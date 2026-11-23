@@ -217,6 +217,15 @@ components:
     typography: "{typography.button}"
     rounded: "{rounded.md}"
     padding: 12px
+  button-disabled:
+    backgroundColor: "{colors.paper}"
+    textColor: "{colors.muted}"
+    typography: "{typography.button}"
+    rounded: "{rounded.md}"
+    padding: 12px
+  button-disabled-stroke:
+    backgroundColor: "{colors.paper}"
+    textColor: "{colors.muted}"
   button-talk-active:
     backgroundColor: "{colors.primary}"
     textColor: "{colors.on-primary}"
@@ -418,6 +427,8 @@ Radius 8 for buttons, fields and notices; 12 for tiles and messages; 16 for card
 ## Components
 
 - **Buttons.** A rectangle with radius 8, a 1 px transparent border and weight 500. Large: 16/24 with 12 x 20 padding. Small: 14/20 with 4 x 14 padding and 34 px of height. Primary is `primary` with `on-primary` text and `primary-hover` under the pointer; quiet is `secondary` with `secondary-text` and no border; the link is `primary` text with an arrow (`Find answers →`) and no background. Buttons are 8 px apart.
+- **Variants reach the CSS only through generated variables.** For every web component, `pnpm design-tokens` writes `--aule-c-<component>-bg`, `-text`, `-type`, `-radius`, `-padding` and `-height` (and `-border`, which for a button is its own background), so `components.button-primary` is the only place the filled button's colours are written, and the CSS of each product only reads them. A test changes a variant here and demands that the generated CSS changes, and a browser test demands that the buttons of the real pages paint what this file says.
+- **A disabled or sending button is `button-disabled`**: white, `muted` text (4.57:1) and a dashed border in the colour of `button-disabled-stroke` (a graphic, 3:1). Never opacity: at 60 % a filled button's text fell to 2.7:1. An error alert is `notice-error` (`danger` text on `paper`), not a colour of the framework.
 - **Every pair of text and background above must reach 4.5:1, and in the `esp32-` components 7:1 when the text is 40 px or less and not a title (`*-title`).** `pnpm --filter @aule/design test` walks them one by one. A component whose name ends in `-stroke` is a graphic, not text (a border, an icon): its `textColor` is the line, its `backgroundColor` is what it is drawn on, and it has to reach 3:1 (WCAG 1.4.11). A colour with transparency (`#ffffffb3`) is laid over its background before it is measured. The linter of the CLI measures every pair as text and so warns once, about `esp32-button-disabled-stroke`; the test allows that one warning and no other.
 - **Fields** are `paper` with a 1.5 px `line` border and radius 8; the focus ring is 3 px of ink with 2 px of offset.
 - **The device screen** (`eink-`) draws buttons with a 2 px border, 56 px high and 72 px of touch area, and keeps 24 px between two targets and margins of 40 and 32. The keyboards of the device stay as they were.

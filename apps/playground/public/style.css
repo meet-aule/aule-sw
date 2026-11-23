@@ -116,32 +116,38 @@ button {
   background: var(--surface);
 }
 
-/* A button is a rectangle with a radius of 8, never a pill. The quiet one is
-   the default: secondary with secondary-text and no border. */
+/* Buttons take everything that makes a variant (background, text, border,
+   radius, type, padding and the hover) from the generated --aule-c-button-*
+   variables, which come from components.button-* in DESIGN.md. Nothing here
+   writes those colours by itself: change the variant in DESIGN.md. A button is
+   a rectangle, never a pill. The quiet one is the default. */
 button {
-  border: 1px solid transparent;
-  padding: var(--aule-space-sm) 20px;
+  border: 1px solid var(--aule-c-button-secondary-border);
+  border-radius: var(--aule-c-button-secondary-radius);
+  padding: calc(var(--aule-c-button-secondary-padding) - 1px) 20px;
   cursor: pointer;
-  font: var(--aule-type-button);
-  background: var(--secondary);
-  color: var(--secondary-text);
+  font: var(--aule-c-button-secondary-type);
+  background: var(--aule-c-button-secondary-bg);
+  color: var(--aule-c-button-secondary-text);
 }
 
 button:hover:not(:disabled) {
-  background: var(--secondary-hover);
+  background: var(--aule-c-button-secondary-hover-bg);
+  color: var(--aule-c-button-secondary-hover-text);
 }
 
-/* The filled one: the primary blue with white text. */
+/* The filled one. */
 button[type="submit"],
 button.primary {
-  background: var(--primary);
-  border-color: var(--primary);
-  color: var(--on-primary);
+  background: var(--aule-c-button-primary-bg);
+  border-color: var(--aule-c-button-primary-border);
+  color: var(--aule-c-button-primary-text);
 }
 
 button[type="submit"]:hover:not(:disabled),
 button.primary:hover:not(:disabled) {
-  background: var(--primary-hover);
+  background: var(--aule-c-button-primary-hover-bg);
+  color: var(--aule-c-button-primary-hover-text);
 }
 
 button:focus-visible,
@@ -151,8 +157,14 @@ select:focus-visible {
   outline-offset: 2px;
 }
 
-button:disabled {
-  opacity: 0.6;
+/* Disabled or sending: a white button with muted text and a dashed border, all
+   from tokens. Never opacity: that took the text below 3:1. */
+button:disabled,
+button[type="submit"]:disabled,
+button.primary:disabled {
+  background: var(--aule-c-button-disabled-bg);
+  color: var(--aule-c-button-disabled-text);
+  border: 1px dashed var(--aule-c-button-disabled-stroke-text);
   cursor: progress;
 }
 
@@ -169,9 +181,9 @@ button[aria-pressed="false"]:not(.talk):hover:not(:disabled) {
 }
 
 button.danger {
-  background: var(--surface);
-  color: var(--danger);
-  border-color: currentColor;
+  background: var(--aule-c-button-danger-bg);
+  color: var(--aule-c-button-danger-text);
+  border-color: var(--aule-c-button-danger-text);
 }
 
 .note {
@@ -499,18 +511,21 @@ label.check input {
 
 .talk[aria-pressed="true"] {
   border-style: solid;
-  background: var(--primary);
-  border-color: var(--primary);
-  color: var(--on-primary);
+  background: var(--aule-c-button-talk-active-bg);
+  border-color: var(--aule-c-button-talk-active-border);
+  color: var(--aule-c-button-talk-active-text);
 }
 
 .talk[aria-pressed="false"] {
-  background: var(--secondary);
-  color: var(--secondary-text);
+  background: var(--aule-c-button-secondary-bg);
+  color: var(--aule-c-button-secondary-text);
   border-style: solid;
 }
 
 .talk:disabled {
+  background: var(--aule-c-button-disabled-bg);
+  color: var(--aule-c-button-disabled-text);
+  border-color: var(--aule-c-button-disabled-stroke-text);
   cursor: not-allowed;
   border-style: dashed;
 }
@@ -588,11 +603,12 @@ label.check input {
 button.quiet {
   background: none;
   border: 0;
-  color: var(--primary);
+  color: var(--aule-c-button-link-text);
 }
 
 button.quiet:hover:not(:disabled) {
   background: none;
+  color: var(--aule-c-button-link-hover-text);
   text-decoration: underline;
 }
 
@@ -1083,8 +1099,8 @@ button[aria-pressed="true"]:not(.talk) {
 }
 
 .talk,
-.talk[aria-pressed="false"] {
-  border-color: var(--primary);
+.talk[aria-pressed="false"]:not(:disabled) {
+  border-color: var(--aule-c-button-primary-border);
 }
 
 /* The buttons stay next to the camera, above the board: a drawing never
@@ -1242,6 +1258,6 @@ button[aria-pressed="true"]:not(.talk) {
   }
 
   main.push-to-talk .talk[aria-pressed="true"] {
-    background: var(--primary);
+    background: var(--aule-c-button-talk-active-bg);
   }
 }

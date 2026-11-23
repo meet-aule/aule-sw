@@ -43,6 +43,9 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @aule/playground typecheck
       - run: pnpm test
+      # The contrast of what the playground really paints (computed colours, also disabled and
+      # error states), in the Chrome of the runner.
+      - run: pnpm --filter @aule/design contrast
 
   agent:
     name: Agent (Python)

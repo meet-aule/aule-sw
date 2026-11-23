@@ -5,7 +5,7 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { contrastFailures, over, pairs, ratio } from "../contrast.mjs";
-import { generate, MODES, parseDesign, readDesign } from "../tokens.mjs";
+import { generate, makeCss, MODES, parseDesign, readDesign } from "../tokens.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const DESIGN = join(HERE, "..", "..", "DESIGN.md");
@@ -209,4 +209,70 @@ test("the old esp32 button, #0075de with white text (4.57:1), no longer passes",
   assert.notEqual(old, text);
   const failures = contrastFailures(parseDesign(old).state);
   assert.ok(failures.some((p) => p.component === "esp32-button" && p.min === 7), JSON.stringify(failures));
+});
+
+// ---- the variants of a component reach the CSS of the product
+
+/** The declarations of every rule of a stylesheet, by its selector (comments out, spaces collapsed). */
+function rulesOf(css) {
+  const rules = new Map();
+  for (const [, selector, body] of css.replace(/\/\*[\s\S]*?\*\//g, "").matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+    const key = selector.trim().replace(/\s+/g, " ");
+    const declarations = Object.fromEntries(
+      body.split(";").map((d) => d.trim()).filter(Boolean).map((d) => [d.slice(0, d.indexOf(":")).trim(), d.slice(d.indexOf(":") + 1).trim()]),
+    );
+    rules.set(key, { ...(rules.get(key) ?? {}), ...declarations });
+  }
+  return rules;
+}
+
+const v = (name) => `var(--aule-c-${name})`;
+const playgroundCss = readFileSync(join(HERE, "..", "..", "apps", "playground", "public", "style.css"), "utf8");
+
+test("a variant changed in DESIGN.md changes the generated CSS", () => {
+  const before = makeCss(state, "x");
+  assert.match(before, /--aule-c-button-primary-bg: #0075de;/);
+  const changed = parseDesign(
+    text.replace(/(  button-primary:\n    backgroundColor: )"\{colors\.primary\}"/, '$1"{colors.danger}"'),
+  ).state;
+  const after = makeCss(changed, "x");
+  assert.notEqual(after, before);
+  assert.match(after, /--aule-c-button-primary-bg: #b01601;/);
+  // and so does its text, its hover, its radius and its padding
+  for (const [pattern, replacement, expected] of [
+    [/(  button-primary:\n    backgroundColor: "\{colors\.primary\}"\n    textColor: )"\{colors\.on-primary\}"/, '$1"{colors.ink}"', /--aule-c-button-primary-text: #000000e5;/],
+    [/(  button-primary-hover:\n    backgroundColor: )"\{colors\.primary-hover\}"/, '$1"{colors.danger}"', /--aule-c-button-primary-hover-bg: #b01601;/],
+    [/(  button-secondary:\n    backgroundColor: "\{colors\.secondary\}"\n    textColor: "\{colors\.secondary-text\}"\n    typography: "\{typography\.button\}"\n    rounded: )"\{rounded\.md\}"/, '$1"{rounded.xl}"', /--aule-c-button-secondary-radius: 16px;/],
+  ]) {
+    const next = text.replace(pattern, replacement);
+    assert.notEqual(next, text, String(pattern));
+    assert.match(makeCss(parseDesign(next).state, "x"), expected);
+  }
+});
+
+test("the playground's CSS takes the colour, border, radius and type of every button variant from the generated variables", () => {
+  const rules = rulesOf(playgroundCss);
+  const need = {
+    button: { background: v("button-secondary-bg"), color: v("button-secondary-text"), "border-radius": v("button-secondary-radius"), font: v("button-secondary-type") },
+    "button:hover:not(:disabled)": { background: v("button-secondary-hover-bg"), color: v("button-secondary-hover-text") },
+    'button[type="submit"], button.primary': { background: v("button-primary-bg"), "border-color": v("button-primary-border"), color: v("button-primary-text") },
+    'button[type="submit"]:hover:not(:disabled), button.primary:hover:not(:disabled)': { background: v("button-primary-hover-bg"), color: v("button-primary-hover-text") },
+    "button.danger": { background: v("button-danger-bg"), color: v("button-danger-text") },
+    "button.quiet": { color: v("button-link-text") },
+    "button.quiet:hover:not(:disabled)": { color: v("button-link-hover-text") },
+    'button:disabled, button[type="submit"]:disabled, button.primary:disabled': { background: v("button-disabled-bg"), color: v("button-disabled-text") },
+    '.talk[aria-pressed="true"]': { background: v("button-talk-active-bg"), color: v("button-talk-active-text") },
+  };
+  for (const [selector, declarations] of Object.entries(need)) {
+    const rule = rules.get(selector);
+    assert.ok(rule, `no rule for ${selector}`);
+    for (const [property, value] of Object.entries(declarations)) assert.equal(rule[property], value, `${selector} { ${property} }`);
+  }
+  // Nothing that styles a button writes one of the variant colours by its own name.
+  const own = /var\(--(primary|primary-hover|on-primary|secondary|secondary-text|secondary-hover)\)|var\(--aule-color-(primary|primary-hover|on-primary|secondary|secondary-text|secondary-hover)\)/;
+  const bad = [...rules].filter(([sel]) => /button|\.talk/.test(sel)).flatMap(([sel, d]) =>
+    Object.entries(d).filter(([, value]) => own.test(value)).map(([p, value]) => `${sel} { ${p}: ${value} }`));
+  assert.deepEqual(bad, []);
+  // A disabled button is never faded: its text came from a token, not from opacity.
+  assert.equal(/opacity:\s*0?\.[0-9]+[^}]*\}/.test(playgroundCss.match(/button:disabled[^{]*\{[^}]*\}/)?.[0] ?? ""), false);
 });

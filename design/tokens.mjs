@@ -77,6 +77,25 @@ export function makeCss(state, designName) {
     if (v.letterSpacing) add(`tracking-${k}`, css(v.letterSpacing));
     if (v.fontFeature) add(`features-${k}`, `"${v.fontFeature}"`);
   }
+  // The variants of every component: its background, text, type, radius, padding
+  // and height, so that the CSS of a product never writes them by itself. A
+  // button's border is its own background (the edge is there and does not show).
+  for (const [name, def] of web(state.components)) {
+    const p = def.properties;
+    const prop = (suffix, value) => add(`c-${name}-${suffix}`, value);
+    const bg = p.get("backgroundColor");
+    if (bg?.type === "color") prop("bg", bg.hex);
+    if (p.get("textColor")?.type === "color") prop("text", p.get("textColor").hex);
+    const type = p.get("typography");
+    if (type?.type === "typography") {
+      prop("type", `${type.fontWeight ?? 400} ${css(type.fontSize)}${type.lineHeight ? `/${css(type.lineHeight)}` : ""} var(--aule-font-sans)`);
+      if (type.letterSpacing) prop("tracking", css(type.letterSpacing));
+    }
+    if (p.get("rounded")?.type === "dimension") prop("radius", css(p.get("rounded")));
+    if (p.get("padding")?.type === "dimension") prop("padding", css(p.get("padding")));
+    if (p.get("height")?.type === "dimension") prop("height", css(p.get("height")));
+    if (name.startsWith("button-") && bg?.type === "color" && !/-(hover|stroke)$/.test(name)) prop("border", bg.hex);
+  }
   if (family) lines.splice(lines.findIndex((l) => l.includes("--aule-type-")), 0, `  --aule-font-sans: ${family};`);
 
   return [
