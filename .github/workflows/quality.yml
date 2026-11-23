@@ -128,6 +128,9 @@ jobs:
       - name: ShellCheck
         if: ${{ !cancelled() }}
         run: git ls-files -z '*.sh' | xargs -0 docker run --rm --volume "$PWD:/mnt" koalaman/shellcheck:v0.11.0 --severity=warning
+      - name: Watch delivery regression tests
+        if: ${{ !cancelled() }}
+        run: python3 -m unittest discover -s infra/watch -p 'test_*.py' -v
       - name: Hadolint
         if: ${{ !cancelled() }}
         # Debian's package versions are not pinned: an old one leaves the archive and breaks the build.

@@ -4,10 +4,21 @@ Two scripts that mail the team when Aule stops working, and again when it works 
 
 | Script | Runs on | What it checks | Mails through |
 |---|---|---|---|
-| `aule-watch.sh` | the server (`/etc/aule/aule-watch.sh`, root-owned, run by `aule-admin`'s cron every 5 minutes) | the platform, the session page, the voice agent, LiveKit, the database, the worker, embeddings, the public page, the shop, disk use under 85 % and a nightly backup younger than 26 hours | the platform's own SMTP settings in `/etc/aule/aule.env` |
+| `aule-watch.sh` | the server (`/etc/aule/aule-watch.sh`, root-owned, run by `aule-admin`'s cron every 5 minutes) | the platform, the session page, the voice agent, LiveKit, the database, the worker, embeddings, the public page, the shop, disk use under 85 % and a backup younger than 7 hours (taken every 6 hours) | the platform's own SMTP settings in `/etc/aule/aule.env` |
 | `aule-watch-outside.sh` | the home server (`~/bin/aule-watch-outside.sh`, its user's cron every 5 minutes) | the public session page, LiveKit and the shop, from outside: the case where the whole server or its network is down | Resend's HTTP API, with the key in `~/.config/aule/resend-key` (mode 600) |
 
 A failure is mailed when it starts and then every six hours while it lasts; a recovery is mailed once. The mail says which check failed and nothing about any family or child. `--test` sends one test mail.
+
+Only a successful send updates the last notified state and time. If delivery
+fails, the next check retries the current change, including a recovery; it does
+not wait six hours. A successful send means the mail service accepted it, not
+that it reached an inbox. Existing state files are kept on upgrade.
+
+Run the delivery regression tests without contacting a server or sending mail:
+
+```sh
+python3 -m unittest discover -s infra/watch -p 'test_*.py' -v
+```
 
 To install or update on the server:
 
