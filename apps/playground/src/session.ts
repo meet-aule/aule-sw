@@ -15,6 +15,7 @@ export type Session = {
   room: string;
   agentName: string;
   expiresInSeconds: number;
+  engine?: boolean;
 };
 
 export class PlatformError extends Error {

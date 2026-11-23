@@ -32,6 +32,61 @@ use crate::supervisor::{self, Brief, PlanInputs, Turn};
 use crate::{engine, events, jobs, learning, llm, memory};
 
 pub const AUDIENCES: [&str; 2] = ["child", "operator"];
+
+async fn owned_session(state: &AppState, caller: &Caller, id: Uuid) -> ApiResult<session_row::Model> {
+    let session =
+        session_row::Entity::find_by_id(id).one(&state.db).await?.ok_or(ApiError::NotFound("session"))?;
+    if *caller != Caller::Operator {
+        let child_id = session.child_id.ok_or(ApiError::NotFound("session"))?;
+        child_for(&state.db, caller, child_id).await.map_err(|error| match error {
+            ApiError::Forbidden(_) | ApiError::NotFound(_) => ApiError::NotFound("session"),
+            other => other,
+        })?;
+    }
+    Ok(session)
+}
+
+fn seconds_left(state: &AppState, session: &session_row::Model) -> i64 {
+    (session.created_at + chrono::Duration::seconds(i64::from(state.config.session_minutes) * 60)
+        - Utc::now())
+    .num_seconds()
+    .max(0)
+}
+
+/// Lifecycle only: no token, profile, transcript, model prompt or expected answer.
+pub async fn status(
+    caller: Caller,
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> ApiResult<Json<Value>> {
+    let session = owned_session(&state, &caller, id).await?;
+    let consent = match session.child_id {
+        Some(child_id) => current_consent(&state.db, child_id).await?["voice"],
+        None => caller == Caller::Operator,
+    };
+    let remaining = seconds_left(&state, &session);
+    Ok(Json(json!({
+        "status": session.status,
+        "end_reason": session.end_reason,
+        "remaining_seconds": remaining,
+        "can_resume": consent && session.status == "active" && remaining > 0,
+        "language": session.language,
+        "engine": session.engine,
+    })))
+}
+
+/// Stopping is allowed even after consent was revoked. The first close wins.
+pub async fn end_by_caller(
+    caller: Caller,
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> ApiResult<StatusCode> {
+    let session = owned_session(&state, &caller, id).await?;
+    let reason = if seconds_left(&state, &session) == 0 { "budget_reached" } else { "parent_ended" };
+    end_session(&state.db, id, None, reason).await?;
+    engine::forget(&state, id);
+    Ok(StatusCode::NO_CONTENT)
+}
 /// How long the agent waits for the supervisor's plan before starting with
 /// the learner model's own.
 // A plan written without a model is ready at once; one a model writes takes
@@ -651,8 +706,16 @@ async fn watch(state: &AppState, session: &Session) -> ApiResult<()> {
     Ok(())
 }
 
-pub const END_REASONS: [&str; 7] =
-    ["child_ended", "idle", "budget_reached", "parent_ended", "device_offline", "not_working", "error"];
+pub const END_REASONS: [&str; 8] = [
+    "child_ended",
+    "idle",
+    "budget_reached",
+    "parent_ended",
+    "device_offline",
+    "not_working",
+    "error",
+    "provider_error",
+];
 
 /// Turns in a row in which the student is plainly not working before the
 /// tutor says so, and before the session closes and the family is told.
@@ -749,10 +812,10 @@ pub async fn end_session(
     let ended = txn
         .query_one_raw(Statement::from_sql_and_values(
             DbBackend::Postgres,
-            "update sessions set status = 'ended', ended_at = now(), speaking_seconds = $2
+            "update sessions set status = 'ended', ended_at = now(), speaking_seconds = $2, end_reason = $3
              where id = $1 and status <> 'ended'
              returning child_id, device_id, coalesce(started_at, created_at) as started_at, ended_at",
-            [session_id.into(), speaking_seconds.into()],
+            [session_id.into(), speaking_seconds.into(), end_reason.into()],
         ))
         .await?;
     if let Some(row) = &ended {

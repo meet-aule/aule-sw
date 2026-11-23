@@ -47,7 +47,8 @@
         "parent_ended",
         "device_offline",
         "not_working",
-        "error"
+        "error",
+        "provider_error"
       ]
     },
     "turns": {

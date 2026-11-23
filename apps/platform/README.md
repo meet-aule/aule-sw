@@ -71,6 +71,8 @@ Devices do not use a bearer token: they sign with the key burned into them.
 | `GET /v1/children/{id}/memories?query=` | What is remembered, closest to the query first |
 | `DELETE /v1/children/{id}/memories/{memory_id}` | Forget one thing |
 | `GET /v1/children/{id}/reviews` | Notes from past sessions |
+| `GET /v1/sessions/{id}` | Lifecycle only for the child's guardian or operator: status, fixed end reason, language, engine flag and remaining seconds; resume requires active status and current voice consent |
+| `POST /v1/sessions/{id}/end` | Owner stops a session, including after voice consent is revoked. First close wins and queues one review |
 | `POST /v1/sessions` | A session and its room token. A guardian can only start a child's session. Optional `objective`: what the family says the session is for, `{kind: homework, exam_prep, exam_review or explore, subject (one of the subjects, or other), topic (up to 200 characters), due (a date)}`; the supervisor plans for it first. Optional `engine: true` asks for the [session engine](#sessions-run-by-the-session-engine) to run the session; the response's `engine` says whether it does |
 | `GET /v1/sessions/{id}/step` | Where a session the engine runs is, for the student's screen. 409 when the engine does not run the session or it has ended |
 | `POST /v1/sessions/{id}/answers` | An answer typed on that screen: `{"answer", "explanation"?}`. Returns the new step; the tutor collects what to say about it with its next report of turns |
@@ -346,3 +348,8 @@ Each exercise is recorded under a skill of `curriculum/math-primaria.json`. The 
 Only skills present in the platform's catalog are recorded.
 
 When the session is reviewed, the family's summary (`session_reviews.guardian_summary`, and the notice made from it) is the engine's report, word for word. The supervisor's review still records its next step and flags, not its own summary. A session that ended before anything happened has no engine report and is summarized by the supervisor as before.
+
+Migration 0020 adds nullable `sessions.end_reason`. Existing sessions keep null;
+new closures persist the same fixed reason published in `session.ended.v1`, now
+including `provider_error`. No transcript is returned by the lifecycle endpoint.
+The additive migration is compatible with the preceding application version.
