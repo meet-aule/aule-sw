@@ -1,0 +1,97 @@
+<div id="aule-ordinal-explorer">
+  <style>
+    #aule-ordinal-explorer {display:grid;gap:calc(var(--font-size-base) * 1);color:var(--foreground)}
+    #aule-ordinal-explorer .field-row {display:flex;align-items:center;gap:calc(var(--font-size-base) * .5)}
+    #aule-ordinal-explorer .context-fields {display:grid;gap:calc(var(--font-size-base) * .5)}
+    #aule-ordinal-explorer [hidden] {display:none}
+  </style>
+  <h2>Final grade prediction · 0–20 scale</h2>
+  <div class="text-small">UCI · Portuguese secondary education · ages 15–22 · no C/B/A/AD equivalence</div>
+  <div class="viz-controls">
+    <label class="form-label" for="aule-subject">Subject
+      <select class="form-select" id="aule-subject"><option value="mat">Mathematics · 395 records</option><option value="por">Portuguese · 649 records</option></select>
+    </label>
+    <label class="form-label" for="aule-model">Model inputs
+      <select class="form-select" id="aule-model"><option value="extended">Grades + age + context</option><option value="grades_age">Grades + age</option><option value="grades">Previous grades</option></select>
+    </label>
+  </div>
+  <div class="viz-controls">
+    <label class="form-label" for="aule-g1"><span>First period: <output id="aule-g1-value" class="tabular-nums">10</output> / 20</span>
+      <input class="form-range" id="aule-g1" type="range" min="0" max="20" step="1" value="10">
+    </label>
+    <label class="form-label" for="aule-g2"><span>Second period: <output id="aule-g2-value" class="tabular-nums">11</output> / 20</span>
+      <input class="form-range" id="aule-g2" type="range" min="0" max="20" step="1" value="11">
+    </label>
+  </div>
+  <div class="viz-controls">
+    <label class="form-label" for="aule-age">Age (years)
+      <input class="form-control" id="aule-age" type="number" min="0" max="25" step="1" value="16">
+    </label>
+  </div>
+  <div class="context-fields" id="aule-context-fields">
+    <div class="viz-controls">
+      <label class="form-label" for="aule-study">Self-reported weekly study
+        <select class="form-select" id="aule-study"><option value="1">Under 2 hours</option><option value="2" selected>2–5 hours</option><option value="3">5–10 hours</option><option value="4">Over 10 hours</option></select>
+      </label>
+      <label class="form-label" for="aule-failures">Recorded past failures
+        <select class="form-select" id="aule-failures"><option value="0">0</option><option value="1">1</option><option value="2">2</option><option value="3">3</option></select>
+      </label>
+    </div>
+    <div class="viz-controls">
+      <label class="form-label" for="aule-school-support">Additional school support
+        <select class="form-select" id="aule-school-support"><option value="0">No</option><option value="1">Yes</option></select>
+      </label>
+      <label class="form-label" for="aule-family-support">Family educational support
+        <select class="form-select" id="aule-family-support"><option value="0">No</option><option value="1" selected>Yes</option></select>
+      </label>
+    </div>
+  </div>
+  <div id="aule-validation" class="text-destructive" role="alert" hidden></div>
+  <div id="aule-prediction" aria-live="polite">
+    <div class="viz-grid">
+      <div class="card viz-stat"><div>Expected final grade</div><div class="viz-stat-value tabular-nums" id="aule-expected"></div><div class="text-small">Mean of the model distribution</div></div>
+      <div class="card viz-stat"><div>Probability of gaining ≥2 points</div><div class="viz-stat-value tabular-nums" id="aule-improvement"></div><div class="text-small">Experimental; overestimates improvements in validation</div></div>
+    </div>
+  </div>
+  <div class="text-small" id="aule-benchmark" aria-live="polite"></div>
+  <div class="text-small">Synthetic scenario · associations, no demonstrated causal effect · probabilities need prospective calibration</div>
+</div>
+<script>
+(() => {
+  const root = document.getElementById('aule-ordinal-explorer');
+  const data = __MODEL_DATA__;
+  __PREDICT_FUNCTION__
+  const get = id => root.querySelector('#' + id);
+  const ids = ['aule-subject','aule-model','aule-g1','aule-g2','aule-age','aule-study','aule-failures','aule-school-support','aule-family-support'];
+  const defaults = ['mat','extended','10','11','16','2','0','0','1'];
+  const fmt = (n, places=1) => n.toLocaleString('en-US',{minimumFractionDigits:places,maximumFractionDigits:places});
+  function update() {
+    const subject=get('aule-subject').value;
+    const key=get('aule-model').value;
+    const values={G1:Number(get('aule-g1').value),G2:Number(get('aule-g2').value),age:Number(get('aule-age').value),studytime:Number(get('aule-study').value),failures:Number(get('aule-failures').value),schoolsup:Number(get('aule-school-support').value),famsup:Number(get('aule-family-support').value)};
+    get('aule-g1-value').textContent=values.G1;
+    get('aule-g2-value').textContent=values.G2;
+    get('aule-context-fields').hidden=key!=='extended';
+    const valid=Number.isInteger(values.age)&&values.age>=15&&values.age<=22;
+    get('aule-validation').hidden=valid;
+    get('aule-validation').textContent=valid?'':'No prediction: this experiment only covers ages 15–22. Primary-school validation is missing.';
+    get('aule-prediction').hidden=!valid;
+    if(valid) {
+      const result=predict(data[subject].models[key],values);
+      get('aule-expected').textContent=fmt(result.expected)+' / 20';
+      get('aule-improvement').textContent=fmt(result.improvement*100)+' %';
+    }
+    const metrics=data[subject].metrics[key];
+    get('aule-benchmark').textContent='Out-of-fold mean error: '+fmt(metrics.mae,2)+' points. Repeat-last-grade baseline: '+fmt(data[subject].baseline.mae,2)+' points. Lower is better.';
+  }
+  function restore() {
+
+    ids.forEach((id,i)=>{get(id).value=defaults[i];});
+    if(!data[get('aule-subject').value]) get('aule-subject').value='mat';
+    if(!data.mat.models[get('aule-model').value]) get('aule-model').value='extended';
+    update();
+  }
+  restore();
+  ids.forEach(id=>get(id).addEventListener('input',()=>update()));
+})();
+</script>

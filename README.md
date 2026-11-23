@@ -46,6 +46,7 @@ apps/
   agent/      the voice tutor on LiveKit Agents (Python)
   playground/ a web page to talk to the tutor with a microphone and a camera (Node, TypeScript)
 contracts/    the events they exchange, as JSON Schema
+research/     reproducible experiments, separate from operational learner models
 compose.yaml  everything above with its database, next to your LiveKit server
 ```
 
@@ -56,6 +57,10 @@ cd apps/platform && cargo test     # platform (needs DATABASE_URL to a Postgres 
 ```
 
 Coding agents: read [AGENTS.md](AGENTS.md) first.
+
+The [student performance benchmark](research/student-performance/README.md)
+evaluates grade prediction on public data and includes an offline explorer.
+It does not outperform repeating the previous grade and is not used by the tutor.
 
 To run it, copy `.env.example` to `.env`, fill it in, run `docker compose up -d --build` and, once, `docker compose exec embeddings ollama pull bge-m3`.
 

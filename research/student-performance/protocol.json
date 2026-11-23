@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "written_before_model_fitting": true,
+  "seed": 20261123,
+  "datasets": ["student-mat.csv", "student-por.csv"],
+  "target": "G3, native final grade from 0 to 20",
+  "forecast_origin": "After G2 is available; questionnaire timing is unverified, so extended-feature analyses are retrospective",
+  "scale_mapping": "No conversion to Peruvian C/B/A/AD",
+  "models": {
+    "grades": ["G1", "G2"],
+    "grades_age": ["G1", "G2", "age"],
+    "extended": ["G1", "G2", "age", "studytime", "failures", "schoolsup", "famsup"],
+    "context_only": ["age", "studytime", "failures", "schoolsup", "famsup"]
+  },
+  "baselines": ["training_mean", "last_grade_G2"],
+  "estimator": "L2-regularized all-threshold ordinal logistic regression (mord.LogisticAT), labels ordered by observed native grade; point forecast is probability-weighted native grade",
+  "outer_validation": "5-fold shuffled KFold, independently per subject, same folds for every model",
+  "inner_validation": "3-fold KFold inside each training fold; select alpha minimizing point-forecast MAE; StandardScaler fitted inside each fit",
+  "alpha_grid": [1.0, 10.0, 100.0],
+  "primary_metric": "MAE in native grade points (0 to 20)",
+  "secondary_metrics": ["RMSE", "within_two_points", "ranked_probability_score", "Brier for G3 >= G2 + 2", "AUC for G3 >= G2 + 2"],
+  "improvement_event": "G3 >= G2 + 2; two native points is an analysis threshold, not a school achievement level",
+  "uncertainty": "2000 paired student bootstraps of fixed out-of-fold errors; conditional on the fitted folds, not full model-refit uncertainty",
+  "stress_test": "Train on one school, evaluate on the other, both directions; inner tuning within the training school only",
+  "sensitivity": "Report errors on G3=0 and G3>0 separately, without excluding any records from main evaluation",
+  "permutation_importance": "Extended model, held-out outer-fold feature permutations, 10 repetitions; association, not intervention effect",
+  "exclusions": ["G3-derived predictors", "absences (no period cutoff)", "sex", "health", "alcohol", "romantic status", "home address", "parent occupation/income/education", "school identifier as predictor"],
+  "leakage_controls": ["No joint training or pooling across subjects: 382 students overlap", "No scaler or tuning fitted on outer test data", "No Aule child records accessed", "No model/feature changes selected after inspecting outer-test scores"],
+  "limitations": ["Portuguese secondary students aged 15-22, not Peruvian primary pupils", "Final G3 is a final-year assessment and may incorporate earlier performance", "Only two schools and no calendar-year or tutor intervention data", "No within-skill attempts, hints, retention probes or school competency rubrics", "Ordinal probabilities require prospective calibration before operational use", "Questionnaire timing is unspecified", "Observational associations do not identify causes"]
+}
