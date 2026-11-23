@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Aule · Student performance research</title>
+  <style>
+    :root{--foreground:#172a3a;--font-size-base:16px}
+    body{font:16px/1.6 system-ui,sans-serif;color:var(--foreground);margin:0;background:#f4f7f8}
+    main{max-width:1000px;margin:auto;padding:24px;background:white}
+    h1,h2{line-height:1.2}h2{margin-top:1.6em}a{color:#126569}
+    table{border-collapse:collapse;width:100%}th,td{text-align:left;padding:8px;border-bottom:1px solid #ddd}
+    img{max-width:100%;height:auto}.note,.card{background:#edf5f5;padding:16px}
+    .viz-controls,.viz-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+    .form-label{display:grid;gap:6px}.form-control,.form-select{font:inherit;padding:8px;max-width:100%;box-sizing:border-box}
+    .form-range{width:100%}.viz-stat-value{font-size:28px}.text-small{font-size:14px}.text-destructive{color:#a42c30}
+    @media(max-width:600px){main{padding:16px}.viz-controls,.viz-grid{grid-template-columns:1fr}}
+  </style>
+</head>
+<body><main>
+  <h1>Predicting school grades with open data</h1>
+  <p class="note"><strong>Research only:</strong> adding age and educational context did not beat repeating the last grade (G2) in mean absolute error. These probabilities must not be used to assess Aule children or promise improvement.</p>
+  <p>Experiment dated 23 November 2026. <a href="README.md">Full interpretation and reproduction instructions</a>.</p>
+  __EXPLORER__
+  <p>The explorer uses a fit on all records, while the errors below are held-out estimates. Inputs are synthetic scenarios. Changing a value shows an association, not an intervention effect. Some combinations may be rare or absent in the data.</p>
+  <h2>Held-out performance</h2>
+  <table><thead><tr><th>Model</th><th>Mathematics MAE</th><th>Portuguese MAE</th></tr></thead><tbody>__RESULT_ROWS__</tbody></table>
+  <p>MAE is error in native 0–20 grade points; lower is better. It is not an accuracy percentage. Five outer folds, three inner folds for regularization, seed 20261123. Scaling is fitted within each training split. All __FIT_COUNT__ optimization runs converged.</p>
+  <img src="results/validacion.png" alt="Held-out prediction errors and calibration of improvement probabilities by subject">
+  <p>Error intervals bootstrap fixed out-of-fold errors. They exclude full model-refit uncertainty. School transfer in either direction also failed to beat G2 in both subjects.</p>
+  <h2>Interpretation and limits</h2>
+  <p>G2 carries most of the predictive signal. Age did not add a clear improvement in these secondary-school data; this does not establish its relevance for primary-school activities or language. Educational support can be received because a pupil is struggling, so its coefficient is not the effect of providing help.</p>
+  <p>Only 18 mathematics and 56 Portuguese records gained at least two points. The extended model overestimated the frequency of improvement. Probability calibration and individual decisions require prospective evidence.</p>
+  <p>The data cover two Portuguese schools, ages 15–22: 395 mathematics and 649 Portuguese records, with 382 pupils overlapping. Subjects are evaluated separately. Questionnaire timing is unverified; G3 may incorporate earlier performance. No translation to C/B/A/AD is justified. No Aule records were used.</p>
+  <p>The dataset lacks skill-level attempts, hints, retention probes, tutor interventions and competency rubrics. It cannot test those factors or explain what causes a child to improve. All zero grades remain in the evaluation; sensitive and potentially future-derived predictors are excluded.</p>
+  <p>Before operational use, collect consented, time-stamped assessments with teacher-reviewed rubrics; hold out later periods and pupils; evaluate calibration and age/grade slices; compare with the last observed grade. Causal recommendations need a separate appropriate study design.</p>
+  <h2>Source and artifacts</h2>
+  <p>Cortez, P. (2008), <a href="https://doi.org/10.24432/C5TG7T">Student Performance, UCI</a>, CC BY 4.0. Raw data are downloaded separately and checked against a pinned SHA-256.</p>
+  <p><a href="protocol.json">Protocol</a> · <a href="source.json">Provenance</a> · <a href="results/results.json">Metrics and model coefficients</a> · <a href="results/validacion.pdf">Exportable figure</a></p>
+</main></body></html>

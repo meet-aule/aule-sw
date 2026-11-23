@@ -34,7 +34,8 @@ the PR description. Keep that description focused on the final change and eviden
 ## Required checks
 
 - `Software CI`: Node contracts/playground/curriculum tests, Python tests, Rust
-  formatting and tests against PostgreSQL 17 with pgvector, and all three Docker builds.
+  formatting and tests against PostgreSQL 17 with pgvector, all three Docker builds,
+  and the reproducible student performance benchmark on pinned public data.
 - `Ruff`: Python lint and formatting.
 - `Clippy and RustSec`: Rust lint and the dependency audit.
 - `Workflows, shell scripts and Dockerfiles`: actionlint, ShellCheck and Hadolint.
