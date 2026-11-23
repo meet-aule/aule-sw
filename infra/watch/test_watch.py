@@ -44,7 +44,12 @@ if command == "curl":
 elif command == "date":
     print(settings["now"] if args == ["+%s"] else "2026-11-23 00:00 UTC")
 elif command == "docker":
-    print("healthy" if "Health.Status" in " ".join(args) else "true")
+    if "psql" in args:
+        if settings.get("reports") == "unavailable":
+            sys.exit(1)
+        print(settings.get("reports", "0"))
+    else:
+        print("healthy" if "Health.Status" in " ".join(args) else "true")
 elif command == "df":
     print("Use%\n15%")
 elif command == "find":
@@ -142,6 +147,22 @@ class WatchHarness:
 
 
 class WatchTests(unittest.TestCase):
+    def test_report_backlog_and_database_errors_alert_and_recover(self) -> None:
+        for reports in ("1", "9", "", "invalid", "unavailable"):
+            with (
+                self.subTest(reports=reports),
+                tempfile.TemporaryDirectory() as directory,
+            ):
+                harness = WatchHarness(Path(directory), "aule-watch.sh")
+                harness.settings["reports"] = reports
+                self.assertEqual(harness.run().returncode, 0)
+                self.assertIn("informes", harness.state.read_text())
+                self.assertEqual(len(harness.deliveries()), 1)
+                harness.settings["reports"] = "0"
+                self.assertEqual(harness.run().returncode, 0)
+                self.assertEqual(harness.state.read_text().strip(), "")
+                self.assertEqual(len(harness.deliveries()), 2)
+
     def test_failed_recovery_is_retried_at_next_check(self) -> None:
         for watch in WATCHES:
             with self.subTest(watch=watch), tempfile.TemporaryDirectory() as directory:
