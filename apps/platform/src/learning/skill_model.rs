@@ -423,7 +423,7 @@ pub struct Correction {
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct TraceRequest {
-    /// Reference instant. Defaults to now.
+    /// Reference instant (inclusive). Later attempts and corrections are ignored. Defaults to now.
     #[serde(default)]
     pub now: Option<DateTime<Utc>>,
     #[serde(default, deserialize_with = "null_to_default")]
@@ -505,6 +505,7 @@ pub fn trace(request: &TraceRequest) -> Result<TraceResponse, String> {
         .iter()
         .map(|attempt| (attempt.at, 0, Event::Attempt(attempt)))
         .chain(request.corrections.iter().map(|correction| (correction.at, 1, Event::Correction(correction))))
+        .filter(|(at, _, _)| *at <= now)
         .collect();
     events.sort_by_key(|(at, kind, _)| (*at, *kind));
 
@@ -580,6 +581,40 @@ mod tests {
 
     fn skill<'a>(response: &'a TraceResponse, id: &str) -> &'a SkillTrace {
         response.skills.iter().find(|skill| skill.skill_id == id).unwrap()
+    }
+
+    #[test]
+    fn historical_trace_ignores_later_attempts_and_corrections() {
+        let now = at(2, 0);
+        let mut past = request(vec![attempt("a", 1, 0, false)], now);
+        past.corrections.push(Correction { skill_id: "b".into(), at: at(1, 1), level: 0.7 });
+        let expected = trace(&past).unwrap();
+        let mut history = past;
+        history.attempts.extend([attempt("a", 3, 0, true), attempt("future", 3, 1, true)]);
+        history.corrections.extend([
+            Correction { skill_id: "a".into(), at: at(3, 2), level: 0.95 },
+            Correction { skill_id: "future-correction".into(), at: at(3, 3), level: 0.9 },
+        ]);
+        let actual = trace(&history).unwrap();
+        assert_eq!(actual.ability, expected.ability);
+        assert_eq!(actual.skills, expected.skills);
+    }
+
+    #[test]
+    fn trace_includes_events_at_the_reference_instant() {
+        let now = at(2, 0);
+        let mut boundary = request(vec![attempt("a", 2, 0, true)], now);
+        boundary.corrections.push(Correction { skill_id: "a".into(), at: now, level: 0.9 });
+        let actual = trace(&boundary).unwrap();
+        assert_eq!(actual.skills.len(), 1);
+        assert_eq!(skill(&actual, "a").attempts, 1);
+        assert!(skill(&actual, "a").corrected);
+        assert!(skill(&actual, "a").p_now > 0.8);
+
+        boundary.now = Some(now - TimeDelta::milliseconds(1));
+        let earlier = trace(&boundary).unwrap();
+        assert!(earlier.skills.is_empty());
+        assert_eq!(earlier.ability, Params::default().prior_ability);
     }
 
     #[test]
