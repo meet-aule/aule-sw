@@ -126,8 +126,8 @@ if [ "$oldest" != "$newest" ]; then
   remote "docker exec $TEST psql -q -U aule -d aule -c 'drop schema public cascade; create schema public;'" >/dev/null 2>&1 && ok "schema emptied"
   if restore "$oldest" oldest; then ok "oldest backup kept ($(basename "$oldest"), migration $(version)) restores"; else ko "oldest backup did not restore"; fi
   old_version=$(version)
-  if [ "$old_version" -ge 17 ] 2>/dev/null; then
-    migrate && ok "already at the baseline: migrate is a no-op" || ko "migrate failed on a baseline backup"
+  if [ "$old_version" -ge 16 ] 2>/dev/null; then
+    migrate && [ "$(version)" = "$current" ] && ok "old backup migrated from $old_version to $current" || ko "migrate failed on a baseline-compatible backup"
   else
     if out=$(migrate); then
       ko "the platform started on a pre-baseline backup"
