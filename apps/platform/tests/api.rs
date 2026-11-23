@@ -1337,6 +1337,10 @@ async fn a_device_is_linked_by_its_code_and_its_key_and_then_starts_sessions(poo
     let claims: Value =
         serde_json::from_slice(&base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(claims).unwrap())
             .unwrap();
+    // Rejoining after a brief Wi-Fi loss reuses this room and token, without
+    // calling /ota/session again and creating another tutoring session.
+    assert_eq!(claims["roomConfig"]["departureTimeout"], 120);
+    assert_eq!(claims["video"]["room"], started["room"]);
     let dispatch: Value =
         serde_json::from_str(claims["roomConfig"]["agents"][0]["metadata"].as_str().unwrap()).unwrap();
     assert_eq!(dispatch["audience"], "child");

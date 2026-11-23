@@ -91,6 +91,23 @@ Devices do not use a bearer token: they sign with the key burned into them.
 
 `/ota/` and `/ota/activate` follow the check-in and activation protocol of xiaozhi-esp32. `/ota/session` is Aule's own: the body is `{"serial_number", "timestamp", "hmac"}`, where `hmac` is HMAC-SHA256 of `session:<serial>:<timestamp>` under the device's key, in hex.
 
+### Reconnecting to a session
+
+Rooms issued for the web and devices stay open for up to 120 seconds after the
+last non-agent participant disconnects. A client should retry with the same
+room, participant identity and still-valid token. It must not call the session
+creation endpoint on every network retry: that creates another session. A
+successful rejoin while the room and tutor remain running preserves their
+state and uses the existing session's allowance. The session's normal time
+limit, consent checks and explicit end still apply.
+
+This grace period covers short transport interruptions, not a device reboot,
+an expired token or a crashed tutor. The firmware's LiveKit transport and
+recovery still need implementation and tests on a board; the signed device
+route alone does not prove that a device can reconnect. Clients should show
+that they are reconnecting, retry with bounded backoff, and preserve the
+physical microphone switch. Do not replay buffered speech after reconnecting.
+
 ### Operator only
 
 | Route | What it does |

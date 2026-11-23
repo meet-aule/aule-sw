@@ -29,6 +29,12 @@ sign-in. An unknown page opened by a browser returns to the start page. Unknown
 API routes, files and write requests keep their error responses. These redirects
 are not cached and do not accept a destination from the request.
 
+Rooms wait up to two minutes after a network disconnect so LiveKit can rejoin
+the same session. This applies both with the platform and to operator sessions
+issued by the playground. The page shows its reconnecting state while the SDK
+retries; a failed recovery still reports that the connection was lost. This
+does not resume a session after a page reload or after its tutor has ended.
+
 ## What it does not do
 
 - It is not a way for children to use the tutor. The session it opens is marked as an operator's, which is the only kind the agent accepts while the safety gates are missing.
