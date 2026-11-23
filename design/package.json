@@ -1,0 +1,19 @@
+{
+  "name": "@aule/design",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "What comes out of DESIGN.md: the CSS and Figma variables, and the checks that keep them honest",
+  "scripts": {
+    "tokens": "node tokens.mjs --css ../apps/playground/public/tokens.css --figma .",
+    "tokens:check": "node tokens.mjs --check --css ../apps/playground/public/tokens.css --figma .",
+    "test": "node --test \"test/*.test.mjs\"",
+    "visual": "playwright test --config visual/playwright.config.mjs",
+    "visual:update": "playwright test --config visual/playwright.config.mjs --update-snapshots",
+    "derive": "node tokens.mjs --derive"
+  },
+  "devDependencies": {
+    "@google/design.md": "0.4.0",
+    "@playwright/test": "1.65.0"
+  }
+}

@@ -1,0 +1,216 @@
+{
+  "$comment": "Generated from DESIGN.md (Aule) by design/tokens.mjs. Do not edit. Mode \"esp32\": one Figma variable per entry; FLOAT values are px.",
+  "mode": "esp32",
+  "variables": [
+    {
+      "name": "space/xs",
+      "type": "FLOAT",
+      "value": 8
+    },
+    {
+      "name": "space/sm",
+      "type": "FLOAT",
+      "value": 16
+    },
+    {
+      "name": "space/md",
+      "type": "FLOAT",
+      "value": 24
+    },
+    {
+      "name": "space/lg",
+      "type": "FLOAT",
+      "value": 32
+    },
+    {
+      "name": "space/target",
+      "type": "FLOAT",
+      "value": 48
+    },
+    {
+      "name": "type/title/family",
+      "type": "STRING",
+      "value": "Inter"
+    },
+    {
+      "name": "type/title/size",
+      "type": "FLOAT",
+      "value": 48
+    },
+    {
+      "name": "type/title/weight",
+      "type": "FLOAT",
+      "value": 600
+    },
+    {
+      "name": "type/title/line-height",
+      "type": "FLOAT",
+      "value": 60
+    },
+    {
+      "name": "type/body/family",
+      "type": "STRING",
+      "value": "Inter"
+    },
+    {
+      "name": "type/body/size",
+      "type": "FLOAT",
+      "value": 40
+    },
+    {
+      "name": "type/body/weight",
+      "type": "FLOAT",
+      "value": 400
+    },
+    {
+      "name": "type/body/line-height",
+      "type": "FLOAT",
+      "value": 50
+    },
+    {
+      "name": "type/button/family",
+      "type": "STRING",
+      "value": "Inter"
+    },
+    {
+      "name": "type/button/size",
+      "type": "FLOAT",
+      "value": 40
+    },
+    {
+      "name": "type/button/weight",
+      "type": "FLOAT",
+      "value": 600
+    },
+    {
+      "name": "type/button/line-height",
+      "type": "FLOAT",
+      "value": 50
+    },
+    {
+      "name": "type/min/family",
+      "type": "STRING",
+      "value": "Inter"
+    },
+    {
+      "name": "type/min/size",
+      "type": "FLOAT",
+      "value": 32
+    },
+    {
+      "name": "type/min/weight",
+      "type": "FLOAT",
+      "value": 400
+    },
+    {
+      "name": "type/min/line-height",
+      "type": "FLOAT",
+      "value": 40
+    },
+    {
+      "name": "color/paper",
+      "type": "COLOR",
+      "value": "#f5f2ea"
+    },
+    {
+      "name": "color/paper-deep",
+      "type": "COLOR",
+      "value": "#ece8dc"
+    },
+    {
+      "name": "color/surface",
+      "type": "COLOR",
+      "value": "#fbfaf6"
+    },
+    {
+      "name": "color/primary",
+      "type": "COLOR",
+      "value": "#141414"
+    },
+    {
+      "name": "color/muted",
+      "type": "COLOR",
+      "value": "#6b6b6b"
+    },
+    {
+      "name": "color/line",
+      "type": "COLOR",
+      "value": "#c9c3b4"
+    },
+    {
+      "name": "color/accent",
+      "type": "COLOR",
+      "value": "#9a5b2e"
+    },
+    {
+      "name": "color/accent-tint",
+      "type": "COLOR",
+      "value": "#e6dacc"
+    },
+    {
+      "name": "color/accent-deep",
+      "type": "COLOR",
+      "value": "#744423"
+    },
+    {
+      "name": "color/on-accent",
+      "type": "COLOR",
+      "value": "#ffffff"
+    },
+    {
+      "name": "color/danger",
+      "type": "COLOR",
+      "value": "#8f1d14"
+    },
+    {
+      "name": "color/tile",
+      "type": "COLOR",
+      "value": "#14130f"
+    },
+    {
+      "name": "color/tile-ink",
+      "type": "COLOR",
+      "value": "#f6f4ef"
+    },
+    {
+      "name": "color/board",
+      "type": "COLOR",
+      "value": "#ffffff"
+    },
+    {
+      "name": "color/device-frame",
+      "type": "COLOR",
+      "value": "#1b1b1b"
+    },
+    {
+      "name": "radius/xs",
+      "type": "FLOAT",
+      "value": 3
+    },
+    {
+      "name": "radius/sm",
+      "type": "FLOAT",
+      "value": 6
+    },
+    {
+      "name": "radius/md",
+      "type": "FLOAT",
+      "value": 8
+    },
+    {
+      "name": "radius/lg",
+      "type": "FLOAT",
+      "value": 12
+    },
+    {
+      "name": "radius/xl",
+      "type": "FLOAT",
+      "value": 16
+    },
+    {
+      "name": "radius/full",
+      "type": "FLOAT",
+      "value": 9999
+    }
+  ]
+}

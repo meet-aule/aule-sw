@@ -6,6 +6,9 @@
     "node": ">=24"
   },
   "scripts": {
-    "test": "pnpm -r test"
+    "test": "pnpm -r test",
+    "design-tokens": "pnpm --filter @aule/design tokens",
+    "design-tokens:check": "pnpm --filter @aule/design tokens:check",
+    "design-derive": "pnpm --filter @aule/design derive"
   }
 }

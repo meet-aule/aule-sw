@@ -1,0 +1,431 @@
+{
+  "$comment": "Generated from DESIGN.md (Aule) by design/tokens.mjs. Do not edit. Mode \"web\": one Figma variable per entry; FLOAT values are px.",
+  "mode": "web",
+  "variables": [
+    {
+      "name": "color/paper",
+      "type": "COLOR",
+      "value": "#f5f2ea"
+    },
+    {
+      "name": "color/paper-deep",
+      "type": "COLOR",
+      "value": "#ece8dc"
+    },
+    {
+      "name": "color/surface",
+      "type": "COLOR",
+      "value": "#fbfaf6"
+    },
+    {
+      "name": "color/primary",
+      "type": "COLOR",
+      "value": "#141414"
+    },
+    {
+      "name": "color/muted",
+      "type": "COLOR",
+      "value": "#6b6b6b"
+    },
+    {
+      "name": "color/line",
+      "type": "COLOR",
+      "value": "#c9c3b4"
+    },
+    {
+      "name": "color/accent",
+      "type": "COLOR",
+      "value": "#9a5b2e"
+    },
+    {
+      "name": "color/accent-tint",
+      "type": "COLOR",
+      "value": "#e6dacc"
+    },
+    {
+      "name": "color/accent-deep",
+      "type": "COLOR",
+      "value": "#744423"
+    },
+    {
+      "name": "color/on-accent",
+      "type": "COLOR",
+      "value": "#ffffff"
+    },
+    {
+      "name": "color/danger",
+      "type": "COLOR",
+      "value": "#8f1d14"
+    },
+    {
+      "name": "color/tile",
+      "type": "COLOR",
+      "value": "#14130f"
+    },
+    {
+      "name": "color/tile-ink",
+      "type": "COLOR",
+      "value": "#f6f4ef"
+    },
+    {
+      "name": "color/board",
+      "type": "COLOR",
+      "value": "#ffffff"
+    },
+    {
+      "name": "color/device-frame",
+      "type": "COLOR",
+      "value": "#1b1b1b"
+    },
+    {
+      "name": "space/2xs",
+      "type": "FLOAT",
+      "value": 4
+    },
+    {
+      "name": "space/xs",
+      "type": "FLOAT",
+      "value": 8
+    },
+    {
+      "name": "space/sm",
+      "type": "FLOAT",
+      "value": 12
+    },
+    {
+      "name": "space/md",
+      "type": "FLOAT",
+      "value": 16
+    },
+    {
+      "name": "space/lg",
+      "type": "FLOAT",
+      "value": 24
+    },
+    {
+      "name": "space/xl",
+      "type": "FLOAT",
+      "value": 32
+    },
+    {
+      "name": "space/2xl",
+      "type": "FLOAT",
+      "value": 48
+    },
+    {
+      "name": "space/3xl",
+      "type": "FLOAT",
+      "value": 96
+    },
+    {
+      "name": "space/text-column",
+      "type": "FLOAT",
+      "value": 640
+    },
+    {
+      "name": "space/container",
+      "type": "FLOAT",
+      "value": 1128
+    },
+    {
+      "name": "radius/xs",
+      "type": "FLOAT",
+      "value": 3
+    },
+    {
+      "name": "radius/sm",
+      "type": "FLOAT",
+      "value": 6
+    },
+    {
+      "name": "radius/md",
+      "type": "FLOAT",
+      "value": 8
+    },
+    {
+      "name": "radius/lg",
+      "type": "FLOAT",
+      "value": 12
+    },
+    {
+      "name": "radius/xl",
+      "type": "FLOAT",
+      "value": 16
+    },
+    {
+      "name": "radius/full",
+      "type": "FLOAT",
+      "value": 9999
+    },
+    {
+      "name": "type/display/family",
+      "type": "STRING",
+      "value": "Inter"
+    },
+    {
+      "name": "type/display/size",
+      "type": "FLOAT",
+      "value": 64
+    },
+    {
+      "name": "type/display/weight",
+      "type": "FLOAT",
+      "value": 700
+    },
+    {
+      "name": "type/display/line-height",
+      "type": "FLOAT",
+      "value": 64
+    },
+    {
+      "name": "type/display/letter-spacing",
+      "type": "FLOAT",
+      "value": -2.112
+    },
+    {
+      "name": "type/display-sm/family",
+      "type": "STRING",
+      "value": "Inter"
+    },
+    {
+      "name": "type/display-sm/size",
+      "type": "FLOAT",
+      "value": 42
+    },
+    {
+      "name": "type/display-sm/weight",
+      "type": "FLOAT",
+      "value": 700
+    },
+    {
+      "name": "type/display-sm/line-height",
+      "type": "FLOAT",
+      "value": 48
+    },
+    {
+      "name": "type/display-sm/letter-spacing",
+      "type": "FLOAT",
+      "value": -1.386
+    },
+    {
+      "name": "type/headline/family",
+      "type": "STRING",
+      "value": "Inter"
+    },
+    {
+      "name": "type/headline/size",
+      "type": "FLOAT",
+      "value": 54
+    },
+    {
+      "name": "type/headline/weight",
+      "type": "FLOAT",
+      "value": 700
+    },
+    {
+      "name": "type/headline/line-height",
+      "type": "FLOAT",
+      "value": 56
+    },
+    {
+      "name": "type/headline/letter-spacing",
+      "type": "FLOAT",
+      "value": -1.89
+    },
+    {
+      "name": "type/headline-sm/family",
+      "type": "STRING",
+      "value": "Inter"
+    },
+    {
+      "name": "type/headline-sm/size",
+      "type": "FLOAT",
+      "value": 32
+    },
+    {
+      "name": "type/headline-sm/weight",
+      "type": "FLOAT",
+      "value": 700
+    },
+    {
+      "name": "type/headline-sm/line-height",
+      "type": "FLOAT",
+      "value": 40
+    },
+    {
+      "name": "type/headline-sm/letter-spacing",
+      "type": "FLOAT",
+      "value": -0.736
+    },
+    {
+      "name": "type/lead/family",
+      "type": "STRING",
+      "value": "Inter"
+    },
+    {
+      "name": "type/lead/size",
+      "type": "FLOAT",
+      "value": 20
+    },
+    {
+      "name": "type/lead/weight",
+      "type": "FLOAT",
+      "value": 400
+    },
+    {
+      "name": "type/lead/line-height",
+      "type": "FLOAT",
+      "value": 28
+    },
+    {
+      "name": "type/lead/letter-spacing",
+      "type": "FLOAT",
+      "value": -0.125
+    },
+    {
+      "name": "type/card-title/family",
+      "type": "STRING",
+      "value": "Inter"
+    },
+    {
+      "name": "type/card-title/size",
+      "type": "FLOAT",
+      "value": 22
+    },
+    {
+      "name": "type/card-title/weight",
+      "type": "FLOAT",
+      "value": 700
+    },
+    {
+      "name": "type/card-title/line-height",
+      "type": "FLOAT",
+      "value": 28
+    },
+    {
+      "name": "type/card-title/letter-spacing",
+      "type": "FLOAT",
+      "value": -0.251
+    },
+    {
+      "name": "type/body/family",
+      "type": "STRING",
+      "value": "Inter"
+    },
+    {
+      "name": "type/body/size",
+      "type": "FLOAT",
+      "value": 16
+    },
+    {
+      "name": "type/body/weight",
+      "type": "FLOAT",
+      "value": 400
+    },
+    {
+      "name": "type/body/line-height",
+      "type": "FLOAT",
+      "value": 24
+    },
+    {
+      "name": "type/body-tabular/family",
+      "type": "STRING",
+      "value": "Inter"
+    },
+    {
+      "name": "type/body-tabular/size",
+      "type": "FLOAT",
+      "value": 16
+    },
+    {
+      "name": "type/body-tabular/weight",
+      "type": "FLOAT",
+      "value": 400
+    },
+    {
+      "name": "type/body-tabular/line-height",
+      "type": "FLOAT",
+      "value": 24
+    },
+    {
+      "name": "type/small/family",
+      "type": "STRING",
+      "value": "Inter"
+    },
+    {
+      "name": "type/small/size",
+      "type": "FLOAT",
+      "value": 14
+    },
+    {
+      "name": "type/small/weight",
+      "type": "FLOAT",
+      "value": 400
+    },
+    {
+      "name": "type/small/line-height",
+      "type": "FLOAT",
+      "value": 20
+    },
+    {
+      "name": "type/label/family",
+      "type": "STRING",
+      "value": "Inter"
+    },
+    {
+      "name": "type/label/size",
+      "type": "FLOAT",
+      "value": 14
+    },
+    {
+      "name": "type/label/weight",
+      "type": "FLOAT",
+      "value": 500
+    },
+    {
+      "name": "type/label/line-height",
+      "type": "FLOAT",
+      "value": 20
+    },
+    {
+      "name": "type/button/family",
+      "type": "STRING",
+      "value": "Inter"
+    },
+    {
+      "name": "type/button/size",
+      "type": "FLOAT",
+      "value": 16
+    },
+    {
+      "name": "type/button/weight",
+      "type": "FLOAT",
+      "value": 500
+    },
+    {
+      "name": "type/button/line-height",
+      "type": "FLOAT",
+      "value": 24
+    },
+    {
+      "name": "type/button-sm/family",
+      "type": "STRING",
+      "value": "Inter"
+    },
+    {
+      "name": "type/button-sm/size",
+      "type": "FLOAT",
+      "value": 14
+    },
+    {
+      "name": "type/button-sm/weight",
+      "type": "FLOAT",
+      "value": 500
+    },
+    {
+      "name": "type/button-sm/line-height",
+      "type": "FLOAT",
+      "value": 20
+    }
+  ]
+}

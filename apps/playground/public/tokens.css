@@ -1,0 +1,55 @@
+/* Generated from DESIGN.md (Aule) by design/tokens.mjs. Do not edit: change DESIGN.md and run
+   the design-tokens script. CI fails if this file is not what DESIGN.md says. */
+:root {
+  --aule-color-paper: #f5f2ea;
+  --aule-color-paper-deep: #ece8dc;
+  --aule-color-surface: #fbfaf6;
+  --aule-color-primary: #141414;
+  --aule-color-muted: #6b6b6b;
+  --aule-color-line: #c9c3b4;
+  --aule-color-accent: #9a5b2e;
+  --aule-color-accent-tint: #e6dacc;
+  --aule-color-accent-deep: #744423;
+  --aule-color-on-accent: #ffffff;
+  --aule-color-danger: #8f1d14;
+  --aule-color-tile: #14130f;
+  --aule-color-tile-ink: #f6f4ef;
+  --aule-color-board: #ffffff;
+  --aule-color-device-frame: #1b1b1b;
+  --aule-space-2xs: 4px;
+  --aule-space-xs: 8px;
+  --aule-space-sm: 12px;
+  --aule-space-md: 16px;
+  --aule-space-lg: 24px;
+  --aule-space-xl: 32px;
+  --aule-space-2xl: 48px;
+  --aule-space-3xl: 96px;
+  --aule-space-text-column: 640px;
+  --aule-space-container: 1128px;
+  --aule-radius-xs: 3px;
+  --aule-radius-sm: 6px;
+  --aule-radius-md: 8px;
+  --aule-radius-lg: 12px;
+  --aule-radius-xl: 16px;
+  --aule-radius-full: 9999px;
+  --aule-font-sans: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --aule-type-display: 700 4rem/64px var(--aule-font-sans);
+  --aule-tracking-display: -0.033em;
+  --aule-type-display-sm: 700 2.625rem/48px var(--aule-font-sans);
+  --aule-tracking-display-sm: -0.033em;
+  --aule-type-headline: 700 3.375rem/56px var(--aule-font-sans);
+  --aule-tracking-headline: -0.035em;
+  --aule-type-headline-sm: 700 2rem/40px var(--aule-font-sans);
+  --aule-tracking-headline-sm: -0.023em;
+  --aule-type-lead: 400 1.25rem/28px var(--aule-font-sans);
+  --aule-tracking-lead: -0.006em;
+  --aule-type-card-title: 700 1.375rem/28px var(--aule-font-sans);
+  --aule-tracking-card-title: -0.011em;
+  --aule-type-body: 400 1rem/24px var(--aule-font-sans);
+  --aule-type-body-tabular: 400 1rem/24px var(--aule-font-sans);
+  --aule-features-body-tabular: "tnum";
+  --aule-type-small: 400 0.875rem/20px var(--aule-font-sans);
+  --aule-type-label: 500 0.875rem/20px var(--aule-font-sans);
+  --aule-type-button: 500 1rem/24px var(--aule-font-sans);
+  --aule-type-button-sm: 500 0.875rem/20px var(--aule-font-sans);
+}

@@ -1,0 +1,141 @@
+{
+  "$comment": "Generated from DESIGN.md (Aule) by design/tokens.mjs. Do not edit. Mode \"eink\": one Figma variable per entry; FLOAT values are px.",
+  "mode": "eink",
+  "variables": [
+    {
+      "name": "color/black",
+      "type": "COLOR",
+      "value": "#000000"
+    },
+    {
+      "name": "color/dark-grey",
+      "type": "COLOR",
+      "value": "#555555"
+    },
+    {
+      "name": "color/light-grey",
+      "type": "COLOR",
+      "value": "#aaaaaa"
+    },
+    {
+      "name": "color/white",
+      "type": "COLOR",
+      "value": "#ffffff"
+    },
+    {
+      "name": "space/margin-x",
+      "type": "FLOAT",
+      "value": 40
+    },
+    {
+      "name": "space/margin-y",
+      "type": "FLOAT",
+      "value": 32
+    },
+    {
+      "name": "space/gap",
+      "type": "FLOAT",
+      "value": 24
+    },
+    {
+      "name": "space/air",
+      "type": "FLOAT",
+      "value": 64
+    },
+    {
+      "name": "space/border",
+      "type": "FLOAT",
+      "value": 2
+    },
+    {
+      "name": "space/button-height",
+      "type": "FLOAT",
+      "value": 56
+    },
+    {
+      "name": "space/touch",
+      "type": "FLOAT",
+      "value": 72
+    },
+    {
+      "name": "type/title/family",
+      "type": "STRING",
+      "value": "Inter"
+    },
+    {
+      "name": "type/title/size",
+      "type": "FLOAT",
+      "value": 34
+    },
+    {
+      "name": "type/title/weight",
+      "type": "FLOAT",
+      "value": 600
+    },
+    {
+      "name": "type/title/line-height",
+      "type": "FLOAT",
+      "value": 40
+    },
+    {
+      "name": "type/body/family",
+      "type": "STRING",
+      "value": "Inter"
+    },
+    {
+      "name": "type/body/size",
+      "type": "FLOAT",
+      "value": 22
+    },
+    {
+      "name": "type/body/weight",
+      "type": "FLOAT",
+      "value": 400
+    },
+    {
+      "name": "type/body/line-height",
+      "type": "FLOAT",
+      "value": 30
+    },
+    {
+      "name": "type/option/family",
+      "type": "STRING",
+      "value": "Inter"
+    },
+    {
+      "name": "type/option/size",
+      "type": "FLOAT",
+      "value": 24
+    },
+    {
+      "name": "type/option/weight",
+      "type": "FLOAT",
+      "value": 600
+    },
+    {
+      "name": "type/option/line-height",
+      "type": "FLOAT",
+      "value": 30
+    },
+    {
+      "name": "type/small/family",
+      "type": "STRING",
+      "value": "Inter"
+    },
+    {
+      "name": "type/small/size",
+      "type": "FLOAT",
+      "value": 18
+    },
+    {
+      "name": "type/small/weight",
+      "type": "FLOAT",
+      "value": 400
+    },
+    {
+      "name": "type/small/line-height",
+      "type": "FLOAT",
+      "value": 24
+    }
+  ]
+}
