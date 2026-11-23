@@ -7,6 +7,8 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
 SPEC = importlib.util.spec_from_file_location(
     "offsite_health", Path(__file__).with_name("offsite-health.py")
@@ -64,6 +66,32 @@ class OffsiteTests(unittest.TestCase):
             + "\n"
         )
         self.assertTrue(self.publish())
+
+    def test_shared_status_directory_must_be_owned_and_not_writable_by_others(
+        self,
+    ) -> None:
+        self.root.chmod(0o777)
+        with self.assertRaises(ValueError):
+            self.publish()
+        self.root.chmod(0o755)
+        self.assertTrue(self.publish())
+        with (
+            patch.object(health.sys, "argv", ["health", "check", str(self.report)]),
+            patch.object(health.time, "time", return_value=NOW),
+        ):
+            with patch.object(
+                health.pwd, "getpwnam", return_value=SimpleNamespace(pw_uid=os.getuid())
+            ):
+                self.assertEqual(health.main(), 0)
+                self.report.chmod(0o666)
+                self.assertEqual(health.main(), 1)
+                self.report.chmod(0o644)
+            with patch.object(
+                health.pwd,
+                "getpwnam",
+                return_value=SimpleNamespace(pw_uid=os.getuid() + 1),
+            ):
+                self.assertEqual(health.main(), 1)
 
     def test_failed_pull_replaces_previous_success(self) -> None:
         self.assertTrue(self.publish())

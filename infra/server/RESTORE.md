@@ -40,8 +40,8 @@ backup weekly on the server; see README.md for isolation, checks and alerts.
 
 `infra/server/backup-tests.sh` is the manual historical encrypted-backup test,
 run from the Mac with both SSH aliases available. It verifies existing
-encrypted copies without invoking the new backup writer. It checks every primary and offsite checksum. The newest
-offsite copy must be at most 30 hours old and match the original ciphertext.
+encrypted copies without invoking the new backup writer. It checks every primary and offsite checksum. The newest retained encrypted offsite copy must match the original ciphertext;
+freshness of new copies is checked by the automated watch.
 
 It restores the newest primary backup twice, the oldest primary backup through
 the documented migration path, and the newest offsite backup. Postgres rejects

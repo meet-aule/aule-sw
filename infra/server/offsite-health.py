@@ -36,7 +36,7 @@ def verify(root: Path, now: float) -> float:
     if before.st_size < 4096:
         raise ValueError("small_backup")
     sidecar = newest.with_name(newest.name + ".sha256")
-    if sidecar.is_symlink() or sidecar.stat().st_size > 1024:
+    if sidecar.is_symlink() or not sidecar.is_file() or sidecar.stat().st_size > 1024:
         raise ValueError("invalid_checksum")
     match = re.fullmatch(
         r"([0-9a-f]{64}) [ *]" + re.escape(newest.name) + r"\n?", sidecar.read_text()
