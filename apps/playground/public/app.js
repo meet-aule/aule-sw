@@ -4,7 +4,7 @@
 
 import { onEnter, sessionRequest } from "./signin.js";
 import { TOPIC as VISUAL_TOPIC, renderVisual } from "./visuals.js";
-import { endedMessage } from "./session-messages.js";
+import { endedMessage, recoveryMessage } from "./session-messages.js";
 
 const { Room, RoomEvent, Track, ParticipantKind, DisconnectReason } = LivekitClient;
 
@@ -100,22 +100,24 @@ let cardShown = "";
 // The platform's id for the session being shown, when there is one.
 let sessionId = null;
 let recoverable = null;
+const recoveryText = (key) => recoveryMessage(key, sessionRequest()?.language);
 
 async function sessionAction(action, body) {
   const response = await fetch(`api/session/${action}`, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
   });
   const answer = await response.json();
-  if (!response.ok) throw new Error(ERRORS[answer.error] ?? "No se pudo recuperar la sesión. Vuelve a intentarlo.");
+  if (!response.ok) throw new Error(recoveryText(answer.error));
   return answer;
 }
 
 async function offerRecovery() {
   const student = sessionRequest()?.student_id;
   recoverable = null;
+  $("resume").textContent = recoveryText("resume");
   $("resume").hidden = true;
   $("resume").disabled = false;
-  $("join").textContent = "Entrar ahora";
+  $("join").textContent = recoveryText("start");
   $("recovery-note").hidden = true;
   try {
     const response = await fetch("api/session/recovery");
@@ -125,13 +127,13 @@ async function offerRecovery() {
     if (answer.available && answer.student_id === student) {
       recoverable = answer;
       $("resume").hidden = false;
-      $("join").textContent = "Cerrar la anterior y empezar otra";
-      $("recovery-note").textContent = "Tu sesión sigue en curso. Continuar conserva el tiempo que quedaba.";
+      $("join").textContent = recoveryText("restart");
+      $("recovery-note").textContent = recoveryText("available");
       $("recovery-note").hidden = false;
     }
   } catch {
     if (student !== sessionRequest()?.student_id || room) return;
-    $("recovery-note").textContent = "No pudimos comprobar si había una sesión. Vuelve a abrir esta pantalla para intentarlo otra vez.";
+    $("recovery-note").textContent = recoveryText("check_failed");
     $("recovery-note").hidden = false;
   }
 }
@@ -146,22 +148,22 @@ async function explainClose(id, connectionLost) {
       const answer = await response.json();
       if (room || (answer.session_id && answer.session_id !== id)) return;
       if (answer.available) {
-        showMessage("La conexión se interrumpió. Elige al mismo alumno y pulsa «Continuar sesión anterior».");
+        showMessage(recoveryText("lost"));
         return;
       }
       if (answer.end_reason) return showMessage(endedMessage(answer.end_reason, answer.language));
     } catch { break; }
   }
   if (!room) showMessage(connectionLost
-    ? "Se perdió la conexión. Vuelve a elegir al alumno para comprobar si puedes continuar."
-    : endedMessage(null));
+    ? recoveryText("lost_unknown")
+    : endedMessage(null, sessionRequest()?.language));
 }
 
-function finishSession(message = endedMessage("child_ended")) {
+function finishSession(message = endedMessage("child_ended", sessionRequest()?.language)) {
   const id = sessionId;
   leave(message);
   if (id) sessionAction("end", { session_id: id }).catch(() => {
-    if (!room) showMessage("Saliste de la sesión, pero no pudimos confirmar el cierre. Se cerrará al vencer la espera de reconexión.");
+    if (!room) showMessage(recoveryText("close_failed"));
   });
 }
 
@@ -214,7 +216,7 @@ function startClock(seconds) {
   const tick = () => {
     const left = Math.max(0, Math.round((endsAt - Date.now()) / 1000));
     $("clock").textContent = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}`;
-    if (left === 0) finishSession(endedMessage("budget_reached"));
+    if (left === 0) finishSession(endedMessage("budget_reached", sessionRequest()?.language));
   };
   tick();
   clock = setInterval(tick, 1000);
@@ -643,7 +645,7 @@ async function join(session) {
     .on(RoomEvent.Disconnected, (reason) => {
       if (room !== connectedRoom) return;
       const id = sessionId;
-      leave("Comprobando por qué terminó la sesión…");
+      leave(recoveryText("checking"));
       explainClose(id, LOST.has(reason));
     });
   room.registerTextStreamHandler(TRANSCRIPTION_TOPIC, (reader, participant) => {
@@ -997,7 +999,7 @@ $("resume").addEventListener("click", async () => {
     await join(session);
   } catch (error) {
     if (room) leave(error?.message);
-    else showMessage(error?.message ?? "No se pudo continuar la sesión.");
+    else showMessage(error?.message ?? recoveryText("failed"));
     $("resume").disabled = false;
     $("join").disabled = false;
   }

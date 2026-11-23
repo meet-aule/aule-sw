@@ -42,7 +42,7 @@ before(async () => {
   const url = `http://127.0.0.1:${(backend.address() as AddressInfo).port}`;
   page = createPlayground(readSettings({ ...COMPLETE, AULE_PLATFORM_URL: url, AULE_ADMIN_TOKEN: "operator", AULE_FREE_ACCESS: "1" }), {
     async listParticipants() { if (failure) throw new Error("synthetic unavailable"); return members; },
-    async deleteRoom() { deletions++; },
+    async deleteRoom() { deletions++; lifecycle.status = "ended"; },
   });
   await new Promise<void>(resolve => page.listen(0, "127.0.0.1", resolve));
   base = `http://127.0.0.1:${(page.address() as AddressInfo).port}/playground`;

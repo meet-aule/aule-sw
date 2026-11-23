@@ -3,6 +3,7 @@
 
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { createRequire } from "node:module";
+import { setTimeout as delay } from "node:timers/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { RoomServiceClient } from "livekit-server-sdk";
@@ -251,10 +252,18 @@ export function createPlayground(
       throw error;
     }
     if (path === "/api/session/end") {
+      // Let the tutor flush its final turns and usage before the platform closes.
+      // If room teardown or agent cleanup fails, the authorized stop still wins.
+      const removed = await rooms.deleteRoom(saved.session.room).then(() => true, () => false);
+      if (removed) {
+        for (let attempt = 0; attempt < 20; attempt++) {
+          const current = await platform(settings, endpoint, undefined, token) as typeof state;
+          if (current.status === "ended") break;
+          await delay(250);
+        }
+      }
       await platform(settings, `${endpoint}/end`, {}, token);
       clear();
-      // The platform is already closed if LiveKit is temporarily unavailable.
-      await rooms.deleteRoom(saved.session.room).catch(() => undefined);
       return json(response, 200, { ended: true });
     }
     const unavailable = {
