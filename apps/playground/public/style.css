@@ -105,15 +105,47 @@ label {
   font: var(--aule-type-label);
 }
 
+/* The edge of a form control is --aule-color-field-border (3:1 on white, WCAG
+   1.4.11), never --line, which is for dividers and cards. */
 input,
 select,
+textarea,
 button {
   font: inherit;
   color: inherit;
   border-radius: var(--aule-radius-md);
-  border: 1.5px solid var(--line);
+  border: 1.5px solid var(--aule-color-field-border);
   padding: var(--aule-space-sm) var(--aule-space-md);
   background: var(--surface);
+}
+
+/* Check boxes and radios are drawn here, so that their edge is the same one. */
+input[type="checkbox"],
+input[type="radio"] {
+  appearance: none;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 1.5px solid var(--aule-color-field-border);
+  border-radius: var(--aule-radius-xs);
+  background: var(--surface);
+  cursor: pointer;
+}
+
+input[type="radio"] {
+  border-radius: var(--aule-radius-full);
+}
+
+input[type="checkbox"]:checked {
+  background: var(--primary) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='white' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 10.5l3.2 3.2L15 6.8'/%3E%3C/svg%3E") center / 100% no-repeat;
+  border-color: var(--primary);
+}
+
+input[type="radio"]:checked {
+  background: var(--primary);
+  border-color: var(--primary);
+  box-shadow: inset 0 0 0 4px var(--surface);
 }
 
 /* Buttons take everything that makes a variant (background, text, border,
@@ -454,8 +486,7 @@ label.check {
 }
 
 label.check input {
-  width: auto;
-  margin-top: 3px;
+  margin-top: 1px;
 }
 
 /* The drawing as the device shows it: the panel's shape (800 x 480), its
@@ -821,7 +852,7 @@ label.tone span {
   display: grid;
   gap: 2px;
   padding: var(--aule-space-sm) 14px;
-  border: 1.5px solid var(--line);
+  border: 1.5px solid var(--aule-color-field-border);
   border-radius: var(--aule-radius-lg);
 }
 
@@ -883,7 +914,7 @@ label.tone input:focus-visible + span {
 label.chip span {
   display: block;
   padding: 7px 13px;
-  border: 1.5px solid var(--line);
+  border: 1.5px solid var(--aule-color-field-border);
   border-radius: var(--aule-radius-md);
   font: var(--aule-type-small);
 }
@@ -1205,7 +1236,7 @@ button[aria-pressed="true"]:not(.talk) {
   font: inherit;
   color: inherit;
   border-radius: var(--aule-radius-md);
-  border: 1px solid var(--line);
+  border: 1px solid var(--aule-color-field-border);
   padding: 10px var(--aule-space-sm);
   background: var(--bg);
   resize: vertical;

@@ -52,6 +52,7 @@ test("the colours are Notion's palette, as the proposal's section 7 lists them: 
     ink: "#000000e5",
     muted: "#0000008a",
     line: "#0000001a",
+    "field-border": "#78736f",
     primary: "#0075de",
     "primary-hover": "#005bab",
     secondary: "#e6f3fe",
@@ -271,4 +272,25 @@ test("the playground's CSS takes the colour, border, radius and type of every bu
   assert.deepEqual(bad, []);
   // A disabled button is never faded: its text came from a token, not from opacity.
   assert.equal(/opacity:\s*0?\.[0-9]+[^}]*\}/.test(playgroundCss.match(/button:disabled[^{]*\{[^}]*\}/)?.[0] ?? ""), false);
+});
+
+test("the border of a form control is field-border #78736f: a graphic at 3:1 (it is 4.69:1), and line is only for dividers and cards", () => {
+  const stroke = pairs(state).find((p) => p.component === "field-border-stroke");
+  assert.equal(stroke.min, 3);
+  assert.equal(stroke.text, "#78736f");
+  assert.ok(stroke.ratio > 4.6 && stroke.ratio < 4.8, `${stroke.ratio}`);
+  // line (black at 10%) on white is 1.26:1: it would not do for a control
+  const line = state.colors.get("line");
+  const white = state.colors.get("paper");
+  assert.ok(ratio(over(line, white), white) < 3);
+  assert.equal(state.components.get("divider").properties.get("backgroundColor").hex, "#0000001a");
+  // and the CSS: the rules of the controls take the edge from field-border and none takes it from line
+  const rules = rulesOf(playgroundCss);
+  const controls = [...rules].filter(([sel]) => /(^|[ ,])(input|select|textarea)\b|label\.chip span|label\.tone span|\.student span|\.card textarea/.test(sel));
+  assert.ok(controls.length >= 5, `${controls.length}`);
+  const onLine = controls.filter(([, d]) => /border(-color)?:[^;]*(var\(--line\)|var\(--aule-color-line\))/.test(Object.entries(d).map(([k, x]) => `${k}:${x}`).join(";")));
+  assert.deepEqual(onLine.map(([sel]) => sel), []);
+  for (const sel of ["input, select, textarea, button", 'input[type="checkbox"], input[type="radio"]', "label.chip span", ".card textarea"]) {
+    assert.match(rules.get(sel)?.border ?? "", /--aule-color-field-border/, sel);
+  }
 });

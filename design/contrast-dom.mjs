@@ -107,3 +107,75 @@ export async function contrastProblems(page, min = 4.5) {
       .map((m) => `${m.where} "${m.text}": ${m.color} on ${m.background} is ${m.ratio.toFixed(2)}:1 (needs ${min})`),
   };
 }
+
+/**
+ * Runs in the page. The edge of every form control (input, select, text area,
+ * check box, radio) against what is around it: WCAG 1.4.11 asks 3:1. A control
+ * that is visually hidden and drawn by the element after it (a chip, a card that
+ * stands for a choice) is measured on that element. Without a border, the fill
+ * has to do it.
+ */
+export function measureControlsInPage() {
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = 1;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  const parse = (css) => {
+    ctx.clearRect(0, 0, 1, 1);
+    ctx.fillStyle = "#000";
+    ctx.fillStyle = css;
+    ctx.fillRect(0, 0, 1, 1);
+    const [r, g, b, a] = ctx.getImageData(0, 0, 1, 1).data;
+    return { r, g, b, a: a / 255 };
+  };
+  const over = (fg, bg) => ({ r: fg.r * fg.a + bg.r * (1 - fg.a), g: fg.g * fg.a + bg.g * (1 - fg.a), b: fg.b * fg.a + bg.b * (1 - fg.a), a: 1 });
+  const lum = ({ r, g, b }) => {
+    const c = (v) => ((v /= 255) <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
+    return 0.2126 * c(r) + 0.7152 * c(g) + 0.0722 * c(b);
+  };
+  const ratio = (a, b) => {
+    const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x);
+    return (hi + 0.05) / (lo + 0.05);
+  };
+  const hex = ({ r, g, b }) => "#" + [r, g, b].map((v) => Math.round(v).toString(16).padStart(2, "0")).join("");
+  const path = (el) => {
+    const parts = [];
+    for (let e = el; e && e.nodeType === 1 && parts.length < 3; e = e.parentElement) {
+      parts.unshift(e.tagName.toLowerCase() + (e.id ? `#${e.id}` : "") + (typeof e.className === "string" && e.className.trim() ? "." + e.className.trim().split(/\s+/)[0] : ""));
+    }
+    return parts.join(" > ");
+  };
+  const out = [];
+  for (const input of document.body.querySelectorAll("input, select, textarea")) {
+    if (["hidden", "submit", "button", "reset", "image", "range", "color", "file"].includes(input.type)) continue;
+    const own = getComputedStyle(input);
+    const proxy = parseFloat(own.opacity) === 0 || (own.position === "absolute" && own.pointerEvents === "none");
+    const el = proxy ? input.nextElementSibling ?? input.parentElement : input;
+    const style = getComputedStyle(el);
+    const rect = el.getBoundingClientRect();
+    if (style.display === "none" || style.visibility === "hidden" || rect.width <= 1 || rect.height <= 1) continue;
+    const ancestors = [];
+    for (let x = el.parentElement; x; x = x.parentElement) ancestors.unshift(x);
+    let outside = { r: 255, g: 255, b: 255, a: 1 };
+    for (const x of ancestors) outside = over(parse(getComputedStyle(x).backgroundColor), outside);
+    const width = parseFloat(style.borderTopWidth);
+    const bordered = width > 0 && style.borderTopStyle !== "none" && style.borderTopStyle !== "hidden";
+    const edge = bordered ? over(parse(style.borderTopColor), outside) : over(parse(style.backgroundColor), outside);
+    out.push({
+      where: path(input) + (proxy ? " (drawn by the next element)" : ""),
+      type: input.tagName === "INPUT" ? input.type : input.tagName.toLowerCase(),
+      how: bordered ? `border ${hex(edge)}` : `no border, fill ${hex(edge)}`,
+      ratio: ratio(edge, outside),
+      outside: hex(outside),
+    });
+  }
+  return out;
+}
+
+/** Every control whose edge is under `min` (3:1), as readable lines. */
+export async function controlProblems(page, min = 3) {
+  const all = await page.evaluate(measureControlsInPage);
+  return {
+    measured: all.length,
+    problems: all.filter((c) => c.ratio < min).map((c) => `${c.where} [${c.type}]: ${c.how} on ${c.outside} is ${c.ratio.toFixed(2)}:1 (needs ${min})`),
+  };
+}

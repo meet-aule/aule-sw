@@ -37,6 +37,11 @@
       "alpha": 0.102
     },
     {
+      "name": "color/field-border",
+      "type": "COLOR",
+      "value": "#78736f"
+    },
+    {
       "name": "color/primary",
       "type": "COLOR",
       "value": "#0075de"

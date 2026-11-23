@@ -8,7 +8,8 @@ colors:
   surface-hover: "#0000000d" # background under the pointer: black at 5%. Notion: alpha-black-100
   ink: "#000000e5"          # text: black at 90%. Notion: alpha-black-800 (text-normal)
   muted: "#0000008a"        # secondary text: black at 54%. Notion: alpha-black-500 (text-muted). On white only: on grey it is 4.47:1
-  line: "#0000001a"         # borders and dividers: black at 10%. Notion: alpha-black-200 (border-base)
+  line: "#0000001a"         # dividers and the border of cards: black at 10%. Notion: alpha-black-200 (border-base). NOT for form controls: it is 1.26:1 on white
+  field-border: "#78736f"   # the border of a form control (inputs, selects, text areas, check boxes and radios): 4.69:1 on white, over the 3:1 of WCAG 1.4.11. Notion: gray-500
   primary: "#0075de"        # the filled button, links and the focus ring. Notion: blue-600
   primary-hover: "#005bab"  # the filled button under the pointer. Notion: blue-700
   on-primary: "#ffffff"     # text on a primary background (4.57:1)
@@ -256,7 +257,10 @@ components:
     typography: "{typography.body}"
     rounded: "{rounded.md}"
     padding: 12px
-  field-border:
+  field-border-stroke:
+    backgroundColor: "{colors.paper}"
+    textColor: "{colors.field-border}"
+  divider:
     backgroundColor: "{colors.line}"
   row-hover:
     backgroundColor: "{colors.surface-hover}"
@@ -397,7 +401,7 @@ The format has no modes, so a mode is a prefix on the token name.
 
 Aule has no colour of its own: the palette is Notion's, taken from the `--tatami-color-*` variables of its public `skilljar.css?v=32` (read on 23 Nov 2026), and each colour above says which variable it comes from. Not the logo, the texts or the illustrations: only the palette and the scale.
 
-White (`paper`) is the page; `surface-neutral` is for grey blocks and cards, and `surface-hover` is what shows under the pointer. Text is `ink` (black at 90 %) and `muted` (black at 54 %); borders are `line` (black at 10 %). The one colour is the blue: `primary` for the filled button, links and the focus ring, `primary-hover` under the pointer, `secondary` with `secondary-text` for the quiet button and highlights, `link-hover` for a link under the pointer. `danger` is for errors and what cannot be undone and `success` for confirmations. `tile`, `tile-ink`, `board` and `device-frame` belong to the playground's video tiles and device screen. The `eink-` colours are the four levels of the panel; the `esp32-` colours are the black screen, its white, its one blue (`esp32-accent`, for button fills and for text) and the grey of a disabled button, and the screen does not use the web palette.
+White (`paper`) is the page; `surface-neutral` is for grey blocks and cards, and `surface-hover` is what shows under the pointer. Text is `ink` (black at 90 %) and `muted` (black at 54 %); dividers and the border of a card are `line` (black at 10 %), and the border of a form control is `field-border` (`#78736f`), because `line` is 1.26:1 on white and a control's edge has to reach 3:1. The one colour is the blue: `primary` for the filled button, links and the focus ring, `primary-hover` under the pointer, `secondary` with `secondary-text` for the quiet button and highlights, `link-hover` for a link under the pointer. `danger` is for errors and what cannot be undone and `success` for confirmations. `tile`, `tile-ink`, `board` and `device-frame` belong to the playground's video tiles and device screen. The `eink-` colours are the four levels of the panel; the `esp32-` colours are the black screen, its white, its one blue (`esp32-accent`, for button fills and for text) and the grey of a disabled button, and the screen does not use the web palette.
 
 **Transparency.** The CLI accepts a colour with an alpha channel as eight hex digits (it ignores the alpha when it measures contrast, so `row-hover` has only a background: its own test lays the colours over white) (`#000000e5`), so `ink`, `muted`, `line`, `surface-hover` and `esp32-white-70` are kept as Notion has them, not composed over white. The contrast test lays a transparent colour over its background (and a transparent background over `paper`) before it measures. In the Figma files they carry their hex and an `alpha`.
 
@@ -438,7 +442,7 @@ Radius 8 for buttons, fields and notices; 12 for tiles and messages; 16 for card
 - **Variants reach the CSS only through generated variables.** For every web component, `pnpm design-tokens` writes `--aule-c-<component>-bg`, `-text`, `-type`, `-radius`, `-padding` and `-height` (and `-border`, which for a button is its own background), so `components.button-primary` is the only place the filled button's colours are written, and the CSS of each product only reads them. A test changes a variant here and demands that the generated CSS changes, and a browser test demands that the buttons of the real pages paint what this file says.
 - **A disabled or sending button is `button-disabled`**: white, `muted` text (4.57:1) and a dashed border in the colour of `button-disabled-stroke` (a graphic, 3:1). Never opacity: at 60 % a filled button's text fell to 2.7:1. An error alert is `notice-error` (`danger` text on `paper`), not a colour of the framework.
 - **Every pair of text and background above must reach 4.5:1, in the `esp32-` components too.** `pnpm --filter @aule/design test` walks them one by one. A component whose name ends in `-stroke` is a graphic, not text (a border, an icon): its `textColor` is the line, its `backgroundColor` is what it is drawn on, and it has to reach 3:1 (WCAG 1.4.11). A colour with transparency (`#ffffffb3`) is laid over its background before it is measured. The linter of the CLI measures every pair as text and so warns once, about `esp32-button-disabled-stroke`; the test allows that one warning and no other.
-- **Fields** are `paper` with a 1.5 px `line` border and radius 8; the focus ring is 3 px of ink with 2 px of offset.
+- **Form controls** (inputs, selects, text areas, check boxes and radios, and the cards that stand for a choice) have a 1.5 px `field-border` border (`field-border-stroke`, a graphic: 3:1; it is 4.69:1) and, the fields, radius 8; `line` is never used for them. A browser test measures the computed border of every control and demands 3:1; the focus ring is 3 px of ink with 2 px of offset.
 - **The device screen** (`eink-`) draws buttons with a 2 px border, 56 px high and 72 px of touch area, and keeps 24 px between two targets and margins of 40 and 32. The keyboards of the device stay as they were.
 
 ## Do's and Don'ts

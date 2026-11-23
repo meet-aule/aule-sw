@@ -28,9 +28,9 @@ Sin acento propio: la paleta es la de Notion (variables `--tatami-color-*` de `s
 - **Playground:** sin el grano de papel (llevaba un color propio), fondo blanco, el avatar del encabezado en `currentColor`, `--accent*` pasa a `--primary`, `--secondary`, `--secondary-text`. El hover del botón quieto es `secondary-hover`.
 - **Tienda:** `--color-surface` pasa a blanco (ya no hay «papel cálido» que distinguir) y los bloques en gris usan `surface-neutral`.
 
-**Riesgos que veo (para decidir):**
-1. **Los bordes de campos y tarjetas (`line`, negro al 10 %) dan 1,26:1 sobre blanco**, lejos de los 3:1 de WCAG 1.4.11 para el borde de un campo. Es lo que usa Notion, pero un campo de texto de un niño casi no se ve. Si se quiere cumplir, el borde de los campos tendría que ser más oscuro (otro token, que la propuesta no define).
-2. Aule se ve ahora muy parecida a Notion (el riesgo de marca que ya anotó la propuesta).
+**Borde de campos (resuelto, a pedido del arquitecto):** `line` (negro al 10 %) da 1,26:1 sobre blanco, así que los controles de formulario (inputs, selects, áreas de texto, casillas y radios, y las tarjetas que hacen de opción) usan `field-border` **#78736f** (gray-500 de Notion, 4,69:1 sobre blanco; componente `field-border-stroke`, gráfico a 3:1). `line` queda para divisores y bordes de tarjeta (componente `divider`). Las casillas y los radios se dibujan en CSS (`appearance: none`) para que su borde sea ese mismo; marcados van en `primary`. Pruebas: en Chrome, `controlProblems` mide el borde calculado de cada control contra lo que lo rodea y exige 3:1 (en el playground, todas sus pantallas mostradas; en la tienda, el libro de reclamaciones); una mutación que vuelve el borde a `line` hace fallar la medida (1,2x:1); y una prueba estática exige que las reglas de los controles usen `--aule-color-field-border` y ninguna `--line`. No cubre los botones de interruptor (`aria-pressed`), que tienen texto y no son campos.
+
+**Riesgo que sigue (para decidir):** Aule se ve muy parecida a Notion (el riesgo de marca que ya anotó la propuesta).
 
 ## Pasada 1 de aule-qa: los tres medios, arreglados con prueba
 

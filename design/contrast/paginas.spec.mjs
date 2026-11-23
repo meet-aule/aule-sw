@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { contrastProblems } from "../contrast-dom.mjs";
+import { contrastProblems, controlProblems } from "../contrast-dom.mjs";
 import { readDesign } from "../tokens.mjs";
 
 const { state } = readDesign(join(fileURLToPath(new URL(".", import.meta.url)), "..", "..", "DESIGN.md"));
@@ -88,4 +88,38 @@ test("the buttons of the page are the variants of DESIGN.md", async ({ page }) =
   const danger = await read("#end");
   expect(rgb(danger.bg)).toBe(component("button-danger", "backgroundColor"));
   expect(rgb(danger.color)).toBe(component("button-danger", "textColor"));
+});
+
+const showEverything = (page) => page.evaluate(() => document.querySelectorAll("[hidden]").forEach((el) => el.removeAttribute("hidden")));
+
+test("the edge of every form control reaches 3:1 (WCAG 1.4.11)", async ({ page }) => {
+  await open(page);
+  await showEverything(page);
+  const { measured, problems } = await controlProblems(page);
+  expect(measured, "no control was measured").toBeGreaterThan(10);
+  expect(problems).toEqual([]);
+});
+
+test("the edge of the controls is field-border, and it is not the line", async ({ page }) => {
+  await open(page);
+  await showEverything(page);
+  const edges = await page.evaluate(() => {
+    const read = (selector) => getComputedStyle(document.querySelector(selector)).borderTopColor;
+    return { text: read("#student-name"), select: read("#student-grade"), area: read("#explanation-text"), box: read("#consent"), card: read("form#entry") };
+  });
+  const field = state.colors.get("field-border").hex;
+  for (const key of ["text", "select", "area", "box"]) expect(rgb(edges[key]), key).toBe(field);
+  // a card keeps the line
+  expect(edges.card).not.toBe(edges.text);
+});
+
+test("mutation: controls with the line as their edge are below 3:1, and the check says so", async ({ page }) => {
+  await open(page);
+  await showEverything(page);
+  await page.addStyleTag({
+    content: "input, select, textarea, label.chip span, .student span, label.tone span { border-color: var(--aule-color-line) !important; }",
+  });
+  const { problems } = await controlProblems(page);
+  expect(problems.length).toBeGreaterThan(8);
+  expect(problems.join("\n")).toMatch(/is 1\.[0-3]\d:1/);
 });
