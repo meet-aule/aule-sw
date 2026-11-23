@@ -98,6 +98,9 @@ jobs:
           workspaces: apps/platform
       - run: cargo fmt --check
       - run: cargo test --locked
+      - name: Restore a synthetic backup and reject invalid SQL
+        working-directory: .
+        run: bash infra/server/test-restore-check.sh
 
   engine:
     name: Engine (Rust)
