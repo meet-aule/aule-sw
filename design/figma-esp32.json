@@ -13,12 +13,7 @@
       "value": "#ffffff"
     },
     {
-      "name": "color/primary",
-      "type": "COLOR",
-      "value": "#0075de"
-    },
-    {
-      "name": "color/text-accent",
+      "name": "color/accent",
       "type": "COLOR",
       "value": "#62aef0"
     },

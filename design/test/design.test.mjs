@@ -62,7 +62,7 @@ test("the colours are Notion's palette, as the proposal's section 7 lists them: 
     success: "#0f6220",
   };
   for (const [name, hex] of Object.entries(want)) assert.equal(state.colors.get(name)?.hex, hex, name);
-  for (const gone of ["accent", "accent-tint", "accent-deep", "paper-deep", "surface", "on-accent", "esp32-accent"]) {
+  for (const gone of ["accent", "accent-tint", "accent-deep", "paper-deep", "surface", "on-accent", "esp32-primary"]) {
     assert.equal(state.colors.has(gone), false, `${gone} is still there`);
   }
   assert.ok(!/#9a5b2e|#cf5a1e|#e8a26b/i.test(text), "the copper, the orange or the light copper is still written");
@@ -138,8 +138,7 @@ test("the esp32 mode is black, white and blue, and has none of the web colours",
   assert.deepEqual(colors, {
     "color/black": "#000000",
     "color/white": "#ffffff",
-    "color/primary": "#0075de",
-    "color/text-accent": "#62aef0",
+    "color/accent": "#62aef0",
     "color/white-70": "#ffffffb3",
     "color/disabled": "#707070",
   });
@@ -148,10 +147,14 @@ test("the esp32 mode is black, white and blue, and has none of the web colours",
   assert.equal(value("space/target-gap"), 38);
   assert.equal(value("space/stroke"), 4);
   assert.equal(value("radius/md"), 24);
-  // The button is the blue with white text, and the accent text is for text on black.
+  // One accent: the fill of the button, with black text, and the colour of text on black.
   const all = pairs(state);
-  assert.ok(all.find((p) => p.component === "esp32-button").ratio >= 4.5);
-  assert.ok(all.find((p) => p.component === "esp32-text-accent").ratio > 8.5);
+  const button = all.find((p) => p.component === "esp32-button");
+  assert.equal(button.background, "#62aef0");
+  assert.equal(button.text, "#000000");
+  assert.ok(button.ratio > 8.8 && button.ratio < 8.9, `${button.ratio}`);
+  assert.ok(all.find((p) => p.component === "esp32-text-accent").ratio > 8.8);
+  assert.equal(JSON.stringify(variables).includes("#0075de"), false, "the web blue is not on the small screen");
 });
 
 test("a colour with an alpha channel keeps its eight hex digits and says its alpha in the Figma files", () => {
@@ -163,13 +166,13 @@ test("a colour with an alpha channel keeps its eight hex digits and says its alp
   assert.equal(web.find((v) => v.name === "color/paper").alpha, undefined);
 });
 
-test("the grey of a disabled esp32 button is a graphic: 3:1, not 4.5:1, and its text is white at 70% over black", () => {
+test("the grey of a disabled esp32 button is a graphic: 3:1, not the 7:1 of its text, and its text is white at 70% over black", () => {
   const all = pairs(state);
   const stroke = all.find((p) => p.component === "esp32-button-disabled-stroke");
   assert.equal(stroke.min, 3);
   assert.ok(stroke.ratio >= 3 && stroke.ratio < 4.5, `${stroke.ratio}`);
   const text = all.find((p) => p.component === "esp32-button-disabled");
-  assert.equal(text.min, 4.5);
+  assert.equal(text.min, 7); // small text on the esp32 screen
   // 70% white over black is #b3b3b3, about 10:1, and not the 21:1 of plain white.
   assert.ok(text.ratio > 9 && text.ratio < 12, `${text.ratio}`);
   // #707070 is allowed only for that border.
@@ -182,4 +185,28 @@ test("a graphic below 3:1 and a text below 4.5:1 both fail", () => {
   assert.ok(contrastFailures(darker).some((p) => p.component === "esp32-button-disabled-stroke"));
   const dim = parseDesign(text.replace('"#ffffffb3"', '"#ffffff40"')).state;
   assert.ok(contrastFailures(dim).some((p) => p.component === "esp32-button-disabled"));
+});
+
+test("the esp32 screen asks for 7:1 in text of 40 px or less that is not a title", () => {
+  const esp = pairs(state).filter((p) => p.component.startsWith("esp32-"));
+  const by = Object.fromEntries(esp.map((p) => [p.component, p.min]));
+  assert.equal(by["esp32-screen"], 7); // body, 40 px
+  assert.equal(by["esp32-button"], 7); // 40 px
+  assert.equal(by["esp32-button-small"], 7); // 32 px
+  assert.equal(by["esp32-button-disabled"], 7);
+  assert.equal(by["esp32-text-accent"], 7);
+  assert.equal(by["esp32-title"], 4.5); // 48 px: a title
+  assert.equal(by["esp32-button-disabled-stroke"], 3);
+  assert.deepEqual(esp.filter((p) => p.ratio < p.min).map((p) => p.component), []);
+  // The web ones are still 4.5.
+  assert.equal(pairs(state).find((p) => p.component === "button-primary").min, 4.5);
+});
+
+test("the old esp32 button, #0075de with white text (4.57:1), no longer passes", () => {
+  const old = text
+    .replace('esp32-accent: "#62aef0"', 'esp32-accent: "#0075de"')
+    .replace(/(  esp32-button:\n    backgroundColor: "\{colors\.esp32-accent\}"\n    textColor: )"\{colors\.esp32-black\}"/, '$1"{colors.esp32-white}"');
+  assert.notEqual(old, text);
+  const failures = contrastFailures(parseDesign(old).state);
+  assert.ok(failures.some((p) => p.component === "esp32-button" && p.min === 7), JSON.stringify(failures));
 });

@@ -28,8 +28,7 @@ colors:
   eink-white: "#ffffff"
   esp32-black: "#000000"    # small colour screen: black background,
   esp32-white: "#ffffff"    # white text,
-  esp32-primary: "#0075de"  # the fill of a button (white text on it is 4.57:1)
-  esp32-text-accent: "#62aef0" # and the accent for text and state, on black (8.8:1). Notion: blue-400
+  esp32-accent: "#62aef0"   # the one accent: the fill of a button (black text on it is 8.83:1) and text and state on black (8.83:1). Notion: blue-400
   esp32-white-70: "#ffffffb3" # white at 70%: the text of a disabled button (10:1 on black)
   esp32-disabled: "#707070" # ONLY the dashed border of a disabled button: 4.2:1 on black as a graphic, over the 3:1 of WCAG 1.4.11
 typography:
@@ -316,14 +315,14 @@ components:
     textColor: "{colors.esp32-white}"
     typography: "{typography.esp32-body}"
   esp32-button:
-    backgroundColor: "{colors.esp32-primary}"
-    textColor: "{colors.esp32-white}"
+    backgroundColor: "{colors.esp32-accent}"
+    textColor: "{colors.esp32-black}"
     typography: "{typography.esp32-button}"
     rounded: "{rounded.esp32-md}"
     height: "{spacing.esp32-target}"
   esp32-button-small:
-    backgroundColor: "{colors.esp32-primary}"
-    textColor: "{colors.esp32-white}"
+    backgroundColor: "{colors.esp32-accent}"
+    textColor: "{colors.esp32-black}"
     typography: "{typography.esp32-min}"
     rounded: "{rounded.esp32-md}"
     height: "{spacing.esp32-target}"
@@ -338,7 +337,7 @@ components:
     textColor: "{colors.esp32-disabled}"
   esp32-text-accent:
     backgroundColor: "{colors.esp32-black}"
-    textColor: "{colors.esp32-text-accent}"
+    textColor: "{colors.esp32-accent}"
     typography: "{typography.esp32-body}"
   esp32-title:
     backgroundColor: "{colors.esp32-black}"
@@ -366,22 +365,22 @@ The format has no modes, so a mode is a prefix on the token name.
 | `eink` | the 7.5 inch device screen, 800 x 480, four greys | `eink-` |
 | `esp32` | the small colour screen, 480 x 480 in 38.4 mm (about 314 ppi) | `esp32-` |
 
-`eink` uses only the four levels of grey. `esp32` does not use the `web` palette: it is a black background and white text, with the blue `#0075de` for the fill of a button and a lighter blue, `#62aef0`, for text and state on black. Its type scale is its own, because it is looked at from close and a conversion from `eink` does not fit in 480 px: nothing below 32 px (2.6 mm), body 40, title 48, buttons 32 to 40 and press targets of 150 px or more (12 mm). Between two targets there are at least 38 px (3 mm, `esp32-target-gap`). A button has a 4 px border (`esp32-stroke`) and a radius of 24 px, the same 2 mm as the web's. A disabled button has its text in white at 70 % (`esp32-white-70`) and a dashed border in `esp32-disabled` (#707070), a grey that is used for nothing else: it is 4.2:1 on black, which is a graphic and has to reach 3:1 (WCAG 1.4.11), not the 4.5:1 of text. The rest of its type scale is a proposal until it is tried on the real screen.
+`eink` uses only the four levels of grey. `esp32` does not use the `web` palette: it is a black background and white text with **one** accent, the light blue `#62aef0`, which is the fill of a button (with black text) and the colour of text and state. It asks for more contrast than the web: **7:1** in text of 40 px or less that is not a title (the web asks for 4.5:1), which is why the button is `#62aef0` with black text (8.83:1) and not `#0075de` with white (4.57:1). Its type scale is its own, because it is looked at from close and a conversion from `eink` does not fit in 480 px: nothing below 32 px (2.6 mm), body 40, title 48, buttons 32 to 40 and press targets of 150 px or more (12 mm). Between two targets there are at least 38 px (3 mm, `esp32-target-gap`). A button has a 4 px border (`esp32-stroke`) and a radius of 24 px, the same 2 mm as the web's. A disabled button has its text in white at 70 % (`esp32-white-70`) and a dashed border in `esp32-disabled` (#707070), a grey that is used for nothing else: it is 4.2:1 on black, which is a graphic and has to reach 3:1 (WCAG 1.4.11), not the 4.5:1 of text. The rest of its type scale is a proposal until it is tried on the real screen.
 
 | | `web` | `eink` | `esp32` |
 |---|---|---|---|
 | Letter | Inter, the scale of Typography | Inter: titles Semi Bold 34/40, text 22/30, options Semi Bold 24, 18 at the least | Inter with its own scale |
 | Line height of text | 1.5 | 1.35 to 1.4 | 1.25 |
 | Negative tracking on big headings | yes | no | no |
-| Button | radius 8, weight 500, padding 12 x 20 | radius 8, 2 px border, 56 px high, 72 px of touch area | blue `#0075de` background with white text, 4 px border, radius 24, target of 150 px or more, 38 px between targets |
+| Button | radius 8, weight 500, padding 12 x 20 | radius 8, 2 px border, 56 px high, 72 px of touch area | `#62aef0` background with black text, 4 px border, radius 24, target of 150 px or more, 38 px between targets |
 | Spacing | the whole scale, 4 to 96 | 4 to 64: margins of 40 and 32, 24 between targets | its own scale on a base of 4 |
-| Colour and shadows | white, ink, one blue, no shadows | four greys | black background, white text, the blue `#0075de` and `#62aef0` for text |
+| Colour and shadows | white, ink, one blue, no shadows | four greys | black background, white text and one accent, `#62aef0` |
 
 ## Colors
 
 Aule has no colour of its own: the palette is Notion's, taken from the `--tatami-color-*` variables of its public `skilljar.css?v=32` (read on 23 Nov 2026), and each colour above says which variable it comes from. Not the logo, the texts or the illustrations: only the palette and the scale.
 
-White (`paper`) is the page; `surface-neutral` is for grey blocks and cards, and `surface-hover` is what shows under the pointer. Text is `ink` (black at 90 %) and `muted` (black at 54 %); borders are `line` (black at 10 %). The one colour is the blue: `primary` for the filled button, links and the focus ring, `primary-hover` under the pointer, `secondary` with `secondary-text` for the quiet button and highlights, `link-hover` for a link under the pointer. `danger` is for errors and what cannot be undone and `success` for confirmations. `tile`, `tile-ink`, `board` and `device-frame` belong to the playground's video tiles and device screen. The `eink-` colours are the four levels of the panel; the `esp32-` colours are the black screen, its white, its blue fill, its blue for text and the grey of a disabled button, and the screen does not use the web palette.
+White (`paper`) is the page; `surface-neutral` is for grey blocks and cards, and `surface-hover` is what shows under the pointer. Text is `ink` (black at 90 %) and `muted` (black at 54 %); borders are `line` (black at 10 %). The one colour is the blue: `primary` for the filled button, links and the focus ring, `primary-hover` under the pointer, `secondary` with `secondary-text` for the quiet button and highlights, `link-hover` for a link under the pointer. `danger` is for errors and what cannot be undone and `success` for confirmations. `tile`, `tile-ink`, `board` and `device-frame` belong to the playground's video tiles and device screen. The `eink-` colours are the four levels of the panel; the `esp32-` colours are the black screen, its white, its one blue (`esp32-accent`, for button fills and for text) and the grey of a disabled button, and the screen does not use the web palette.
 
 **Transparency.** The CLI accepts a colour with an alpha channel as eight hex digits (it ignores the alpha when it measures contrast, so `row-hover` has only a background: its own test lays the colours over white) (`#000000e5`), so `ink`, `muted`, `line`, `surface-hover` and `esp32-white-70` are kept as Notion has them, not composed over white. The contrast test lays a transparent colour over its background (and a transparent background over `paper`) before it measures. In the Figma files they carry their hex and an `alpha`.
 
@@ -419,7 +418,7 @@ Radius 8 for buttons, fields and notices; 12 for tiles and messages; 16 for card
 ## Components
 
 - **Buttons.** A rectangle with radius 8, a 1 px transparent border and weight 500. Large: 16/24 with 12 x 20 padding. Small: 14/20 with 4 x 14 padding and 34 px of height. Primary is `primary` with `on-primary` text and `primary-hover` under the pointer; quiet is `secondary` with `secondary-text` and no border; the link is `primary` text with an arrow (`Find answers →`) and no background. Buttons are 8 px apart.
-- **Every pair of text and background above must reach 4.5:1.** `pnpm --filter @aule/design test` walks them one by one. A component whose name ends in `-stroke` is a graphic, not text (a border, an icon): its `textColor` is the line, its `backgroundColor` is what it is drawn on, and it has to reach 3:1 (WCAG 1.4.11). A colour with transparency (`#ffffffb3`) is laid over its background before it is measured. The linter of the CLI measures every pair as text and so warns once, about `esp32-button-disabled-stroke`; the test allows that one warning and no other.
+- **Every pair of text and background above must reach 4.5:1, and in the `esp32-` components 7:1 when the text is 40 px or less and not a title (`*-title`).** `pnpm --filter @aule/design test` walks them one by one. A component whose name ends in `-stroke` is a graphic, not text (a border, an icon): its `textColor` is the line, its `backgroundColor` is what it is drawn on, and it has to reach 3:1 (WCAG 1.4.11). A colour with transparency (`#ffffffb3`) is laid over its background before it is measured. The linter of the CLI measures every pair as text and so warns once, about `esp32-button-disabled-stroke`; the test allows that one warning and no other.
 - **Fields** are `paper` with a 1.5 px `line` border and radius 8; the focus ring is 3 px of ink with 2 px of offset.
 - **The device screen** (`eink-`) draws buttons with a 2 px border, 56 px high and 72 px of touch area, and keeps 24 px between two targets and margins of 40 and 32. The keyboards of the device stay as they were.
 

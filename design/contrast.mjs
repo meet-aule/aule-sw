@@ -1,5 +1,5 @@
 // Every text/background pair of every component in DESIGN.md, against WCAG's
-// 4.5:1 (text) or 3:1 (a graphic, see GRAPHIC_SUFFIX). The linter of
+// 4.5:1 (text), 3:1 (a graphic, see GRAPHIC_SUFFIX) or 7:1 (small text on the esp32 screen). The linter of
 // @google/design.md only warns; this fails a test.
 // Same file in aule-sw and aule-store.
 
@@ -22,6 +22,20 @@ export function ratio(a, b) {
 export const GRAPHIC_SUFFIX = "-stroke";
 export const MIN_TEXT = 4.5;
 export const MIN_GRAPHIC = 3;
+// The small screen is read from close and at a glance: text of 40 px or less
+// that is not a title (a component named *-title) needs 7:1.
+export const MIN_ESP32_TEXT = 7;
+export const ESP32_MAX_PX = 40;
+const px = (d) => (d.unit === "rem" ? d.value * 16 : d.value);
+
+export function minimumFor(component, def) {
+  if (component.endsWith(GRAPHIC_SUFFIX)) return MIN_GRAPHIC;
+  const size = def.properties.get("typography")?.fontSize;
+  if (component.startsWith("esp32-") && !component.endsWith("-title") && size && px(size) <= ESP32_MAX_PX) {
+    return MIN_ESP32_TEXT;
+  }
+  return MIN_TEXT;
+}
 
 /**
  * { component, text, background, ratio, min } for each component that has both.
@@ -36,13 +50,12 @@ export function pairs(state) {
     if (text?.type === "color" && surface?.type === "color") {
       // A transparent background lies over the page, and the text over that.
       const background = over(surface, state.colors.get("paper") ?? { r: 255, g: 255, b: 255 });
-      const graphic = component.endsWith(GRAPHIC_SUFFIX);
       out.push({
         component,
         text: text.hex,
         background: surface.hex,
         ratio: ratio(over(text, background), background),
-        min: graphic ? MIN_GRAPHIC : MIN_TEXT,
+        min: minimumFor(component, def),
       });
     }
   }
