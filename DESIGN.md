@@ -5,25 +5,27 @@ description: One design for every Aule product. White, ink and Notion's blue, se
 colors:
   paper: "#ffffff"          # the page. Notion: background-base
   surface-neutral: "#f6f5f4" # grey blocks and grey cards. Notion: gray-200
-  surface-hover: "#0000000d" # background under the pointer: black at 5%. Notion: alpha-black-100
+  surface-hover: "#0000000d" # interactive web only. Background under the pointer: black at 5%. Notion: alpha-black-100
   ink: "#000000e5"          # text: black at 90%. Notion: alpha-black-800 (text-normal)
-  muted: "#0000008a"        # secondary text: black at 54%. Notion: alpha-black-500 (text-muted). On white only: on grey it is 4.47:1
+  muted: "#0000008a"        # secondary text: black at 54%. Notion: alpha-black-500 (text-muted). 4.61:1 on white. On white only: on grey it is 4.52:1 laid over it, a margin of 0.02
   line: "#0000001a"         # dividers and the border of cards: black at 10%. Notion: alpha-black-200 (border-base). NOT for form controls: it is 1.26:1 on white
   field-border: "#78736f"   # the border of a form control (inputs, selects, text areas, check boxes and radios): 4.69:1 on white, over the 3:1 of WCAG 1.4.11. Notion: gray-500
   primary: "#0075de"        # the filled button, links and the focus ring. Notion: blue-600
-  primary-hover: "#005bab"  # the filled button under the pointer. Notion: blue-700
+  primary-hover: "#005bab"  # interactive web only. The filled button under the pointer. Notion: blue-700
   on-primary: "#ffffff"     # text on a primary background (4.57:1)
   secondary: "#e6f3fe"      # the quiet button and highlights. Notion: blue-200
   secondary-text: "#005bab" # text on secondary, and a link on a grey surface. Notion: blue-700
-  secondary-hover: "#f2f9ff" # the quiet button under the pointer. Notion: blue-100
-  link-hover: "#00396b"     # a link under the pointer. Notion: blue-800
+  secondary-hover: "#f2f9ff" # interactive web only. The quiet button under the pointer. Notion: blue-100
+  link-hover: "#00396b"     # interactive web only. A link under the pointer. Notion: blue-800
   danger: "#b01601"         # errors and destructive actions. Notion: red-700
-  danger-hover: "#6f0d00"   # a destructive control under the pointer. Notion: red-800
+  danger-hover: "#6f0d00"   # interactive web only. A destructive control under the pointer. Notion: red-800
   success: "#0f6220"        # confirmations. Notion: green-700
-  tile: "#14130f"           # video and tutor tiles of the playground
-  tile-ink: "#f6f4ef"       # text on the dark tiles
-  board: "#ffffff"          # what the tutor draws: always black on white, like the device screen
-  device-frame: "#1b1b1b"   # the 14px frame of the device screen in the playground
+  tile: "#14130f"           # PLAYGROUND ONLY: the video and tutor tiles
+  tile-ink: "#f6f4ef"       # PLAYGROUND ONLY: text on the dark tiles
+  board: "#ffffff"          # PLAYGROUND ONLY: what the tutor draws, always black on white like the device screen
+  device-frame: "#1b1b1b"   # PLAYGROUND ONLY: the 14px frame of the device screen
+  google-border: "#747775"  # THIRD PARTY (Google's sign-in button guide): its border. The only colour outside the palette; see button-google
+  google-text: "#1f1f1f"    # THIRD PARTY (Google): its text
   eink-black: "#000000"     # the four levels of the device panel: 0, 85, 170 and 255
   eink-dark-grey: "#555555"
   eink-light-grey: "#aaaaaa"
@@ -101,6 +103,11 @@ typography:
     fontSize: 0.875rem      # the small button, 14/20
     fontWeight: 500
     lineHeight: 20px
+  google-button:
+    fontFamily: "Roboto, Arial, sans-serif"
+    fontSize: 14px          # THIRD PARTY (Google): the "Continuar con Google" button, Roboto Medium 14, from Google's guide. The only letter that is not Inter; Aule does not load Roboto
+    fontWeight: 500
+    lineHeight: 20px
   eink-title:
     fontFamily: "Inter, system-ui, sans-serif"
     fontSize: 34px          # device screen: title, Semi Bold 34/40
@@ -148,6 +155,7 @@ rounded:
   lg: 12px                  # tiles, messages and chips
   xl: 16px                  # cards, the tutor's board
   full: 9999px              # the orb and round marks. Buttons are not pills
+  google: 4px               # THIRD PARTY (Google): the radius of its button, from its guide
   esp32-md: 24px            # small colour screen: the radius of a button, 24 px, the same 2 mm as the web's 8px. Fixed
 spacing:
   2xs: 4px                  # vertical padding of the small button
@@ -157,7 +165,8 @@ spacing:
   lg: 24px                  # side margin of the page and between cards
   xl: 32px                  # padding of a card
   2xl: 48px                 # between blocks inside a section
-  3xl: 96px                 # between sections on desktop (64px on a phone)
+  3xl: 96px                 # between sections on desktop
+  3xl-mobile: 64px          # between sections on a phone (from 640px up it is 3xl)
   text-column: 640px        # widest a paragraph gets: 60 to 75 characters a line
   container: 1128px         # widest the page gets (1080 of it is content)
   eink-margin-x: 40px       # device screen: side margins
@@ -203,6 +212,15 @@ components:
   button-secondary-hover:
     backgroundColor: "{colors.secondary-hover}"
     textColor: "{colors.secondary-text}"
+  button-google:
+    backgroundColor: "{colors.paper}"
+    textColor: "{colors.google-text}"
+    typography: "{typography.google-button}"
+    rounded: "{rounded.google}"
+    height: 40px
+  button-google-stroke:
+    backgroundColor: "{colors.paper}"
+    textColor: "{colors.google-border}"
   button-link:
     backgroundColor: "{colors.paper}"
     textColor: "{colors.primary}"
@@ -436,11 +454,11 @@ The format has no modes, so a mode is a prefix on the token name.
 
 Aule has no colour of its own: the palette is Notion's, taken from the `--tatami-color-*` variables of its public `skilljar.css?v=32` (read on 23 Nov 2026), and each colour above says which variable it comes from. Not the logo, the texts or the illustrations: only the palette and the scale.
 
-White (`paper`) is the page; `surface-neutral` is for grey blocks and cards, and `surface-hover` is what shows under the pointer. Text is `ink` (black at 90 %) and `muted` (black at 54 %); dividers and the border of a card are `line` (black at 10 %), and the border of a form control is `field-border` (`#78736f`), because `line` is 1.26:1 on white and a control's edge has to reach 3:1. The one colour is the blue: `primary` for the filled button, links and the focus ring, `primary-hover` under the pointer, `secondary` with `secondary-text` for the quiet button and highlights, `link-hover` for a link under the pointer. `danger` is for errors and what cannot be undone and `success` for confirmations. `tile`, `tile-ink`, `board` and `device-frame` belong to the playground's video tiles and device screen. The `eink-` colours are the four levels of the panel; the `esp32-` colours are the black screen, its white, its one blue (`esp32-accent`, for button fills and for text) and the grey of a disabled button, and the screen does not use the web palette.
+White (`paper`) is the page; `surface-neutral` is for grey blocks and cards, and `surface-hover` is what shows under the pointer. Text is `ink` (black at 90 %) and `muted` (black at 54 %); dividers and the border of a card are `line` (black at 10 %), and the border of a form control is `field-border` (`#78736f`), because `line` is 1.26:1 on white and a control's edge has to reach 3:1. The one colour is the blue: `primary` for the filled button, links and the focus ring, `primary-hover` under the pointer, `secondary` with `secondary-text` for the quiet button and highlights, `link-hover` for a link under the pointer. `danger` is for errors and what cannot be undone and `success` for confirmations. `tile`, `tile-ink`, `board` and `device-frame` are **playground only**: the video tiles and the device screen of the demo are not drawn on any other page. Every `*-hover` colour, and the disabled, switch and talk-active components, are **interactive web only**: they exist where a pointer or a state exists, and not on the device screens. Both groups carry that in the Figma files (`scope`). The `eink-` colours are the four levels of the panel; the `esp32-` colours are the black screen, its white, its one blue (`esp32-accent`, for button fills and for text) and the grey of a disabled button, and the screen does not use the web palette.
 
 **Transparency.** The CLI accepts a colour with an alpha channel as eight hex digits (it ignores the alpha when it measures contrast, so `row-hover` has only a background: its own test lays the colours over white) (`#000000e5`), so `ink`, `muted`, `line`, `surface-hover` and `esp32-white-70` are kept as Notion has them, not composed over white. The contrast test lays a transparent colour over its background (and a transparent background over `paper`) before it measures. In the Figma files they carry their hex and an `alpha`.
 
-**Two rules of contrast** that come from the numbers: a link in `primary` on `surface-neutral` is 4.19:1 and does not reach 4.5, so a link on grey is `secondary-text` (`link-on-neutral`); and `muted` on grey is 4.47:1, so it goes on white only. A test checks both.
+**Two rules of contrast** that come from the numbers: a link in `primary` on `surface-neutral` is 4.19:1 and does not reach 4.5, so a link on grey is `secondary-text` (`link-on-neutral`); and `muted` on grey is 4.52:1 laid over it, which passes but by 0.02: any change of the grey, of the alpha or of the text size leaves no room, so it goes on white only. The rule stays for that margin, and not because it fails. A test checks both.
 
 ## Typography
 
@@ -459,6 +477,8 @@ Texts are 1.5 tall (24 px on 16) and headings 1.0 to 1.05, with negative trackin
 
 In the apps (the playground), the page title is `headline-sm` and a form title is `card-title`.
 
+**Letter spacing is written in em** (`letterSpacing: -0.023em`), so that it follows the size, and the pixels that Figma asks for come from it: `figma-*.json` writes `letter-spacing` as the em times the font size, that is −0.736 px at 32 px (`headline-sm`, −0.023 em) and −0.251 px at 22 px (`card-title`, −0.0114 em). A test checks every one.
+
 ## Layout
 
 A page is at most `container` wide, with `lg` on each side. A paragraph is at most `text-column` wide. Sections are `3xl` apart on desktop and 64 px on a phone; blocks inside a section are `2xl` apart; a heading and its paragraph are `md` apart. The scale is on a base of 4: `2xs` 4, `xs` 8, `sm` 12, `md` 16, `lg` 24, `xl` 32, `2xl` 48, `3xl` 96. Other isolated values (2, 6, 10 and 14 px, and the 20 px at the sides of a button) stay in the CSS and are not tokens.
@@ -474,9 +494,10 @@ Radius 8 for buttons, fields and notices; 12 for tiles and messages; 16 for card
 ## Components
 
 - **Buttons.** A rectangle with radius 8, a 1 px transparent border and weight 500. Large: 16/24 with 12 x 20 padding. Small: 14/20 with 4 x 14 padding and 34 px of height. Primary is `primary` with `on-primary` text and `primary-hover` under the pointer; quiet is `secondary` with `secondary-text` and no border; the link is `primary` text with an arrow (`Find answers →`) and no background. Buttons are 8 px apart.
+- **The Google sign-in button ("Continuar con Google") is the one exception of colour and letter**, because it is Google's brand and its guide dictates it: Roboto Medium 14 (`google-button`), 40 px high, radius 4 (`rounded.google`), a `#747775` border (`google-border`, `button-google-stroke`, a graphic) and `#1f1f1f` text (`google-text`) on white. Nothing else may use those tokens: a test fails if any component other than `button-google*`, or any CSS of a product, uses them or Roboto. In the playground Google draws the button itself; Aule does not load Roboto. The 40 px is smaller than Aule's 48 px targets, so the touch area around it is 48 px.
 - **Variants reach the CSS only through generated variables.** For every web component, `pnpm design-tokens` writes `--aule-c-<component>-bg`, `-text`, `-type`, `-radius`, `-padding` and `-height` (and `-border`, which for a button is its own background), so `components.button-primary` is the only place the filled button's colours are written, and the CSS of each product only reads them. A test changes a variant here and demands that the generated CSS changes, and a browser test demands that the buttons of the real pages paint what this file says.
 - **A destructive button** is `danger` with white text (`button-destructive`) and `danger-hover` under the pointer (`button-destructive-hover`, Notion's red-800, `#6f0d00`); the outlined one (`button-danger`) and the quiet red link (`button-danger-link`) go to `danger-hover` text too. None is a blend with black, and a browser test passes the pointer over every button.
-- **A disabled or sending button is `button-disabled`**: white, `muted` text (4.57:1) and a dashed border in the colour of `button-disabled-stroke` (a graphic, 3:1). Never opacity: at 60 % a filled button's text fell to 2.7:1. An error alert is `notice-error` (`danger` text on `paper`), not a colour of the framework.
+- **A disabled or sending button is `button-disabled`**: white, `muted` text (4.61:1) and a dashed border in the colour of `button-disabled-stroke` (a graphic, 3:1). Never opacity: at 60 % a filled button's text fell to 2.7:1. An error alert is `notice-error` (`danger` text on `paper`), not a colour of the framework.
 - **Every pair of text and background above must reach 4.5:1, in the `esp32-` components too.** `pnpm --filter @aule/design test` walks them one by one. A component whose name ends in `-stroke` is a graphic, not text (a border, an icon): its `textColor` is the line, its `backgroundColor` is what it is drawn on, and it has to reach 3:1 (WCAG 1.4.11). A colour with transparency (`#ffffffb3`) is laid over its background before it is measured. The linter of the CLI measures every pair as text and so warns once, about `esp32-button-disabled-stroke`; the test allows that one warning and no other.
 - **Form controls** (inputs, selects, text areas, check boxes and radios, and the cards that stand for a choice) have a 1.5 px `field-border` border (`field-border-stroke`, a graphic: 3:1; it is 4.69:1) and, the fields, radius 8; `line` is never used for them. A browser test measures the computed border of every control, **switches included** (`button[aria-pressed]`, in both states, `button-switch-stroke`), and demands 3:1; the placeholder of an empty field is `muted` (`field-placeholder`, 4.57:1) and the same test measures it; the focus ring is 3 px of ink with 2 px of offset.
 - **The device screen** (`eink-`) draws buttons with a 2 px border, 56 px high and 72 px of touch area, and keeps 24 px between two targets and margins of 40 and 32. The keyboards of the device stay as they were.

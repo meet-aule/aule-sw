@@ -26,6 +26,21 @@ import { lint } from "@google/design.md/linter";
 const HERE = dirname(fileURLToPath(import.meta.url));
 export const MODES = ["web", "eink", "esp32"];
 
+/**
+ * What a token is for, beyond its mode. Carried in the Figma files (`scope`) so that
+ * a designer does not reach for them by accident. The Google ones are the one
+ * exception to the palette and the letter: Google's brand, from its guide.
+ */
+export const SCOPES = {
+  "playground-only": ["tile", "tile-ink", "board", "device-frame"],
+  "interactive-web-only": ["surface-hover", "primary-hover", "secondary-hover", "link-hover", "danger-hover"],
+  "third-party-google": ["google-border", "google-text"],
+};
+const scopeOf = (name) => Object.entries(SCOPES).find(([, names]) => names.includes(name))?.[0];
+
+/** A token or component of Google's button: not Aule's CSS (Google draws it), only Figma's. */
+export const isThirdParty = (name) => /^(google|button-google)(-|$)/.test(name);
+
 // ---------------------------------------------------------------- reading
 
 export function parseDesign(text) {
@@ -62,7 +77,7 @@ const quoteFamily = (stack) =>
 export function makeCss(state, designName) {
   const lines = [];
   const add = (name, value) => lines.push(`  --aule-${name}: ${value};`);
-  const web = (map) => [...map].map(([k, v]) => [k, v, modeOf(k)]).filter(([, , m]) => m.mode === "web");
+  const web = (map) => [...map].map(([k, v]) => [k, v, modeOf(k)]).filter(([k, , m]) => m.mode === "web" && !isThirdParty(k));
 
   for (const [k, v] of web(state.colors)) add(`color-${k}`, v.hex);
   for (const [k, v] of web(state.spacing)) add(`space-${k}`, css(v));
@@ -126,6 +141,8 @@ export function makeFigma(state, mode, designName) {
   // A colour with an alpha channel keeps its eight hex digits and also says the alpha.
   const color = (n, v) => {
     const entry = { name: `color/${n}`, type: "COLOR", value: v.hex };
+    const scope = scopeOf(n);
+    if (scope) entry.scope = scope;
     if (v.a !== undefined && v.a < 1) entry.alpha = Math.round(v.a * 1000) / 1000;
     variables.push(entry);
   };

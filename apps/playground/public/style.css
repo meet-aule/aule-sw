@@ -119,7 +119,7 @@ button {
   background: var(--surface);
 }
 
-/* A placeholder is muted text, 4.57:1 on the field: not the browser's grey, and not faded. */
+/* A placeholder is muted text, 4.61:1 on the field: not the browser's grey, and not faded. */
 ::placeholder {
   color: var(--aule-c-field-placeholder-text);
   opacity: 1;

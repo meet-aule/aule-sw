@@ -5,7 +5,7 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { contrastFailures, over, pairs, ratio } from "../contrast.mjs";
-import { generate, makeCss, MODES, parseDesign, readDesign } from "../tokens.mjs";
+import { generate, makeCss, MODES, parseDesign, readDesign, SCOPES } from "../tokens.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const DESIGN = join(HERE, "..", "..", "DESIGN.md");
@@ -78,7 +78,7 @@ test("a link on grey is secondary-text: the blue of a link does not reach 4.5:1 
   assert.equal(rule.background, "#f6f5f4");
   assert.equal(rule.text, "#005bab");
   assert.ok(rule.ratio >= 4.5, `${rule.ratio}`);
-  // muted is 4.47:1 on grey: every muted pair has to be on white.
+  // muted is 4.52:1 on grey laid over it, 4.49:1 as a browser rounds it: every muted pair has to be on white.
   const mutedOnGrey = [...state.components].filter(
     ([, d]) => d.properties.get("textColor")?.hex === "#0000008a" && d.properties.get("backgroundColor")?.hex !== "#ffffff",
   );
@@ -315,4 +315,97 @@ test("the border of a form control is field-border #78736f: a graphic at 3:1 (it
   for (const sel of ["input, select, textarea, button", 'input[type="checkbox"], input[type="radio"]', "label.chip span", ".card textarea"]) {
     assert.match(rules.get(sel)?.border ?? "", /--aule-color-field-border/, sel);
   }
+});
+
+// ---- the second round of arquitecto-2's notes
+
+test("muted on grey is 4.52:1 laid over it: it passes by 0.02, and the rule keeps it on white for that margin", () => {
+  const grey = state.colors.get("surface-neutral");
+  const white = state.colors.get("paper");
+  const muted = state.colors.get("muted");
+  const exact = ratio(over(muted, grey), grey);
+  assert.ok(exact > 4.51 && exact < 4.53, `${exact}`);
+  assert.ok(exact - 4.5 < 0.05, "there is room now: the rule could be dropped");
+  assert.ok(ratio(over(muted, white), white) > 4.6);
+  assert.match(text, /muted: "#0000008a".*4\.61:1 on white.*4\.52:1 laid over it, a margin of 0\.02/);
+  assert.match(text, /muted` on grey is 4\.52:1 laid over it, which passes but by 0\.02/);
+  assert.equal(/4\.47|4\.49/.test(text), false, "an old number is still written");
+});
+
+test("there is a space for the gap between sections on a phone: 3xl-mobile 64, and 3xl 96 above it", () => {
+  assert.equal(state.spacing.get("3xl-mobile").value, 64);
+  assert.equal(state.spacing.get("3xl").value, 96);
+  assert.match(makeCss(state, "x"), /--aule-space-3xl-mobile: 64px;/);
+  const figma = JSON.parse(generate({ design: DESIGN, figma: FIGMA_DIR })[join(FIGMA_DIR, "figma-web.json")]).variables;
+  assert.equal(figma.find((v) => v.name === "space/3xl-mobile").value, 64);
+});
+
+test("letter spacing is in em, and the px of Figma are the em times the size: -0.736 at 32 and -0.251 at 22", () => {
+  const figma = JSON.parse(generate({ design: DESIGN, figma: FIGMA_DIR })[join(FIGMA_DIR, "figma-web.json")]).variables;
+  const value = (name) => figma.find((v) => v.name === name).value;
+  assert.equal(value("type/headline-sm/size"), 32);
+  assert.equal(value("type/headline-sm/letter-spacing"), -0.736);
+  assert.equal(value("type/card-title/size"), 22);
+  assert.equal(value("type/card-title/letter-spacing"), -0.251);
+  for (const [name, type] of state.typography) {
+    if (!type.letterSpacing) continue;
+    assert.equal(type.letterSpacing.unit, "em", `${name} is not in em`);
+    const size = type.fontSize.unit === "rem" ? type.fontSize.value * 16 : type.fontSize.value;
+    assert.equal(figma.concat(JSON.parse(generate({ design: DESIGN, figma: FIGMA_DIR })[join(FIGMA_DIR, "figma-eink.json")]).variables).find((v) => v.name === `type/${name}/letter-spacing`)?.value ?? NaN, Math.round(type.letterSpacing.value * size * 1000) / 1000, name);
+  }
+  assert.match(text, /Letter spacing is written in em.*−0\.736 px at 32 px.*−0\.251 px at 22 px/);
+});
+
+test("tile, tile-ink, board and device-frame are playground only, and the hover colours are interactive web only", () => {
+  for (const name of ["tile", "tile-ink", "board", "device-frame"]) assert.match(text, new RegExp(`  ${name}: "#[0-9a-f]{6}" +# PLAYGROUND ONLY`), name);
+  for (const name of ["surface-hover", "primary-hover", "secondary-hover", "link-hover", "danger-hover"]) {
+    assert.match(text, new RegExp(`  ${name}: "#[0-9a-f]+" +# interactive web only`), name);
+  }
+  for (const names of Object.values(SCOPES)) for (const n of names) assert.ok(state.colors.has(n), `${n} is not a colour`);
+  const web = JSON.parse(generate({ design: DESIGN, figma: FIGMA_DIR })[join(FIGMA_DIR, "figma-web.json")]).variables;
+  const scope = (n) => web.find((v) => v.name === `color/${n}`).scope;
+  assert.equal(scope("tile"), "playground-only");
+  assert.equal(scope("device-frame"), "playground-only");
+  assert.equal(scope("primary-hover"), "interactive-web-only");
+  assert.equal(scope("google-border"), "third-party-google");
+  assert.equal(scope("paper"), undefined);
+});
+
+test("the Google sign-in button is the only exception of colour and letter, and only there", () => {
+  // the tokens, as the guide gives them
+  assert.equal(state.colors.get("google-border").hex, "#747775");
+  assert.equal(state.colors.get("google-text").hex, "#1f1f1f");
+  const type = state.typography.get("google-button");
+  assert.equal(type.fontFamily.split(",")[0], "Roboto");
+  assert.equal(type.fontSize.value, 14);
+  assert.equal(state.rounded.get("google").value, 4);
+  const button = state.components.get("button-google").properties;
+  assert.equal(button.get("height").value, 40);
+  assert.equal(button.get("textColor").hex, "#1f1f1f");
+  assert.equal(button.get("rounded").value, 4);
+  const stroke = pairs(state).find((p) => p.component === "button-google-stroke");
+  assert.equal(stroke.min, 3);
+  assert.ok(stroke.ratio >= 4.4, `${stroke.ratio}`);
+  assert.ok(pairs(state).find((p) => p.component === "button-google").ratio >= 4.5);
+  // no other component uses them
+  const users = [...state.components].filter(([, d]) => [...d.properties.values()].some((x) => x?.hex === "#747775" || x?.hex === "#1f1f1f" || x?.fontFamily?.startsWith("Roboto"))).map(([n]) => n);
+  assert.deepEqual(users.sort(), ["button-google", "button-google-stroke"]);
+  // and no CSS of a product writes them, or loads Roboto
+  const css = `${playgroundCss}\n${readFileSync(join(HERE, "..", "..", "apps", "playground", "public", "tokens.css"), "utf8")}`;
+  assert.equal(/#747775|#1f1f1f/i.test(css), false);
+  // Roboto may appear only as a system fallback in a stack; it is never loaded
+  assert.equal(/@font-face[^}]*roboto|googleapis|gstatic/i.test(css), false);
+  // the colours of the web, as the palette lists them, are all Notion's (and the playground's own neutrals): nothing else comes in
+  const allowed = new Set(["paper", "surface-neutral", "surface-hover", "ink", "muted", "line", "field-border", "primary", "primary-hover", "on-primary", "secondary", "secondary-text", "secondary-hover", "link-hover", "danger", "danger-hover", "success", "tile", "tile-ink", "board", "device-frame"]);
+  const web = [...state.colors.keys()].filter((n) => !/^(eink|esp32|google)-/.test(n));
+  assert.deepEqual(web.filter((n) => !allowed.has(n)), []);
+  // Google's colour in another component is caught
+  const borrowed = parseDesign(text.replace(/(  skip-link:\n    backgroundColor: "\{colors\.ink\}"\n    textColor: )"\{colors\.paper\}"/, '$1"{colors.google-text}"')).state;
+  assert.deepEqual(
+    [...borrowed.components].filter(([, d]) => [...d.properties.values()].some((x) => x?.hex === "#1f1f1f")).map(([n]) => n).sort(),
+    ["button-google", "skip-link"],
+  );
+  // a colour added on the side, even in a component, fails the test of the palette
+  const sneaky = parseDesign(text.replace('  success: "#0f6220"', '  success: "#0f6220"\n  brand-pink: "#ff3399"')).state;
+  assert.deepEqual([...sneaky.colors.keys()].filter((n) => !/^(eink|esp32|google)-/.test(n) && !allowed.has(n)), ["brand-pink"]);
 });

@@ -16,6 +16,7 @@
       "name": "color/surface-hover",
       "type": "COLOR",
       "value": "#0000000d",
+      "scope": "interactive-web-only",
       "alpha": 0.051
     },
     {
@@ -49,7 +50,8 @@
     {
       "name": "color/primary-hover",
       "type": "COLOR",
-      "value": "#005bab"
+      "value": "#005bab",
+      "scope": "interactive-web-only"
     },
     {
       "name": "color/on-primary",
@@ -69,12 +71,14 @@
     {
       "name": "color/secondary-hover",
       "type": "COLOR",
-      "value": "#f2f9ff"
+      "value": "#f2f9ff",
+      "scope": "interactive-web-only"
     },
     {
       "name": "color/link-hover",
       "type": "COLOR",
-      "value": "#00396b"
+      "value": "#00396b",
+      "scope": "interactive-web-only"
     },
     {
       "name": "color/danger",
@@ -84,7 +88,8 @@
     {
       "name": "color/danger-hover",
       "type": "COLOR",
-      "value": "#6f0d00"
+      "value": "#6f0d00",
+      "scope": "interactive-web-only"
     },
     {
       "name": "color/success",
@@ -94,22 +99,38 @@
     {
       "name": "color/tile",
       "type": "COLOR",
-      "value": "#14130f"
+      "value": "#14130f",
+      "scope": "playground-only"
     },
     {
       "name": "color/tile-ink",
       "type": "COLOR",
-      "value": "#f6f4ef"
+      "value": "#f6f4ef",
+      "scope": "playground-only"
     },
     {
       "name": "color/board",
       "type": "COLOR",
-      "value": "#ffffff"
+      "value": "#ffffff",
+      "scope": "playground-only"
     },
     {
       "name": "color/device-frame",
       "type": "COLOR",
-      "value": "#1b1b1b"
+      "value": "#1b1b1b",
+      "scope": "playground-only"
+    },
+    {
+      "name": "color/google-border",
+      "type": "COLOR",
+      "value": "#747775",
+      "scope": "third-party-google"
+    },
+    {
+      "name": "color/google-text",
+      "type": "COLOR",
+      "value": "#1f1f1f",
+      "scope": "third-party-google"
     },
     {
       "name": "space/2xs",
@@ -152,6 +173,11 @@
       "value": 96
     },
     {
+      "name": "space/3xl-mobile",
+      "type": "FLOAT",
+      "value": 64
+    },
+    {
       "name": "space/text-column",
       "type": "FLOAT",
       "value": 640
@@ -190,6 +216,11 @@
       "name": "radius/full",
       "type": "FLOAT",
       "value": 9999
+    },
+    {
+      "name": "radius/google",
+      "type": "FLOAT",
+      "value": 4
     },
     {
       "name": "type/display/family",
@@ -458,6 +489,26 @@
     },
     {
       "name": "type/button-sm/line-height",
+      "type": "FLOAT",
+      "value": 20
+    },
+    {
+      "name": "type/google-button/family",
+      "type": "STRING",
+      "value": "Roboto"
+    },
+    {
+      "name": "type/google-button/size",
+      "type": "FLOAT",
+      "value": 14
+    },
+    {
+      "name": "type/google-button/weight",
+      "type": "FLOAT",
+      "value": 500
+    },
+    {
+      "name": "type/google-button/line-height",
       "type": "FLOAT",
       "value": 20
     }
