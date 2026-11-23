@@ -1,19 +1,23 @@
 ---
 version: alpha
 name: Aule
-description: One design for every Aule product. Paper, ink and one accent, set in Inter. Tokens without a prefix are the web (demo, parents' page, store); `eink-` is the 7.5 inch device screen and `esp32-` the small colour screen.
+description: One design for every Aule product. White, ink and Notion's blue, set in Inter. Tokens without a prefix are the web (demo, parents' page, store); `eink-` is the 7.5 inch device screen and `esp32-` the small colour screen.
 colors:
-  paper: "#f5f2ea"          # the page: warm white, "paper and ink"
-  paper-deep: "#ece8dc"     # hover of quiet buttons, the flat shadow of cards
-  surface: "#fbfaf6"        # cards, fields and messages, a warm white on the paper
-  primary: "#141414"        # the ink: text and strong borders
-  muted: "#6b6b6b"          # secondary text and notes
-  line: "#c9c3b4"           # soft borders and dividers
-  accent: "#9a5b2e"         # THE accent, worked copper. Change this one line to repaint every product, then run `pnpm design-derive` and `pnpm design-tokens`
-  accent-tint: "#e6dacc"    # derived: accent at 16% over paper. Background of the quiet button and of highlights
-  accent-deep: "#744423"    # derived: accent at 75% over black. Text on accent-tint and the hover of the filled button
-  on-accent: "#ffffff"      # text on an accent background
-  danger: "#8f1d14"         # errors and destructive actions
+  paper: "#ffffff"          # the page. Notion: background-base
+  surface-neutral: "#f6f5f4" # grey blocks and grey cards. Notion: gray-200
+  surface-hover: "#0000000d" # background under the pointer: black at 5%. Notion: alpha-black-100
+  ink: "#000000e5"          # text: black at 90%. Notion: alpha-black-800 (text-normal)
+  muted: "#0000008a"        # secondary text: black at 54%. Notion: alpha-black-500 (text-muted). On white only: on grey it is 4.47:1
+  line: "#0000001a"         # borders and dividers: black at 10%. Notion: alpha-black-200 (border-base)
+  primary: "#0075de"        # the filled button, links and the focus ring. Notion: blue-600
+  primary-hover: "#005bab"  # the filled button under the pointer. Notion: blue-700
+  on-primary: "#ffffff"     # text on a primary background (4.57:1)
+  secondary: "#e6f3fe"      # the quiet button and highlights. Notion: blue-200
+  secondary-text: "#005bab" # text on secondary, and a link on a grey surface. Notion: blue-700
+  secondary-hover: "#f2f9ff" # the quiet button under the pointer. Notion: blue-100
+  link-hover: "#00396b"     # a link under the pointer. Notion: blue-800
+  danger: "#b01601"         # errors and destructive actions. Notion: red-700
+  success: "#0f6220"        # confirmations. Notion: green-700
   tile: "#14130f"           # video and tutor tiles of the playground
   tile-ink: "#f6f4ef"       # text on the dark tiles
   board: "#ffffff"          # what the tutor draws: always black on white, like the device screen
@@ -23,8 +27,9 @@ colors:
   eink-light-grey: "#aaaaaa"
   eink-white: "#ffffff"
   esp32-black: "#000000"    # small colour screen: black background,
-  esp32-white: "#ffffff"    # white text
-  esp32-accent: "#e8a26b"   # and one accent: the light version of the copper, for a dark background
+  esp32-white: "#ffffff"    # white text,
+  esp32-primary: "#0075de"  # the fill of a button (white text on it is 4.57:1)
+  esp32-text-accent: "#62aef0" # and the accent for text and state, on black (8.8:1). Notion: blue-400
   esp32-white-70: "#ffffffb3" # white at 70%: the text of a disabled button (10:1 on black)
   esp32-disabled: "#707070" # ONLY the dashed border of a disabled button: 4.2:1 on black as a graphic, over the 3:1 of WCAG 1.4.11
 typography:
@@ -171,69 +176,82 @@ spacing:
 components:
   page:
     backgroundColor: "{colors.paper}"
-    textColor: "{colors.primary}"
+    textColor: "{colors.ink}"
     typography: "{typography.body}"
   button-primary:
-    backgroundColor: "{colors.accent}"
-    textColor: "{colors.on-accent}"
+    backgroundColor: "{colors.primary}"
+    textColor: "{colors.on-primary}"
     typography: "{typography.button}"
     rounded: "{rounded.md}"
     padding: 12px
   button-primary-sm:
-    backgroundColor: "{colors.accent}"
-    textColor: "{colors.on-accent}"
+    backgroundColor: "{colors.primary}"
+    textColor: "{colors.on-primary}"
     typography: "{typography.button-sm}"
     rounded: "{rounded.md}"
     padding: 4px
   button-primary-hover:
-    backgroundColor: "{colors.accent-deep}"
-    textColor: "{colors.on-accent}"
+    backgroundColor: "{colors.primary-hover}"
+    textColor: "{colors.on-primary}"
   button-secondary:
-    backgroundColor: "{colors.accent-tint}"
-    textColor: "{colors.accent-deep}"
+    backgroundColor: "{colors.secondary}"
+    textColor: "{colors.secondary-text}"
     typography: "{typography.button}"
     rounded: "{rounded.md}"
     padding: 12px
   button-secondary-hover:
-    backgroundColor: "{colors.paper-deep}"
-    textColor: "{colors.accent-deep}"
+    backgroundColor: "{colors.secondary-hover}"
+    textColor: "{colors.secondary-text}"
   button-link:
     backgroundColor: "{colors.paper}"
-    textColor: "{colors.accent}"
+    textColor: "{colors.primary}"
     typography: "{typography.button}"
+  button-link-hover:
+    backgroundColor: "{colors.paper}"
+    textColor: "{colors.link-hover}"
+  link-on-neutral:
+    backgroundColor: "{colors.surface-neutral}"
+    textColor: "{colors.secondary-text}"
   button-danger:
-    backgroundColor: "{colors.surface}"
+    backgroundColor: "{colors.paper}"
     textColor: "{colors.danger}"
     typography: "{typography.button}"
     rounded: "{rounded.md}"
     padding: 12px
   button-talk-active:
-    backgroundColor: "{colors.accent}"
-    textColor: "{colors.on-accent}"
+    backgroundColor: "{colors.primary}"
+    textColor: "{colors.on-primary}"
     rounded: "{rounded.md}"
   card:
-    backgroundColor: "{colors.surface}"
-    textColor: "{colors.primary}"
+    backgroundColor: "{colors.paper}"
+    textColor: "{colors.ink}"
+    rounded: "{rounded.xl}"
+    padding: "{spacing.xl}"
+  card-neutral:
+    backgroundColor: "{colors.surface-neutral}"
+    textColor: "{colors.ink}"
     rounded: "{rounded.xl}"
     padding: "{spacing.xl}"
   card-note:
-    backgroundColor: "{colors.surface}"
+    backgroundColor: "{colors.paper}"
     textColor: "{colors.muted}"
     typography: "{typography.small}"
     rounded: "{rounded.xl}"
     padding: "{spacing.md}"
   highlight:
-    backgroundColor: "{colors.accent-tint}"
-    textColor: "{colors.accent-deep}"
+    backgroundColor: "{colors.secondary}"
+    textColor: "{colors.secondary-text}"
     rounded: "{rounded.md}"
   field:
-    backgroundColor: "{colors.surface}"
-    textColor: "{colors.primary}"
+    backgroundColor: "{colors.paper}"
+    textColor: "{colors.ink}"
     typography: "{typography.body}"
     rounded: "{rounded.md}"
     padding: 12px
   field-border:
     backgroundColor: "{colors.line}"
+  row-hover:
+    backgroundColor: "{colors.surface-hover}"
   note:
     backgroundColor: "{colors.paper}"
     textColor: "{colors.muted}"
@@ -243,13 +261,18 @@ components:
     textColor: "{colors.danger}"
     typography: "{typography.small}"
     rounded: "{rounded.md}"
+  notice-success:
+    backgroundColor: "{colors.paper}"
+    textColor: "{colors.success}"
+    typography: "{typography.small}"
+    rounded: "{rounded.md}"
   message-tutor:
-    backgroundColor: "{colors.surface}"
-    textColor: "{colors.primary}"
+    backgroundColor: "{colors.paper}"
+    textColor: "{colors.ink}"
     rounded: "{rounded.lg}"
   message-you:
-    backgroundColor: "{colors.primary}"
-    textColor: "{colors.surface}"
+    backgroundColor: "{colors.ink}"
+    textColor: "{colors.paper}"
     rounded: "{rounded.lg}"
   video-tile:
     backgroundColor: "{colors.tile}"
@@ -257,14 +280,14 @@ components:
     rounded: "{rounded.lg}"
   board:
     backgroundColor: "{colors.board}"
-    textColor: "{colors.primary}"
+    textColor: "{colors.ink}"
     rounded: "{rounded.xl}"
   device-screen:
     backgroundColor: "{colors.device-frame}"
     textColor: "{colors.board}"
     rounded: 10px
   skip-link:
-    backgroundColor: "{colors.primary}"
+    backgroundColor: "{colors.ink}"
     textColor: "{colors.paper}"
   eink-screen:
     backgroundColor: "{colors.eink-white}"
@@ -293,14 +316,14 @@ components:
     textColor: "{colors.esp32-white}"
     typography: "{typography.esp32-body}"
   esp32-button:
-    backgroundColor: "{colors.esp32-accent}"
-    textColor: "{colors.esp32-black}"
+    backgroundColor: "{colors.esp32-primary}"
+    textColor: "{colors.esp32-white}"
     typography: "{typography.esp32-button}"
     rounded: "{rounded.esp32-md}"
     height: "{spacing.esp32-target}"
   esp32-button-small:
-    backgroundColor: "{colors.esp32-accent}"
-    textColor: "{colors.esp32-black}"
+    backgroundColor: "{colors.esp32-primary}"
+    textColor: "{colors.esp32-white}"
     typography: "{typography.esp32-min}"
     rounded: "{rounded.esp32-md}"
     height: "{spacing.esp32-target}"
@@ -313,6 +336,10 @@ components:
   esp32-button-disabled-stroke:
     backgroundColor: "{colors.esp32-black}"
     textColor: "{colors.esp32-disabled}"
+  esp32-text-accent:
+    backgroundColor: "{colors.esp32-black}"
+    textColor: "{colors.esp32-text-accent}"
+    typography: "{typography.esp32-body}"
   esp32-title:
     backgroundColor: "{colors.esp32-black}"
     textColor: "{colors.esp32-white}"
@@ -321,7 +348,7 @@ components:
 
 ## Overview
 
-One design for every Aule product: the demo and the parents' page (`aule-sw`), the store (`aule-store`), the device screen and the small colour screen. It looks like paper and ink with a single accent, and it reads calmly, like a tool and not like a toy. Every heading, the tutor's words and the interface are set in Inter. The only drawing of letters that is not Inter is the "Aule" logotype, which is a fixed drawing, not text.
+One design for every Aule product: the demo and the parents' page (`aule-sw`), the store (`aule-store`), the device screen and the small colour screen. It is white, ink and one blue, and it reads calmly, like a tool and not like a toy. Every heading, the tutor's words and the interface are set in Inter. The only drawing of letters that is not Inter is the "Aule" logotype, which is a fixed drawing, not text.
 
 This file is the original. `aule-store` carries an identical copy that a check keeps honest. The CSS and the Figma variables are generated from it (`pnpm design-tokens`), and CI fails if a generated file does not match.
 
@@ -339,24 +366,26 @@ The format has no modes, so a mode is a prefix on the token name.
 | `eink` | the 7.5 inch device screen, 800 x 480, four greys | `eink-` |
 | `esp32` | the small colour screen, 480 x 480 in 38.4 mm (about 314 ppi) | `esp32-` |
 
-`eink` uses only the four levels of grey. `esp32` does not use the `web` palette: it is a black background, white text and one accent, `#e8a26b`, the light version of the copper for a dark background. Its type scale is its own, because it is looked at from close and a conversion from `eink` does not fit in 480 px: nothing below 32 px (2.6 mm), body 40, title 48, buttons 32 to 40 and press targets of 150 px or more (12 mm). Between two targets there are at least 38 px (3 mm, `esp32-target-gap`). A button has a 4 px border (`esp32-stroke`) and a radius of 24 px, the same 2 mm as the web's. A disabled button has its text in white at 70 % (`esp32-white-70`) and a dashed border in `esp32-disabled` (#707070), a grey that is used for nothing else: it is 4.2:1 on black, which is a graphic and has to reach 3:1 (WCAG 1.4.11), not the 4.5:1 of text. The rest of its type scale is a proposal until it is tried on the real screen.
+`eink` uses only the four levels of grey. `esp32` does not use the `web` palette: it is a black background and white text, with the blue `#0075de` for the fill of a button and a lighter blue, `#62aef0`, for text and state on black. Its type scale is its own, because it is looked at from close and a conversion from `eink` does not fit in 480 px: nothing below 32 px (2.6 mm), body 40, title 48, buttons 32 to 40 and press targets of 150 px or more (12 mm). Between two targets there are at least 38 px (3 mm, `esp32-target-gap`). A button has a 4 px border (`esp32-stroke`) and a radius of 24 px, the same 2 mm as the web's. A disabled button has its text in white at 70 % (`esp32-white-70`) and a dashed border in `esp32-disabled` (#707070), a grey that is used for nothing else: it is 4.2:1 on black, which is a graphic and has to reach 3:1 (WCAG 1.4.11), not the 4.5:1 of text. The rest of its type scale is a proposal until it is tried on the real screen.
 
 | | `web` | `eink` | `esp32` |
 |---|---|---|---|
 | Letter | Inter, the scale of Typography | Inter: titles Semi Bold 34/40, text 22/30, options Semi Bold 24, 18 at the least | Inter with its own scale |
 | Line height of text | 1.5 | 1.35 to 1.4 | 1.25 |
 | Negative tracking on big headings | yes | no | no |
-| Button | radius 8, weight 500, padding 12 x 20 | radius 8, 2 px border, 56 px high, 72 px of touch area | accent background with black text, 4 px border, radius 24, target of 150 px or more, 38 px between targets |
+| Button | radius 8, weight 500, padding 12 x 20 | radius 8, 2 px border, 56 px high, 72 px of touch area | blue `#0075de` background with white text, 4 px border, radius 24, target of 150 px or more, 38 px between targets |
 | Spacing | the whole scale, 4 to 96 | 4 to 64: margins of 40 and 32, 24 between targets | its own scale on a base of 4 |
-| Colour and shadows | paper, ink, one accent, no shadows | four greys | black background, white text and the accent `#e8a26b` |
+| Colour and shadows | white, ink, one blue, no shadows | four greys | black background, white text, the blue `#0075de` and `#62aef0` for text |
 
 ## Colors
 
-Paper (`paper`, `paper-deep`, `surface`), ink (`primary`, `muted`, `line`) and **one** accent. The accent is `accent`; `accent-tint` and `accent-deep` are the same colour made lighter and darker, so that the quiet button, the highlight and the hover keep their contrast. They are derived: when `accent` changes, run `pnpm design-derive` and it rewrites those two lines. A test fails if they have drifted.
+Aule has no colour of its own: the palette is Notion's, taken from the `--tatami-color-*` variables of its public `skilljar.css?v=32` (read on 23 Nov 2026), and each colour above says which variable it comes from. Not the logo, the texts or the illustrations: only the palette and the scale.
 
-`danger` is for errors and what cannot be undone. `tile`, `tile-ink`, `board` and `device-frame` belong to the playground's video tiles and device screen. The `eink-` colours are the four levels of the panel; the `esp32-` colours are black, white and the accent `#e8a26b`, and the screen does not use the paper, the ink or the copper.
+White (`paper`) is the page; `surface-neutral` is for grey blocks and cards, and `surface-hover` is what shows under the pointer. Text is `ink` (black at 90 %) and `muted` (black at 54 %); borders are `line` (black at 10 %). The one colour is the blue: `primary` for the filled button, links and the focus ring, `primary-hover` under the pointer, `secondary` with `secondary-text` for the quiet button and highlights, `link-hover` for a link under the pointer. `danger` is for errors and what cannot be undone and `success` for confirmations. `tile`, `tile-ink`, `board` and `device-frame` belong to the playground's video tiles and device screen. The `eink-` colours are the four levels of the panel; the `esp32-` colours are the black screen, its white, its blue fill, its blue for text and the grey of a disabled button, and the screen does not use the web palette.
 
-The recommendation for the accent is copper `#9a5b2e` on paper `#f5f2ea`; it is what the Figma and the demo already used. The store's orange `#cf5a1e` on `#faf7f2` goes away.
+**Transparency.** The CLI accepts a colour with an alpha channel as eight hex digits (it ignores the alpha when it measures contrast, so `row-hover` has only a background: its own test lays the colours over white) (`#000000e5`), so `ink`, `muted`, `line`, `surface-hover` and `esp32-white-70` are kept as Notion has them, not composed over white. The contrast test lays a transparent colour over its background (and a transparent background over `paper`) before it measures. In the Figma files they carry their hex and an `alpha`.
+
+**Two rules of contrast** that come from the numbers: a link in `primary` on `surface-neutral` is 4.19:1 and does not reach 4.5, so a link on grey is `secondary-text` (`link-on-neutral`); and `muted` on grey is 4.47:1, so it goes on white only. A test checks both.
 
 ## Typography
 
@@ -381,7 +410,7 @@ A page is at most `container` wide, with `lg` on each side. A paragraph is at mo
 
 ## Elevation & Depth
 
-None. No soft shadows: separation comes from `line` borders, from `paper-deep` and from air. The form card and the board keep a flat shadow in `paper-deep` as a drawn edge, not a blur.
+None. No soft shadows: separation comes from `line` borders, from `surface-neutral` and from air. The form card and the board keep a flat shadow in `surface-neutral` as a drawn edge, not a blur.
 
 ## Shapes
 
@@ -389,18 +418,18 @@ Radius 8 for buttons, fields and notices; 12 for tiles and messages; 16 for card
 
 ## Components
 
-- **Buttons.** A rectangle with radius 8, a 1 px transparent border and weight 500. Large: 16/24 with 12 x 20 padding. Small: 14/20 with 4 x 14 padding and 34 px of height. Primary is `accent` with `on-accent` text; quiet is `accent-tint` with `accent-deep` text and no border; the link is `accent` text with an arrow (`Find answers →`) and no background. Buttons are 8 px apart.
+- **Buttons.** A rectangle with radius 8, a 1 px transparent border and weight 500. Large: 16/24 with 12 x 20 padding. Small: 14/20 with 4 x 14 padding and 34 px of height. Primary is `primary` with `on-primary` text and `primary-hover` under the pointer; quiet is `secondary` with `secondary-text` and no border; the link is `primary` text with an arrow (`Find answers →`) and no background. Buttons are 8 px apart.
 - **Every pair of text and background above must reach 4.5:1.** `pnpm --filter @aule/design test` walks them one by one. A component whose name ends in `-stroke` is a graphic, not text (a border, an icon): its `textColor` is the line, its `backgroundColor` is what it is drawn on, and it has to reach 3:1 (WCAG 1.4.11). A colour with transparency (`#ffffffb3`) is laid over its background before it is measured. The linter of the CLI measures every pair as text and so warns once, about `esp32-button-disabled-stroke`; the test allows that one warning and no other.
-- **Fields** are `surface` with a 1.5 px `line` border and radius 8; the focus ring is 3 px of ink with 2 px of offset.
+- **Fields** are `paper` with a 1.5 px `line` border and radius 8; the focus ring is 3 px of ink with 2 px of offset.
 - **The device screen** (`eink-`) draws buttons with a 2 px border, 56 px high and 72 px of touch area, and keeps 24 px between two targets and margins of 40 and 32. The keyboards of the device stay as they were.
 
 ## Do's and Don'ts
 
-- Do use one accent and change it in one line.
+- Do use the one blue, and a link on grey in `secondary-text`.
 - Do keep Inter everywhere, and the logotype as a drawing.
 - Do keep visible keyboard focus and respect `prefers-reduced-motion`.
 - Don't load fonts, scripts or images from other domains.
-- Don't make a pill button, or put the accent as both the background and the text of one button.
+- Don't make a pill button, or put the same colour as both the background and the text of one button.
 - Don't add a colour, a radius, a size or a spacing that is not in this file without changing the CSS and this file together.
 - Don't put data about children or families in screenshots, examples or designs.
 

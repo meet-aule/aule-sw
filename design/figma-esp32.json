@@ -13,14 +13,20 @@
       "value": "#ffffff"
     },
     {
-      "name": "color/accent",
+      "name": "color/primary",
       "type": "COLOR",
-      "value": "#e8a26b"
+      "value": "#0075de"
+    },
+    {
+      "name": "color/text-accent",
+      "type": "COLOR",
+      "value": "#62aef0"
     },
     {
       "name": "color/white-70",
       "type": "COLOR",
-      "value": "#ffffffb3"
+      "value": "#ffffffb3",
+      "alpha": 0.702
     },
     {
       "name": "color/disabled",

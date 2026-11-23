@@ -9,8 +9,7 @@
     "tokens:check": "node tokens.mjs --check --css ../apps/playground/public/tokens.css --figma .",
     "test": "node --test \"test/*.test.mjs\"",
     "visual": "playwright test --config visual/playwright.config.mjs",
-    "visual:update": "playwright test --config visual/playwright.config.mjs --update-snapshots",
-    "derive": "node tokens.mjs --derive"
+    "visual:update": "playwright test --config visual/playwright.config.mjs --update-snapshots"
   },
   "devDependencies": {
     "@google/design.md": "0.4.0",

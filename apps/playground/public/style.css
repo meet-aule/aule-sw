@@ -10,18 +10,20 @@
 
 /* Every value below comes from tokens.css, which is generated from DESIGN.md
    at the root of the repository. The names on the left are the short ones this
-   file uses. Paper and ink: the page looks like the device's screen. */
+   file uses. The palette is Notion's: white, ink and one blue. */
 :root {
   --bg: var(--aule-color-paper);
-  --bg-2: var(--aule-color-paper-deep);
-  --surface: var(--aule-color-surface);
-  --ink: var(--aule-color-primary);
+  --bg-2: var(--aule-color-surface-neutral);
+  --surface: var(--aule-color-paper);
+  --ink: var(--aule-color-ink);
   --muted: var(--aule-color-muted);
   --line: var(--aule-color-line);
-  --accent: var(--aule-color-accent);
-  --accent-ink: var(--aule-color-on-accent);
-  --accent-tint: var(--aule-color-accent-tint);
-  --accent-deep: var(--aule-color-accent-deep);
+  --primary: var(--aule-color-primary);
+  --primary-hover: var(--aule-color-primary-hover);
+  --on-primary: var(--aule-color-on-primary);
+  --secondary: var(--aule-color-secondary);
+  --secondary-text: var(--aule-color-secondary-text);
+  --secondary-hover: var(--aule-color-secondary-hover);
   --danger: var(--aule-color-danger);
   --tile: var(--aule-color-tile);
   --tile-ink: var(--aule-color-tile-ink);
@@ -42,9 +44,7 @@ body {
   color: var(--ink);
   font: var(--aule-type-body);
   -webkit-font-smoothing: antialiased;
-  /* Paper: a warm white with a faint grain, drawn by the browser. */
   background-color: var(--bg);
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .32  0 0 0 0 .26  0 0 0 0 .18  0 0 0 .09 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
 main {
@@ -117,31 +117,31 @@ button {
 }
 
 /* A button is a rectangle with a radius of 8, never a pill. The quiet one is
-   the default: accent-tint with accent-deep text and no border. */
+   the default: secondary with secondary-text and no border. */
 button {
   border: 1px solid transparent;
   padding: var(--aule-space-sm) 20px;
   cursor: pointer;
   font: var(--aule-type-button);
-  background: var(--accent-tint);
-  color: var(--accent-deep);
+  background: var(--secondary);
+  color: var(--secondary-text);
 }
 
 button:hover:not(:disabled) {
-  background: var(--bg-2);
+  background: var(--secondary-hover);
 }
 
-/* The filled one: the accent with white text. */
+/* The filled one: the primary blue with white text. */
 button[type="submit"],
 button.primary {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--accent-ink);
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--on-primary);
 }
 
 button[type="submit"]:hover:not(:disabled),
 button.primary:hover:not(:disabled) {
-  background: var(--accent-deep);
+  background: var(--primary-hover);
 }
 
 button:focus-visible,
@@ -161,6 +161,11 @@ button[aria-pressed="false"] {
   background: var(--surface);
   border-color: var(--line);
   color: var(--muted);
+}
+
+button[aria-pressed="false"]:not(.talk):hover:not(:disabled) {
+  background: var(--bg-2);
+  color: var(--ink);
 }
 
 button.danger {
@@ -233,9 +238,9 @@ button.danger {
     transform 0.2s;
   width: 64px;
   height: 64px;
-  background: radial-gradient(circle, var(--accent) 0 22%, transparent 24%);
-  border: 2px solid var(--accent);
-  box-shadow: 0 0 0 6px var(--accent-tint);
+  background: radial-gradient(circle, var(--primary) 0 22%, transparent 24%);
+  border: 2px solid var(--primary);
+  box-shadow: 0 0 0 6px var(--secondary);
   opacity: 0.4;
 }
 
@@ -335,7 +340,7 @@ button.danger {
 }
 
 #transcript li[data-who="you"]::before {
-  color: var(--line);
+  color: var(--bg);
 }
 
 .message {
@@ -375,7 +380,7 @@ button.danger {
 }
 
 .supervisor ol li {
-  color: var(--accent);
+  color: var(--primary);
 }
 
 /* What the tutor shows: a sheet pinned to the desk, always black on white,
@@ -420,7 +425,7 @@ button.danger {
   display: block;
   width: 0;
   height: 100%;
-  background: var(--accent);
+  background: var(--primary);
   transition: width 80ms linear;
 }
 
@@ -494,14 +499,14 @@ label.check input {
 
 .talk[aria-pressed="true"] {
   border-style: solid;
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--accent-ink);
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--on-primary);
 }
 
 .talk[aria-pressed="false"] {
-  background: var(--accent-tint);
-  color: var(--accent-deep);
+  background: var(--secondary);
+  color: var(--secondary-text);
   border-style: solid;
 }
 
@@ -579,11 +584,11 @@ label.check input {
   color: var(--muted);
 }
 
-/* The link: the accent, no background, no border. */
+/* The link: the blue, no background, no border. */
 button.quiet {
   background: none;
   border: 0;
-  color: var(--accent);
+  color: var(--primary);
 }
 
 button.quiet:hover:not(:disabled) {
@@ -828,14 +833,14 @@ label.tone b {
   font: var(--aule-type-button-sm);
 }
 
-/* Who is chosen carries the copper mark; what is chosen has the ink's border. */
+/* Who is chosen carries the blue mark; what is chosen has the ink's border. */
 .student input:checked + span b::before {
   content: "";
   display: inline-block;
   width: 7px;
   height: 7px;
   margin-right: 9px;
-  background: var(--accent);
+  background: var(--primary);
   transform: translateY(-2px) rotate(45deg);
 }
 
@@ -972,7 +977,7 @@ button[type="submit"].danger:hover:not(:disabled) {
 }
 
 /* ------------------------------------------------------------------------
-   A craftsman's page: paper with a grain, ink, and a little worked copper.
+   A craftsman's page: white, ink and the one blue.
    Drawn here, by us; nothing is taken from anyone's book or film.
    ------------------------------------------------------------------------ */
 /* A small mark between parts of the page, as on the corner of a map. */
@@ -984,7 +989,7 @@ button[type="submit"].danger:hover:not(:disabled) {
   width: 7px;
   height: 7px;
   transform: translateX(-50%) rotate(45deg);
-  border: 1.5px solid var(--accent);
+  border: 1.5px solid var(--primary);
 }
 
 /* Icons: one thin line, the same weight as the letters next to them. */
@@ -1019,7 +1024,7 @@ button[aria-pressed="true"]:not(.talk) {
   border-color: var(--ink);
 }
 
-/* The tutor: on paper like everything it says, with a ring of copper that
+/* The tutor: on paper like everything it says, with a ring of blue that
    breathes when it listens and beats when it speaks. */
 .tile.tutor {
   background: var(--surface);
@@ -1079,7 +1084,7 @@ button[aria-pressed="true"]:not(.talk) {
 
 .talk,
 .talk[aria-pressed="false"] {
-  border-color: var(--accent);
+  border-color: var(--primary);
 }
 
 /* The buttons stay next to the camera, above the board: a drawing never
@@ -1138,13 +1143,13 @@ button[aria-pressed="true"]:not(.talk) {
 .route li[data-state="current"] {
   border: 2px solid var(--ink);
   color: var(--ink);
-  box-shadow: 3px 3px 0 var(--accent-tint);
+  box-shadow: 3px 3px 0 var(--secondary);
 }
 
 .route li[data-state="done"] {
   color: var(--ink);
-  background: var(--accent-tint);
-  border-color: var(--accent-tint);
+  background: var(--secondary);
+  border-color: var(--secondary);
 }
 
 .card {
@@ -1161,7 +1166,7 @@ button[aria-pressed="true"]:not(.talk) {
   font: var(--aule-type-label);
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--accent);
+  color: var(--primary);
 }
 
 .card-statement {
@@ -1237,6 +1242,6 @@ button[aria-pressed="true"]:not(.talk) {
   }
 
   main.push-to-talk .talk[aria-pressed="true"] {
-    background: var(--accent);
+    background: var(--primary);
   }
 }

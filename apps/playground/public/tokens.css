@@ -1,17 +1,21 @@
 /* Generated from DESIGN.md (Aule) by design/tokens.mjs. Do not edit: change DESIGN.md and run
    the design-tokens script. CI fails if this file is not what DESIGN.md says. */
 :root {
-  --aule-color-paper: #f5f2ea;
-  --aule-color-paper-deep: #ece8dc;
-  --aule-color-surface: #fbfaf6;
-  --aule-color-primary: #141414;
-  --aule-color-muted: #6b6b6b;
-  --aule-color-line: #c9c3b4;
-  --aule-color-accent: #9a5b2e;
-  --aule-color-accent-tint: #e6dacc;
-  --aule-color-accent-deep: #744423;
-  --aule-color-on-accent: #ffffff;
-  --aule-color-danger: #8f1d14;
+  --aule-color-paper: #ffffff;
+  --aule-color-surface-neutral: #f6f5f4;
+  --aule-color-surface-hover: #0000000d;
+  --aule-color-ink: #000000e5;
+  --aule-color-muted: #0000008a;
+  --aule-color-line: #0000001a;
+  --aule-color-primary: #0075de;
+  --aule-color-primary-hover: #005bab;
+  --aule-color-on-primary: #ffffff;
+  --aule-color-secondary: #e6f3fe;
+  --aule-color-secondary-text: #005bab;
+  --aule-color-secondary-hover: #f2f9ff;
+  --aule-color-link-hover: #00396b;
+  --aule-color-danger: #b01601;
+  --aule-color-success: #0f6220;
   --aule-color-tile: #14130f;
   --aule-color-tile-ink: #f6f4ef;
   --aule-color-board: #ffffff;

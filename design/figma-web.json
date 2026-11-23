@@ -5,57 +5,81 @@
     {
       "name": "color/paper",
       "type": "COLOR",
-      "value": "#f5f2ea"
+      "value": "#ffffff"
     },
     {
-      "name": "color/paper-deep",
+      "name": "color/surface-neutral",
       "type": "COLOR",
-      "value": "#ece8dc"
+      "value": "#f6f5f4"
     },
     {
-      "name": "color/surface",
+      "name": "color/surface-hover",
       "type": "COLOR",
-      "value": "#fbfaf6"
+      "value": "#0000000d",
+      "alpha": 0.051
     },
     {
-      "name": "color/primary",
+      "name": "color/ink",
       "type": "COLOR",
-      "value": "#141414"
+      "value": "#000000e5",
+      "alpha": 0.898
     },
     {
       "name": "color/muted",
       "type": "COLOR",
-      "value": "#6b6b6b"
+      "value": "#0000008a",
+      "alpha": 0.541
     },
     {
       "name": "color/line",
       "type": "COLOR",
-      "value": "#c9c3b4"
+      "value": "#0000001a",
+      "alpha": 0.102
     },
     {
-      "name": "color/accent",
+      "name": "color/primary",
       "type": "COLOR",
-      "value": "#9a5b2e"
+      "value": "#0075de"
     },
     {
-      "name": "color/accent-tint",
+      "name": "color/primary-hover",
       "type": "COLOR",
-      "value": "#e6dacc"
+      "value": "#005bab"
     },
     {
-      "name": "color/accent-deep",
-      "type": "COLOR",
-      "value": "#744423"
-    },
-    {
-      "name": "color/on-accent",
+      "name": "color/on-primary",
       "type": "COLOR",
       "value": "#ffffff"
     },
     {
+      "name": "color/secondary",
+      "type": "COLOR",
+      "value": "#e6f3fe"
+    },
+    {
+      "name": "color/secondary-text",
+      "type": "COLOR",
+      "value": "#005bab"
+    },
+    {
+      "name": "color/secondary-hover",
+      "type": "COLOR",
+      "value": "#f2f9ff"
+    },
+    {
+      "name": "color/link-hover",
+      "type": "COLOR",
+      "value": "#00396b"
+    },
+    {
       "name": "color/danger",
       "type": "COLOR",
-      "value": "#8f1d14"
+      "value": "#b01601"
+    },
+    {
+      "name": "color/success",
+      "type": "COLOR",
+      "value": "#0f6220"
     },
     {
       "name": "color/tile",

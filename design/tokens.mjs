@@ -5,7 +5,6 @@
 //   --figma <dir>    variables for Figma, one file per mode (figma-<mode>.json)
 //   --check          write nothing; fail if a generated file differs from what
 //                    DESIGN.md says now (this is what CI runs)
-//   --derive         rewrite `accent-tint` and `accent-deep` from `accent`
 //   --design <file>  the DESIGN.md to read (default: ../DESIGN.md)
 //
 // This file is identical in aule-sw and aule-store.
@@ -49,29 +48,6 @@ export function modeOf(name) {
 const px = (d) => (d.unit === "rem" ? d.value * 16 : d.value);
 const css = (d) => `${trim(d.value)}${d.unit}`;
 const trim = (n) => String(Math.round(n * 1000) / 1000);
-
-// ---------------------------------------------------------------- derived colours
-
-const toRgb = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
-const toHex = (rgb) => "#" + rgb.map((v) => Math.round(v).toString(16).padStart(2, "0")).join("");
-const mix = (a, b, share) => {
-  const [x, y] = [toRgb(a), toRgb(b)];
-  return toHex(x.map((v, i) => v * share + y[i] * (1 - share)));
-};
-
-/** What `accent-tint` and `accent-deep` must be for a given accent and paper. */
-export function derived(accent, paper) {
-  return { "accent-tint": mix(accent, paper, 0.16), "accent-deep": mix(accent, "#000000", 0.75) };
-}
-
-export function deriveInto(text, state) {
-  const want = derived(state.colors.get("accent").hex, state.colors.get("paper").hex);
-  let out = text;
-  for (const [name, hex] of Object.entries(want)) {
-    out = out.replace(new RegExp(`^(  ${name}: )"#[0-9a-fA-F]{6}"`, "m"), `$1"${hex}"`);
-  }
-  return out;
-}
 
 // ---------------------------------------------------------------- CSS
 
@@ -128,7 +104,12 @@ export function makeFigma(state, mode, designName) {
       kind(m.name, value);
     }
   };
-  const color = (n, v) => variables.push({ name: `color/${n}`, type: "COLOR", value: v.hex });
+  // A colour with an alpha channel keeps its eight hex digits and also says the alpha.
+  const color = (n, v) => {
+    const entry = { name: `color/${n}`, type: "COLOR", value: v.hex };
+    if (v.a !== undefined && v.a < 1) entry.alpha = Math.round(v.a * 1000) / 1000;
+    variables.push(entry);
+  };
   const num = (group) => (n, v) => variables.push({ name: `${group}/${n}`, type: "FLOAT", value: trim(px(v)) * 1 });
   const type = (n, v) => {
     const size = px(v.fontSize);
@@ -171,11 +152,10 @@ export function generate({ design, css: cssPath, figma }) {
 }
 
 function parse(argv) {
-  const options = { design: resolve(HERE, "..", "DESIGN.md"), css: null, figma: null, check: false, derive: false };
+  const options = { design: resolve(HERE, "..", "DESIGN.md"), css: null, figma: null, check: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--check") options.check = true;
-    else if (a === "--derive") options.derive = true;
     else if (a === "--css") options.css = argv[++i];
     else if (a === "--figma") options.figma = argv[++i];
     else if (a === "--design") options.design = resolve(argv[++i]);
@@ -194,14 +174,6 @@ function main() {
   } catch (error) {
     process.stderr.write(`DESIGN.md does not pass design.md lint:\n${error.stdout ?? ""}${error.stderr ?? ""}`);
     process.exit(1);
-  }
-
-  if (options.derive) {
-    const { text, state } = readDesign(options.design);
-    const next = deriveInto(text, state);
-    if (next !== text) writeFileSync(options.design, next);
-    console.log(next === text ? "accent-tint and accent-deep already match accent" : "rewrote accent-tint and accent-deep");
-    return;
   }
 
   const files = generate(options);

@@ -8,7 +8,6 @@
   "scripts": {
     "test": "pnpm -r test",
     "design-tokens": "pnpm --filter @aule/design tokens",
-    "design-tokens:check": "pnpm --filter @aule/design tokens:check",
-    "design-derive": "pnpm --filter @aule/design derive"
+    "design-tokens:check": "pnpm --filter @aule/design tokens:check"
   }
 }
