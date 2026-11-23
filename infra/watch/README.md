@@ -14,6 +14,12 @@ fails, the next check retries the current change, including a recovery; it does
 not wait six hours. A successful send means the mail service accepted it, not
 that it reached an inbox. Existing state files are kept on upgrade.
 
+The server also checks the review queue, even if its worker container is running.
+An unfinished job alerts when it exhausts all five attempts or its scheduled run
+is more than 15 minutes overdue. Future retries and completed jobs do not alert.
+The database query is read-only, has a five-second statement timeout and returns
+only a count; a failed query alerts too. It never retries a job or changes its data.
+
 Run the delivery regression tests without contacting a server or sending mail:
 
 ```sh

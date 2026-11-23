@@ -33,6 +33,14 @@ check() { # name, then the command that succeeds when all is well
 http() { curl -fsS -o /dev/null --max-time 10 "$1"; }
 healthy() { [ "$(docker inspect -f '{{.State.Health.Status}}' "$1" 2>/dev/null)" = healthy ]; }
 running() { [ "$(docker inspect -f '{{.State.Running}}' "$1" 2>/dev/null)" = true ]; }
+reports_ok() {
+  local overdue
+  overdue=$(docker exec --env 'PGOPTIONS=-c statement_timeout=5000 -c default_transaction_read_only=on' \
+    aule-sw-postgres-1 psql -X -qAt -v ON_ERROR_STOP=1 -U aule -d aule -c \
+    "select count(*) from jobs where done_at is null
+       and (attempts >= 5 or run_at < now() - interval '15 minutes')") || return 1
+  [ "$overdue" = 0 ]
+}
 disk_ok() { [ "$(df --output=pcent / | tail -1 | tr -dc 0-9)" -lt 85 ]; }
 # A backup every six hours (aule-backup.sh): one younger than seven.
 backup_ok() { [ -n "$(find /var/lib/aule/backups/aule-sw -name '*.sql.gz' -mmin -420 -print -quit)" ]; }
@@ -81,6 +89,7 @@ check "tutor (agente de voz)" http http://127.0.0.1:8081/
 check "LiveKit (audio)" http http://127.0.0.1:7880/
 check "base de datos" healthy aule-sw-postgres-1
 check "worker (informes y avisos)" running aule-sw-worker-1
+check "informes (atrasados más de 15 min o sin reintentos)" reports_ok
 check "embeddings (memoria)" running aule-sw-embeddings-1
 check "página pública (playground.meetaule.com)" http https://playground.meetaule.com/session/
 check "tienda (shop.meetaule.com)" http https://shop.meetaule.com/
