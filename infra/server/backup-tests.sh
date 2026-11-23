@@ -48,7 +48,9 @@ remote "sudo -n -u aule-admin tail -1 /home/aule-admin/.local/state/aule/aule-ba
   && ok "the log names the new file" || ko "the log does not name the new file"
 
 echo "== 2. every backup file is whole"
-checks=$(remote 'sudo -n -u aule-admin bash -c "set -e; cd /; for f in /var/lib/aule/backups/aule-sw/*/*.sha256; do (cd \$(dirname \$f) && sha256sum -c \$(basename \$f)); done"') || ko "backup checksum verification failed"
+# sha256sum answers in the machine's language ("La suma coincide" on a Spanish
+# one); the checks below read its English "OK", so the language is fixed.
+checks=$(remote 'sudo -n -u aule-admin bash -c "set -e; cd /; for f in /var/lib/aule/backups/aule-sw/*/*.sha256; do (cd \$(dirname \$f) && LC_ALL=C sha256sum -c \$(basename \$f)); done"') || ko "backup checksum verification failed"
 while read -r line; do
   case "$line" in *": OK") ok "checksum ${line%%:*}" ;; *) ko "checksum $line" ;; esac
 done <<<"$checks"
@@ -148,7 +150,7 @@ if [ "$oldest" != "$newest" ]; then
 fi
 
 echo "== 5. the offsite copy is current, intact and restorable"
-checks=$(offsite 'set -e; for f in "$HOME"/respaldos/aule-sw/*/*.sha256; do (cd "$(dirname "$f")" && sha256sum -c "$(basename "$f")"); done') || ko "offsite checksum verification failed"
+checks=$(offsite 'set -e; for f in "$HOME"/respaldos/aule-sw/*/*.sha256; do (cd "$(dirname "$f")" && LC_ALL=C sha256sum -c "$(basename "$f")"); done') || ko "offsite checksum verification failed"
 while read -r line; do
   case "$line" in *": OK") ok "offsite checksum ${line%%:*}" ;; *) ko "offsite checksum $line" ;; esac
 done <<<"$checks"
