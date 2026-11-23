@@ -2894,3 +2894,86 @@ async fn secondary_school_algebra_is_checked_like_arithmetic(pool: PgPool) {
     // What has no exact answer is not checked.
     assert_eq!(pose("x^2 = 2").await.0, StatusCode::BAD_REQUEST);
 }
+
+#[sqlx::test(migrator = "aule_platform::MIGRATOR")]
+async fn session_lifecycle_is_private_revocable_and_closes_once(pool: PgPool) {
+    let app = app(pool);
+    let child = app.child().await;
+    app.consent(&child, "voice", true).await;
+    let guardian = app.sign_in("ana@example.org", "Ana").await;
+    let stranger = app.sign_in("another@example.org", "Another guardian").await;
+    let (id, agent) = app.session(&child).await;
+    let path = format!("/v1/sessions/{id}");
+    app.call(Method::GET, "/v1/agent/session", Some(&agent), None).await;
+    let (status, state) = app.call(Method::GET, &path, Some(&guardian), None).await;
+    assert_eq!(status, StatusCode::OK, "{state}");
+    assert_eq!(state["can_resume"], true);
+    assert_eq!(state["status"], "active");
+    assert!(state["remaining_seconds"].as_i64().unwrap() > 0);
+    let mut keys: Vec<_> = state.as_object().unwrap().keys().map(String::as_str).collect();
+    keys.sort();
+    assert_eq!(keys, ["can_resume", "end_reason", "engine", "language", "remaining_seconds", "status"]);
+    assert_eq!(app.call(Method::GET, &path, None, None).await.0, StatusCode::UNAUTHORIZED);
+    assert_eq!(app.call(Method::GET, &path, Some(&stranger), None).await.0, StatusCode::NOT_FOUND);
+    let end = format!("{path}/end");
+    assert_eq!(app.call(Method::POST, &end, Some(&stranger), Some(json!({}))).await.0, StatusCode::NOT_FOUND);
+    app.consent(&child, "voice", false).await;
+    assert_eq!(app.call(Method::GET, &path, Some(&guardian), None).await.1["can_resume"], false);
+    assert_eq!(
+        app.call(Method::POST, &end, Some(&guardian), Some(json!({}))).await.0,
+        StatusCode::NO_CONTENT
+    );
+    // A late cleanup report must not replace the reason the guardian already set.
+    let result = app
+        .call(
+            Method::POST,
+            "/v1/agent/session/end",
+            Some(&agent),
+            Some(json!({"end_reason":"provider_error"})),
+        )
+        .await;
+    assert_eq!(result.0, StatusCode::NO_CONTENT, "{}", result.1);
+    let state = app.call(Method::GET, &path, Some(&guardian), None).await.1;
+    assert_eq!(state["status"], "ended");
+    assert_eq!(state["end_reason"], "parent_ended");
+    assert_eq!(state["can_resume"], false);
+    assert_eq!(app.count("select count(*) from jobs").await, 1);
+    events_follow_the_contracts(&app).await;
+}
+
+#[sqlx::test(migrator = "aule_platform::MIGRATOR")]
+async fn lifecycle_deadline_and_provider_failure_have_distinct_reasons(pool: PgPool) {
+    let app = app(pool);
+    let child = app.child().await;
+    app.consent(&child, "voice", true).await;
+    let (id, agent) = app.session(&child).await;
+    app.call(Method::GET, "/v1/agent/session", Some(&agent), None).await;
+    assert_eq!(
+        app.call(
+            Method::POST,
+            "/v1/agent/session/end",
+            Some(&agent),
+            Some(json!({"end_reason":"provider_error"}))
+        )
+        .await
+        .0,
+        StatusCode::NO_CONTENT
+    );
+    let path = format!("/v1/sessions/{id}");
+    assert_eq!(app.admin(Method::GET, &path, None).await.1["end_reason"], "provider_error");
+    let (id, _) = app.session(&child).await;
+    sqlx::query(
+        "update sessions set created_at = now() - interval '1 day', status = 'active' where id = $1::uuid",
+    )
+    .bind(&id)
+    .execute(&app.state.pool)
+    .await
+    .unwrap();
+    let path = format!("/v1/sessions/{id}");
+    let state = app.admin(Method::GET, &path, None).await.1;
+    assert_eq!(state["remaining_seconds"], 0);
+    assert_eq!(state["can_resume"], false);
+    app.admin(Method::POST, &format!("{path}/end"), Some(json!({}))).await;
+    assert_eq!(app.admin(Method::GET, &path, None).await.1["end_reason"], "budget_reached");
+    events_follow_the_contracts(&app).await;
+}

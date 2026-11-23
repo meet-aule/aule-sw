@@ -1,10 +1,12 @@
 // The playground's HTTP server: a static page and one endpoint that trades the
-// access code for a room token. It keeps no state and stores nothing.
+// access code for a room token. Reload tickets keep room routing in bounded RAM.
 
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { createRequire } from "node:module";
+import { setTimeout as delay } from "node:timers/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { RoomServiceClient } from "livekit-server-sdk";
 
 import { GuessLimiter, sameCode } from "./access.ts";
 import { cacheFor, keptUntilEdited, loadAssets, stillFresh } from "./assets.ts";
@@ -49,6 +51,7 @@ import {
   stateMatches,
 } from "./providers.ts";
 import { DailyLimit, guardianToken, signedInCookie, signedOutCookie } from "./signin.ts";
+import { RecoveryStore, recoveryCookie, recoveryTicket, resumeToken, STATUS_GRACE_SECONDS } from "./recovery.ts";
 
 const publicDir = new URL("../public/", import.meta.url);
 // The browser build that ships inside the livekit-client package.
@@ -72,6 +75,7 @@ const STATIC: Record<string, { file: string | URL; type: string }> = {
   "/app.js": { file: new URL("app.js", publicDir), type: "text/javascript; charset=utf-8" },
   "/students.js": { file: new URL("students.js", publicDir), type: "text/javascript; charset=utf-8" },
   "/signin.js": { file: new URL("signin.js", publicDir), type: "text/javascript; charset=utf-8" },
+  "/session-messages.js": { file: new URL("session-messages.js", publicDir), type: "text/javascript; charset=utf-8" },
   "/visuals.js": { file: new URL("visuals.js", publicDir), type: "text/javascript; charset=utf-8" },
   "/style.css": { file: new URL("style.css", publicDir), type: "text/css; charset=utf-8" },
   // The page's pixels: the wall, what is drawn behind the page, the dancing cuyes,
@@ -187,9 +191,14 @@ function addressOf(target: string): URL | undefined {
 
 // The page's own scripts: their imports of each other are rewritten to the
 // fingerprinted addresses. The packages' bundles are versioned but left as they are.
-const OWN_SCRIPTS = new Set(["/app.js", "/students.js", "/signin.js", "/visuals.js", "/admin.js"]);
+const OWN_SCRIPTS = new Set(["/app.js", "/students.js", "/signin.js", "/visuals.js", "/admin.js", "/session-messages.js"]);
 
-export function createPlayground(settings: Settings): Server {
+export function createPlayground(
+  settings: Settings,
+  rooms: Pick<RoomServiceClient, "listParticipants" | "deleteRoom"> = new RoomServiceClient(
+    settings.livekitServiceUrl, settings.livekitApiKey, settings.livekitApiSecret, { requestTimeout: 5 },
+  ),
+): Server {
   const headers = securityHeaders(settings);
   // Read on the first request and kept in memory until a file in public/
   // changes, so an edit to the page shows on the next reload.
@@ -197,6 +206,95 @@ export function createPlayground(settings: Settings): Server {
   const assetFor = async (path: string) => (await assets.get()).get(path);
   const limiter = new GuessLimiter();
   const daily = new DailyLimit(settings.dailySessions);
+  const recoveries = new RecoveryStore();
+
+  async function lifecycle(path: string, request: IncomingMessage, response: ServerResponse) {
+    const token = guardianToken(request);
+    if (!settings.platform || !token) return json(response, 401, { error: "not_signed_in" });
+    const ticket = recoveryTicket(request);
+    const saved = recoveries.get(ticket, token);
+    const clear = () => {
+      recoveries.forget(ticket);
+      response.setHeader("Set-Cookie", recoveryCookie("", settings.basePath));
+    };
+    if (!saved?.session.session_id) {
+      // Do not erase another sign-in's ticket from the shared store.
+      response.setHeader("Set-Cookie", recoveryCookie("", settings.basePath));
+      return json(response, 200, { available: false });
+    }
+    let body: Record<string, unknown> = {};
+    if (request.method === "POST") {
+      if (request.headers.origin) {
+        try {
+          const origin = new URL(request.headers.origin);
+          if (!["https:", "http:"].includes(origin.protocol) || origin.host !== request.headers.host) {
+            return json(response, 403, { error: "wrong_origin" });
+          }
+        } catch { return json(response, 403, { error: "wrong_origin" }); }
+      }
+      if (request.headers["content-type"]?.split(";")[0] !== "application/json") {
+        return json(response, 400, { error: "bad_request" });
+      }
+      try { body = await readJson(request); } catch { return json(response, 400, { error: "bad_request" }); }
+      if (body.session_id !== saved.session.session_id) {
+        return json(response, 409, { error: "session_changed" });
+      }
+    }
+    const endpoint = `/v1/sessions/${saved.session.session_id}`;
+    let state: { status: string; end_reason: string | null; remaining_seconds: number; can_resume: boolean; language: string };
+    try {
+      state = await platform(settings, endpoint, undefined, token) as typeof state;
+    } catch (error) {
+      if (error instanceof PlatformError && [401, 403, 404].includes(error.status)) {
+        clear();
+        return json(response, error.status === 401 ? 401 : 200, { available: false });
+      }
+      throw error;
+    }
+    if (path === "/api/session/end") {
+      // Let the tutor flush its final turns and usage before the platform closes.
+      // If room teardown or agent cleanup fails, the authorized stop still wins.
+      const removed = await rooms.deleteRoom(saved.session.room).then(() => true, () => false);
+      if (removed) {
+        for (let attempt = 0; attempt < 20; attempt++) {
+          const current = await platform(settings, endpoint, undefined, token) as typeof state;
+          if (current.status === "ended") break;
+          await delay(250);
+        }
+      }
+      await platform(settings, `${endpoint}/end`, {}, token);
+      clear();
+      return json(response, 200, { ended: true });
+    }
+    const unavailable = {
+      available: false, session_id: saved.session.session_id,
+      end_reason: state.end_reason, language: state.language,
+    };
+    const remaining = Math.min(state.remaining_seconds, Math.floor((saved.expires - Date.now()) / 1000));
+    if (!state.can_resume || remaining <= 0) return json(response, 200, unavailable);
+    let participants: Awaited<ReturnType<RoomServiceClient["listParticipants"]>>;
+    try { participants = await rooms.listParticipants(saved.session.room); }
+    catch (error) {
+      if ((error as { code?: string }).code === "not_found") participants = [];
+      else return json(response, 503, { error: "recovery_unavailable" });
+    }
+    // ParticipantInfo.Kind.AGENT is 4 in LiveKit's protocol.
+    if (!participants.some((participant) => participant.kind === 4)) {
+      return json(response, 200, unavailable);
+    }
+    if (path !== "/api/session/resume") {
+      return json(response, 200, { available: true, session_id: saved.session.session_id, student_id: saved.student, remaining_seconds: remaining });
+    }
+    if (body.student_id !== saved.student) return json(response, 409, { error: "session_changed" });
+    // Another tab still owns the participant. Wait for its departure before resuming.
+    if (participants.some((participant) => participant.kind !== 4)) {
+      return json(response, 409, { error: "session_active" });
+    }
+    const seconds = Math.min(remaining, Math.floor((saved.expires - Date.now()) / 1000));
+    if (seconds <= 0) return json(response, 200, unavailable);
+    const resumed = await resumeToken(settings, saved, seconds);
+    return json(response, 200, { ...saved.session, token: resumed, expiresInSeconds: seconds });
+  }
 
   const send = (response: ServerResponse, status: number, type: string, body: string | Buffer) => {
     response.writeHead(status, { ...headers, "Content-Type": type });
@@ -307,10 +405,12 @@ export function createPlayground(settings: Settings): Server {
     }
     const token = guardianToken(request);
     if (path === "/api/signout") {
+      const ticket = recoveryTicket(request);
+      if (token && recoveries.get(ticket, token)) recoveries.forget(ticket);
       if (token) await signOut(settings, token).catch(() => undefined);
       response.writeHead(200, {
         ...headers,
-        "Set-Cookie": signedOutCookie(settings.basePath),
+        "Set-Cookie": [signedOutCookie(settings.basePath), recoveryCookie("", settings.basePath)],
         "Content-Type": "application/json; charset=utf-8",
       });
       return response.end(JSON.stringify({ signed_in: false }));
@@ -339,7 +439,7 @@ export function createPlayground(settings: Settings): Server {
       }
       response.writeHead(200, {
         ...headers,
-        "Set-Cookie": signedOutCookie(settings.basePath),
+        "Set-Cookie": [signedOutCookie(settings.basePath), recoveryCookie("", settings.basePath)],
         "Content-Type": "application/json; charset=utf-8",
       });
       return response.end(JSON.stringify({ signed_in: false, erased: true }));
@@ -368,9 +468,21 @@ export function createPlayground(settings: Settings): Server {
     // "/api/session" for a signed-in guardian.
     const objective = objectiveFrom(body.objective);
     if (objective === null) return json(response, 400, { error: "bad_request" });
-    if (!settings.freeAccess && !daily.take(token)) return json(response, 429, { error: "daily_limit" });
     try {
-      return json(response, 200, await startSession(settings, token, id, language, objective));
+      const previous = recoveryTicket(request);
+      const saved = recoveries.get(previous, token);
+      if (saved?.session.session_id) {
+        const state = await platform(settings, `/v1/sessions/${saved.session.session_id}`, undefined, token) as { status: string; remaining_seconds: number };
+        if (state.status !== "ended" && state.remaining_seconds > 0) {
+          return json(response, 409, { error: "session_active" });
+        }
+        recoveries.forget(previous);
+      }
+      if (!settings.freeAccess && !daily.take(token)) return json(response, 429, { error: "daily_limit" });
+      const started = await startSession(settings, token, id, language, objective);
+      const ticket = recoveries.remember(token, id, started);
+      response.setHeader("Set-Cookie", recoveryCookie(ticket, settings.basePath, started.expiresInSeconds + STATUS_GRACE_SECONDS));
+      return json(response, 200, started);
     } catch (error) {
       // The family's plan has no session left now; the platform says which limit.
       if (error instanceof PlatformError && error.status === 402) {
@@ -575,6 +687,11 @@ export function createPlayground(settings: Settings): Server {
     const handle = async () => {
       if (path === "/healthz" && request.method === "GET") return json(response, 200, { ok: true });
       if (path === "/api/account" && request.method === "GET") return whoIsHere(request, response);
+      if (["/api/session/recovery", "/api/session/resume", "/api/session/end"].includes(path)) {
+        const expected = path === "/api/session/recovery" ? "GET" : "POST";
+        if (request.method !== expected) return json(response, 405, { error: "method_not_allowed" });
+        return lifecycle(path, request, response);
+      }
       if (path.startsWith("/api/admin/")) return admin(path, request, response);
       const signingIn = SIGN_IN_PATH.exec(path);
       if (signingIn) return codeSignIn(signingIn[1] as CodeProvider, signingIn[2]!, url.searchParams, request, response);

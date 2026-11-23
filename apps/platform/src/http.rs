@@ -35,6 +35,8 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/children/{child_id}/reviews", get(child_reviews))
         .route("/v1/skills", put(put_skills).get(get_skills))
         .route("/v1/sessions", post(sessions::create_session))
+        .route("/v1/sessions/{session_id}", get(sessions::status))
+        .route("/v1/sessions/{session_id}/end", post(sessions::end_by_caller))
         .route("/v1/sessions/{session_id}/supervisor", get(sessions::supervisor_view))
         // The page of a session the engine runs
         .route("/v1/sessions/{session_id}/step", get(engine::step))

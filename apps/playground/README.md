@@ -59,3 +59,27 @@ node --env-file=../../.env src/server.ts
 
 - **Typing** to the tutor works at any time, next to speaking. A typed message passes the same safety gates as a spoken one.
 - **Report for the family**: with the team box ticked and a platform, the page shows, after the session ends, the summary and next step the review wrote for the family.
+
+### Reload recovery and session endings
+
+A signed-in family can reload, select the same student and choose “Continuar
+sesión anterior” within the room's 120-second departure window. The agent stays
+alive with its conversation context; an abandoned partial push-to-talk turn is
+cancelled. Resume uses the same room and participant identity, with no agent
+dispatch, no new platform session, no extra quota charge and no clock reset.
+Another tab that is still connected must leave before resume succeeds. Choosing
+a new session explicitly closes the previous one first.
+
+The browser holds an opaque HttpOnly/Secure/SameSite cookie, scoped to the app.
+The BFF keeps at most 512 entries with room routing, a hashed sign-in owner and
+the original deadline, never the original room JWT or transcript. Each recovery
+rechecks family authorization, voice consent, remaining time and the live tutor.
+Tickets expire five minutes after the deadline so the final reason can be read;
+those extra minutes never allow a resume. A BFF restart loses tickets. Operator
+access-code sessions do not support reload recovery. No hardware IoT reconnection
+flow has been tested by this change.
+
+`LIVEKIT_URL` is also the server-side RoomService address (converted to HTTP);
+the browser still uses `AULE_LIVEKIT_PUBLIC_URL`. Session lifecycle responses are
+`no-store`. The page explains known endings using fixed Spanish/English text;
+it never renders raw provider errors. Old sessions may have no stored reason.
