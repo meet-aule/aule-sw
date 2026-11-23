@@ -100,6 +100,7 @@ let cardShown = "";
 // The platform's id for the session being shown, when there is one.
 let sessionId = null;
 let recoverable = null;
+let mediaReady = false;
 const recoveryText = (key) => recoveryMessage(key, sessionRequest()?.language);
 
 async function sessionAction(action, body) {
@@ -116,7 +117,7 @@ async function offerRecovery() {
   recoverable = null;
   $("resume").textContent = recoveryText("resume");
   $("resume").hidden = true;
-  $("resume").disabled = false;
+  $("resume").disabled = !mediaReady;
   $("join").textContent = recoveryText("start");
   $("recovery-note").hidden = true;
   try {
@@ -726,6 +727,8 @@ function startMeter(stream) {
 }
 
 async function openLobby() {
+  mediaReady = false;
+  $("resume").disabled = true;
   wanted.mic = true;
   wanted.cam = true;
   $("lobby-note").textContent = "";
@@ -755,7 +758,9 @@ async function openLobby() {
     }
   }
   if (lobby.hidden) return stopPreview();
+  mediaReady = usable;
   $("join").disabled = !usable;
+  $("resume").disabled = !usable;
   if (preview) {
     $("preview").srcObject = preview;
     if (preview.getAudioTracks().length) startMeter(preview);
@@ -764,6 +769,7 @@ async function openLobby() {
 }
 
 function closeLobby() {
+  mediaReady = false;
   stopPreview();
   lobby.hidden = true;
   entry.hidden = false;
@@ -983,7 +989,7 @@ $("join").addEventListener("click", async () => {
 });
 
 $("resume").addEventListener("click", async () => {
-  if (!recoverable || room) return;
+  if (!recoverable || room || !mediaReady) return;
   $("resume").disabled = true;
   $("join").disabled = true;
   readySounds();
@@ -1000,8 +1006,8 @@ $("resume").addEventListener("click", async () => {
   } catch (error) {
     if (room) leave(error?.message);
     else showMessage(error?.message ?? recoveryText("failed"));
-    $("resume").disabled = false;
-    $("join").disabled = false;
+    $("resume").disabled = !mediaReady;
+    $("join").disabled = !mediaReady;
   }
 });
 
