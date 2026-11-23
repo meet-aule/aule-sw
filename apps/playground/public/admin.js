@@ -2,7 +2,7 @@
 // plan, and a plan granted for free. The platform decides who is on the team.
 
 const $ = (id) => document.getElementById(id);
-const PLANS = { trial: "Prueba", paid: "Pagado", granted: "Regalado", none: "Sin plan", team: "Equipo" };
+const PLANS = { trial: "Prueba", paid: "Pagado", granted: "Regalado", none: "Sin plan", team: "Equipo", free: "Gratis ilimitado" };
 
 let families = [];
 

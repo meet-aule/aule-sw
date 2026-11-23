@@ -203,6 +203,7 @@ fn app_with(pool: PgPool, events_webhook: Option<EventsWebhook>) -> App {
         fcm_service_account: None,
         google_client_id: Some(GOOGLE_CLIENT.into()),
         admin_emails: vec!["team@example.org".into()],
+        free_access: false,
         github: None,
         meta: None,
         apple: None,
@@ -1819,6 +1820,61 @@ async fn a_family_s_sessions_are_what_its_plan_allows_and_the_team_can_grant_one
     // Ending the grant leaves the family where the trial left it.
     let (status, ended) = app.call(Method::DELETE, &grant, Some(team.as_str()), None).await;
     assert_eq!((status, ended["plan"].as_str()), (StatusCode::OK, Some("none")));
+}
+
+#[sqlx::test(migrator = "aule_platform::MIGRATOR")]
+async fn free_access_allows_used_and_expired_trials_without_staff_privileges(pool: PgPool) {
+    let mut app = app(pool);
+    let child = app.child().await;
+    let ana = app.sign_in("ana@example.org", "Ana").await;
+    let body = json!({ "child_id": child, "audience": "child" });
+    Arc::make_mut(&mut app.state.config).free_access = true;
+    app.router = http::router(app.state.clone());
+
+    // Free access still needs the family's consent and a signed-in guardian.
+    assert_eq!(
+        app.call(Method::POST, "/v1/sessions", None, Some(body.clone())).await.0,
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(
+        app.call(Method::POST, "/v1/sessions", Some(&ana), Some(body.clone())).await.0,
+        StatusCode::FORBIDDEN
+    );
+    app.consent(&child, "voice", true).await;
+    for _ in 0..4 {
+        assert_eq!(
+            app.call(Method::POST, "/v1/sessions", Some(&ana), Some(body.clone())).await.0,
+            StatusCode::CREATED
+        );
+        sqlx::query("update sessions set started_at = now() - interval '20 minutes', ended_at = now() where started_at is null")
+            .execute(&app.state.pool).await.unwrap();
+    }
+    let (_, plan) = app.call(Method::GET, "/v1/me/plan", Some(&ana), None).await;
+    assert_eq!((plan["plan"].as_str(), plan["used"].as_i64()), (Some("free"), Some(4)));
+    assert_eq!(
+        (plan["left"].clone(), plan["ends_at"].clone(), plan["team"].clone()),
+        (Value::Null, Value::Null, json!(false))
+    );
+    assert_eq!(app.call(Method::GET, "/v1/admin/families", Some(&ana), None).await.0, StatusCode::FORBIDDEN);
+    let luis = app.sign_in("luis@example.org", "Luis").await;
+    assert_eq!(
+        app.call(Method::POST, "/v1/sessions", Some(&luis), Some(body.clone())).await.0,
+        StatusCode::NOT_FOUND
+    );
+    sqlx::query("update sessions set started_at = started_at - interval '8 days', ended_at = ended_at - interval '8 days'")
+        .execute(&app.state.pool).await.unwrap();
+    assert_eq!(
+        app.call(Method::POST, "/v1/sessions", Some(&ana), Some(body.clone())).await.0,
+        StatusCode::CREATED
+    );
+    assert_eq!(app.count("select count(*) from subscriptions").await, 0);
+
+    // Switching it off restores the original expired trial, without rewriting history.
+    Arc::make_mut(&mut app.state.config).free_access = false;
+    app.router = http::router(app.state.clone());
+    let (status, refused) = app.call(Method::POST, "/v1/sessions", Some(&ana), Some(body)).await;
+    assert_eq!(status, StatusCode::PAYMENT_REQUIRED);
+    assert_eq!(refused["error"]["message"], "trial_over");
 }
 
 #[sqlx::test(migrator = "aule_platform::MIGRATOR")]

@@ -368,7 +368,7 @@ export function createPlayground(settings: Settings): Server {
     // "/api/session" for a signed-in guardian.
     const objective = objectiveFrom(body.objective);
     if (objective === null) return json(response, 400, { error: "bad_request" });
-    if (!daily.take(token)) return json(response, 429, { error: "daily_limit" });
+    if (!settings.freeAccess && !daily.take(token)) return json(response, 429, { error: "daily_limit" });
     try {
       return json(response, 200, await startSession(settings, token, id, language, objective));
     } catch (error) {

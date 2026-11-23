@@ -139,6 +139,12 @@ const date = (iso) => new Date(iso).toLocaleDateString("es-PE", { day: "numeric"
 function planLine(plan) {
   if (!plan) return { text: "", open: true };
   if (plan.plan === "team") return { text: "Equipo de Aule: sesiones sin límite.", open: true };
+  if (plan.plan === "free") return {
+    text: document.documentElement.lang.startsWith("en")
+      ? "Free access: unlimited sessions."
+      : "Acceso gratuito: sesiones sin límite.",
+    open: true,
+  };
   const left = plan.left ?? 0;
   if (plan.plan === "trial" && !plan.ends_at) {
     return { text: "Prueba gratis de 7 días: empieza con tu primera sesión. Una sesión al día.", open: true };

@@ -30,6 +30,8 @@ pub struct Config {
     /// The addresses of Aule's team: signed in like a family, they also reach
     /// the admin routes.
     pub admin_emails: Vec<String>,
+    /// Temporarily allow free sessions without plan quotas or trial expiry.
+    pub free_access: bool,
     /// GitHub's OAuth app, Meta's app and Apple's Services ID for sign-in.
     /// Each provider is offered only when all its settings are there.
     pub github: Option<OAuthApp>,
@@ -137,6 +139,14 @@ impl Config {
         let session_minutes = whole("AULE_SESSION_MINUTES", 20, 1, 120);
         let break_every_minutes = whole("AULE_BREAK_EVERY_MINUTES", 30, 5, 120);
         let transcript_hours = whole("AULE_TRANSCRIPT_HOURS", 24, 1, 24);
+        let free_access = match get("AULE_FREE_ACCESS") {
+            None | Some("0") => false,
+            Some("1") => true,
+            _ => {
+                problems.push("AULE_FREE_ACCESS must be 1, 0 or left out".into());
+                false
+            }
+        };
 
         let livekit = match (get("LIVEKIT_API_KEY"), get("LIVEKIT_API_SECRET")) {
             (Some(api_key), Some(api_secret)) => {
@@ -302,6 +312,7 @@ impl Config {
             fcm_service_account: get("AULE_FCM_SERVICE_ACCOUNT").map(str::to_string),
             google_client_id,
             admin_emails,
+            free_access,
             github,
             meta,
             apple,
@@ -335,8 +346,15 @@ mod tests {
         assert!(config.mail.is_none() && config.events_webhook.is_none());
         assert!(config.github.is_none() && config.meta.is_none() && config.apple.is_none());
         assert!(config.admin_emails.is_empty());
+        assert!(!config.free_access);
 
         let mut env = complete();
+        env.insert("AULE_FREE_ACCESS".into(), "1".into());
+        assert!(Config::from_map(&env).unwrap().free_access);
+        env.insert("AULE_FREE_ACCESS".into(), "yes".into());
+        assert!(Config::from_map(&env).unwrap_err().to_string().contains("AULE_FREE_ACCESS"));
+        env.insert("AULE_FREE_ACCESS".into(), "0".into());
+        assert!(!Config::from_map(&env).unwrap().free_access);
         env.insert("AULE_ADMIN_EMAILS".into(), " Admin@Example.org, gonzalo@example.org ,".into());
         assert_eq!(
             Config::from_map(&env).unwrap().admin_emails,

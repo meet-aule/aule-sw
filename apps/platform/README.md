@@ -28,6 +28,14 @@ aule-platform import-skills curriculum/math-primaria.json
 
 ## API
 
+`AULE_FREE_ACCESS=1` temporarily lets signed-in families start sessions without
+plan quotas or trial expiry. Set it on the platform and playground together.
+The page shows free unlimited access and bypasses its own daily session cap.
+Usage is still measured; existing subscriptions and trial history are not
+rewritten. Setting it back to `0` (the default) restores the usual plans.
+Authentication, consent, family isolation, staff permissions, safety gates and
+each session's duration limit still apply.
+
 Three kinds of caller use `Authorization: Bearer ...`:
 
 - the **operator**, with `AULE_ADMIN_TOKEN`, for running the server;

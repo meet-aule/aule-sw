@@ -155,6 +155,27 @@ test("a signed-in session is a student's, asked for as the guardian, and bounded
   assert.deepEqual(await third.json(), { error: "daily_limit" });
 });
 
+test("free access bypasses the page's daily cap but still needs sign-in", async () => {
+  const url = `http://127.0.0.1:${(platform.address() as AddressInfo).port}`;
+  const free = createPlayground(readSettings({
+    ...COMPLETE, AULE_PLATFORM_URL: url, AULE_ADMIN_TOKEN: "admin",
+    PLAYGROUND_DAILY_SESSIONS: "1", AULE_FREE_ACCESS: "1",
+  }));
+  await new Promise<void>((resolve) => free.listen(0, "127.0.0.1", resolve));
+  const endpoint = `http://127.0.0.1:${(free.address() as AddressInfo).port}/playground/api/session`;
+  try {
+    const start = (cookie?: string) => fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...(cookie ? { Cookie: cookie } : {}) },
+      body: JSON.stringify({ student_id: STUDENT, language: "es" }),
+    });
+    assert.equal((await start()).status, 401);
+    for (let i = 0; i < 4; i++) assert.equal((await start(COOKIE)).status, 200);
+  } finally {
+    free.close();
+  }
+});
+
 test("signing out ends the platform session and clears the cookie", async () => {
   seen.length = 0;
 

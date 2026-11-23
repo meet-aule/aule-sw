@@ -18,6 +18,8 @@ export type Settings = {
   sessionMinutes: number;
   /** Sessions one signed-in account may start in a day. */
   dailySessions: number;
+  /** Temporary free access also bypasses the page's daily session cap. */
+  freeAccess: boolean;
   /**
    * Who runs a family's sessions: with "engine" the platform is asked for the
    * session engine and uses it where it can; otherwise the tutor runs them.
@@ -82,6 +84,10 @@ export function readSettings(env: Record<string, string | undefined>): Settings 
   if (engine !== "" && engine !== "1" && engine !== "0") {
     problems.push("PLAYGROUND_ENGINE must be 1, 0 or left out");
   }
+  const freeAccess = get("AULE_FREE_ACCESS");
+  if (freeAccess !== "" && freeAccess !== "1" && freeAccess !== "0") {
+    problems.push("AULE_FREE_ACCESS must be 1, 0 or left out");
+  }
 
   const platformUrl = get("AULE_PLATFORM_URL").replace(/\/+$/, "");
   const adminToken = get("AULE_ADMIN_TOKEN");
@@ -114,6 +120,7 @@ export function readSettings(env: Record<string, string | undefined>): Settings 
     agentName: get("AULE_AGENT_NAME", "aule-tutor"),
     sessionMinutes,
     dailySessions,
+    freeAccess: freeAccess === "1",
     engine: engine === "1",
     platform: platformUrl ? { url: platformUrl, adminToken, childId: childId || null } : null,
     publicUrl: publicUrl || null,

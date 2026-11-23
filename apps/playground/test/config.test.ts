@@ -14,6 +14,13 @@ test("reads a complete environment with defaults", () => {
   assert.equal(settings.agentName, "aule-tutor");
   assert.equal(settings.sessionMinutes, 20);
   assert.equal(settings.engine, false);
+  assert.equal(settings.freeAccess, false);
+});
+
+test("temporary free access must be explicitly enabled", () => {
+  assert.equal(readSettings({ ...COMPLETE, AULE_FREE_ACCESS: "1" }).freeAccess, true);
+  assert.equal(readSettings({ ...COMPLETE, AULE_FREE_ACCESS: "0" }).freeAccess, false);
+  assert.throws(() => readSettings({ ...COMPLETE, AULE_FREE_ACCESS: "yes" }), /AULE_FREE_ACCESS/);
 });
 
 test("the session engine is asked for only when the page is set to it", () => {

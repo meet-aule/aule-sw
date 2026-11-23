@@ -43,6 +43,8 @@ pub enum Plan {
     None,
     /// A family of Aule's team: no limit.
     Team,
+    /// Temporary free access, without changing the family's stored plan.
+    Free,
 }
 
 impl Plan {
@@ -53,6 +55,7 @@ impl Plan {
             Self::Granted => "granted",
             Self::None => "none",
             Self::Team => "team",
+            Self::Free => "free",
         }
     }
 }
@@ -74,7 +77,7 @@ impl Standing {
     }
 
     pub fn json(&self) -> Value {
-        let unlimited = self.plan == Plan::Team;
+        let unlimited = matches!(self.plan, Plan::Team | Plan::Free);
         json!({
             "plan": self.plan.name(),
             "ends_at": self.ends_at,
@@ -88,13 +91,13 @@ impl Standing {
 
     /// Why no session can start now, for the page to say; none while one can.
     fn limit(&self) -> Option<&'static str> {
-        if self.plan == Plan::Team {
+        if matches!(self.plan, Plan::Team | Plan::Free) {
             return None;
         }
         (self.left() == 0).then_some(match self.plan {
             Plan::Trial => "trial_day_used",
             Plan::None => "trial_over",
-            Plan::Paid | Plan::Granted | Plan::Team => "week_used",
+            Plan::Paid | Plan::Granted | Plan::Team | Plan::Free => "week_used",
         })
     }
 }
@@ -162,6 +165,15 @@ pub async fn standing(state: &AppState, family_id: Uuid, now: DateTime<Utc>) -> 
         });
     }
     let offset_minutes = state.config.timezone_offset_minutes;
+    if state.config.free_access {
+        return Ok(Standing {
+            plan: Plan::Free,
+            ends_at: None,
+            used: counted(db, family_id, now - Duration::days(7)).await?,
+            allowed: 0,
+            period: "week",
+        });
+    }
     // A plan that holds now; with two, the one that lasts longer.
     let plan = subscription::Entity::find()
         .filter(subscription::Column::FamilyId.eq(family_id))
@@ -349,6 +361,10 @@ mod tests {
         assert_eq!(standing(Plan::Granted, 3, 3).limit(), Some("week_used"));
         assert_eq!(standing(Plan::None, 0, 0).limit(), Some("trial_over"));
         assert_eq!(standing(Plan::Team, 9, 0).limit(), None);
+        assert_eq!(standing(Plan::Free, 99, 0).limit(), None);
+        let free = standing(Plan::Free, 99, 0).json();
+        assert_eq!(free["left"], Value::Null);
+        assert_eq!(free["allowed"], Value::Null);
         assert_eq!(standing(Plan::Paid, 5, 3).left(), 0);
     }
 }
