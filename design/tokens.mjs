@@ -118,7 +118,6 @@ export function makeCss(state, designName) {
 /**
  * One file per mode, flat, in the shape of Figma variables: the name has the
  * group in it ("color/paper"), the type is COLOR, FLOAT (px) or STRING.
- * `esp32` also carries the `web` colours and radii, which it uses as they are.
  */
 export function makeFigma(state, mode, designName) {
   const variables = [];
@@ -146,10 +145,6 @@ export function makeFigma(state, mode, designName) {
   take(num("space"), state.spacing);
   take(num("radius"), state.rounded);
   take(type, state.typography);
-  if (mode === "esp32") {
-    take(color, state.colors, false);
-    take(num("radius"), state.rounded, false);
-  }
   return (
     JSON.stringify(
       {

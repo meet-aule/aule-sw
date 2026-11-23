@@ -3,6 +3,21 @@
   "mode": "esp32",
   "variables": [
     {
+      "name": "color/black",
+      "type": "COLOR",
+      "value": "#000000"
+    },
+    {
+      "name": "color/white",
+      "type": "COLOR",
+      "value": "#ffffff"
+    },
+    {
+      "name": "color/accent",
+      "type": "COLOR",
+      "value": "#e8a26b"
+    },
+    {
       "name": "space/xs",
       "type": "FLOAT",
       "value": 8
@@ -25,7 +40,12 @@
     {
       "name": "space/target",
       "type": "FLOAT",
-      "value": 48
+      "value": 150
+    },
+    {
+      "name": "radius/md",
+      "type": "FLOAT",
+      "value": 24
     },
     {
       "name": "type/title/family",
@@ -106,111 +126,6 @@
       "name": "type/min/line-height",
       "type": "FLOAT",
       "value": 40
-    },
-    {
-      "name": "color/paper",
-      "type": "COLOR",
-      "value": "#f5f2ea"
-    },
-    {
-      "name": "color/paper-deep",
-      "type": "COLOR",
-      "value": "#ece8dc"
-    },
-    {
-      "name": "color/surface",
-      "type": "COLOR",
-      "value": "#fbfaf6"
-    },
-    {
-      "name": "color/primary",
-      "type": "COLOR",
-      "value": "#141414"
-    },
-    {
-      "name": "color/muted",
-      "type": "COLOR",
-      "value": "#6b6b6b"
-    },
-    {
-      "name": "color/line",
-      "type": "COLOR",
-      "value": "#c9c3b4"
-    },
-    {
-      "name": "color/accent",
-      "type": "COLOR",
-      "value": "#9a5b2e"
-    },
-    {
-      "name": "color/accent-tint",
-      "type": "COLOR",
-      "value": "#e6dacc"
-    },
-    {
-      "name": "color/accent-deep",
-      "type": "COLOR",
-      "value": "#744423"
-    },
-    {
-      "name": "color/on-accent",
-      "type": "COLOR",
-      "value": "#ffffff"
-    },
-    {
-      "name": "color/danger",
-      "type": "COLOR",
-      "value": "#8f1d14"
-    },
-    {
-      "name": "color/tile",
-      "type": "COLOR",
-      "value": "#14130f"
-    },
-    {
-      "name": "color/tile-ink",
-      "type": "COLOR",
-      "value": "#f6f4ef"
-    },
-    {
-      "name": "color/board",
-      "type": "COLOR",
-      "value": "#ffffff"
-    },
-    {
-      "name": "color/device-frame",
-      "type": "COLOR",
-      "value": "#1b1b1b"
-    },
-    {
-      "name": "radius/xs",
-      "type": "FLOAT",
-      "value": 3
-    },
-    {
-      "name": "radius/sm",
-      "type": "FLOAT",
-      "value": 6
-    },
-    {
-      "name": "radius/md",
-      "type": "FLOAT",
-      "value": 8
-    },
-    {
-      "name": "radius/lg",
-      "type": "FLOAT",
-      "value": 12
-    },
-    {
-      "name": "radius/xl",
-      "type": "FLOAT",
-      "value": 16
-    },
-    {
-      "name": "radius/full",
-      "type": "FLOAT",
-      "value": 9999
     }
   ]
 }

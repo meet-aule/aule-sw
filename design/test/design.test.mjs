@@ -78,3 +78,11 @@ test("the playground's CSS draws only from the tokens: no colour, font or variab
   const used = [...style.matchAll(/var\((--[\w-]+)/g)].map((m) => m[1]);
   assert.deepEqual([...new Set(used)].filter((v) => !defined.has(v)), [], "a variable that does not exist");
 });
+
+test("the esp32 mode is black, white and its own accent, and has none of the web colours", () => {
+  const files = generate({ design: DESIGN, figma: FIGMA_DIR });
+  const { variables } = JSON.parse(files[join(FIGMA_DIR, "figma-esp32.json")]);
+  const colors = Object.fromEntries(variables.filter((v) => v.type === "COLOR").map((v) => [v.name, v.value]));
+  assert.deepEqual(colors, { "color/black": "#000000", "color/white": "#ffffff", "color/accent": "#e8a26b" });
+  assert.equal(variables.find((v) => v.name === "space/target").value, 150);
+});

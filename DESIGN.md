@@ -22,6 +22,9 @@ colors:
   eink-dark-grey: "#555555"
   eink-light-grey: "#aaaaaa"
   eink-white: "#ffffff"
+  esp32-black: "#000000"    # small colour screen: black background,
+  esp32-white: "#ffffff"    # white text
+  esp32-accent: "#e8a26b"   # and one accent: the light version of the copper, for a dark background
 typography:
   display:
     fontFamily: "Inter, system-ui, -apple-system, Segoe UI, Roboto, Helvetica Neue, Arial, sans-serif"
@@ -137,6 +140,7 @@ rounded:
   lg: 12px                  # tiles, messages and chips
   xl: 16px                  # cards, the tutor's board
   full: 9999px              # the orb and round marks. Buttons are not pills
+  esp32-md: 24px            # small colour screen: the same 2 mm as the web's 8px. A proposal: arquitecto-2 decides it
 spacing:
   2xs: 4px                  # vertical padding of the small button
   xs: 8px                   # between buttons, between small items
@@ -159,7 +163,7 @@ spacing:
   esp32-sm: 16px
   esp32-md: 24px
   esp32-lg: 32px
-  esp32-target: 48px        # the least a press target measures
+  esp32-target: 150px       # the least a press target measures: 12 mm
 components:
   page:
     backgroundColor: "{colors.paper}"
@@ -281,24 +285,24 @@ components:
     textColor: "{colors.eink-dark-grey}"
     typography: "{typography.eink-small}"
   esp32-screen:
-    backgroundColor: "{colors.paper}"
-    textColor: "{colors.primary}"
+    backgroundColor: "{colors.esp32-black}"
+    textColor: "{colors.esp32-white}"
     typography: "{typography.esp32-body}"
   esp32-button:
-    backgroundColor: "{colors.accent}"
-    textColor: "{colors.on-accent}"
+    backgroundColor: "{colors.esp32-accent}"
+    textColor: "{colors.esp32-black}"
     typography: "{typography.esp32-button}"
-    rounded: "{rounded.md}"
+    rounded: "{rounded.esp32-md}"
     height: "{spacing.esp32-target}"
   esp32-button-small:
-    backgroundColor: "{colors.accent}"
-    textColor: "{colors.on-accent}"
+    backgroundColor: "{colors.esp32-accent}"
+    textColor: "{colors.esp32-black}"
     typography: "{typography.esp32-min}"
-    rounded: "{rounded.md}"
+    rounded: "{rounded.esp32-md}"
     height: "{spacing.esp32-target}"
   esp32-title:
-    backgroundColor: "{colors.paper}"
-    textColor: "{colors.primary}"
+    backgroundColor: "{colors.esp32-black}"
+    textColor: "{colors.esp32-white}"
     typography: "{typography.esp32-title}"
 ---
 
@@ -322,22 +326,22 @@ The format has no modes, so a mode is a prefix on the token name.
 | `eink` | the 7.5 inch device screen, 800 x 480, four greys | `eink-` |
 | `esp32` | the small colour screen, 480 x 480 in 38.4 mm (about 314 ppi) | `esp32-` |
 
-`eink` uses only the four levels of grey. `esp32` uses the `web` colours and radii with a type scale of its own, because it is looked at from close and a conversion from `eink` does not fit in 480 px: nothing below 32 px (2.6 mm), body 40, title 48, buttons 32 to 40 and press targets of 48 px or more. Its scale is a proposal until it is tried on the real screen.
+`eink` uses only the four levels of grey. `esp32` does not use the `web` palette: it is a black background, white text and one accent, `#e8a26b`, the light version of the copper for a dark background. Its type scale is its own, because it is looked at from close and a conversion from `eink` does not fit in 480 px: nothing below 32 px (2.6 mm), body 40, title 48, buttons 32 to 40 and press targets of 150 px or more (12 mm). The radius of its buttons is the same 2 mm as the web's (about 24 px) and is a proposal that arquitecto-2 decides; the rest of its scale is a proposal until it is tried on the real screen.
 
 | | `web` | `eink` | `esp32` |
 |---|---|---|---|
 | Letter | Inter, the scale of Typography | Inter: titles Semi Bold 34/40, text 22/30, options Semi Bold 24, 18 at the least | Inter with its own scale |
 | Line height of text | 1.5 | 1.35 to 1.4 | 1.25 |
 | Negative tracking on big headings | yes | no | no |
-| Button | radius 8, weight 500, padding 12 x 20 | radius 8, 2 px border, 56 px high, 72 px of touch area | radius 8, target of 48 px or more |
+| Button | radius 8, weight 500, padding 12 x 20 | radius 8, 2 px border, 56 px high, 72 px of touch area | accent background with black text, radius 24, target of 150 px or more |
 | Spacing | the whole scale, 4 to 96 | 4 to 64: margins of 40 and 32, 24 between targets | its own scale on a base of 4 |
-| Colour and shadows | paper, ink, one accent, no shadows | four greys | the `web` colours |
+| Colour and shadows | paper, ink, one accent, no shadows | four greys | black background, white text and the accent `#e8a26b` |
 
 ## Colors
 
 Paper (`paper`, `paper-deep`, `surface`), ink (`primary`, `muted`, `line`) and **one** accent. The accent is `accent`; `accent-tint` and `accent-deep` are the same colour made lighter and darker, so that the quiet button, the highlight and the hover keep their contrast. They are derived: when `accent` changes, run `pnpm design-derive` and it rewrites those two lines. A test fails if they have drifted.
 
-`danger` is for errors and what cannot be undone. `tile`, `tile-ink`, `board` and `device-frame` belong to the playground's video tiles and device screen. The `eink-` colours are the four levels of the panel.
+`danger` is for errors and what cannot be undone. `tile`, `tile-ink`, `board` and `device-frame` belong to the playground's video tiles and device screen. The `eink-` colours are the four levels of the panel; the `esp32-` colours are black, white and the accent `#e8a26b`, and the screen does not use the paper, the ink or the copper.
 
 The recommendation for the accent is copper `#9a5b2e` on paper `#f5f2ea`; it is what the Figma and the demo already used. The store's orange `#cf5a1e` on `#faf7f2` goes away.
 
