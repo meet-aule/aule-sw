@@ -31,4 +31,21 @@ A backup older than migration 16 (some of 1 to 16 missing) is refused at start w
 
 ## Test
 
-`infra/server/backup-tests.sh`, run from the Mac, makes a backup the way cron does, checks every file's checksum, restores the newest backup into a throwaway database on an internal network (row counts compared table by table with production, restored twice, migrations a no-op) and the oldest one into an empty schema followed by the platform's `migrate`, then removes the throwaway database. Nothing decrypted is written to a disk; only counts are printed.
+`infra/server/backup-tests.sh`, run from the Mac with both SSH aliases available,
+makes a backup the way cron does and verifies that it is new, encrypted to the
+backup key and intact. It checks every primary and offsite checksum. The newest
+offsite copy must be at most 30 hours old and match the original ciphertext.
+
+It restores the newest primary backup twice, the oldest primary backup through
+the documented migration path, and the newest offsite backup. Postgres rejects
+any SQL error. Row counts from the first restore are compared with a live sample
+(concurrent writes can change that sample); the second restore must match the
+first exactly. Migration checks use the images currently running in production.
+
+Each run owns a separate database and internal network, without published ports.
+The database uses a memory filesystem with swap disabled and container logging
+disabled; SQL errors are not printed because they can contain row values. The
+private key stays on the Mac and decrypted SQL flows through pipes. Cleanup runs
+on success, failure and interrupt. A lost SSH connection or forced kill can still
+require an operator to remove the resources named for that run. Production
+services and database contents are not changed.
