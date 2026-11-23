@@ -15,16 +15,21 @@ const FIGMA_DIR = join(HERE, "..");
 const { text, state, report } = readDesign(DESIGN);
 
 test("DESIGN.md passes the linter of @google/design.md with no error and no warning", () => {
-  const bad = report.findings.filter((f) => f.severity !== "info");
+  // The linter measures every pair as text (4.5:1). A *-stroke component is a
+  // graphic that has to reach 3:1, which the test below checks, so its warning
+  // is the only one allowed.
+  const bad = report.findings.filter(
+    (f) => f.severity !== "info" && !(f.rule === "contrast-ratio" && f.path?.endsWith("-stroke")),
+  );
   assert.deepEqual(bad, []);
 });
 
-test("every text and background pair of every component reaches 4.5:1", () => {
+test("every text pair of every component reaches 4.5:1 and every graphic 3:1", () => {
   const all = pairs(state);
   // A DESIGN.md with no pairs would pass for nothing.
-  assert.ok(all.length >= 20, `only ${all.length} pairs`);
+  assert.ok(all.length >= 25, `only ${all.length} pairs`);
   assert.deepEqual(
-    contrastFailures(state).map((p) => `${p.component}: ${p.text} on ${p.background} is ${p.ratio.toFixed(2)}:1`),
+    contrastFailures(state).map((p) => `${p.component}: ${p.text} on ${p.background} is ${p.ratio.toFixed(2)}:1, needs ${p.min}`),
     [],
   );
 });
@@ -83,6 +88,37 @@ test("the esp32 mode is black, white and its own accent, and has none of the web
   const files = generate({ design: DESIGN, figma: FIGMA_DIR });
   const { variables } = JSON.parse(files[join(FIGMA_DIR, "figma-esp32.json")]);
   const colors = Object.fromEntries(variables.filter((v) => v.type === "COLOR").map((v) => [v.name, v.value]));
-  assert.deepEqual(colors, { "color/black": "#000000", "color/white": "#ffffff", "color/accent": "#e8a26b" });
-  assert.equal(variables.find((v) => v.name === "space/target").value, 150);
+  assert.deepEqual(colors, {
+    "color/black": "#000000",
+    "color/white": "#ffffff",
+    "color/accent": "#e8a26b",
+    "color/white-70": "#ffffffb3",
+    "color/disabled": "#707070",
+  });
+  const value = (name) => variables.find((v) => v.name === name).value;
+  assert.equal(value("space/target"), 150);
+  assert.equal(value("space/target-gap"), 38);
+  assert.equal(value("space/stroke"), 4);
+  assert.equal(value("radius/md"), 24);
+});
+
+test("the grey of a disabled esp32 button is a graphic: 3:1, not 4.5:1, and its text is white at 70% over black", () => {
+  const all = pairs(state);
+  const stroke = all.find((p) => p.component === "esp32-button-disabled-stroke");
+  assert.equal(stroke.min, 3);
+  assert.ok(stroke.ratio >= 3 && stroke.ratio < 4.5, `${stroke.ratio}`);
+  const text = all.find((p) => p.component === "esp32-button-disabled");
+  assert.equal(text.min, 4.5);
+  // 70% white over black is #b3b3b3, about 10:1, and not the 21:1 of plain white.
+  assert.ok(text.ratio > 9 && text.ratio < 12, `${text.ratio}`);
+  // #707070 is allowed only for that border.
+  const users = [...state.components].filter(([, d]) => [...d.properties.values()].some((v) => v.hex === "#707070")).map(([n]) => n);
+  assert.deepEqual(users, ["esp32-button-disabled-stroke"]);
+});
+
+test("a graphic below 3:1 and a text below 4.5:1 both fail", () => {
+  const darker = parseDesign(text.replace('esp32-disabled: "#707070"', 'esp32-disabled: "#505050"')).state;
+  assert.ok(contrastFailures(darker).some((p) => p.component === "esp32-button-disabled-stroke"));
+  const dim = parseDesign(text.replace('"#ffffffb3"', '"#ffffff40"')).state;
+  assert.ok(contrastFailures(dim).some((p) => p.component === "esp32-button-disabled"));
 });

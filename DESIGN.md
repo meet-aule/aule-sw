@@ -25,6 +25,8 @@ colors:
   esp32-black: "#000000"    # small colour screen: black background,
   esp32-white: "#ffffff"    # white text
   esp32-accent: "#e8a26b"   # and one accent: the light version of the copper, for a dark background
+  esp32-white-70: "#ffffffb3" # white at 70%: the text of a disabled button (10:1 on black)
+  esp32-disabled: "#707070" # ONLY the dashed border of a disabled button: 4.2:1 on black as a graphic, over the 3:1 of WCAG 1.4.11
 typography:
   display:
     fontFamily: "Inter, system-ui, -apple-system, Segoe UI, Roboto, Helvetica Neue, Arial, sans-serif"
@@ -140,7 +142,7 @@ rounded:
   lg: 12px                  # tiles, messages and chips
   xl: 16px                  # cards, the tutor's board
   full: 9999px              # the orb and round marks. Buttons are not pills
-  esp32-md: 24px            # small colour screen: the same 2 mm as the web's 8px. A proposal: arquitecto-2 decides it
+  esp32-md: 24px            # small colour screen: the radius of a button, 24 px, the same 2 mm as the web's 8px. Fixed
 spacing:
   2xs: 4px                  # vertical padding of the small button
   xs: 8px                   # between buttons, between small items
@@ -164,6 +166,8 @@ spacing:
   esp32-md: 24px
   esp32-lg: 32px
   esp32-target: 150px       # the least a press target measures: 12 mm
+  esp32-target-gap: 38px    # the least air between two press targets: 3 mm
+  esp32-stroke: 4px         # the line of a button's border
 components:
   page:
     backgroundColor: "{colors.paper}"
@@ -300,6 +304,15 @@ components:
     typography: "{typography.esp32-min}"
     rounded: "{rounded.esp32-md}"
     height: "{spacing.esp32-target}"
+  esp32-button-disabled:
+    backgroundColor: "{colors.esp32-black}"
+    textColor: "{colors.esp32-white-70}"
+    typography: "{typography.esp32-button}"
+    rounded: "{rounded.esp32-md}"
+    height: "{spacing.esp32-target}"
+  esp32-button-disabled-stroke:
+    backgroundColor: "{colors.esp32-black}"
+    textColor: "{colors.esp32-disabled}"
   esp32-title:
     backgroundColor: "{colors.esp32-black}"
     textColor: "{colors.esp32-white}"
@@ -326,14 +339,14 @@ The format has no modes, so a mode is a prefix on the token name.
 | `eink` | the 7.5 inch device screen, 800 x 480, four greys | `eink-` |
 | `esp32` | the small colour screen, 480 x 480 in 38.4 mm (about 314 ppi) | `esp32-` |
 
-`eink` uses only the four levels of grey. `esp32` does not use the `web` palette: it is a black background, white text and one accent, `#e8a26b`, the light version of the copper for a dark background. Its type scale is its own, because it is looked at from close and a conversion from `eink` does not fit in 480 px: nothing below 32 px (2.6 mm), body 40, title 48, buttons 32 to 40 and press targets of 150 px or more (12 mm). The radius of its buttons is the same 2 mm as the web's (about 24 px) and is a proposal that arquitecto-2 decides; the rest of its scale is a proposal until it is tried on the real screen.
+`eink` uses only the four levels of grey. `esp32` does not use the `web` palette: it is a black background, white text and one accent, `#e8a26b`, the light version of the copper for a dark background. Its type scale is its own, because it is looked at from close and a conversion from `eink` does not fit in 480 px: nothing below 32 px (2.6 mm), body 40, title 48, buttons 32 to 40 and press targets of 150 px or more (12 mm). Between two targets there are at least 38 px (3 mm, `esp32-target-gap`). A button has a 4 px border (`esp32-stroke`) and a radius of 24 px, the same 2 mm as the web's. A disabled button has its text in white at 70 % (`esp32-white-70`) and a dashed border in `esp32-disabled` (#707070), a grey that is used for nothing else: it is 4.2:1 on black, which is a graphic and has to reach 3:1 (WCAG 1.4.11), not the 4.5:1 of text. The rest of its type scale is a proposal until it is tried on the real screen.
 
 | | `web` | `eink` | `esp32` |
 |---|---|---|---|
 | Letter | Inter, the scale of Typography | Inter: titles Semi Bold 34/40, text 22/30, options Semi Bold 24, 18 at the least | Inter with its own scale |
 | Line height of text | 1.5 | 1.35 to 1.4 | 1.25 |
 | Negative tracking on big headings | yes | no | no |
-| Button | radius 8, weight 500, padding 12 x 20 | radius 8, 2 px border, 56 px high, 72 px of touch area | accent background with black text, radius 24, target of 150 px or more |
+| Button | radius 8, weight 500, padding 12 x 20 | radius 8, 2 px border, 56 px high, 72 px of touch area | accent background with black text, 4 px border, radius 24, target of 150 px or more, 38 px between targets |
 | Spacing | the whole scale, 4 to 96 | 4 to 64: margins of 40 and 32, 24 between targets | its own scale on a base of 4 |
 | Colour and shadows | paper, ink, one accent, no shadows | four greys | black background, white text and the accent `#e8a26b` |
 
@@ -377,7 +390,7 @@ Radius 8 for buttons, fields and notices; 12 for tiles and messages; 16 for card
 ## Components
 
 - **Buttons.** A rectangle with radius 8, a 1 px transparent border and weight 500. Large: 16/24 with 12 x 20 padding. Small: 14/20 with 4 x 14 padding and 34 px of height. Primary is `accent` with `on-accent` text; quiet is `accent-tint` with `accent-deep` text and no border; the link is `accent` text with an arrow (`Find answers →`) and no background. Buttons are 8 px apart.
-- **Every pair of text and background above must reach 4.5:1.** `pnpm --filter @aule/design test` walks them one by one.
+- **Every pair of text and background above must reach 4.5:1.** `pnpm --filter @aule/design test` walks them one by one. A component whose name ends in `-stroke` is a graphic, not text (a border, an icon): its `textColor` is the line, its `backgroundColor` is what it is drawn on, and it has to reach 3:1 (WCAG 1.4.11). A colour with transparency (`#ffffffb3`) is laid over its background before it is measured. The linter of the CLI measures every pair as text and so warns once, about `esp32-button-disabled-stroke`; the test allows that one warning and no other.
 - **Fields** are `surface` with a 1.5 px `line` border and radius 8; the focus ring is 3 px of ink with 2 px of offset.
 - **The device screen** (`eink-`) draws buttons with a 2 px border, 56 px high and 72 px of touch area, and keeps 24 px between two targets and margins of 40 and 32. The keyboards of the device stay as they were.
 

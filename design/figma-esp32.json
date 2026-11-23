@@ -18,6 +18,16 @@
       "value": "#e8a26b"
     },
     {
+      "name": "color/white-70",
+      "type": "COLOR",
+      "value": "#ffffffb3"
+    },
+    {
+      "name": "color/disabled",
+      "type": "COLOR",
+      "value": "#707070"
+    },
+    {
       "name": "space/xs",
       "type": "FLOAT",
       "value": 8
@@ -41,6 +51,16 @@
       "name": "space/target",
       "type": "FLOAT",
       "value": 150
+    },
+    {
+      "name": "space/target-gap",
+      "type": "FLOAT",
+      "value": 38
+    },
+    {
+      "name": "space/stroke",
+      "type": "FLOAT",
+      "value": 4
     },
     {
       "name": "radius/md",
