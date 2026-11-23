@@ -615,7 +615,11 @@ mod tests {
         let catalog = [skill("add", "P2", &[]), skill("mult", "P3", &["add"])];
         let attempts = answers("add", &[true; 8], 1);
 
-        let soon = candidates(&traced(attempts.clone(), day(1)), &catalog, None, day(1));
+        let during = candidates(&traced(attempts.clone(), day(1)), &catalog, None, day(1));
+        assert_eq!((during[0].skill_id.as_str(), during[0].reason), ("add", Reason::InProgress));
+
+        let now = day(1) + chrono::TimeDelta::minutes(10);
+        let soon = candidates(&traced(attempts.clone(), now), &catalog, None, now);
         assert_eq!(soon.len(), 1);
         assert_eq!((soon[0].skill_id.as_str(), soon[0].reason), ("mult", Reason::Ready));
 
@@ -641,8 +645,9 @@ mod tests {
         assert_eq!(ids(&offered), ["mult"]);
 
         // Wrong answers on an assumed prerequisite bring it back, and block what builds on it.
-        let struggling = traced(answers("add", &[false, false, false], 1), day(1));
-        let offered = candidates(&struggling, &catalog, Some("P3"), day(1));
+        let now = day(1) + chrono::TimeDelta::minutes(10);
+        let struggling = traced(answers("add", &[false, false, false], 1), now);
+        let offered = candidates(&struggling, &catalog, Some("P3"), now);
         assert_eq!(ids(&offered), ["add"]);
         assert_eq!(offered[0].reason, Reason::InProgress);
 
@@ -663,7 +668,8 @@ mod tests {
         ]
         .concat();
 
-        let offered = candidates(&traced(attempts, day(1)), &[], None, day(1));
+        let now = day(1) + chrono::TimeDelta::minutes(10);
+        let offered = candidates(&traced(attempts, now), &[], None, now);
 
         assert_eq!(offered.len(), MAX_CANDIDATES_PER_REASON);
         assert_eq!(offered[0].skill_id, "close");
