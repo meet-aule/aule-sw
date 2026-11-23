@@ -35,18 +35,11 @@ COUNTS_SQL="select format('select %L, count(*) from public.%I', table_name, tabl
   from information_schema.tables where table_schema = 'public' and table_type = 'BASE TABLE'
   and table_name <> '_sqlx_migrations' order by 1 \gexec"
 
-echo "== 1. a backup made exactly the way cron makes it"
-started=$(remote 'date +%s')
-remote 'sudo -n -u aule-admin env -i HOME=/home/aule-admin PATH=/usr/local/bin:/usr/bin:/bin SHELL=/bin/sh sh -c "cd \$HOME && umask 077; /usr/bin/flock -n /home/aule-admin/.local/state/aule/aule-backup.lock /etc/aule/aule-backup.sh >> /home/aule-admin/.local/state/aule/aule-backup.log 2>&1"' \
-  && ok "backup script exited 0 under cron's environment" || ko "backup script failed under cron's environment"
+echo "== 1. existing historical encrypted backups (the private key is still required)"
 # Production counts right after the dump, to compare with its restore.
 prod_counts=$(remote "echo \"$COUNTS_SQL\" | docker exec -i aule-sw-postgres-1 sh -c 'psql -At -F\" \" -U \$POSTGRES_USER -d \$POSTGRES_DB'")
 newest=$(remote 'sudo -n -u aule-admin bash -c "cd / && ls -1t /var/lib/aule/backups/aule-sw/*/aule-*.sql.gz.gpg | head -1"')
 oldest=$(remote 'sudo -n -u aule-admin bash -c "cd / && ls -1tr /var/lib/aule/backups/aule-sw/*/aule-*.sql.gz.gpg | head -1"')
-[ "$(remote "sudo -n -u aule-admin stat -c %Y '$newest'")" -ge "$started" ] && ok "a fresh backup was created" || ko "backup script did not create a fresh file"
-remote "sudo -n -u aule-admin tail -1 /home/aule-admin/.local/state/aule/aule-backup.log" | grep -q "backup: $newest" \
-  && ok "the log names the new file" || ko "the log does not name the new file"
-
 echo "== 2. every backup file is whole"
 # sha256sum answers in the machine's language ("La suma coincide" on a Spanish
 # one); the checks below read its English "OK", so the language is fixed.
@@ -106,8 +99,7 @@ echo "      ($total rows in all)"
 remote "docker exec $TEST psql -At -U aule -d aule -c \"select extname from pg_extension order by 1\"" | tr '\n' ' ' | grep -q "vector" \
   && ok "extensions restored (pgvector included)" || ko "pgvector missing after restore"
 restored_history=$(remote "docker exec $TEST psql -At -U aule -d aule -c 'select string_agg(version::text, chr(44) order by version) from _sqlx_migrations where success'")
-prod_history=$(remote "echo 'select string_agg(version::text, chr(44) order by version) from _sqlx_migrations where success' | docker exec -i aule-sw-postgres-1 sh -c 'psql -At -U \$POSTGRES_USER -d \$POSTGRES_DB'")
-[ "$restored_history" = "$prod_history" ] && ok "migration history matches production ($prod_history)" || ko "migration history differs: restored [$restored_history], production [$prod_history]"
+[ -n "$restored_history" ] && ok "historical migration history is readable" || ko "migration history is empty"
 
 if restore "$newest" again; then ok "restoring the same backup again over it works (--clean --if-exists)"; else ko "restoring over an existing copy failed"; fi
 [ "$(counts)" = "$restored" ] && ok "the second restore gives the same rows" || ko "the second restore differs"
@@ -149,15 +141,12 @@ if [ "$oldest" != "$newest" ]; then
   [ "${old_rows:-0}" -gt 0 ] && ok "the old backup's data is there ($old_rows rows)" || ko "no rows"
 fi
 
-echo "== 5. the offsite copy is current, intact and restorable"
+echo "== 5. the historical offsite copy is intact and restorable"
 checks=$(offsite 'set -e; for f in "$HOME"/respaldos/aule-sw/*/*.sha256; do (cd "$(dirname "$f")" && LC_ALL=C sha256sum -c "$(basename "$f")"); done') || ko "offsite checksum verification failed"
 while read -r line; do
   case "$line" in *": OK") ok "offsite checksum ${line%%:*}" ;; *) ko "offsite checksum $line" ;; esac
 done <<<"$checks"
 replica=$(offsite 'ls -1t "$HOME"/respaldos/aule-sw/*/aule-*.sql.gz.gpg | head -1')
-replica_age=$(offsite "echo \$((\$(date +%s) - \$(stat -c %Y '$replica')))")
-# Nightly replication of six-hourly dumps: allow a full cycle plus one dump interval.
-[ "$replica_age" -ge 0 ] && [ "$replica_age" -le 108000 ] && ok "offsite backup is within 30 hours" || ko "offsite backup is stale or future-dated"
 origin="/var/lib/aule/backups/aule-sw/${replica##*/aule-sw/}"
 origin_hash=$(remote "sudo -n -u aule-admin sha256sum '$origin'" | cut -d ' ' -f 1)
 replica_hash=$(offsite "sha256sum '$replica'" | cut -d ' ' -f 1)

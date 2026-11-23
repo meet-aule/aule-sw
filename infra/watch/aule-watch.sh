@@ -35,7 +35,12 @@ healthy() { [ "$(docker inspect -f '{{.State.Health.Status}}' "$1" 2>/dev/null)"
 running() { [ "$(docker inspect -f '{{.State.Running}}' "$1" 2>/dev/null)" = true ]; }
 disk_ok() { [ "$(df --output=pcent / | tail -1 | tr -dc 0-9)" -lt 85 ]; }
 # A backup every six hours (aule-backup.sh): one younger than seven.
-backup_ok() { [ -n "$(find /var/lib/aule/backups/aule-sw -name '*.sql.gz.gpg' -mmin -420 -print -quit)" ]; }
+backup_ok() { [ -n "$(find /var/lib/aule/backups/aule-sw -name '*.sql.gz' -mmin -420 -print -quit)" ]; }
+restore_ok() {
+  local stamp
+  stamp=$(cat "$STATE_DIR/restore.ok") || return 1
+  [[ "$stamp" =~ ^[0-9]{10}$ ]] && [ "$stamp" -le "$now" ] && [ $((now - stamp)) -lt $((8 * 86400)) ]
+}
 
 mail() { # subject, body
   local url from msg rcpt=()
@@ -81,6 +86,7 @@ check "página pública (playground.meetaule.com)" http https://playground.meeta
 check "tienda (shop.meetaule.com)" http https://shop.meetaule.com/
 check "disco (más de 85 % usado)" disk_ok
 check "respaldo (ninguno en 7 h)" backup_ok
+check "restauración (falló o sin prueba en 8 días)" restore_ok
 
 current=$(printf '%s\n' "${failing[@]+"${failing[@]}"}" | sed '/^$/d' | sort)
 previous=$(cat "$STATE" 2>/dev/null || true)

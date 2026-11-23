@@ -35,3 +35,8 @@ the nightly copy. Failed pulls, missing/corrupt files, a newest backup older tha
 seven hours at copy time, or a verification older than 26 hours alert. The watch
 cannot read the backups or the decryption key. See the offsite installation in
 [`infra/server/README.md`](../server/README.md).
+
+The primary watch checks weekly restore completion as well. A missing or failed
+restore, or one not completed in eight days, uses the same alert/recovery delivery.
+New primary backups must be `.sql.gz`; an old encrypted file cannot mask failure
+to create the newly configured format.

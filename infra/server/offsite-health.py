@@ -10,7 +10,7 @@ import tempfile
 import time
 from pathlib import Path
 
-NAME = re.compile(r"aule-\d{8}T\d{6}Z\.sql\.gz\.gpg\Z")
+NAME = re.compile(r"aule-\d{8}T\d{6}Z\.sql\.gz(?:\.gpg)?\Z")
 MAX_SOURCE_AGE = 7 * 3600
 MAX_CHECK_AGE = 26 * 3600
 
@@ -20,7 +20,7 @@ def verify(root: Path, now: float) -> float:
         raise ValueError("missing_backup")
     backups = [
         path
-        for path in root.glob("*/*.sql.gz.gpg")
+        for path in root.glob("*/*.sql.gz*")
         if NAME.fullmatch(path.name)
         and not path.is_symlink()
         and not path.parent.is_symlink()

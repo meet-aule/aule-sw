@@ -67,6 +67,7 @@ class WatchHarness:
         self.root = root
         self.state_dir = root / "state"
         self.state_dir.mkdir()
+        (self.state_dir / "restore.ok").write_text("1800000000\n")
         prefix = "watch-outside" if "outside" in watch else "watch"
         self.state = self.state_dir / (prefix + ".failing")
         self.last_mail = self.state_dir / (prefix + ".last-mail")
@@ -147,6 +148,19 @@ class WatchHarness:
 
 
 class WatchTests(unittest.TestCase):
+    def test_restore_failure_staleness_and_recovery(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            harness = WatchHarness(Path(directory), "aule-watch.sh")
+            stamp = harness.state_dir / "restore.ok"
+            for value in ("", "garbled", "1800000001", "1799308800"):
+                stamp.write_text(value)
+                self.assertEqual(harness.run().returncode, 0)
+                self.assertIn("restauración", harness.state.read_text())
+            stamp.write_text("1800000000")
+            self.assertEqual(harness.run().returncode, 0)
+            self.assertEqual(harness.state.read_text().strip(), "")
+            self.assertEqual(len(harness.deliveries()), 2)
+
     def test_offsite_backup_failure_alerts_and_recovers(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             harness = WatchHarness(Path(directory), "aule-watch-outside.sh")

@@ -51,6 +51,20 @@ class OffsiteTests(unittest.TestCase):
         self.assertEqual(self.report.stat().st_mode & 0o777, 0o644)
         self.assertNotIn(self.backup.name, self.report.read_text())
 
+    def test_new_compressed_format_is_verified_too(self) -> None:
+        old = self.backup
+        self.backup = old.with_suffix("")
+        old.rename(self.backup)
+        self.sidecar.unlink()
+        self.sidecar = self.backup.with_name(self.backup.name + ".sha256")
+        self.sidecar.write_text(
+            hashlib.sha256(self.backup.read_bytes()).hexdigest()
+            + "  "
+            + self.backup.name
+            + "\n"
+        )
+        self.assertTrue(self.publish())
+
     def test_failed_pull_replaces_previous_success(self) -> None:
         self.assertTrue(self.publish())
         self.assertFalse(self.publish(23))
