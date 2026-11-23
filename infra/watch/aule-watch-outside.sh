@@ -26,6 +26,7 @@ mkdir -p "$STATE_DIR"
 up() { curl -fsS -o /dev/null --max-time 15 "$1"; }
 # A blip is not an outage: a page that fails is tried again before it counts.
 reachable() { up "$1" || { sleep 20 && up "$1"; }; }
+backup_ok() { python3 /usr/local/lib/aule/offsite-health.py check /var/lib/aule/backup-health/latest.json; }
 
 failing=()
 check() {
@@ -56,6 +57,7 @@ fi
 check "página de sesión (playground.meetaule.com)" https://playground.meetaule.com/session/healthz
 check "audio (livekit.meetaule.com)" https://livekit.meetaule.com/
 check "tienda (shop.meetaule.com)" https://shop.meetaule.com/
+backup_ok >/dev/null 2>&1 || failing+=("respaldo externo (falló o no se verificó en 26 h)")
 
 current=$(printf '%s\n' "${failing[@]+"${failing[@]}"}" | sed '/^$/d' | sort)
 previous=$(cat "$STATE" 2>/dev/null || true)

@@ -29,4 +29,9 @@ ssh aule-prod 'sudo install -o root -g root -m 755 /tmp/aule-watch.sh /etc/aule/
 # */5 * * * * /usr/bin/flock -n /home/aule-admin/.local/state/aule/watch.lock /etc/aule/aule-watch.sh 2>&1 | /usr/bin/logger -t aule-watch
 ```
 
-Not watched yet: whether the home server pulled last night's backup (its pull user's files are not readable by the watch).
+The outside watch also reads `/var/lib/aule/backup-health/latest.json`. The backup
+pull user publishes only a success flag and verification/backup timestamps after
+the nightly copy. Failed pulls, missing/corrupt files, a newest backup older than
+seven hours at copy time, or a verification older than 26 hours alert. The watch
+cannot read the backups or the decryption key. See the offsite installation in
+[`infra/server/README.md`](../server/README.md).

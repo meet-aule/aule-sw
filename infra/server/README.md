@@ -11,6 +11,31 @@ What runs on aule-prod outside the containers, kept here so a new server can be 
 
 The alerts are in `infra/watch`.
 
+## Offsite copy health
+
+On the offsite host, install `offsite-health.py` at
+`/usr/local/lib/aule/offsite-health.py` (root-owned, mode 755), and
+`aule-offsite-backup.sh` in the existing pull user's `~/bin/` (mode 750).
+Create `/var/lib/aule/backup-health` owned by that user, mode 755. It holds only
+`latest.json`, mode 644: a boolean and two timestamps. Keep the backup directory,
+SSH credentials and decryption key permissions unchanged.
+
+Replace the existing nightly cron command with `~/bin/aule-offsite-backup.sh`,
+keeping its schedule and log. The wrapper locks concurrent runs, calls the
+existing `~/bin/pull-aule-backups.sh`, then verifies the newest encrypted file's
+SHA-256 and source age before atomically publishing health. Run the publisher
+once after a successful copy before updating the external watch, to avoid a
+missing-status alert during installation. No mail is sent by the publisher.
+
+This check proves encrypted-copy integrity and freshness. It does not decrypt
+or restore a database; `backup-tests.sh` remains the full restore check.
+
+Test without real backups or credentials:
+
+```sh
+python3 -m unittest discover -s infra/server -p 'test_*.py' -v
+```
+
 `aule-admin`'s crontab on the server:
 
 ```

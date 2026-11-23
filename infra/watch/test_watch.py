@@ -53,6 +53,10 @@ elif command == "hostname":
     print("watch-test")
 elif command == "base64":
     print(base64.b64encode(sys.stdin.buffer.read()).decode())
+elif command == "python3":
+    if args and args[0] == "/usr/local/lib/aule/offsite-health.py":
+        sys.exit(0 if settings.get("backup_ok", True) else 1)
+    os.execv(sys.executable, [sys.executable, *args])
 elif command != "sleep":
     raise RuntimeError("Unexpected command: " + command)
 """
@@ -81,6 +85,7 @@ class WatchHarness:
             "hostname",
             "base64",
             "sleep",
+            "python3",
         ):
             (fake_bin / command).symlink_to(fake.name)
         self.environ = {
@@ -142,6 +147,18 @@ class WatchHarness:
 
 
 class WatchTests(unittest.TestCase):
+    def test_offsite_backup_failure_alerts_and_recovers(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            harness = WatchHarness(Path(directory), "aule-watch-outside.sh")
+            harness.settings["backup_ok"] = False
+            self.assertEqual(harness.run().returncode, 0)
+            self.assertIn("respaldo externo", harness.state.read_text())
+            self.assertEqual(len(harness.deliveries()), 1)
+            harness.settings["backup_ok"] = True
+            self.assertEqual(harness.run().returncode, 0)
+            self.assertEqual(harness.state.read_text().strip(), "")
+            self.assertEqual(len(harness.deliveries()), 2)
+
     def test_failed_recovery_is_retried_at_next_check(self) -> None:
         for watch in WATCHES:
             with self.subTest(watch=watch), tempfile.TemporaryDirectory() as directory:
