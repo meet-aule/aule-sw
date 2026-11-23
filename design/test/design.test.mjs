@@ -64,3 +64,17 @@ test("every mode has variables of its own", () => {
   assert.equal(eink.find((v) => v.name === "space/margin-x").value, 40);
   assert.equal(eink.filter((v) => v.type === "COLOR").length, 4);
 });
+
+test("the playground's CSS draws only from the tokens: no colour, font or variable of its own", () => {
+  const dir = join(HERE, "..", "..", "apps", "playground", "public");
+  const style = readFileSync(join(dir, "style.css"), "utf8");
+  const tokens = readFileSync(join(dir, "tokens.css"), "utf8");
+  // The paper's grain is an SVG inside a data URI, drawn by the browser.
+  const code = style.replace(/url\("data:[^"]*"\)/g, "");
+  assert.deepEqual(code.match(/#[0-9a-fA-F]{3,8}\b/g) ?? [], [], "a colour written by hand");
+  const families = [...code.matchAll(/font-family:\s*([^;]+);/g)].map((m) => m[1].trim());
+  assert.deepEqual(families.filter((f) => f !== '"Inter"'), [], "a font family other than Inter");
+  const defined = new Set([...(style + tokens).matchAll(/(--[\w-]+)\s*:/g)].map((m) => m[1]));
+  const used = [...style.matchAll(/var\((--[\w-]+)/g)].map((m) => m[1]);
+  assert.deepEqual([...new Set(used)].filter((v) => !defined.has(v)), [], "a variable that does not exist");
+});

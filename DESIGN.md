@@ -360,7 +360,7 @@ In the apps (the playground), the page title is `headline-sm` and a form title i
 
 ## Layout
 
-A page is at most `container` wide, with `lg` on each side. A paragraph is at most `text-column` wide. Sections are `3xl` apart on desktop and 64 px on a phone; blocks inside a section are `2xl` apart; a heading and its paragraph are `md` apart. The scale is on a base of 4: `2xs` 4, `xs` 8, `sm` 12, `md` 16, `lg` 24, `xl` 32, `2xl` 48, `3xl` 96. Other isolated values (2, 6, 10 and 14 px) stay in the CSS and are not tokens.
+A page is at most `container` wide, with `lg` on each side. A paragraph is at most `text-column` wide. Sections are `3xl` apart on desktop and 64 px on a phone; blocks inside a section are `2xl` apart; a heading and its paragraph are `md` apart. The scale is on a base of 4: `2xs` 4, `xs` 8, `sm` 12, `md` 16, `lg` 24, `xl` 32, `2xl` 48, `3xl` 96. Other isolated values (2, 6, 10 and 14 px, and the 20 px at the sides of a button) stay in the CSS and are not tokens.
 
 ## Elevation & Depth
 

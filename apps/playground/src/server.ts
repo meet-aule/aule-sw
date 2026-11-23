@@ -45,22 +45,17 @@ const livekitClient = join(
   "livekit-client.umd.js",
 );
 
-// The serif the tutor's words are set in, from its own package: no font is
-// fetched from anywhere else.
-const serif = join(
-  dirname(createRequire(import.meta.url).resolve("@fontsource-variable/source-serif-4/package.json")),
-  "files",
-);
-
 const STATIC: Record<string, { file: string | URL; type: string }> = {
   "/": { file: new URL("index.html", publicDir), type: "text/html; charset=utf-8" },
   "/app.js": { file: new URL("app.js", publicDir), type: "text/javascript; charset=utf-8" },
   "/students.js": { file: new URL("students.js", publicDir), type: "text/javascript; charset=utf-8" },
   "/signin.js": { file: new URL("signin.js", publicDir), type: "text/javascript; charset=utf-8" },
   "/visuals.js": { file: new URL("visuals.js", publicDir), type: "text/javascript; charset=utf-8" },
+  "/tokens.css": { file: new URL("tokens.css", publicDir), type: "text/css; charset=utf-8" },
   "/style.css": { file: new URL("style.css", publicDir), type: "text/css; charset=utf-8" },
-  "/fonts/serif.woff2": { file: join(serif, "source-serif-4-latin-wght-normal.woff2"), type: "font/woff2" },
-  "/fonts/serif-italic.woff2": { file: join(serif, "source-serif-4-latin-wght-italic.woff2"), type: "font/woff2" },
+  // Inter, self-hosted: no font is fetched from anywhere else.
+  "/fonts/InterVariable.woff2": { file: new URL("fonts/InterVariable.woff2", publicDir), type: "font/woff2" },
+  "/fonts/Inter-LICENSE.txt": { file: new URL("fonts/Inter-LICENSE.txt", publicDir), type: "text/plain; charset=utf-8" },
   "/livekit-client.js": { file: livekitClient, type: "text/javascript; charset=utf-8" },
   "/wobnimo.js": { file: mascot, type: "text/javascript; charset=utf-8" },
 };

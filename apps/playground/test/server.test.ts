@@ -32,11 +32,12 @@ test("serves the page and its scripts with a strict policy", async () => {
     "/app.js",
     "/signin.js",
     "/visuals.js",
+    "/tokens.css",
     "/style.css",
     "/livekit-client.js",
     "/wobnimo.js",
-    "/fonts/serif.woff2",
-    "/fonts/serif-italic.woff2",
+    "/fonts/InterVariable.woff2",
+    "/fonts/Inter-LICENSE.txt",
   ]) {
     const response = await fetch(base + path);
     assert.equal(response.status, 200, path);

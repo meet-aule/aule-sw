@@ -39,6 +39,10 @@ pnpm --filter @aule/playground test
 node --env-file=../../.env src/server.ts
 ```
 
+## Design
+
+One `DESIGN.md` at the root of the repository describes every Aule product. `public/tokens.css` is generated from it (`pnpm design-tokens`) and `public/style.css` takes every colour, size, radius and space from it. Inter is served from `public/fonts/` with its licence. `pnpm test` fails if the generated file is out of date.
+
 ## Testing as on the device
 
 - **Device screen** (a switch in the session) shows the drawing as the device's panel would: 800 x 480, snapped to black, white and one grey, with a flash on every redraw. It does not imitate ghosting.
