@@ -131,6 +131,9 @@ jobs:
       - name: Watch delivery regression tests
         if: ${{ !cancelled() }}
         run: python3 -m unittest discover -s infra/watch -p 'test_*.py' -v
+      - name: Offsite backup health tests
+        if: ${{ !cancelled() }}
+        run: python3 -m unittest discover -s infra/server -p 'test_*.py' -v
       - name: Hadolint
         if: ${{ !cancelled() }}
         # Debian's package versions are not pinned: an old one leaves the archive and breaks the build.

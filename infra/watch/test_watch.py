@@ -44,7 +44,12 @@ if command == "curl":
 elif command == "date":
     print(settings["now"] if args == ["+%s"] else "2026-11-23 00:00 UTC")
 elif command == "docker":
-    print("healthy" if "Health.Status" in " ".join(args) else "true")
+    if "psql" in args:
+        if settings.get("reports") == "unavailable":
+            sys.exit(1)
+        print(settings.get("reports", "0"))
+    else:
+        print("healthy" if "Health.Status" in " ".join(args) else "true")
 elif command == "df":
     print("Use%\n15%")
 elif command == "find":
@@ -53,6 +58,10 @@ elif command == "hostname":
     print("watch-test")
 elif command == "base64":
     print(base64.b64encode(sys.stdin.buffer.read()).decode())
+elif command == "python3":
+    if args and args[0].endswith("/.local/lib/aule/offsite-health.py"):
+        sys.exit(0 if settings.get("backup_ok", True) else 1)
+    os.execv(sys.executable, [sys.executable, *args])
 elif command != "sleep":
     raise RuntimeError("Unexpected command: " + command)
 """
@@ -63,6 +72,7 @@ class WatchHarness:
         self.root = root
         self.state_dir = root / "state"
         self.state_dir.mkdir()
+        (self.state_dir / "restore.ok").write_text("1800000000\n")
         prefix = "watch-outside" if "outside" in watch else "watch"
         self.state = self.state_dir / (prefix + ".failing")
         self.last_mail = self.state_dir / (prefix + ".last-mail")
@@ -81,6 +91,7 @@ class WatchHarness:
             "hostname",
             "base64",
             "sleep",
+            "python3",
         ):
             (fake_bin / command).symlink_to(fake.name)
         self.environ = {
@@ -142,6 +153,47 @@ class WatchHarness:
 
 
 class WatchTests(unittest.TestCase):
+    def test_report_backlog_and_database_errors_alert_and_recover(self) -> None:
+        for reports in ("1", "9", "", "invalid", "unavailable"):
+            with (
+                self.subTest(reports=reports),
+                tempfile.TemporaryDirectory() as directory,
+            ):
+                harness = WatchHarness(Path(directory), "aule-watch.sh")
+                harness.settings["reports"] = reports
+                self.assertEqual(harness.run().returncode, 0)
+                self.assertIn("informes", harness.state.read_text())
+                self.assertEqual(len(harness.deliveries()), 1)
+                harness.settings["reports"] = "0"
+                self.assertEqual(harness.run().returncode, 0)
+                self.assertEqual(harness.state.read_text().strip(), "")
+                self.assertEqual(len(harness.deliveries()), 2)
+
+    def test_restore_failure_staleness_and_recovery(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            harness = WatchHarness(Path(directory), "aule-watch.sh")
+            stamp = harness.state_dir / "restore.ok"
+            for value in ("", "garbled", "1800000001", "1799308800"):
+                stamp.write_text(value)
+                self.assertEqual(harness.run().returncode, 0)
+                self.assertIn("restauración", harness.state.read_text())
+            stamp.write_text("1800000000")
+            self.assertEqual(harness.run().returncode, 0)
+            self.assertEqual(harness.state.read_text().strip(), "")
+            self.assertEqual(len(harness.deliveries()), 2)
+
+    def test_offsite_backup_failure_alerts_and_recovers(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            harness = WatchHarness(Path(directory), "aule-watch-outside.sh")
+            harness.settings["backup_ok"] = False
+            self.assertEqual(harness.run().returncode, 0)
+            self.assertIn("respaldo externo", harness.state.read_text())
+            self.assertEqual(len(harness.deliveries()), 1)
+            harness.settings["backup_ok"] = True
+            self.assertEqual(harness.run().returncode, 0)
+            self.assertEqual(harness.state.read_text().strip(), "")
+            self.assertEqual(len(harness.deliveries()), 2)
+
     def test_failed_recovery_is_retried_at_next_check(self) -> None:
         for watch in WATCHES:
             with self.subTest(watch=watch), tempfile.TemporaryDirectory() as directory:
