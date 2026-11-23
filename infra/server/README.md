@@ -14,10 +14,12 @@ The alerts are in `infra/watch`.
 
 ## Offsite copy health
 
-On the offsite host, install `offsite-health.py` at
-`/usr/local/lib/aule/offsite-health.py` (root-owned, mode 755), and
-`aule-offsite-backup.sh` in the existing pull user's `~/bin/` (mode 750).
-Create `/var/lib/aule/backup-health` owned by that user, mode 755. It holds only
+On the offsite host, install the same `offsite-health.py` in both the existing
+pull and watch users' `~/.local/lib/aule/` (mode 750), and `aule-offsite-backup.sh`
+in the pull user's `~/bin/` (mode 750). No root installation or new privilege is
+needed. The wrapper creates `/var/tmp/aule-backup-health`, owned by `aule-agent`,
+mode 755. Publisher and reader verify ownership and reject writable or symlinked
+status directories. It holds only
 `latest.json`, mode 644: a boolean and two timestamps. Keep the backup directory,
 SSH credentials and decryption key permissions unchanged.
 

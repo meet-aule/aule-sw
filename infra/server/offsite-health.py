@@ -4,6 +4,7 @@
 import hashlib
 import json
 import os
+import pwd
 import re
 import sys
 import tempfile
@@ -66,7 +67,14 @@ def publish(root: Path, destination: Path, pull_exit: int, now: float) -> bool:
     except (OSError, UnicodeError, ValueError):
         # No filename, checksum, exception text or backup contents leaves this user.
         pass
-    descriptor, name = tempfile.mkstemp(prefix=".health-", dir=destination.parent)
+    parent = destination.parent
+    if (
+        parent.is_symlink()
+        or parent.stat().st_uid != os.getuid()
+        or parent.stat().st_mode & 0o022
+    ):
+        raise ValueError("unsafe_status_directory")
+    descriptor, name = tempfile.mkstemp(prefix=".health-", dir=parent)
     temporary = Path(name)
     try:
         with os.fdopen(descriptor, "w") as stream:
@@ -101,7 +109,14 @@ def healthy(path: Path, now: float) -> bool:
 def main() -> int:
     try:
         if len(sys.argv) == 3 and sys.argv[1] == "check":
-            return 0 if healthy(Path(sys.argv[2]), time.time()) else 1
+            path = Path(sys.argv[2])
+            owner = pwd.getpwnam("aule-agent").pw_uid
+            if path.parent.is_symlink() or any(
+                item.stat().st_uid != owner or item.stat().st_mode & 0o022
+                for item in (path.parent, path)
+            ):
+                return 1
+            return 0 if healthy(path, time.time()) else 1
         if len(sys.argv) == 5 and sys.argv[1] == "publish":
             return (
                 0
@@ -110,7 +125,7 @@ def main() -> int:
                 )
                 else 1
             )
-    except (OSError, ValueError):
+    except (OSError, ValueError, KeyError):
         pass
     return 1
 

@@ -54,7 +54,7 @@ elif command == "hostname":
 elif command == "base64":
     print(base64.b64encode(sys.stdin.buffer.read()).decode())
 elif command == "python3":
-    if args and args[0] == "/usr/local/lib/aule/offsite-health.py":
+    if args and args[0].endswith("/.local/lib/aule/offsite-health.py"):
         sys.exit(0 if settings.get("backup_ok", True) else 1)
     os.execv(sys.executable, [sys.executable, *args])
 elif command != "sleep":

@@ -26,7 +26,7 @@ mkdir -p "$STATE_DIR"
 up() { curl -fsS -o /dev/null --max-time 15 "$1"; }
 # A blip is not an outage: a page that fails is tried again before it counts.
 reachable() { up "$1" || { sleep 20 && up "$1"; }; }
-backup_ok() { python3 /usr/local/lib/aule/offsite-health.py check /var/lib/aule/backup-health/latest.json; }
+backup_ok() { python3 "$HOME/.local/lib/aule/offsite-health.py" check /var/tmp/aule-backup-health/latest.json; }
 
 failing=()
 check() {
