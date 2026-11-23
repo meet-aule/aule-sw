@@ -119,6 +119,12 @@ button {
   background: var(--surface);
 }
 
+/* A placeholder is muted text, 4.57:1 on the field: not the browser's grey, and not faded. */
+::placeholder {
+  color: var(--aule-c-field-placeholder-text);
+  opacity: 1;
+}
+
 /* Check boxes and radios are drawn here, so that their edge is the same one. */
 input[type="checkbox"],
 input[type="radio"] {
@@ -200,22 +206,37 @@ button.primary:disabled {
   cursor: progress;
 }
 
-/* A switch that is off is quiet, not broken: a soft border and a dimmed icon. */
+/* A switch (aria-pressed) has the edge of a form control in both states:
+   button-switch-stroke is field-border, 3:1 (WCAG 1.4.11), never the line. Off is
+   quiet, not broken: white with muted text. On is the quiet blue. */
 button[aria-pressed="false"] {
-  background: var(--surface);
-  border-color: var(--line);
-  color: var(--muted);
+  background: var(--aule-c-button-switch-off-bg);
+  border-color: var(--aule-c-button-switch-stroke-text);
+  color: var(--aule-c-button-switch-off-text);
+}
+
+button[aria-pressed="true"]:not(.talk) {
+  background: var(--aule-c-button-switch-on-bg);
+  border-color: var(--aule-c-button-switch-stroke-text);
+  color: var(--aule-c-button-switch-on-text);
 }
 
 button[aria-pressed="false"]:not(.talk):hover:not(:disabled) {
-  background: var(--bg-2);
-  color: var(--ink);
+  background: var(--aule-c-button-switch-off-hover-bg);
+  color: var(--aule-c-button-switch-off-hover-text);
 }
 
+/* The red ones: outlined, the quiet link and (below) the solid destructive one,
+   each with its own hover from DESIGN.md. */
 button.danger {
   background: var(--aule-c-button-danger-bg);
   color: var(--aule-c-button-danger-text);
   border-color: var(--aule-c-button-danger-text);
+}
+
+button.danger:hover:not(:disabled) {
+  background: var(--aule-c-button-danger-hover-bg);
+  color: var(--aule-c-button-danger-hover-text);
 }
 
 .note {
@@ -1003,7 +1024,11 @@ label.tone b {
 }
 
 button.danger-text {
-  color: var(--danger);
+  color: var(--aule-c-button-danger-link-text);
+}
+
+button.danger-text:hover:not(:disabled) {
+  color: var(--aule-c-button-danger-link-hover-text);
 }
 
 @media (max-width: 420px) {
@@ -1014,13 +1039,14 @@ button.danger-text {
 
 /* Erasing is the one thing that cannot be undone, and looks like it. */
 button[type="submit"].danger {
-  background: var(--danger);
-  border-color: var(--danger);
-  color: var(--surface);
+  background: var(--aule-c-button-destructive-bg);
+  border-color: var(--aule-c-button-destructive-border);
+  color: var(--aule-c-button-destructive-text);
 }
 
 button[type="submit"].danger:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--danger) 80%, black);
+  background: var(--aule-c-button-destructive-hover-bg);
+  color: var(--aule-c-button-destructive-hover-text);
 }
 
 /* ------------------------------------------------------------------------
@@ -1063,13 +1089,6 @@ button[data-icon="device"] { --icon: url("data:image/svg+xml,%3Csvg xmlns='http:
 button[data-icon="end"] { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M14 4h4.5a1.5 1.5 0 0 1 1.5 1.5v13a1.5 1.5 0 0 1-1.5 1.5H14'/%3E%3Cpath d='M10 8l-4 4 4 4M6 12h9'/%3E%3C/svg%3E"); }
 button[data-icon="send"] { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 12l15-7-5.5 15-2.5-6.5z'/%3E%3Cpath d='M11 13.5l3-3'/%3E%3C/svg%3E"); }
 
-button[aria-pressed="false"][data-icon]::before {
-  opacity: 0.55;
-}
-
-button[aria-pressed="true"]:not(.talk) {
-  border-color: var(--ink);
-}
 
 /* The tutor: on paper like everything it says, with a ring of blue that
    breathes when it listens and beats when it speaks. */

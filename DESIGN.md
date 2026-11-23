@@ -18,6 +18,7 @@ colors:
   secondary-hover: "#f2f9ff" # the quiet button under the pointer. Notion: blue-100
   link-hover: "#00396b"     # a link under the pointer. Notion: blue-800
   danger: "#b01601"         # errors and destructive actions. Notion: red-700
+  danger-hover: "#6f0d00"   # a destructive control under the pointer. Notion: red-800
   success: "#0f6220"        # confirmations. Notion: green-700
   tile: "#14130f"           # video and tutor tiles of the playground
   tile-ink: "#f6f4ef"       # text on the dark tiles
@@ -218,6 +219,37 @@ components:
     typography: "{typography.button}"
     rounded: "{rounded.md}"
     padding: 12px
+  button-danger-hover:
+    backgroundColor: "{colors.paper}"
+    textColor: "{colors.danger-hover}"
+  button-danger-link:
+    backgroundColor: "{colors.paper}"
+    textColor: "{colors.danger}"
+    typography: "{typography.button}"
+  button-danger-link-hover:
+    backgroundColor: "{colors.paper}"
+    textColor: "{colors.danger-hover}"
+  button-destructive:
+    backgroundColor: "{colors.danger}"
+    textColor: "{colors.on-primary}"
+    typography: "{typography.button}"
+    rounded: "{rounded.md}"
+    padding: 12px
+  button-destructive-hover:
+    backgroundColor: "{colors.danger-hover}"
+    textColor: "{colors.on-primary}"
+  button-switch-off:
+    backgroundColor: "{colors.paper}"
+    textColor: "{colors.muted}"
+  button-switch-off-hover:
+    backgroundColor: "{colors.surface-neutral}"
+    textColor: "{colors.ink}"
+  button-switch-on:
+    backgroundColor: "{colors.secondary}"
+    textColor: "{colors.secondary-text}"
+  button-switch-stroke:
+    backgroundColor: "{colors.paper}"
+    textColor: "{colors.field-border}"
   button-disabled:
     backgroundColor: "{colors.paper}"
     textColor: "{colors.muted}"
@@ -257,6 +289,9 @@ components:
     typography: "{typography.body}"
     rounded: "{rounded.md}"
     padding: 12px
+  field-placeholder:
+    backgroundColor: "{colors.paper}"
+    textColor: "{colors.muted}"
   field-border-stroke:
     backgroundColor: "{colors.paper}"
     textColor: "{colors.field-border}"
@@ -440,9 +475,10 @@ Radius 8 for buttons, fields and notices; 12 for tiles and messages; 16 for card
 
 - **Buttons.** A rectangle with radius 8, a 1 px transparent border and weight 500. Large: 16/24 with 12 x 20 padding. Small: 14/20 with 4 x 14 padding and 34 px of height. Primary is `primary` with `on-primary` text and `primary-hover` under the pointer; quiet is `secondary` with `secondary-text` and no border; the link is `primary` text with an arrow (`Find answers →`) and no background. Buttons are 8 px apart.
 - **Variants reach the CSS only through generated variables.** For every web component, `pnpm design-tokens` writes `--aule-c-<component>-bg`, `-text`, `-type`, `-radius`, `-padding` and `-height` (and `-border`, which for a button is its own background), so `components.button-primary` is the only place the filled button's colours are written, and the CSS of each product only reads them. A test changes a variant here and demands that the generated CSS changes, and a browser test demands that the buttons of the real pages paint what this file says.
+- **A destructive button** is `danger` with white text (`button-destructive`) and `danger-hover` under the pointer (`button-destructive-hover`, Notion's red-800, `#6f0d00`); the outlined one (`button-danger`) and the quiet red link (`button-danger-link`) go to `danger-hover` text too. None is a blend with black, and a browser test passes the pointer over every button.
 - **A disabled or sending button is `button-disabled`**: white, `muted` text (4.57:1) and a dashed border in the colour of `button-disabled-stroke` (a graphic, 3:1). Never opacity: at 60 % a filled button's text fell to 2.7:1. An error alert is `notice-error` (`danger` text on `paper`), not a colour of the framework.
 - **Every pair of text and background above must reach 4.5:1, in the `esp32-` components too.** `pnpm --filter @aule/design test` walks them one by one. A component whose name ends in `-stroke` is a graphic, not text (a border, an icon): its `textColor` is the line, its `backgroundColor` is what it is drawn on, and it has to reach 3:1 (WCAG 1.4.11). A colour with transparency (`#ffffffb3`) is laid over its background before it is measured. The linter of the CLI measures every pair as text and so warns once, about `esp32-button-disabled-stroke`; the test allows that one warning and no other.
-- **Form controls** (inputs, selects, text areas, check boxes and radios, and the cards that stand for a choice) have a 1.5 px `field-border` border (`field-border-stroke`, a graphic: 3:1; it is 4.69:1) and, the fields, radius 8; `line` is never used for them. A browser test measures the computed border of every control and demands 3:1; the focus ring is 3 px of ink with 2 px of offset.
+- **Form controls** (inputs, selects, text areas, check boxes and radios, and the cards that stand for a choice) have a 1.5 px `field-border` border (`field-border-stroke`, a graphic: 3:1; it is 4.69:1) and, the fields, radius 8; `line` is never used for them. A browser test measures the computed border of every control, **switches included** (`button[aria-pressed]`, in both states, `button-switch-stroke`), and demands 3:1; the placeholder of an empty field is `muted` (`field-placeholder`, 4.57:1) and the same test measures it; the focus ring is 3 px of ink with 2 px of offset.
 - **The device screen** (`eink-`) draws buttons with a 2 px border, 56 px high and 72 px of touch area, and keeps 24 px between two targets and margins of 40 and 32. The keyboards of the device stay as they were.
 
 ## Do's and Don'ts

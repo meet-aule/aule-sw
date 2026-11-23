@@ -110,7 +110,7 @@ export async function contrastProblems(page, min = 4.5) {
 
 /**
  * Runs in the page. The edge of every form control (input, select, text area,
- * check box, radio) against what is around it: WCAG 1.4.11 asks 3:1. A control
+ * check box, radio, switch) against what is around it: WCAG 1.4.11 asks 3:1. A control
  * that is visually hidden and drawn by the element after it (a chip, a card that
  * stands for a choice) is measured on that element. Without a border, the fill
  * has to do it.
@@ -145,8 +145,13 @@ export function measureControlsInPage() {
     return parts.join(" > ");
   };
   const out = [];
-  for (const input of document.body.querySelectorAll("input, select, textarea")) {
-    if (["hidden", "submit", "button", "reset", "image", "range", "color", "file"].includes(input.type)) continue;
+  // Form fields, and every control that shows a state with its edge: switches
+  // (button[aria-pressed]), custom check boxes, radios, comboboxes and text boxes.
+  // A button identified by its text is not in the list: its label does that.
+  const CONTROLS =
+    "input, select, textarea, button[aria-pressed], [aria-checked], [role=switch], [role=checkbox], [role=radio], [role=combobox], [role=textbox], [contenteditable=true]";
+  for (const input of document.body.querySelectorAll(CONTROLS)) {
+    if (input.tagName === "INPUT" && ["hidden", "submit", "button", "reset", "image", "range", "color", "file"].includes(input.type)) continue;
     const own = getComputedStyle(input);
     const proxy = parseFloat(own.opacity) === 0 || (own.position === "absolute" && own.pointerEvents === "none");
     const el = proxy ? input.nextElementSibling ?? input.parentElement : input;
@@ -162,7 +167,7 @@ export function measureControlsInPage() {
     const edge = bordered ? over(parse(style.borderTopColor), outside) : over(parse(style.backgroundColor), outside);
     out.push({
       where: path(input) + (proxy ? " (drawn by the next element)" : ""),
-      type: input.tagName === "INPUT" ? input.type : input.tagName.toLowerCase(),
+      type: input.tagName === "INPUT" ? input.type : input.tagName.toLowerCase() + (input.hasAttribute("aria-pressed") ? `[aria-pressed=${input.getAttribute("aria-pressed")}]` : ""),
       how: bordered ? `border ${hex(edge)}` : `no border, fill ${hex(edge)}`,
       ratio: ratio(edge, outside),
       outside: hex(outside),
@@ -177,5 +182,62 @@ export async function controlProblems(page, min = 3) {
   return {
     measured: all.length,
     problems: all.filter((c) => c.ratio < min).map((c) => `${c.where} [${c.type}]: ${c.how} on ${c.outside} is ${c.ratio.toFixed(2)}:1 (needs ${min})`),
+  };
+}
+
+/**
+ * Runs in the page. The placeholder of every empty field, as painted: its own
+ * colour and opacity laid over the field's fill (WCAG 1.4.3 asks 4.5:1; Tailwind's
+ * preflight sets it to the ink at 50%, which is 3.3:1).
+ */
+export function measurePlaceholdersInPage() {
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = 1;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  const parse = (css) => {
+    ctx.clearRect(0, 0, 1, 1);
+    ctx.fillStyle = "#000";
+    ctx.fillStyle = css;
+    ctx.fillRect(0, 0, 1, 1);
+    const [r, g, b, a] = ctx.getImageData(0, 0, 1, 1).data;
+    return { r, g, b, a: a / 255 };
+  };
+  const over = (fg, bg, k = 1) => {
+    const a = fg.a * k;
+    return { r: fg.r * a + bg.r * (1 - a), g: fg.g * a + bg.g * (1 - a), b: fg.b * a + bg.b * (1 - a), a: 1 };
+  };
+  const lum = ({ r, g, b }) => {
+    const c = (v) => ((v /= 255) <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
+    return 0.2126 * c(r) + 0.7152 * c(g) + 0.0722 * c(b);
+  };
+  const ratio = (a, b) => {
+    const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x);
+    return (hi + 0.05) / (lo + 0.05);
+  };
+  const hex = ({ r, g, b }) => "#" + [r, g, b].map((v) => Math.round(v).toString(16).padStart(2, "0")).join("");
+  const out = [];
+  for (const el of document.body.querySelectorAll("input[placeholder], textarea[placeholder]")) {
+    if (el.value !== "" || (el.tagName === "INPUT" && ["hidden", "checkbox", "radio", "submit", "button"].includes(el.type))) continue;
+    const style = getComputedStyle(el);
+    const rect = el.getBoundingClientRect();
+    if (style.display === "none" || style.visibility === "hidden" || rect.width <= 1 || rect.height <= 1) continue;
+    const ph = getComputedStyle(el, "::placeholder");
+    const ancestors = [];
+    for (let x = el.parentElement; x; x = x.parentElement) ancestors.unshift(x);
+    let outside = { r: 255, g: 255, b: 255, a: 1 };
+    for (const x of ancestors) outside = over(parse(getComputedStyle(x).backgroundColor), outside);
+    const fill = over(parse(style.backgroundColor), outside);
+    const text = over(parse(ph.color), fill, parseFloat(ph.opacity));
+    out.push({ where: (el.id ? `#${el.id}` : el.tagName.toLowerCase() + `[name=${el.name}]`), text: el.getAttribute("placeholder").slice(0, 30), color: hex(text), background: hex(fill), ratio: ratio(text, fill) });
+  }
+  return out;
+}
+
+/** Every empty field whose placeholder is under `min` (4.5:1), as readable lines. */
+export async function placeholderProblems(page, min = 4.5) {
+  const all = await page.evaluate(measurePlaceholdersInPage);
+  return {
+    measured: all.length,
+    problems: all.filter((p) => p.ratio < min).map((p) => `${p.where} placeholder "${p.text}": ${p.color} on ${p.background} is ${p.ratio.toFixed(2)}:1 (needs ${min})`),
   };
 }

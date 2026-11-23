@@ -82,6 +82,11 @@
       "value": "#b01601"
     },
     {
+      "name": "color/danger-hover",
+      "type": "COLOR",
+      "value": "#6f0d00"
+    },
+    {
       "name": "color/success",
       "type": "COLOR",
       "value": "#0f6220"

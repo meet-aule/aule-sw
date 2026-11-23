@@ -259,6 +259,16 @@ test("the playground's CSS takes the colour, border, radius and type of every bu
     "button.quiet:hover:not(:disabled)": { color: v("button-link-hover-text") },
     'button:disabled, button[type="submit"]:disabled, button.primary:disabled': { background: v("button-disabled-bg"), color: v("button-disabled-text") },
     '.talk[aria-pressed="true"]': { background: v("button-talk-active-bg"), color: v("button-talk-active-text") },
+    "button.danger": { background: v("button-danger-bg"), color: v("button-danger-text") },
+    "button.danger:hover:not(:disabled)": { background: v("button-danger-hover-bg"), color: v("button-danger-hover-text") },
+    "button.danger-text": { color: v("button-danger-link-text") },
+    "button.danger-text:hover:not(:disabled)": { color: v("button-danger-link-hover-text") },
+    'button[type="submit"].danger': { background: v("button-destructive-bg"), "border-color": v("button-destructive-border"), color: v("button-destructive-text") },
+    'button[type="submit"].danger:hover:not(:disabled)': { background: v("button-destructive-hover-bg"), color: v("button-destructive-hover-text") },
+    'button[aria-pressed="false"]': { background: v("button-switch-off-bg"), "border-color": v("button-switch-stroke-text"), color: v("button-switch-off-text") },
+    'button[aria-pressed="true"]:not(.talk)': { background: v("button-switch-on-bg"), "border-color": v("button-switch-stroke-text"), color: v("button-switch-on-text") },
+    'button[aria-pressed="false"]:not(.talk):hover:not(:disabled)': { background: v("button-switch-off-hover-bg"), color: v("button-switch-off-hover-text") },
+    "::placeholder": { color: v("field-placeholder-text"), opacity: "1" },
   };
   for (const [selector, declarations] of Object.entries(need)) {
     const rule = rules.get(selector);
@@ -270,6 +280,18 @@ test("the playground's CSS takes the colour, border, radius and type of every bu
   const bad = [...rules].filter(([sel]) => /button|\.talk/.test(sel)).flatMap(([sel, d]) =>
     Object.entries(d).filter(([, value]) => own.test(value)).map(([p, value]) => `${sel} { ${p}: ${value} }`));
   assert.deepEqual(bad, []);
+  // The red ones, whatever their selector: no blend with black, and no red written by its own name.
+  const reds = [...rules].filter(([sel]) => /danger|destructive/.test(sel)).flatMap(([sel, d]) =>
+    Object.entries(d).filter(([, value]) => /color-mix|var\(--danger\)|var\(--aule-color-danger/.test(value)).map(([p, value]) => `${sel} { ${p}: ${value} }`));
+  assert.deepEqual(reds, []);
+  // Nothing in a button, switch or control rule is a colour mixed in the CSS.
+  const mixed = [...rules].filter(([sel]) => /button|input|select|textarea|\.talk|placeholder/.test(sel)).flatMap(([sel, d]) =>
+    Object.entries(d).filter(([, value]) => /color-mix\(/.test(value)).map(([p, value]) => `${sel} { ${p}: ${value} }`));
+  assert.deepEqual(mixed, []);
+  // The edge of a switch is never the line, in either state.
+  const switches = [...rules].filter(([sel]) => /aria-pressed/.test(sel) && !/\.talk\[/.test(sel)).flatMap(([sel, d]) =>
+    Object.entries(d).filter(([p, value]) => /border/.test(p) && /--line|--aule-color-line/.test(value)).map(([p, value]) => `${sel} { ${p}: ${value} }`));
+  assert.deepEqual(switches, []);
   // A disabled button is never faded: its text came from a token, not from opacity.
   assert.equal(/opacity:\s*0?\.[0-9]+[^}]*\}/.test(playgroundCss.match(/button:disabled[^{]*\{[^}]*\}/)?.[0] ?? ""), false);
 });
