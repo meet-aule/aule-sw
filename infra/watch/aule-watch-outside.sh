@@ -60,16 +60,16 @@ check "tienda (shop.meetaule.com)" https://shop.meetaule.com/
 current=$(printf '%s\n' "${failing[@]+"${failing[@]}"}" | sed '/^$/d' | sort)
 previous=$(cat "$STATE" 2>/dev/null || true)
 last=$(cat "$LAST_MAIL" 2>/dev/null || echo 0)
-printf '%s\n' "$current" | sed '/^$/d' >"$STATE"
 
 subject=""
+details=$current
 if [ "$current" != "$previous" ] && [ -n "$current" ]; then
   subject="Aule (desde fuera): no responde $(echo "$current" | paste -sd, - | sed 's/,/, /g')"
   body="Desde el servidor de casa, $when, no responde:"
 elif [ "$current" != "$previous" ]; then
   subject="Aule (desde fuera): responde de nuevo"
   body="Desde el servidor de casa, $when, volvió a responder:"
-  current=$previous
+  details=$previous
 elif [ -n "$current" ] && [ $((now - last)) -ge $REMIND_SECONDS ]; then
   subject="Aule (desde fuera): sigue sin responder $(echo "$current" | paste -sd, - | sed 's/,/, /g')"
   body="Desde el servidor de casa, $when, sigue sin responder:"
@@ -77,8 +77,12 @@ fi
 [ -n "$subject" ] || exit 0
 
 body="$body
-$(echo "$current" | sed 's/^/- /')
+$(echo "$details" | sed 's/^/- /')
 
 Si fallan todas a la vez, lo más probable es que el servidor aule-prod (Contabo) esté caído o sin red: ssh aule-prod; si no entra, el panel de Contabo.
 Si falla una sola, mira el correo del vigía del propio servidor, que dice cuál servicio."
-mail "$subject" "$body" && echo "$now" >"$LAST_MAIL"
+# Keep the last delivered state if mail fails, so the next check retries even
+# a recovery or a changed incident within the six-hour reminder window.
+mail "$subject" "$body" || exit $?
+printf '%s\n' "$now" >"$LAST_MAIL" || exit 1
+printf '%s\n' "$current" | sed '/^$/d' >"$STATE"

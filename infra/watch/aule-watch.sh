@@ -85,16 +85,16 @@ check "respaldo (ninguno en 7 h)" backup_ok
 current=$(printf '%s\n' "${failing[@]+"${failing[@]}"}" | sed '/^$/d' | sort)
 previous=$(cat "$STATE" 2>/dev/null || true)
 last=$(cat "$LAST_MAIL" 2>/dev/null || echo 0)
-printf '%s\n' "$current" | sed '/^$/d' >"$STATE"
 
 subject=""
+details=$current
 if [ "$current" != "$previous" ] && [ -n "$current" ]; then
   subject="Aule: falla $(echo "$current" | paste -sd, - | sed 's/,/, /g')"
   body="En $host, $when, falla:"
 elif [ "$current" != "$previous" ]; then
   subject="Aule: todo funciona de nuevo"
   body="En $host, $when, volvió a funcionar lo que fallaba:"
-  current=$previous
+  details=$previous
 elif [ -n "$current" ] && [ $((now - last)) -ge $REMIND_SECONDS ]; then
   subject="Aule: sigue fallando $(echo "$current" | paste -sd, - | sed 's/,/, /g')"
   body="En $host, $when, sigue fallando:"
@@ -102,8 +102,12 @@ fi
 [ -n "$subject" ] || exit 0
 
 body="$body
-$(echo "$current" | sed 's/^/- /')
+$(echo "$details" | sed 's/^/- /')
 
 Para mirar: ssh aule-prod, luego docker ps y docker logs <contenedor>.
 Desplegar de nuevo: sudo -u aule-admin /etc/aule/aule-compose.sh up -d --build <servicio>."
-mail "$subject" "$body" && echo "$now" >"$LAST_MAIL"
+# Keep the last delivered state if mail fails, so the next check retries even
+# a recovery or a changed incident within the six-hour reminder window.
+mail "$subject" "$body" || exit $?
+printf '%s\n' "$now" >"$LAST_MAIL" || exit 1
+printf '%s\n' "$current" | sed '/^$/d' >"$STATE"
