@@ -18,6 +18,7 @@ let members: ParticipantInfo[];
 let creates = 0;
 let endings = 0;
 let deletions = 0;
+let reads = 0;
 const backend = createServer(async (request, response) => {
   for await (const _ of request) { /* drain synthetic body */ }
   response.setHeader("Content-Type", "application/json");
@@ -27,7 +28,7 @@ const backend = createServer(async (request, response) => {
   }
   if (request.url === "/v1/sessions") { creates++; return response.end(JSON.stringify(started)); }
   if (request.url === `/v1/sessions/${ID}/end`) { endings++; return response.end("{}"); }
-  if (request.url === `/v1/sessions/${ID}`) return response.end(JSON.stringify(lifecycle));
+  if (request.url === `/v1/sessions/${ID}`) { reads++; return response.end(JSON.stringify(lifecycle)); }
   response.writeHead(404); response.end("{}");
 });
 let page: ReturnType<typeof createPlayground>;
@@ -50,7 +51,7 @@ before(async () => {
 after(() => { page.close(); backend.close(); });
 beforeEach(async () => {
   lifecycle = { status: "active", can_resume: true, remaining_seconds: 450, end_reason: null, language: "es" };
-  authorization = 200; failure = false; creates = 0; endings = 0; deletions = 0;
+  authorization = 200; failure = false; creates = 0; endings = 0; deletions = 0; reads = 0;
   members = [new ParticipantInfo({ kind: 4, identity: "tutor" })];
   cookie = `aule_guardian=${TOKEN}`;
   // A fresh browser has no previous ticket. Free access keeps each fixture independent.
@@ -112,4 +113,42 @@ test("an old tab or a different origin cannot close the newer session", async ()
 test("a participant in another tab cannot be replaced by resume", async () => {
   members.push(new ParticipantInfo({ kind: 0, identity: "child" }));
   assert.equal((await post("session/resume", { session_id: ID, student_id: CHILD })).status, 409);
+});
+
+test("a session its tutor never started closes at once and gives its day's session back; a started one keeps it", async () => {
+  const url = `http://127.0.0.1:${(backend.address() as AddressInfo).port}`;
+  const capped = createPlayground(readSettings({ ...COMPLETE, AULE_PLATFORM_URL: url, AULE_ADMIN_TOKEN: "operator", PLAYGROUND_DAILY_SESSIONS: "1" }), {
+    async listParticipants() { return members; },
+    async deleteRoom() { deletions++; lifecycle.status = "ended"; },
+  });
+  await new Promise<void>(resolve => capped.listen(0, "127.0.0.1", resolve));
+  const at = `http://127.0.0.1:${(capped.address() as AddressInfo).port}/playground/api`;
+  let jar = `aule_guardian=${TOKEN}`;
+  const send = async (path: string, body: unknown) => {
+    const response = await fetch(`${at}/${path}`, { method: "POST", headers: { "Content-Type": "application/json", Cookie: jar }, body: JSON.stringify(body) });
+    const ticket = response.headers.get("set-cookie");
+    if (ticket?.startsWith("aule_recovery=")) jar = `aule_guardian=${TOKEN}; ${ticket.split(";")[0]}`;
+    return response;
+  };
+  try {
+    // Aule never arrived: the platform still has the session as created, never started.
+    lifecycle.status = "created";
+    assert.equal((await send("session", { student_id: CHILD })).status, 200);
+    reads = 0;
+    endings = 0;
+    assert.equal((await send("session/end", { session_id: ID })).status, 200);
+    assert.equal(endings, 1);
+    assert.equal(reads, 1, "nothing to flush: no waiting for the tutor to close it");
+    // So the family can try again today, with the one session the day has.
+    lifecycle.status = "active";
+    assert.equal((await send("session", { student_id: CHILD })).status, 200);
+    // A session the tutor started is the day's, ended or not.
+    assert.equal((await send("session/end", { session_id: ID })).status, 200);
+    assert.equal(endings, 2);
+    const again = await send("session", { student_id: CHILD });
+    assert.equal(again.status, 429);
+    assert.deepEqual(await again.json(), { error: "daily_limit" });
+  } finally {
+    capped.close();
+  }
 });

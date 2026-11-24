@@ -51,6 +51,7 @@ test("serves the page and its scripts with a strict policy", async () => {
     "/onboarding.js",
     "/home.js",
     "/session-messages.js",
+    "/first-steps.js",
     "/students.js",
     "/visuals.js",
     "/style.css",

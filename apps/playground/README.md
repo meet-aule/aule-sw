@@ -6,7 +6,17 @@ It is a small Node server with no database. It serves the page and has one endpo
 
 When the tutor shows something (an exercise, fraction bars, a number line...), the page draws it under the video from the description it receives; `public/visuals.js` is that drawing code, a plain function from the description to SVG.
 
-The page's screens follow the Figma file «Login-Aule» v8: the parent's on paper (who is here, the ways in, the emailed code, the authorisation, a short interview, the child's name), the student's in the device's black on white (what today's session is for, the microphone before it, the session). [FIGMA.md](FIGMA.md) maps each screen, component, token and icon to the code, and says where the page differs from the file.
+The page's screens follow the Figma file «Login-Aule» v8, in the order César gave the flows on 24 November: the parent's on paper (whether there is an account, the ways in, the emailed code, the authorisation, a short interview, the child's name), then the child's in the device's black on white (the hand-off «¿Eres tú?», what today's session is for, the microphone before it, the session). [FIGMA.md](FIGMA.md) maps each screen, component, token and icon to the code, and says where the page differs from the file.
+
+### A child's first steps
+
+- **The hand-off.** After the parent saves the child's name, «Empezar su primera sesión» hands the browser to the child: «Ahora le toca a {nombre}.», «¿Eres tú?» and the name, with «Sí, soy yo» and «No soy yo» (which opens Configurar for the name). It follows César's A02; FIGMA.md D25.
+- **The microphone check (A05).** A05 asks the browser for the microphone alone. A bar moves with its level, and once a voice has been heard the line beside Aule's face says «Te escucho.»; with no voice it gives one hint at a time, and a microphone the browser will not give is named (blocked, missing or busy) with «Intentar otra vez». «Probar el sonido» plays the chime Aule joins with. The level is worked out in the browser by an AnalyserNode that is not connected to anything: no sound leaves the device, is played back or kept. The check never holds back «Empezar la sesión». FIGMA.md D26.
+- **The camera, off until it is needed.** A05's camera starts off and the browser is asked for it only when it is turned on; there it only shows what it sees. A session never turns it on by itself, as it joins or as the tutor comes in: it goes on for «Mostrar mi tarea», or, with a tutor that takes no pictures, with the session's «Cámara» once the tutor is in. FIGMA.md D12.
+- **The first turn.** On a first run (the child said «Sí, soy yo» in this visit, or the family's trial has not started) the session's title is A16's «Hola, soy Aule» and «Soy tu tutor. Soy una inteligencia artificial.». With hold to talk, a line above the button teaches holding until the first good hold (on a short screen it stays in the page, under Aule's tile, so it never covers the session's controls), and a press too short to carry a voice gets a hint. FIGMA.md D27, D28.
+- **When Aule does not arrive.** After 15 seconds the session says so, with «Intentar otra vez», which closes the attempt and goes back to A05. A session Aule never came to does not count: the platform's plan counts only a session its tutor started, and the page gives the day's session back when such a session is closed (`api/session/end`, at most `PLAYGROUND_DAILY_SESSIONS` times a day). FIGMA.md D29.
+
+The words of these steps are in `public/first-steps.js`, in Spanish and English, written in the student's language. First run is held in the page's memory only: nothing new goes into the browser's storage.
 
 ## Settings
 
@@ -78,7 +88,7 @@ node --env-file=../../.env src/server.ts
 ## Testing as on the device
 
 - **Device screen** (a switch in the session) shows the drawing as the device's panel would: 800 x 480, snapped to black, white and one grey, with a flash on every redraw. It does not imitate ghosting.
-- **Hold to talk** appears when the tutor sets the participant attribute `aule.turns` to `manual`. The microphone is then closed except while the button (or the space bar) is held: pressing calls the tutor's `start_turn`, letting go calls `end_turn`, and losing the button or the window calls `cancel_turn`. The microphone switch is the device's mute: while it is off nothing is sent.
+- **Hold to talk** appears when the tutor sets the participant attribute `aule.turns` to `manual`. The microphone is then closed except while the button (or the space bar) is held: pressing calls the tutor's `start_turn`, letting go calls `end_turn`, and losing the button or the window calls `cancel_turn`. The microphone switch is the device's mute: while it is off nothing is sent. While the button is held, a bar inside it follows the microphone's level, measured in the browser.
 
 - **Typing** to the tutor works at any time, next to speaking. A typed message passes the same safety gates as a spoken one.
 - **Report for the family**: with the team box ticked and a platform, the page shows, after the session ends, the summary and next step the review wrote for the family.

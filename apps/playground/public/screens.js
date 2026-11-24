@@ -52,10 +52,10 @@ function allowed(id) {
   return !screen.needs || needs.get(screen.needs)?.() === true;
 }
 
-/** Where a visit lands: the family's students, the first question, or nothing without a way to sign in. */
+/** Where a visit lands: the family's students, C01's question, or nothing without a way to sign in. */
 export function landing() {
   if (signedIn()) return "home";
-  return account.google_client_id || account.providers?.length ? "c00" : null;
+  return account.google_client_id || account.providers?.length ? "c01" : null;
 }
 
 /** The screen itself if it can show, else the first one back from it that can. */
