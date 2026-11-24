@@ -421,7 +421,7 @@ components:
 
 ## Overview
 
-One design for every Aule product: the demo and the parents' page (`aule-sw`), the store (`aule-store`), the device screen and the small colour screen. It is white, ink and one blue, and it reads calmly, like a tool and not like a toy. Every heading, the tutor's words and the interface are set in Inter. The only drawing of letters that is not Inter is the "Aule" logotype, which is a fixed drawing, not text.
+One design for every Aule product: the demo and the parents' page (`aule-sw`), the store (`aule-store`), the device screen and the small colour screen. It is white, ink and one blue, and it reads calmly, like a tool and not like a toy. Every heading, the tutor's words, the interface and the "Aule" logotype are set in Inter. The logotype is the word "Aule" as text in Inter Semi Bold (600), the same as the brand component of the Figma, at the size that component gives each screen.
 
 This file is the original. `aule-store` carries an identical copy that a check keeps honest. The CSS and the Figma variables are generated from it (`pnpm design-tokens`), and CI fails if a generated file does not match.
 
@@ -505,7 +505,7 @@ Radius 8 for buttons, fields and notices; 12 for tiles and messages; 16 for card
 ## Do's and Don'ts
 
 - Do use the one blue, and a link on grey in `secondary-text`.
-- Do keep Inter everywhere, and the logotype as a drawing.
+- Do keep Inter everywhere, the logotype too (Inter Semi Bold).
 - Do keep visible keyboard focus and respect `prefers-reduced-motion`.
 - Don't load fonts, scripts or images from other domains.
 - Don't make a pill button, or put the same colour as both the background and the text of one button.
