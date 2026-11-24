@@ -1,245 +1,764 @@
 <!doctype html>
-<html lang="es">
+<html lang="es" data-surface="paper">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="robots" content="noindex, nofollow" />
     <title>Aule · Tu tutor con IA</title>
-    <meta name="description" content="Aule, el tutor con IA que conversa por voz con tu hijo y practica matemática sin darle la respuesta. Crea tu cuenta: 7 días gratis, sin tarjeta." />
+    <meta name="description" content="Aule, el tutor con IA que conversa por voz con tu hijo y practica matemática sin darle la respuesta." />
     <meta name="theme-color" content="#f5f2ea" />
     <link rel="icon" href="icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="apple-touch-icon.png" />
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="stylesheet" href="style.css" />
+    <link rel="preload" as="font" type="font/woff2" href="fonts/sans.woff2" crossorigin />
+    <link rel="preload" as="font" type="font/woff2" href="fonts/serif.woff2" crossorigin />
     <!-- Signing in comes first: its scripts and Google's are fetched at once. -->
     <link rel="modulepreload" href="students.js" />
+    <link rel="modulepreload" href="steps.js" />
+    <link rel="modulepreload" href="screens.js" />
     <link rel="modulepreload" href="signin.js" />
     <link rel="preload" as="script" href="https://accounts.google.com/gsi/client" />
   </head>
   <body>
+    <!--
+      Each screen is a frame of the Figma «Login-Aule» v8 (file yOAIYJNl5nZ7NgWtESN0Fo):
+      the parent's on page 160:1345 «Vigente · Login padre · v8», on paper; the
+      student's on page 190:717 «Vigente · Login alumno · v8», in the device's ink.
+      The comment before each section names its frame; steps.js holds the same
+      table and FIGMA.md maps screens, components and tokens to the code.
+    -->
     <main>
-      <header>
-        <div class="brand">
-          <svg viewBox="0 0 64 64" aria-hidden="true" focusable="false">
-            <rect x="6" y="8" width="52" height="40" rx="10" fill="#fbfaf6" stroke="#141414" stroke-width="4" />
-            <circle cx="24" cy="27" r="4" fill="#141414" />
-            <circle cx="40" cy="27" r="4" fill="#141414" />
-            <path d="M24 37 q8 6 16 0" fill="none" stroke="#141414" stroke-width="3.5" stroke-linecap="round" />
-            <path d="M22 48 v8 M42 48 v8 M16 56 h32" fill="none" stroke="#141414" stroke-width="4" stroke-linecap="round" />
-          </svg>
-          <h1>Aule</h1>
+      <!-- Figma: C00 ¿Quién eres? · Móvil 160:1649 / Escritorio 160:1727 -->
+      <section class="screen" data-screen="c00" data-surface="paper" hidden aria-labelledby="c00-title">
+        <div class="frame">
+          <header class="screen-head">
+            <div class="head-row"><p class="wordmark">Aule</p></div>
+            <ol class="progress plain" aria-hidden="true"></ol>
+          </header>
+          <div class="screen-body">
+            <div class="question">
+              <p class="question-step">Empezar</p>
+              <h2 class="question-title" id="c00-title" tabindex="-1">¿Quién eres?</h2>
+              <p class="question-help">Elige cómo vas a usar Aule en este dispositivo.</p>
+            </div>
+            <div class="controls">
+              <div class="options">
+                <button type="button" class="option" id="c00-parent">Soy padre de familia</button>
+                <button type="button" class="option" id="c00-child">Soy alumno</button>
+              </div>
+            </div>
+          </div>
+          <div class="screen-foot"></div>
         </div>
-        <p>Habla con tu tutor por el micrófono y muéstrale tu cuaderno con la cámara.</p>
-      </header>
+      </section>
 
-      <section id="welcome">
-        <!-- Signing in: an account the family already has, then the student this session is for. -->
-        <div id="signed-out" class="signin" hidden>
-          <!-- Aule says hello: the same face the tutor has in a session. -->
-          <wobnimo-mascot class="signin-mascot" character="mochi" state="idle" aria-hidden="true"></wobnimo-mascot>
-          <!-- Creating an account and coming back are the same steps; the words say which one. -->
-          <div class="signin-tabs" role="tablist" aria-label="Cuenta">
-            <button type="button" role="tab" id="tab-new" aria-selected="true">Crear cuenta</button>
-            <button type="button" role="tab" id="tab-back" aria-selected="false">Iniciar sesión</button>
+      <!-- Figma: web-only, mirrors the device's «C00 ¿Quién eres? · Aparato · Padre» 190:1035; built from Botón/Negro 190:834 -->
+      <section class="screen" data-screen="c00-student" data-surface="ink" hidden aria-labelledby="c00-student-title">
+        <div class="ink-frame">
+          <div class="ink-body">
+            <h2 class="ink-title" id="c00-student-title" tabindex="-1">Soy alumno</h2>
+            <p class="ink-text">Pídele a tu papá o mamá que entre primero con su cuenta en este navegador. Luego eliges qué hacemos hoy.</p>
+            <!-- Where A06–A14 (the child's own account on the device) would go. -->
+            <p class="ink-text">Pronto también podrás empezar desde el aparato Aule.</p>
           </div>
-          <h2 id="signin-title">Crea tu cuenta de familia</h2>
-          <p id="signin-lead" class="signin-lead">7 días gratis, sin tarjeta. Luego decides.</p>
-          <div id="google"></div>
-          <!-- Each shows only when the server has that provider set up. -->
-          <div class="providers">
-            <a id="signin-github" class="provider" href="api/signin/github/start" hidden>
-              <svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/></svg>
-              <span data-new="Registrarse con GitHub" data-back="Acceder con GitHub">Registrarse con GitHub</span>
-            </a>
-            <a id="signin-meta" class="provider" href="api/signin/meta/start" hidden>
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#0866FF" d="M24 12.073C24 5.405 18.627 0 12 0S0 5.405 0 12.073C0 18.1 4.388 23.094 10.125 24v-8.437H7.078v-3.49h3.047V9.413c0-3.026 1.792-4.697 4.533-4.697 1.312 0 2.686.236 2.686.236v2.971H15.83c-1.491 0-1.956.93-1.956 1.886v2.264h3.328l-.532 3.49h-2.796V24C19.612 23.094 24 18.1 24 12.073z"/></svg>
-              <span data-new="Registrarse con Facebook" data-back="Acceder con Facebook">Registrarse con Facebook</span>
-            </a>
-            <a id="signin-apple" class="provider" href="api/signin/apple/start" hidden>
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"/></svg>
-              <span data-new="Registrarse con Apple" data-back="Acceder con Apple">Registrarse con Apple</span>
-            </a>
+          <div class="ink-foot">
+            <span></span>
+            <button type="button" class="ink-button" data-back>Volver</button>
           </div>
-          <!-- With an address alone: a six-digit code arrives by email. -->
-          <div id="email-way" class="email-way" hidden>
-            <p class="or"><span>o con tu correo</span></p>
-            <form id="email-start" class="email-form" autocomplete="on">
-              <label class="sr-only" for="email-address">Tu correo</label>
-              <input id="email-address" type="email" required autocomplete="email" placeholder="tu@correo.com" maxlength="254" />
-              <button type="submit">Enviarme un código</button>
-            </form>
-            <form id="email-verify" class="email-form" autocomplete="off" hidden>
-              <p id="email-sent" class="note"></p>
-              <label class="sr-only" for="email-code">Código de 6 dígitos</label>
-              <input id="email-code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required placeholder="Código de 6 dígitos" />
-              <label class="sr-only" for="email-name">Tu nombre</label>
-              <input id="email-name" type="text" autocomplete="name" maxlength="120" placeholder="Tu nombre (padre, madre o apoderado)" />
-              <button type="submit">Entrar</button>
-              <button type="button" id="email-back" class="quiet">Usar otro correo</button>
-            </form>
-          </div>
-          <ul class="benefits">
-            <li>Tu hijo conversa con su tutor por voz y le muestra su cuaderno.</li>
-            <li>Matemática de primaria con ejercicios propios; en lo demás, acompaña sus tareas.</li>
-            <li>Un resumen para ti después de cada sesión.</li>
-          </ul>
-          <p class="note">Tu cuenta es la del padre, la madre o el apoderado; ahí agregas a tus hijos.</p>
         </div>
+      </section>
 
-        <form id="who" hidden autocomplete="off">
-          <h2 id="hello" class="hello"></h2>
-          <!-- The family's plan: the trial's days, or the sessions left this week. -->
-          <p id="plan-line" class="plan-line" hidden></p>
-          <fieldset id="students">
-            <legend>¿Quién va a estudiar hoy?</legend>
-            <div id="student-list"></div>
-            <p id="no-students" class="note" hidden>
-              Todavía no hay alumnos en tu cuenta. Agrega al primero para empezar.
-            </p>
-            <button type="button" id="add-student" class="quiet">+ Agregar un alumno</button>
-          </fieldset>
+      <!-- Figma: C01 ¿Ya tienes cuenta? · Móvil 160:1661 / Escritorio 160:1741 -->
+      <section class="screen" data-screen="c01" data-surface="paper" hidden aria-labelledby="c01-title">
+        <div class="frame">
+          <header class="screen-head">
+            <div class="head-row">
+              <p class="wordmark">Aule</p>
+              <button type="button" class="link back" data-back><span aria-hidden="true">←</span> Atrás</button>
+            </div>
+            <ol class="progress plain" aria-hidden="true"></ol>
+          </header>
+          <div class="screen-body">
+            <div class="question">
+              <p class="question-step">Empezar</p>
+              <h2 class="question-title" id="c01-title" tabindex="-1">¿Ya tienes una cuenta en Aule?</h2>
+            </div>
+            <div class="controls">
+              <div class="options">
+                <button type="button" class="option" id="c01-new">No, es mi primera vez</button>
+                <button type="button" class="option" id="c01-back">Sí, ya tengo cuenta</button>
+              </div>
+            </div>
+          </div>
+          <div class="screen-foot"></div>
+        </div>
+      </section>
 
-          <!-- What the family says this session is for. Aule starts from it. -->
-          <fieldset id="today" hidden>
-            <legend>¿Qué toca hoy?</legend>
-            <div id="kind" class="chips" role="radiogroup" aria-label="Para qué es la sesión"></div>
-            <div id="today-details" hidden>
-              <label>
-                Asignatura
+      <!-- Figma: P01 ¿Cómo quieres entrar? · Móvil 160:1636 / Escritorio 160:1455 -->
+      <section class="screen" data-screen="p01" data-surface="paper" hidden aria-labelledby="p01-title">
+        <div class="frame">
+          <header class="screen-head">
+            <div class="head-row">
+              <p class="wordmark">Aule</p>
+              <button type="button" class="link back" data-back><span aria-hidden="true">←</span> Atrás</button>
+            </div>
+            <ol class="progress" aria-label="Avance"></ol>
+          </header>
+          <div class="screen-body">
+            <div class="question">
+              <h2 class="question-title" id="p01-title" tabindex="-1">¿Cómo quieres entrar?</h2>
+              <p class="question-help">No necesitas crear ninguna contraseña.</p>
+            </div>
+            <div class="controls ways">
+              <!-- Figma: Botón/Google 168:991. Google draws its own button here. -->
+              <div class="google-slot" id="google-p01" data-google hidden></div>
+              <button type="button" class="option" data-way="email" hidden>Con mi correo (te enviamos un código)</button>
+              <details class="other-ways" hidden>
+                <summary class="link">Otras formas de entrar</summary>
+                <div class="providers">
+                  <a class="provider" data-provider="github" href="api/signin/github/start" hidden>
+                    <svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/></svg>
+                    <span>Continuar con GitHub</span>
+                  </a>
+                  <a class="provider" data-provider="meta" href="api/signin/meta/start" hidden>
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#0866FF" d="M24 12.073C24 5.405 18.627 0 12 0S0 5.405 0 12.073C0 18.1 4.388 23.094 10.125 24v-8.437H7.078v-3.49h3.047V9.413c0-3.026 1.792-4.697 4.533-4.697 1.312 0 2.686.236 2.686.236v2.971H15.83c-1.491 0-1.956.93-1.956 1.886v2.264h3.328l-.532 3.49h-2.796V24C19.612 23.094 24 18.1 24 12.073z"/></svg>
+                    <span>Continuar con Facebook</span>
+                  </a>
+                  <a class="provider" data-provider="apple" href="api/signin/apple/start" hidden>
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"/></svg>
+                    <span>Continuar con Apple</span>
+                  </a>
+                </div>
+              </details>
+            </div>
+          </div>
+          <div class="screen-foot"></div>
+        </div>
+      </section>
+
+      <!-- Figma: P02 Tu correo · Móvil 160:1624 / Escritorio 160:1755 -->
+      <section class="screen" data-screen="p02" data-surface="paper" hidden aria-labelledby="p02-title">
+        <form class="frame" id="email-start" novalidate autocomplete="on">
+          <header class="screen-head">
+            <div class="head-row">
+              <p class="wordmark">Aule</p>
+              <button type="button" class="link back" data-back><span aria-hidden="true">←</span> Atrás</button>
+            </div>
+            <ol class="progress" aria-label="Avance"></ol>
+          </header>
+          <div class="screen-body">
+            <div class="question">
+              <h2 class="question-title" id="p02-title" tabindex="-1">¿Cuál es tu correo?</h2>
+              <p class="question-help">Te enviaremos un código para entrar.</p>
+            </div>
+            <div class="controls">
+              <!-- Figma: Campo/Línea 160:1355 (Vacío 160:1356, Lleno 160:1362, Error 160:1368) -->
+              <div class="field">
+                <label class="sr-only" for="email-address">Tu correo</label>
+                <input id="email-address" type="email" autocomplete="email" inputmode="email" placeholder="nombre@correo.com" maxlength="254" aria-describedby="email-error" />
+                <p class="field-error" id="email-error" role="alert" hidden>Revisa el correo: no parece una dirección válida.</p>
+              </div>
+            </div>
+          </div>
+          <div class="screen-foot">
+            <button type="submit" class="primary">Enviarme un código</button>
+          </div>
+        </form>
+      </section>
+
+      <!-- Figma: P03 Código · Móvil 160:1604 / Escritorio 160:1768 -->
+      <section class="screen" data-screen="p03" data-surface="paper" hidden aria-labelledby="p03-title">
+        <form class="frame" id="email-verify" novalidate autocomplete="off">
+          <header class="screen-head">
+            <div class="head-row">
+              <p class="wordmark">Aule</p>
+              <button type="button" class="link back" data-back><span aria-hidden="true">←</span> Atrás</button>
+            </div>
+            <ol class="progress" aria-label="Avance"></ol>
+          </header>
+          <div class="screen-body">
+            <div class="question">
+              <h2 class="question-title" id="p03-title" tabindex="-1">Escribe el código que te enviamos</h2>
+              <p class="question-help">Puedes pegarlo. Llega en un minuto.</p>
+            </div>
+            <div class="controls">
+              <!-- Figma: Dígito/Base 160:1405 (Vacío 160:1406, Foco 160:1408, Lleno 160:1410): one real field over six boxes. -->
+              <div class="digits">
+                <label class="sr-only" for="email-code">Código de 6 dígitos</label>
+                <input id="email-code" class="digits-input" inputmode="numeric" autocomplete="one-time-code" enterkeyhint="go" spellcheck="false" />
+                <div class="digit-boxes" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span><span></span></div>
+              </div>
+              <p class="wait" id="code-wait" role="status" hidden>Revisando tu código. Suele tardar unos segundos; si no avanza, pide uno nuevo.</p>
+              <div class="links">
+                <button type="button" class="link" id="code-resend">Reenviar</button>
+                <button type="button" class="link" id="code-missing">No me llega el correo</button>
+              </div>
+            </div>
+          </div>
+          <div class="screen-foot">
+            <button type="submit" class="primary" id="code-continue">Continuar</button>
+          </div>
+        </form>
+      </section>
+
+      <!-- Figma: web-only, after P03 Código (160:1604); built from Pregunta/Base 161:2101, Campo/Línea 160:1355, Botón/Principal 160:1392 -->
+      <section class="screen" data-screen="p03-name" data-surface="paper" hidden aria-labelledby="p03-name-title">
+        <form class="frame" id="email-name-form" novalidate autocomplete="on">
+          <header class="screen-head">
+            <div class="head-row">
+              <p class="wordmark">Aule</p>
+              <button type="button" class="link back" data-back><span aria-hidden="true">←</span> Atrás</button>
+            </div>
+            <ol class="progress" aria-label="Avance"></ol>
+          </header>
+          <div class="screen-body">
+            <div class="question">
+              <h2 class="question-title" id="p03-name-title" tabindex="-1">¿Cómo te llamas?</h2>
+              <p class="question-help">Es la primera vez que entras con este correo. Con tu nombre creamos tu cuenta.</p>
+            </div>
+            <div class="controls">
+              <div class="field">
+                <label for="email-name">Tu nombre</label>
+                <input id="email-name" type="text" autocomplete="name" maxlength="120" placeholder="Ej.: Ana" aria-describedby="email-name-error" />
+                <p class="field-error" id="email-name-error" role="alert" hidden>Escribe tu nombre para crear tu cuenta.</p>
+              </div>
+            </div>
+          </div>
+          <div class="screen-foot">
+            <button type="submit" class="primary">Crear mi cuenta</button>
+          </div>
+        </form>
+      </section>
+
+      <!-- Figma: P04 Tu autorización · Móvil 160:1592 / Escritorio 160:1442; P04 · Marcada · Móvil 160:1994 -->
+      <section class="screen" data-screen="p04" data-surface="paper" hidden aria-labelledby="p04-title">
+        <form class="frame" id="consent-form" novalidate autocomplete="off">
+          <header class="screen-head">
+            <div class="head-row">
+              <p class="wordmark">Aule</p>
+              <button type="button" class="link back" data-back><span aria-hidden="true">←</span> Atrás</button>
+            </div>
+            <ol class="progress" aria-label="Avance"></ol>
+          </header>
+          <div class="screen-body">
+            <div class="question">
+              <h2 class="question-title" id="p04-title" tabindex="-1">Antes de empezar, tu autorización</h2>
+              <p class="question-help">Aule es un tutor por voz para tu hijo. Necesitamos tu permiso antes de crear su perfil.</p>
+            </div>
+            <div class="controls">
+              <!-- Figma: Casilla/Base 160:1397; P04 · Marcada · Móvil 160:1994 when the box is checked -->
+              <label class="check boxed">
+                <input type="checkbox" id="consent" />
+                <span class="box" aria-hidden="true"></span>
+                <span>Soy su padre, madre o apoderado y autorizo que Aule procese su voz para conversar con él y, si usa la cámara, las imágenes de su cuaderno para revisar sus ejercicios.</span>
+              </label>
+              <button type="button" class="link" id="keep-toggle" aria-expanded="true" aria-controls="keep-panel">Qué guardamos</button>
+              <!-- The Figma does not draw where «Qué guardamos» goes: the two choices the editor keeps, here,
+                   with the editor's defaults (D5): remembering ticked, the written conversation not. Open before
+                   «Autorizo», so the parent sees both and can change either; only the consent above starts unticked. -->
+              <div class="keep-panel" id="keep-panel">
+                <label class="check">
+                  <input type="checkbox" id="keep-memory" checked />
+                  <span class="box" aria-hidden="true"></span>
+                  <span>Recordar entre sesiones lo que aprende y lo que le gusta</span>
+                </label>
+                <label class="check">
+                  <input type="checkbox" id="keep-transcripts" />
+                  <span class="box" aria-hidden="true"></span>
+                  <span>Guardar por escrito la conversación de cada sesión</span>
+                </label>
+                <p class="small-help">El audio y el video nunca se guardan. Puedes cambiarlo cuando quieras en Configurar.</p>
+                <a class="link" href="https://meetaule.com/legal/privacy" target="_blank" rel="noopener">Política de privacidad</a>
+              </div>
+            </div>
+          </div>
+          <div class="screen-foot">
+            <button type="submit" class="primary" id="consent-ok" disabled>Autorizo</button>
+          </div>
+        </form>
+      </section>
+
+      <!-- Figma: P05 Conozcamos a tu hijo · Móvil 160:1581 / Escritorio 160:1789 -->
+      <section class="screen" data-screen="p05" data-surface="paper" hidden aria-labelledby="p05-title">
+        <div class="frame">
+          <header class="screen-head">
+            <div class="head-row">
+              <p class="wordmark">Aule</p>
+              <button type="button" class="link back" data-back><span aria-hidden="true">←</span> Atrás</button>
+            </div>
+            <ol class="progress" aria-label="Avance"></ol>
+          </header>
+          <div class="screen-body">
+            <div class="question">
+              <h2 class="question-title" id="p05-title" tabindex="-1">Conozcamos a tu hijo</h2>
+              <p class="question-help">Para que las sesiones sean realmente personalizadas, nos gustaría conocer un poco más a tu hijo.<br />3 preguntas, un par de minutos. Es opcional y solo lo usamos para personalizar sus sesiones.</p>
+            </div>
+          </div>
+          <div class="screen-foot">
+            <button type="button" class="link" id="interview-later">En otro momento</button>
+            <button type="button" class="primary" id="interview-start">Empezar entrevista</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Figma: P06 Entrevista · expectativas · Móvil 160:1568 / Escritorio 160:1801 -->
+      <section class="screen" data-screen="p06" data-surface="paper" hidden aria-labelledby="p06-title">
+        <form class="frame" id="expect-form" novalidate autocomplete="off">
+          <header class="screen-head">
+            <div class="head-row">
+              <p class="wordmark">Aule</p>
+              <button type="button" class="link back" data-back><span aria-hidden="true">←</span> Atrás</button>
+            </div>
+            <ol class="progress" aria-label="Avance"></ol>
+          </header>
+          <div class="screen-body">
+            <div class="question">
+              <p class="question-step">1 de 3</p>
+              <h2 class="question-title" id="p06-title" tabindex="-1">¿Qué esperas de Aule en el día a día?</h2>
+            </div>
+            <div class="controls">
+              <div class="field">
+                <label class="sr-only" for="expect">Tu respuesta</label>
+                <textarea id="expect" rows="3" maxlength="200" placeholder="Escribe aquí tu respuesta" aria-describedby="expect-help"></textarea>
+                <p class="small-help" id="expect-help">Hasta 200 caracteres.</p>
+              </div>
+            </div>
+          </div>
+          <div class="screen-foot">
+            <button type="button" class="link" id="expect-skip">Saltar pregunta</button>
+            <button type="submit" class="primary">Siguiente</button>
+          </div>
+        </form>
+      </section>
+
+      <!-- Figma: web-only, interview question 2; built from Pregunta/Base 161:2101, Opción/Grande 160:1374 -->
+      <section class="screen" data-screen="p06-grade" data-surface="paper" hidden aria-labelledby="p06-grade-title">
+        <div class="frame">
+          <header class="screen-head">
+            <div class="head-row">
+              <p class="wordmark">Aule</p>
+              <button type="button" class="link back" data-back><span aria-hidden="true">←</span> Atrás</button>
+            </div>
+            <ol class="progress" aria-label="Avance"></ol>
+          </header>
+          <div class="screen-body">
+            <div class="question">
+              <p class="question-step">2 de 3</p>
+              <h2 class="question-title" id="p06-grade-title" tabindex="-1">¿En qué grado está?</h2>
+              <p class="question-help">Así Aule le propone ejercicios de su nivel.</p>
+            </div>
+            <div class="controls">
+              <div class="options two" id="grade-options"></div>
+            </div>
+          </div>
+          <div class="screen-foot">
+            <button type="button" class="link" id="grade-skip">Saltar pregunta</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Figma: P07 Entrevista · gustos · Móvil 160:1547 / Escritorio 160:1815 -->
+      <section class="screen" data-screen="p07" data-surface="paper" hidden aria-labelledby="p07-title">
+        <form class="frame" id="likes-form" novalidate autocomplete="off">
+          <header class="screen-head">
+            <div class="head-row">
+              <p class="wordmark">Aule</p>
+              <button type="button" class="link back" data-back><span aria-hidden="true">←</span> Atrás</button>
+            </div>
+            <ol class="progress" aria-label="Avance"></ol>
+          </header>
+          <div class="screen-body">
+            <div class="question">
+              <p class="question-step">3 de 3</p>
+              <h2 class="question-title" id="p07-title" tabindex="-1">¿Qué le gusta a tu hijo?</h2>
+              <p class="question-help">Elige todos los que apliquen y, si falta algo, escríbelo abajo.</p>
+            </div>
+            <div class="controls spaced">
+              <fieldset class="options wrap" id="likes">
+                <legend class="sr-only">Lo que le gusta</legend>
+              </fieldset>
+              <div class="field">
+                <label for="likes-more">¿Algo más que le guste?</label>
+                <input id="likes-more" type="text" maxlength="200" placeholder="Ej.: dinosaurios, cocinar, ajedrez" aria-describedby="likes-help" />
+                <p class="small-help" id="likes-help">Opcional. Escríbelo como lo dirías tú.</p>
+              </div>
+            </div>
+          </div>
+          <div class="screen-foot">
+            <button type="submit" class="primary">Siguiente</button>
+          </div>
+        </form>
+      </section>
+
+      <!-- Figma: web-only, in the place of P10 Nombre de usuario (Móvil 160:1493 / Escritorio 160:1877, device-only); built from Pregunta/Base 161:2101, Campo/Línea 160:1355, Botón/Principal 160:1392 -->
+      <section class="screen" data-screen="p10-name" data-surface="paper" hidden aria-labelledby="p10-name-title">
+        <form class="frame" id="child-name-form" novalidate autocomplete="off">
+          <header class="screen-head">
+            <div class="head-row">
+              <p class="wordmark">Aule</p>
+              <button type="button" class="link back" data-back><span aria-hidden="true">←</span> Atrás</button>
+            </div>
+            <ol class="progress" aria-label="Avance"></ol>
+          </header>
+          <div class="screen-body">
+            <div class="question">
+              <h2 class="question-title" id="p10-name-title" tabindex="-1">¿Cómo quieres que lo llamemos?</h2>
+              <p class="question-help">Aule lo llamará así en sus sesiones. Basta un nombre corto o un apodo.</p>
+            </div>
+            <div class="controls">
+              <div class="field">
+                <label class="sr-only" for="child-name">Su nombre o apodo</label>
+                <input id="child-name" type="text" maxlength="40" placeholder="Ej.: Mati" aria-describedby="child-name-error" />
+                <p class="field-error" id="child-name-error" role="alert" hidden>Escribe cómo quieres que lo llamemos.</p>
+              </div>
+            </div>
+          </div>
+          <div class="screen-foot">
+            <button type="submit" class="primary" id="child-save">Guardar</button>
+          </div>
+        </form>
+      </section>
+
+      <!-- Figma: P12 Listo · Móvil 160:1469 / Escritorio 160:1909 -->
+      <section class="screen" data-screen="p12" data-surface="paper" hidden aria-labelledby="p12-title">
+        <div class="frame">
+          <header class="screen-head">
+            <div class="head-row"><p class="wordmark">Aule</p></div>
+            <ol class="progress" aria-label="Avance"></ol>
+          </header>
+          <div class="screen-body">
+            <div class="question">
+              <p class="question-step">Listo</p>
+              <h2 class="question-title" id="p12-title" tabindex="-1">Listo.</h2>
+              <!-- With no session left in the plan, onboarding.js puts the plan's line here instead. -->
+              <p class="question-help" id="p12-help">Ya puede empezar su primera sesión desde este navegador.</p>
+            </div>
+            <!-- Where P08–P11 (linking the device) would go. -->
+            <p class="small-help">Pronto también podrás enlazar aquí el aparato Aule.</p>
+          </div>
+          <div class="screen-foot">
+            <button type="button" class="link" id="done-finish">Terminar</button>
+            <button type="button" class="primary" id="done-start">Empezar su primera sesión</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Figma: P13 Entra a tu cuenta · Móvil 160:1674 / Escritorio 160:1920; P13 · De vuelta · Móvil 160:1711 / Escritorio 160:1934 -->
+      <section class="screen" data-screen="p13" data-surface="paper" hidden aria-labelledby="p13-title">
+        <div class="frame">
+          <header class="screen-head">
+            <div class="head-row">
+              <p class="wordmark">Aule</p>
+              <button type="button" class="link back" data-back><span aria-hidden="true">←</span> Atrás</button>
+            </div>
+            <ol class="progress plain" aria-hidden="true"></ol>
+          </header>
+          <div class="screen-body">
+            <div class="question">
+              <!-- Figma: P13 · De vuelta 160:1711 / 160:1934 when this browser signed in before -->
+              <p class="question-step" id="p13-greeting">Te damos la bienvenida</p>
+              <h2 class="question-title" id="p13-title" tabindex="-1">Entra a tu cuenta</h2>
+            </div>
+            <div class="controls ways">
+              <!-- Figma: Botón/Google 168:991. Google draws its own button here. -->
+              <div class="google-slot" id="google-p13" data-google hidden></div>
+              <button type="button" class="option" data-way="email" hidden>Con mi correo (te enviamos un código)</button>
+              <details class="other-ways" hidden>
+                <summary class="link">Otras formas de entrar</summary>
+                <div class="providers">
+                  <a class="provider" data-provider="github" href="api/signin/github/start" hidden>
+                    <svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/></svg>
+                    <span>Continuar con GitHub</span>
+                  </a>
+                  <a class="provider" data-provider="meta" href="api/signin/meta/start" hidden>
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#0866FF" d="M24 12.073C24 5.405 18.627 0 12 0S0 5.405 0 12.073C0 18.1 4.388 23.094 10.125 24v-8.437H7.078v-3.49h3.047V9.413c0-3.026 1.792-4.697 4.533-4.697 1.312 0 2.686.236 2.686.236v2.971H15.83c-1.491 0-1.956.93-1.956 1.886v2.264h3.328l-.532 3.49h-2.796V24C19.612 23.094 24 18.1 24 12.073z"/></svg>
+                    <span>Continuar con Facebook</span>
+                  </a>
+                  <a class="provider" data-provider="apple" href="api/signin/apple/start" hidden>
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"/></svg>
+                    <span>Continuar con Apple</span>
+                  </a>
+                </div>
+              </details>
+            </div>
+          </div>
+          <div class="screen-foot"></div>
+        </div>
+      </section>
+
+      <!-- Figma: P14 Revisa tu correo · Móvil 160:1688 / Escritorio 160:1948 -->
+      <section class="screen" data-screen="p14" data-surface="paper" hidden aria-labelledby="p14-title">
+        <div class="frame">
+          <header class="screen-head">
+            <div class="head-row">
+              <p class="wordmark">Aule</p>
+              <button type="button" class="link back" data-back><span aria-hidden="true">←</span> Atrás</button>
+            </div>
+            <ol class="progress plain" aria-hidden="true"></ol>
+          </header>
+          <div class="screen-body">
+            <div class="question">
+              <h2 class="question-title" id="p14-title" tabindex="-1">Revisa tu correo</h2>
+              <p class="question-help">Te enviamos un código para entrar. Si no lo ves, revisa la carpeta de spam o de promociones; puede tardar un minuto.</p>
+            </div>
+            <div class="controls">
+              <p class="sent-to">Lo enviamos a <span id="masked-email"></span></p>
+              <button type="button" class="link link-small" id="write-us-go">¿Sigue sin llegar? Escríbenos</button>
+            </div>
+          </div>
+          <div class="screen-foot">
+            <button type="button" class="primary" id="other-email">Probar con otro correo</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Figma: P15 Escríbenos · Móvil 160:1701 / Escritorio 160:1962 -->
+      <section class="screen" data-screen="p15" data-surface="paper" hidden aria-labelledby="p15-title">
+        <div class="frame">
+          <header class="screen-head">
+            <div class="head-row">
+              <p class="wordmark">Aule</p>
+              <button type="button" class="link back" data-back><span aria-hidden="true">←</span> Atrás</button>
+            </div>
+            <ol class="progress plain" aria-hidden="true"></ol>
+          </header>
+          <div class="screen-body">
+            <div class="question">
+              <p class="question-step">¿No llega el código?</p>
+              <h2 class="question-title" id="p15-title" tabindex="-1">Te ayudamos por correo</h2>
+              <p class="question-help">Escríbenos y te ayudamos a entrar personalmente.</p>
+            </div>
+          </div>
+          <div class="screen-foot">
+            <a class="primary" id="write-us" href="mailto:admin@meetaule.com">Escribir a admin@meetaule.com</a>
+          </div>
+        </div>
+      </section>
+
+      <!-- Figma: web-only, the family's account (Pendiente · Cuenta del padre is not Vigente); built from Pregunta/Base 161:2101, Fila/Alumno 161:2110, Acción/Pequeña 161:2104, Enlace/Base 161:2096 -->
+      <section class="screen" data-screen="home" data-surface="paper" hidden aria-labelledby="home-title">
+        <div class="frame">
+          <header class="screen-head">
+            <div class="head-row"><p class="wordmark">Aule</p></div>
+            <ol class="progress plain" aria-hidden="true"></ol>
+          </header>
+          <div class="screen-body">
+            <div class="question">
+              <p class="question-step" id="hello"></p>
+              <h2 class="question-title" id="home-title" tabindex="-1">¿Quién va a estudiar hoy?</h2>
+              <!-- The family's plan: the trial's days, or the sessions left this week. -->
+              <p class="question-help" id="plan-line" hidden></p>
+            </div>
+            <div class="controls">
+              <!-- Figma: Fila/Alumno 161:2110, one per student -->
+              <ul class="student-list" id="student-list" aria-label="Tus alumnos"></ul>
+              <p class="question-help" id="no-students" hidden>Todavía no hay alumnos en tu cuenta. Agrega al primero para empezar.</p>
+              <button type="button" class="link" id="add-student">+ Agregar un alumno</button>
+            </div>
+            <div class="account-links">
+              <!-- The account: what is kept, and how to remove it. -->
+              <details class="account" id="account">
+                <summary class="link">Mi cuenta y mis datos</summary>
+                <p class="small-help">Guardamos tu nombre y tu correo, y de cada alumno lo que tú decidas al configurarlo. No guardamos audio ni video.</p>
+                <form id="erase" class="erase" novalidate autocomplete="off">
+                  <div class="field">
+                    <label for="erase-email">Para borrar tu cuenta y todo lo guardado, escribe tu correo</label>
+                    <input id="erase-email" type="email" autocomplete="off" />
+                  </div>
+                  <button type="submit" class="primary danger">Borrar mi cuenta</button>
+                  <p class="small-help">No se puede deshacer.</p>
+                </form>
+              </details>
+              <button type="button" class="link" id="sign-out">Salir de la cuenta</button>
+              <a class="link" id="team-panel" href="admin" hidden>Panel del equipo</a>
+            </div>
+          </div>
+          <div class="screen-foot">
+            <button type="button" class="primary" id="add-first" hidden>Agregar un alumno</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Figma: web-only, a student's settings (no Figma screen); built from Pregunta/Base 161:2101, Campo/Línea 160:1355, Opción/Grande 160:1374, Casilla/Base 160:1397, Botón/Principal 160:1392, Acción/Pequeña 161:2104 -->
+      <section class="screen" data-screen="editor" data-surface="paper" hidden aria-labelledby="editor-title">
+        <form class="frame" id="student-editor" novalidate autocomplete="off">
+          <header class="screen-head">
+            <div class="head-row">
+              <p class="wordmark">Aule</p>
+              <button type="button" class="link back" data-back><span aria-hidden="true">←</span> Atrás</button>
+            </div>
+            <ol class="progress plain" aria-hidden="true"></ol>
+          </header>
+          <div class="screen-body">
+            <div class="question">
+              <h2 class="question-title" id="editor-title" tabindex="-1"></h2>
+            </div>
+            <div class="controls editor-fields">
+              <div class="field">
+                <label for="student-name">¿Cómo quieres que lo llamemos?</label>
+                <input id="student-name" type="text" maxlength="40" required autocomplete="off" />
+              </div>
+              <div class="field">
+                <label for="student-grade">Grado <span class="optional">opcional</span></label>
+                <select id="student-grade"></select>
+              </div>
+              <div class="field">
+                <label for="student-relationship"><span id="relationship-label"></span> <span class="optional">opcional</span></label>
+                <select id="student-relationship"></select>
+              </div>
+              <fieldset id="subjects-field" class="group" hidden>
+                <legend>Asignaturas que quieres reforzar</legend>
+                <div id="student-subjects" class="chips"></div>
+              </fieldset>
+              <fieldset class="group">
+                <legend>Lo que le gusta</legend>
+                <div id="student-interests" class="chips"></div>
+                <div class="add-row">
+                  <input id="interest-new" type="text" maxlength="40" placeholder="Otra cosa que le guste" aria-label="Otro interés" />
+                  <button type="button" class="small" id="interest-add">Agregar</button>
+                </div>
+                <p class="small-help">Aule usa hasta diez para ambientar los ejemplos y los ejercicios.</p>
+              </fieldset>
+              <fieldset class="group">
+                <legend>Cómo le habla Aule</legend>
+                <div id="student-tone" class="tones" role="radiogroup" aria-label="Tono de Aule"></div>
+                <div class="field">
+                  <label for="student-note">Algo que Aule deba tener en cuenta <span class="optional">opcional</span></label>
+                  <input id="student-note" type="text" maxlength="200" placeholder="Ej.: se frustra rápido, ve despacio" />
+                </div>
+              </fieldset>
+              <div class="field">
+                <label for="student-language">Idioma de las sesiones</label>
+                <select id="student-language">
+                  <option value="es">Español</option>
+                  <option value="en">English</option>
+                </select>
+              </div>
+              <fieldset class="group">
+                <legend>Lo que guardamos</legend>
+                <label class="check">
+                  <input id="student-remembers" type="checkbox" checked />
+                  <span class="box" aria-hidden="true"></span>
+                  <span>Recordar entre sesiones lo que aprende y lo que le gusta</span>
+                </label>
+                <label class="check">
+                  <input id="student-transcripts" type="checkbox" />
+                  <span class="box" aria-hidden="true"></span>
+                  <span>Guardar por escrito la conversación de cada sesión</span>
+                </label>
+                <p class="small-help">El audio y el video nunca se guardan.</p>
+              </fieldset>
+
+              <!-- What is kept about a student who already has sessions, to read and to prune. -->
+              <section id="known" class="known" hidden>
+                <h3 id="known-title"></h3>
+                <p id="progress-known" class="small-help"></p>
+                <ul id="memories" aria-label="Lo que Aule recuerda"></ul>
+                <h3 id="past-title" hidden>Últimas sesiones</h3>
+                <ul id="past" aria-label="Últimas sesiones"></ul>
+              </section>
+
+              <button type="button" class="link danger" id="remove-student">Quitar a este alumno</button>
+            </div>
+          </div>
+          <div class="screen-foot">
+            <button type="submit" class="primary" id="save-student">Guardar</button>
+          </div>
+        </form>
+      </section>
+
+      <!-- Figma: A04 ¿Qué hacemos hoy? · Aparato 190:891 -->
+      <section class="screen" data-screen="a04" data-surface="ink" hidden aria-labelledby="a04-title">
+        <div class="ink-frame">
+          <div class="ink-body">
+            <h2 class="ink-title" id="a04-title" tabindex="-1">¿Qué hacemos hoy?</h2>
+            <!-- Figma: Cuadro/Opción 190:806, Cuadrícula (Normal 190:822, Seleccionada 190:825); Íconos · Aparato 190:995 -->
+            <div class="choice-grid" id="kinds"></div>
+          </div>
+          <div class="ink-foot">
+            <button type="button" class="ink-link" id="kind-review">Revisar una evaluación que ya di</button>
+            <button type="button" class="ink-link" data-back>Volver</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Figma: web-only, after A04 (190:891); built from Campo/Línea · Aparato 191:1333, Botón/Negro 190:834 -->
+      <section class="screen" data-screen="a04-details" data-surface="ink" hidden aria-labelledby="a04-details-title">
+        <form class="ink-frame" id="details-form" novalidate autocomplete="off">
+          <div class="ink-body">
+            <div class="ink-head">
+              <h2 class="ink-title" id="a04-details-title" tabindex="-1"></h2>
+              <button type="button" class="ink-link" data-back>Volver</button>
+            </div>
+            <p class="ink-text">Si quieres, cuéntale a Aule de qué se trata.</p>
+            <div class="ink-fields">
+              <div class="ink-field">
+                <label for="subject">Asignatura</label>
                 <select id="subject"></select>
-              </label>
-              <p id="subject-note" class="note" hidden>
-                Por ahora Aule tiene ejercicios propios solo de Matemática. En otras asignaturas
-                acompaña con lo que el alumno traiga.
-              </p>
-              <label>
-                <span>Tema <span class="optional">opcional</span></span>
-                <input id="topic" type="text" maxlength="200" placeholder="Por ejemplo: fracciones, triángulos" />
-              </label>
-              <label id="due-line" hidden>
-                <span>¿Para cuándo es? <span class="optional">opcional</span></span>
+              </div>
+              <div class="ink-field" id="due-line">
+                <label for="due">¿Para cuándo es? <span class="optional">(opcional)</span></label>
                 <input id="due" type="date" />
-              </label>
+              </div>
+              <div class="ink-field wide">
+                <label for="topic">Tema <span class="optional">(opcional)</span></label>
+                <input id="topic" type="text" maxlength="200" placeholder="Ej.: fracciones, triángulos" />
+              </div>
             </div>
-          </fieldset>
-
-          <button type="submit" id="enter">Continuar</button>
-          <button type="button" id="sign-out" class="quiet">Salir de la cuenta</button>
-          <a id="team-panel" class="team-panel" href="admin" hidden>Panel del equipo</a>
+            <p class="ink-note" id="subject-note" hidden>Por ahora Aule tiene ejercicios propios solo de Matemática. En otras asignaturas te acompaña con lo que traigas.</p>
+          </div>
+          <div class="ink-foot">
+            <span></span>
+            <button type="submit" class="ink-button">Seguir</button>
+          </div>
         </form>
-
-        <!-- One student: who they are for Aule, and what the family allows. -->
-        <form id="student-editor" hidden autocomplete="off">
-          <h2 id="editor-title"></h2>
-          <label>
-            ¿Cómo quieres que lo llamemos?
-            <input id="student-name" type="text" maxlength="40" required autocomplete="off" />
-          </label>
-          <label>
-            <span>Grado <span class="optional">opcional</span></span>
-            <select id="student-grade"></select>
-          </label>
-          <label>
-            <span><span id="relationship-label"></span> <span class="optional">opcional</span></span>
-            <select id="student-relationship"></select>
-          </label>
-          <fieldset id="subjects-field" hidden>
-            <legend>Asignaturas que quieres reforzar</legend>
-            <div id="student-subjects" class="chips"></div>
-          </fieldset>
-          <fieldset>
-            <legend>Lo que le gusta</legend>
-            <div id="student-interests" class="chips"></div>
-            <div class="add-row">
-              <input id="interest-new" type="text" maxlength="40" placeholder="Otra cosa que le guste" aria-label="Otro interés" />
-              <button type="button" id="interest-add">Agregar</button>
-            </div>
-            <p class="note">Aule usa hasta diez para ambientar los ejemplos y los ejercicios.</p>
-          </fieldset>
-          <fieldset>
-            <legend>Cómo le habla Aule</legend>
-            <div id="student-tone" class="tones" role="radiogroup" aria-label="Tono de Aule"></div>
-            <label>
-              <span>Algo que Aule deba tener en cuenta <span class="optional">opcional</span></span>
-              <input id="student-note" type="text" maxlength="200" placeholder="Por ejemplo: se frustra rápido, ve despacio" />
-            </label>
-          </fieldset>
-          <label>
-            Idioma de las sesiones
-            <select id="student-language">
-              <option value="es">Español</option>
-              <option value="en">English</option>
-            </select>
-          </label>
-          <fieldset>
-            <legend>Lo que guardamos</legend>
-            <label class="check">
-              <input id="student-remembers" type="checkbox" checked />
-              Recordar entre sesiones lo que aprende y lo que le gusta
-            </label>
-            <label class="check">
-              <input id="student-transcripts" type="checkbox" />
-              Guardar por escrito la conversación de cada sesión
-            </label>
-            <p class="note">El audio y el video nunca se guardan.</p>
-            <label class="check" id="consent-line">
-              <input id="consent" type="checkbox" />
-              Soy su padre, madre o apoderado y acepto que Aule procese su voz para responderle.
-            </label>
-          </fieldset>
-
-          <!-- What is kept about a student who already has sessions, to read and to prune. -->
-          <section id="known" hidden>
-            <h3 id="known-title"></h3>
-            <p id="progress" class="note"></p>
-            <ul id="memories" aria-label="Lo que Aule recuerda"></ul>
-            <h3 id="past-title" hidden>Últimas sesiones</h3>
-            <ul id="past" aria-label="Últimas sesiones"></ul>
-          </section>
-
-          <button type="submit" id="save-student">Guardar</button>
-          <button type="button" id="cancel-student" class="quiet">Volver</button>
-          <button type="button" id="remove-student" class="quiet danger-text" hidden>Quitar a este alumno</button>
-        </form>
-
-        <!-- The account: what is kept, and how to remove it. -->
-        <details id="account" hidden>
-          <summary>Mi cuenta y mis datos</summary>
-          <p class="note">
-            Guardamos tu nombre y tu correo, y de cada alumno lo que tú decidas al configurarlo. No
-            guardamos audio ni video.
-          </p>
-          <form id="erase" autocomplete="off">
-            <label>
-              Para borrar tu cuenta y todo lo guardado, escribe tu correo
-              <input id="erase-email" type="email" required autocomplete="off" />
-            </label>
-            <button type="submit" class="danger">Borrar mi cuenta</button>
-            <p class="note">No se puede deshacer.</p>
-          </form>
-        </details>
-
       </section>
 
-      <section id="lobby" hidden aria-labelledby="lobby-title">
-        <h2 id="lobby-title">¿Listo para entrar?</h2>
-        <div class="tile preview">
-          <video id="preview" autoplay muted playsinline></video>
-          <p id="preview-off" class="tile-empty" hidden>Cámara apagada</p>
-          <div id="level" class="level" role="img" aria-label="Nivel del micrófono"><span></span></div>
-        </div>
-        <div class="controls big">
-          <button type="button" id="lobby-mic" data-icon="mic" aria-pressed="true">Micrófono</button>
-          <button type="button" id="lobby-cam" data-icon="camera" aria-pressed="true">Cámara</button>
-        </div>
-        <p id="lobby-note" class="note" role="status"></p>
-        <div class="controls">
-          <button type="button" id="join" class="primary">Entrar ahora</button>
-          <button type="button" id="back">Volver</button>
+      <!-- Figma: A05 Antes de empezar · Aparato 190:899 / · Silenciado 190:1005 -->
+      <section class="screen" data-screen="a05" data-surface="ink" hidden aria-labelledby="a05-title">
+        <div class="ink-frame">
+          <div class="ink-body">
+            <h2 class="ink-title" id="a05-title" tabindex="-1">Antes de empezar</h2>
+            <p class="ink-text">Recuerda que Aule necesita escucharte para responderte al instante. Si necesitas silenciarte, solo presiona el botón de micrófono.</p>
+            <div class="device-rows">
+              <!-- Figma: Botón/Micrófono 193:709 (Encendido 193:705, Apagado 193:708); A05 · Silenciado 190:1005 when it is off -->
+              <div class="device-row">
+                <button type="button" class="round-toggle" id="lobby-mic" aria-pressed="true" aria-label="Micrófono" aria-describedby="lobby-mic-text">
+                  <span class="icon" data-icon="mic" aria-hidden="true"></span>
+                </button>
+                <div class="device-says">
+                  <p class="round-text" id="lobby-mic-text" data-on="Si el botón es de color negro, tu micrófono está encendido." data-off="Si el botón es de color blanco, tu micrófono está apagado.">Si el botón es de color negro, tu micrófono está encendido.</p>
+                  <div id="level" class="level" role="img" aria-label="Nivel del micrófono"><span></span></div>
+                </div>
+              </div>
+              <!-- The web's camera, in César's pattern: Ícono/videocam 191:1407 and videocam_off 191:1410. -->
+              <div class="device-row camera-row">
+                <button type="button" class="round-toggle round-88" id="lobby-cam" aria-pressed="true" aria-label="Cámara" aria-describedby="lobby-cam-text">
+                  <span class="icon" data-icon="videocam" aria-hidden="true"></span>
+                </button>
+                <div class="device-says">
+                  <p class="round-text" id="lobby-cam-text" data-on="Si el botón es de color negro, tu cámara está encendida." data-off="Si el botón es de color blanco, tu cámara está apagada.">Si el botón es de color negro, tu cámara está encendida.</p>
+                </div>
+                <div class="preview">
+                  <video id="preview" autoplay muted playsinline></video>
+                  <p id="preview-off" class="preview-off" hidden>Cámara apagada</p>
+                </div>
+              </div>
+            </div>
+            <p id="lobby-note" class="ink-note" role="status"></p>
+          </div>
+          <div class="ink-foot">
+            <button type="button" class="ink-link" id="lobby-back" data-back>Volver</button>
+            <button type="button" class="ink-button" id="join">Empezar la sesión</button>
+          </div>
         </div>
       </section>
 
-      <section id="stage" hidden>
+      <!-- Figma: A15 La sesión empieza · Aparato 190:1069 / · Silenciado 194:509 -->
+      <section class="screen" data-screen="session" data-surface="ink" id="stage" hidden aria-labelledby="session-title">
+        <h2 class="session-title" id="session-title" tabindex="-1">La sesión empezó.</h2>
+        <div class="session-message" data-message></div>
         <!-- A session the engine runs says where it is: done, now, to come. -->
         <ol id="route" class="route" hidden aria-label="Etapas de la sesión"></ol>
         <!-- Left: what the student works on. The camera on their notebook and the board. -->
@@ -263,19 +782,26 @@
                 <textarea id="explanation-text" rows="2" maxlength="600"></textarea>
               </label>
               <p id="card-help" class="note" hidden></p>
-              <button type="submit" id="answer-send" data-icon="send">Responder</button>
+              <button type="submit" class="compact" id="answer-send">Responder</button>
               <p class="note">También puedes decirlo en voz alta, o resolverlo en tu cuaderno y mostrárselo a Aule.</p>
             </form>
           </section>
           <figure id="board" class="board device" hidden aria-live="polite"></figure>
-            <!-- Until something is drawn, the board is a quiet empty sheet. -->
-            <p class="board-empty">Aquí verás lo que Aule te muestre.</p>
+          <!-- Until something is drawn, the board is a quiet empty sheet. -->
+          <p class="board-empty">Aquí verás lo que Aule te muestre.</p>
           <div class="controls">
-            <button type="button" id="mic" data-icon="mic" aria-pressed="true">Micrófono</button>
-            <button type="button" id="cam" data-icon="camera" aria-pressed="true">Cámara</button>
-            <button type="button" id="device" data-icon="device" aria-pressed="true">Modo tinta</button>
+            <!-- Figma: Botón/Micrófono 193:709; A15 · Silenciado 194:509 when the microphone is off -->
+            <div class="mic-group" id="mic-group">
+              <button type="button" class="round-toggle round-64" id="mic" aria-pressed="true" aria-label="Micrófono" aria-describedby="mic-text">
+                <span class="icon" data-icon="mic" aria-hidden="true"></span>
+              </button>
+              <p class="round-text" id="mic-text" data-on="Tu micrófono está encendido." data-off="Tu micrófono está apagado.">Tu micrófono está encendido.</p>
+            </div>
+            <!-- Figma: Botón/Compacto 191:1396; off, the camera's icon is crossed (Ícono/videocam 191:1407, videocam_off 191:1410) -->
+            <button type="button" class="compact" id="cam" aria-pressed="true"><span class="icon" data-icon="videocam" aria-hidden="true"></span>Cámara</button>
+            <button type="button" class="compact" id="device" aria-pressed="true">Modo tinta</button>
             <span id="clock" class="clock" aria-label="Tiempo que queda"></span>
-            <button type="button" id="end" data-icon="end" class="danger">Terminar</button>
+            <button type="button" class="compact" id="end">Terminar</button>
           </div>
         </div>
 
@@ -289,62 +815,56 @@
             <p id="tutor-state" class="tile-state" role="status">Esperando a Aule…</p>
           </div>
           <!-- The device does not listen all the time: a turn lasts while its button is held. -->
-          <button type="button" id="talk" data-icon="mic" class="talk" hidden aria-pressed="false">Mantén apretado para hablar</button>
+          <button type="button" id="talk" class="talk" hidden aria-pressed="false">Mantén apretado para hablar</button>
           <ol id="transcript" aria-label="Conversación" aria-live="polite"></ol>
           <form id="type" class="type" autocomplete="off">
-            <input
-              id="typed"
-              type="text"
-              maxlength="500"
-              aria-label="Mensaje para Aule"
-              placeholder="O escríbele a Aule…"
-            />
-            <button type="submit" data-icon="send">Enviar</button>
+            <input id="typed" type="text" maxlength="500" aria-label="Mensaje para Aule" placeholder="O escríbele a Aule…" />
+            <button type="submit" class="compact">Enviar</button>
           </form>
         </div>
       </section>
-
-      <!-- After a session: what the family is told. For the team only. -->
-
-      <!-- The device's panel shows four greys; this snaps the drawing to them. -->
-      <svg width="0" height="0" aria-hidden="true" focusable="false">
-        <filter id="four-greys" color-interpolation-filters="sRGB">
-          <feColorMatrix type="saturate" values="0" />
-          <feComponentTransfer>
-            <feFuncR type="discrete" tableValues="0 0.541 0.541 1" />
-            <feFuncG type="discrete" tableValues="0 0.541 0.541 1" />
-            <feFuncB type="discrete" tableValues="0 0.541 0.541 1" />
-          </feComponentTransfer>
-        </filter>
-      </svg>
-
-      <p id="message" class="message" role="alert" hidden></p>
-      <div id="audio"></div>
-
-      <!-- What the page keeps in the browser, said once; out of the way during a session. -->
-      <div id="cookies" class="cookie-notice" role="region" aria-label="Aviso de cookies" hidden>
-        <p>
-          Usamos solo las cookies necesarias para que entres a tu cuenta y funcione la sesión; nada de
-          publicidad. Si entras con Google, GitHub, Facebook o Apple, ellos usan las suyas.
-          <a href="https://meetaule.com/legal/privacy#cookies">Política de cookies</a>
-        </p>
-        <button type="button" id="cookies-ok">Entendido</button>
-      </div>
-
-      <!-- Cuyes dance on a manta at the foot of the page. -->
-      <div class="dancers" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
-
-      <!-- Who runs Aule and its terms; out of the way during a session. -->
-      <footer class="site-footer">
-        <a href="https://meetaule.com">Aule</a>
-        <a href="https://meetaule.com/legal/privacy">Privacidad</a>
-        <a href="https://meetaule.com/legal/terms">Términos</a>
-        <a href="https://meetaule.com/libro-de-reclamaciones">Libro de Reclamaciones</a>
-        <a href="mailto:admin@meetaule.com">admin@meetaule.com</a>
-      </footer>
     </main>
+
+    <!-- The one message line: screens.js puts it where the screen showing has it. -->
+    <p id="message" class="message" role="alert" hidden></p>
+    <div id="audio"></div>
+
+    <!-- The device's panel shows four greys; this snaps the drawing to them. -->
+    <svg width="0" height="0" aria-hidden="true" focusable="false" class="filters">
+      <filter id="four-greys" color-interpolation-filters="sRGB">
+        <feColorMatrix type="saturate" values="0" />
+        <feComponentTransfer>
+          <feFuncR type="discrete" tableValues="0 0.541 0.541 1" />
+          <feFuncG type="discrete" tableValues="0 0.541 0.541 1" />
+          <feFuncB type="discrete" tableValues="0 0.541 0.541 1" />
+        </feComponentTransfer>
+      </filter>
+    </svg>
+
+    <!-- What the page keeps in the browser, said once; out of the way on a student's screen. -->
+    <div id="cookies" class="cookie-notice" role="region" aria-label="Aviso de cookies" hidden>
+      <p>
+        Usamos solo las cookies necesarias para que entres a tu cuenta y funcione la sesión; nada de
+        publicidad. Si entras con Google, GitHub, Facebook o Apple, ellos usan las suyas.
+        <a href="https://meetaule.com/legal/privacy#cookies">Política de cookies</a>
+      </p>
+      <!-- Figma: Acción/Pequeña 161:2104 -->
+      <button type="button" class="small" id="cookies-ok">Entendido</button>
+    </div>
+
+    <!-- Who runs Aule and its terms; out of the way during a session. -->
+    <footer class="site-footer">
+      <a href="https://meetaule.com">Aule</a>
+      <a href="https://meetaule.com/legal/privacy">Privacidad</a>
+      <a href="https://meetaule.com/legal/terms">Términos</a>
+      <a href="https://meetaule.com/libro-de-reclamaciones">Libro de Reclamaciones</a>
+      <a href="mailto:admin@meetaule.com">admin@meetaule.com</a>
+    </footer>
+
     <!-- In this order: signing in runs before the call library has arrived. -->
     <script type="module" src="signin.js"></script>
+    <script type="module" src="onboarding.js"></script>
+    <script type="module" src="home.js"></script>
     <script src="livekit-client.js" defer></script>
     <script type="module" src="wobnimo.js"></script>
     <script type="module" src="app.js"></script>

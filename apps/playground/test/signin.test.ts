@@ -128,9 +128,9 @@ test("a student is created only signed in, with a name and the guardian's yes", 
   assert.deepEqual(
     seen.filter((call) => call.path.endsWith("/consents")).map((call) => call.body),
     [
-      { purpose: "voice", granted: true, policy_version: "playground-2026-11" },
-      { purpose: "memory", granted: true, policy_version: "playground-2026-11" },
-      { purpose: "transcripts", granted: false, policy_version: "playground-2026-11" },
+      { purpose: "voice", granted: true, policy_version: "playground-2026-11-v8" },
+      { purpose: "memory", granted: true, policy_version: "playground-2026-11-v8" },
+      { purpose: "transcripts", granted: false, policy_version: "playground-2026-11-v8" },
     ],
   );
 });

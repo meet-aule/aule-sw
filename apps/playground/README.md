@@ -6,6 +6,8 @@ It is a small Node server with no database. It serves the page and has one endpo
 
 When the tutor shows something (an exercise, fraction bars, a number line...), the page draws it under the video from the description it receives; `public/visuals.js` is that drawing code, a plain function from the description to SVG.
 
+The page's screens follow the Figma file «Login-Aule» v8: the parent's on paper (who is here, the ways in, the emailed code, the authorisation, a short interview, the child's name), the student's in the device's black on white (what today's session is for, the microphone before it, the session). [FIGMA.md](FIGMA.md) maps each screen, component, token and icon to the code, and says where the page differs from the file.
+
 ## Settings
 
 | Variable | Meaning |

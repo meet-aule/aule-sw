@@ -1,8 +1,9 @@
-// The playground page: lets the person check their camera and microphone,
-// asks the server for a room token, joins the room, and shows what the tutor
-// is doing.
+// The playground page: lets the person check their camera and microphone
+// (A05 Antes de empezar), asks the server for a room token, joins the room,
+// and shows what the tutor is doing (A15 La sesión empezó, then the session).
 
-import { onEnter, sessionRequest } from "./signin.js";
+import { sessionRequest } from "./home.js";
+import { current, go, need, onHide, onShow } from "./screens.js";
 import { TOPIC as VISUAL_TOPIC, renderVisual } from "./visuals.js";
 
 const { Room, RoomEvent, Track, ParticipantKind, DisconnectReason } = LivekitClient;
@@ -63,10 +64,6 @@ const ERRORS = {
 };
 
 const $ = (id) => document.getElementById(id);
-// Everything shown before a session: signing in and choosing the student.
-const entry = $("welcome");
-const lobby = $("lobby");
-const stage = $("stage");
 const message = $("message");
 
 // What the person chose before joining. Both start on.
@@ -96,9 +93,10 @@ let cardShown = "";
 // The platform's id for the session being shown, when there is one.
 let sessionId = null;
 
-function showMessage(text) {
+function showMessage(text, tone = "error") {
   message.textContent = text;
   message.hidden = !text;
+  message.dataset.tone = tone;
 }
 
 // For something that went wrong once and can be tried again: it does not stay
@@ -133,11 +131,38 @@ function setTutorState(state) {
   $("mascot").setAttribute("state", MASCOT_STATE[state] ?? "idle");
 }
 
+// The icon a compact toggle (Botón/Compacto 191:1396) shows beside its label,
+// crossed when it is off, as on A05; one without an icon says it in words only.
+const TOGGLE_ICONS = { Cámara: "videocam" };
+
 function setToggle(button, label, on) {
   button.setAttribute("aria-pressed", String(on));
-  // "Cámara apagada", "Micrófono apagado": the word follows the thing's gender.
+  // "Cámara apagada", "Modo tinta apagado": the word follows the thing's gender.
   const off = label.split(" ")[0].endsWith("a") ? "apagada" : "apagado";
-  button.textContent = on ? label : `${label} ${off}`;
+  const words = on ? label : `${label} ${off}`;
+  const base = TOGGLE_ICONS[label];
+  if (!base) {
+    button.textContent = words;
+    return;
+  }
+  const icon = document.createElement("span");
+  icon.className = "icon";
+  icon.dataset.icon = on ? base : CROSSED[base];
+  icon.setAttribute("aria-hidden", "true");
+  button.replaceChildren(icon, words);
+}
+
+// A round control (Botón/Micrófono 193:709): black with its icon when on,
+// white with the icon crossed when off. Its name stays («Micrófono»,
+// «Cámara»); the sentence next to it, which describes it, says which.
+const CROSSED = { mic: "mic_off", videocam: "videocam_off" };
+function setRound(button, on) {
+  button.setAttribute("aria-pressed", String(on));
+  const icon = button.querySelector(".icon");
+  const base = icon.dataset.icon.replace("_off", "");
+  icon.dataset.icon = on ? base : CROSSED[base];
+  const says = $(button.getAttribute("aria-describedby"));
+  says.textContent = on ? says.dataset.on : says.dataset.off;
 }
 
 function startClock(seconds) {
@@ -399,7 +424,7 @@ function watchTutor(participant) {
   // the microphone was switched off in the lobby.
   if (manual && !manualTurns) {
     wanted.mic = true;
-    setToggle($("mic"), "Micrófono", true);
+    setRound($("mic"), true);
   }
   manualTurns = manual;
   tutorReady = ready;
@@ -432,7 +457,7 @@ const touchOnly = matchMedia("(pointer: coarse)").matches && !matchMedia("(point
 // talk button is the only microphone button.
 function showTalk() {
   $("talk").hidden = !manualTurns;
-  $("mic").hidden = manualTurns;
+  $("mic-group").hidden = manualTurns;
   // On a phone the button then stays at the bottom of the screen (style.css).
   document.querySelector("main").classList.toggle("push-to-talk", manualTurns);
   $("talk").disabled = !wanted.mic;
@@ -571,11 +596,9 @@ async function join(session) {
     .on(RoomEvent.SignalReconnecting, () => showConnection(true))
     .on(RoomEvent.Reconnected, () => showConnection(false))
     .on(RoomEvent.Disconnected, (reason) =>
-      leave(
-        LOST.has(reason)
-          ? "Se perdió la conexión y la sesión no pudo continuar. Empieza una nueva."
-          : "La sesión terminó.",
-      ),
+      LOST.has(reason)
+        ? leave("Se perdió la conexión y la sesión no pudo continuar. Empieza una nueva.", "error")
+        : leave("La sesión terminó."),
     );
   room.registerTextStreamHandler(TRANSCRIPTION_TOPIC, (reader, participant) => {
     onTranscription(reader, participant).catch(() => undefined);
@@ -594,16 +617,13 @@ async function join(session) {
   startClock(session.expiresInSeconds);
   sessionId = session.session_id ?? null;
   if (session.session_id && session.engine === true) followSteps(session.session_id);
-  lobby.hidden = true;
-  stage.hidden = false;
+  // A15: «La sesión empezó.», with the microphone as A05 left it.
+  go("session");
   if (inkMode) showInk();
   play(hello);
-  // The layout of a session hangs on this class, not on :has(), which older
-  // Firefox and Safari do not know.
-  document.querySelector("main").classList.toggle("in-session", true);
 
   await syncMicrophone();
-  setToggle($("mic"), "Micrófono", wanted.mic);
+  setRound($("mic"), wanted.mic);
   showTalk();
   try {
     await room.localParticipant.setCameraEnabled(wanted.cam);
@@ -631,8 +651,8 @@ function showPreview() {
   $("preview").hidden = !seen;
   $("preview-off").hidden = seen;
   $("level").hidden = !(audio && wanted.mic);
-  setToggle($("lobby-mic"), "Micrófono", wanted.mic);
-  setToggle($("lobby-cam"), "Cámara", wanted.cam);
+  setRound($("lobby-mic"), wanted.mic);
+  setRound($("lobby-cam"), wanted.cam);
 }
 
 // Moves a bar with the loudness of the microphone, so the person can tell it
@@ -655,17 +675,21 @@ function startMeter(stream) {
   draw();
 }
 
+// Each showing of A05 asks for the devices once; an answer to an earlier
+// showing that comes late lets its devices go.
+let lobbyAsked = 0;
+
 async function openLobby() {
+  const asked = ++lobbyAsked;
   wanted.mic = true;
   wanted.cam = true;
   $("lobby-note").textContent = "";
-  entry.hidden = true;
-  lobby.hidden = false;
   // Joining waits until the devices have answered, so only one thing holds them.
   $("join").disabled = true;
   let usable = true;
+  let stream = null;
   try {
-    preview = await navigator.mediaDevices.getUserMedia({
+    stream = await navigator.mediaDevices.getUserMedia({
       audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
       video: { facingMode: { ideal: "environment" } },
     });
@@ -673,7 +697,7 @@ async function openLobby() {
     // No camera, or only the camera was refused: try the microphone alone.
     wanted.cam = false;
     try {
-      preview = await navigator.mediaDevices.getUserMedia({
+      stream = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
       });
       $("lobby-note").textContent = "No se encontró o no se permitió la cámara. Igual puedes entrar con voz.";
@@ -684,7 +708,12 @@ async function openLobby() {
       usable = false;
     }
   }
-  if (lobby.hidden) return stopPreview();
+  // Left while the browser asked, or asked again since: nothing keeps these devices.
+  if (asked !== lobbyAsked || current() !== "a05") {
+    stream?.getTracks().forEach((track) => track.stop());
+    return;
+  }
+  preview = stream;
   $("join").disabled = !usable;
   if (preview) {
     $("preview").srcObject = preview;
@@ -693,11 +722,11 @@ async function openLobby() {
   showPreview();
 }
 
-function closeLobby() {
-  stopPreview();
-  lobby.hidden = true;
-  entry.hidden = false;
-}
+// A05 shows the devices each time it shows; leaving it lets them go.
+onShow("a05", () => {
+  openLobby();
+});
+onHide("a05", stopPreview);
 
 // Joining and leaving have their sound, as in a video call, and it is a
 // video game's: synths through resonant filters, a sub bass, an echo and a
@@ -825,7 +854,7 @@ function play(tune) {
   }
 }
 
-function leave(reason) {
+function leave(reason, tone = "info") {
   if (!room) return;
   const leaving = room;
   room = null;
@@ -846,19 +875,13 @@ function leave(reason) {
   $("board").hidden = true;
   boardShows = null;
   lastExercise = null;
-  stage.hidden = true;
-  document.querySelector("main").classList.toggle("in-session", false);
-  lobby.hidden = true;
-  entry.hidden = false;
-  showMessage(reason ?? "");
   sessionId = null;
+  // Back to the family's students, with what happened.
+  go("home", { replace: true, message: reason ?? "", tone });
 }
 
-// A signed-in person who has chosen a student goes to the lobby.
-onEnter(() => {
-  showMessage("");
-  openLobby();
-});
+// A session can show only while its room is open.
+need("session", () => room !== null);
 
 $("lobby-mic").addEventListener("click", () => {
   wanted.mic = !wanted.mic;
@@ -870,8 +893,6 @@ $("lobby-cam").addEventListener("click", () => {
   wanted.cam = !wanted.cam;
   showPreview();
 });
-
-$("back").addEventListener("click", closeLobby);
 
 $("join").addEventListener("click", async () => {
   readySounds();
@@ -898,17 +919,14 @@ $("join").addEventListener("click", async () => {
       error?.name === "NotAllowedError"
         ? "El navegador bloqueó el micrófono. Permítelo y empieza otra vez."
         : (error?.message ?? "No se pudo empezar la sesión.");
-    if (room) leave(text);
-    else {
-      closeLobby();
-      showMessage(text);
-    }
+    if (room) leave(text, "error");
+    else go("home", { message: text });
   }
 });
 
 $("mic").addEventListener("click", async () => {
   wanted.mic = !wanted.mic;
-  setToggle($("mic"), "Micrófono", wanted.mic);
+  setRound($("mic"), wanted.mic);
   if (manualTurns) {
     if (!wanted.mic) await stopTalking("cancel_turn");
     showTalk();
@@ -929,7 +947,7 @@ $("talk").addEventListener("contextmenu", (event) => event.preventDefault());
 // The space bar is the button too, except while typing or on another control.
 const typing = (target) => ["INPUT", "SELECT", "TEXTAREA", "BUTTON"].includes(target?.tagName);
 document.addEventListener("keydown", (event) => {
-  if (event.code !== "Space" || event.repeat || !manualTurns || stage.hidden || typing(event.target)) return;
+  if (event.code !== "Space" || event.repeat || !manualTurns || current() !== "session" || typing(event.target)) return;
   event.preventDefault();
   startTalking();
 });

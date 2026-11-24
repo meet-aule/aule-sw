@@ -1,0 +1,188 @@
+// The screens of the Figma «Login-Aule» v8 that the page follows, and the
+// rules for moving between them. Pure data and functions: nothing here touches
+// the page, so the tests import it as it is. FIGMA.md maps it all to the file.
+
+/** The Figma file the page follows (read-only; Code Connect is not on the team's plan). */
+export const FIGMA_FILE = "yOAIYJNl5nZ7NgWtESN0Fo";
+
+/**
+ * The three named parts of the progress header (Barra de progreso/Base
+ * 160:1415), with the steps each has on the web. The Figma's third part,
+ * «Enlazar Aule», links the device; on the web it is the child's profile.
+ */
+export const SEGMENTS = [
+  { name: "Tu cuenta", steps: 4 },
+  { name: "Conocer a tu hijo (opcional)", steps: 4 },
+  { name: "Su perfil", steps: 2 },
+];
+
+/**
+ * Every screen of the page, by its data-screen. For each:
+ * - code, name: the Figma frame it follows ("" for a screen the Figma does not draw);
+ * - nodes: the ids its <!-- Figma: … --> comment names (frames, or the components a
+ *   web-only screen is built from);
+ * - surface: "paper" (the parent's, page 160:1345) or "ink" (the device's, page 190:717);
+ * - auth: "out" signed out only, "in" signed in only;
+ * - progress: [part, step] in SEGMENTS, or null for the plain line;
+ * - plainComingBack: the plain line when reached from P13 (a returning parent is not onboarding);
+ * - back: where «← Atrás» goes when nothing came before it in this visit;
+ * - needs: what the page must hold for the screen to make sense (see screens.js).
+ */
+export const SCREENS = {
+  c00: { code: "C00", name: "¿Quién eres?", nodes: ["160:1649", "160:1727"], surface: "paper", auth: "out", progress: null, back: null },
+  "c00-student": { code: "", name: "Soy alumno", nodes: ["190:1035", "190:834"], surface: "ink", auth: "out", progress: null, back: "c00" },
+  c01: { code: "C01", name: "¿Ya tienes cuenta?", nodes: ["160:1661", "160:1741"], surface: "paper", auth: "out", progress: null, back: "c00" },
+  p01: { code: "P01", name: "¿Cómo quieres entrar?", nodes: ["160:1636", "160:1455"], surface: "paper", auth: "out", progress: [0, 1], back: "c01" },
+  p02: { code: "P02", name: "Tu correo", nodes: ["160:1624", "160:1755"], surface: "paper", auth: "out", progress: [0, 2], plainComingBack: true, back: "p01" },
+  p03: { code: "P03", name: "Código", nodes: ["160:1604", "160:1768"], surface: "paper", auth: "out", progress: [0, 3], plainComingBack: true, back: "p02", needs: "email" },
+  "p03-name": { code: "", name: "Tu nombre", nodes: ["160:1604", "161:2101", "160:1355", "160:1392"], surface: "paper", auth: "out", progress: [0, 3], plainComingBack: true, back: "p03", needs: "email" },
+  p04: { code: "P04", name: "Tu autorización", nodes: ["160:1592", "160:1442", "160:1994"], surface: "paper", auth: "in", progress: [0, 4], back: "home" },
+  p05: { code: "P05", name: "Conozcamos a tu hijo", nodes: ["160:1581", "160:1789"], surface: "paper", auth: "in", progress: [1, 1], back: "p04", needs: "consent" },
+  p06: { code: "P06", name: "Entrevista · expectativas", nodes: ["160:1568", "160:1801"], surface: "paper", auth: "in", progress: [1, 2], back: "p05", needs: "consent" },
+  "p06-grade": { code: "", name: "Entrevista · grado", nodes: ["161:2101", "160:1374"], surface: "paper", auth: "in", progress: [1, 3], back: "p06", needs: "consent" },
+  p07: { code: "P07", name: "Entrevista · gustos", nodes: ["160:1547", "160:1815"], surface: "paper", auth: "in", progress: [1, 4], back: "p06-grade", needs: "consent" },
+  "p10-name": { code: "", name: "¿Cómo lo llamamos?", nodes: ["160:1493", "160:1877", "161:2101", "160:1355", "160:1392"], surface: "paper", auth: "in", progress: [2, 1], back: "p05", needs: "consent" },
+  p12: { code: "P12", name: "Listo", nodes: ["160:1469", "160:1909"], surface: "paper", auth: "in", progress: [2, 2], back: "home", needs: "created" },
+  p13: { code: "P13", name: "Entra a tu cuenta", nodes: ["160:1674", "160:1920", "160:1711", "160:1934"], surface: "paper", auth: "out", progress: null, back: "c01" },
+  p14: { code: "P14", name: "Revisa tu correo", nodes: ["160:1688", "160:1948"], surface: "paper", auth: "out", progress: null, back: "p03", needs: "email" },
+  p15: { code: "P15", name: "Escríbenos", nodes: ["160:1701", "160:1962"], surface: "paper", auth: "out", progress: null, back: "p14" },
+  home: { code: "", name: "Tus alumnos", nodes: ["161:2101", "161:2110", "161:2104", "161:2096"], surface: "paper", auth: "in", progress: null, back: null },
+  editor: { code: "", name: "Configurar", nodes: ["161:2101", "160:1355", "160:1374", "160:1397", "160:1392", "161:2104"], surface: "paper", auth: "in", progress: null, back: "home", needs: "editing" },
+  a04: { code: "A04", name: "¿Qué hacemos hoy?", nodes: ["190:891"], surface: "ink", auth: "in", progress: null, back: "home", needs: "student" },
+  "a04-details": { code: "", name: "Detalles", nodes: ["190:891", "191:1333", "190:834"], surface: "ink", auth: "in", progress: null, back: "a04", needs: "objective" },
+  a05: { code: "A05", name: "Antes de empezar", nodes: ["190:899", "190:1005"], surface: "ink", auth: "in", progress: null, back: "a04", needs: "student" },
+  session: { code: "A15", name: "La sesión empieza", nodes: ["190:1069", "194:509"], surface: "ink", auth: "in", progress: null, back: "home", needs: "session" },
+};
+
+/**
+ * The progress header of a screen: each part with its steps, how many are
+ * done and whether it is the current one; null for the plain 2 px line.
+ * `flow` is "new" for a family signing up and "back" for one coming back.
+ */
+export function progressAt(id, flow = "new") {
+  const screen = SCREENS[id];
+  if (!screen?.progress || (flow === "back" && screen.plainComingBack)) return null;
+  const [part, step] = screen.progress;
+  return SEGMENTS.map((segment, index) => ({
+    name: segment.name,
+    steps: segment.steps,
+    done: index < part ? segment.steps : index === part ? step : 0,
+    current: index === part,
+  }));
+}
+
+/** What a student can say a session is for (A04 · Aparato 190:891), with the Figma's icons. */
+export const KINDS = [
+  { kind: "homework", label: "Terminar tareas de la escuela", icon: "task_alt" },
+  { kind: "exam_prep", label: "Repasar para una evaluación", icon: "assignment" },
+  { kind: "explore", label: "Quiero aprender algo nuevo", icon: "school" },
+  // Aule decides: the session carries no objective.
+  { kind: "", label: "No lo sé", icon: "help_outline" },
+];
+/** The fifth kind the platform knows, kept on the web as a link under the tiles. */
+export const REVIEW = { kind: "exam_review", label: "Revisar una evaluación que ya di" };
+/** A day matters for these: when the homework is due, when the evaluation is. */
+export const DATED = ["homework", "exam_prep"];
+/** The one subject Aule has exercises of its own for today. */
+export const OWN_SUBJECT = "matematica";
+
+/** The words a kind is shown with, as the title of its details. */
+export function kindLabel(kind) {
+  return kind === REVIEW.kind ? REVIEW.label : (KINDS.find((one) => one.kind === kind)?.label ?? "");
+}
+
+/**
+ * The objective a session is asked with, or null when the student left it
+ * to Aule. The date goes only with homework and evaluations.
+ */
+export function objectiveFor(kind, { subject = "other", topic = "", due = "" } = {}) {
+  if (!kind) return null;
+  return {
+    kind,
+    subject: subject || "other",
+    topic: topic.trim(),
+    due: DATED.includes(kind) && due ? due : null,
+  };
+}
+
+/**
+ * The subject a session starts on: one the family wants reinforced, and among
+ * those the one Aule has exercises for; else the first the platform keeps;
+ * else "other". The platform keeps them in its own order, so the family's
+ * first would not be the first.
+ */
+export function defaultSubject(wanted, kept) {
+  const offered = (wanted ?? []).filter((subject) => kept?.includes(subject));
+  const choices = offered.length ? offered : (kept ?? []);
+  return choices.includes(OWN_SUBJECT) ? OWN_SUBJECT : (choices[0] ?? "other");
+}
+
+/** P07's options (Entrevista · gustos 160:1547), as the Figma writes them. */
+export const LIKES = ["Deportes", "Videojuegos", "Animales y naturaleza", "Espacio y ciencia", "Música y arte", "Libros e historias"];
+const MAX_INTERESTS = 10;
+const MAX_INTEREST_CHARS = 40;
+
+/**
+ * What a child likes, from P07: the options picked and what was typed, split
+ * at commas and semicolons, in lower case, without repeats. At most ten, each
+ * up to 40 characters; past that, the reason why not.
+ */
+export function interestsFrom(picked, typed = "") {
+  const all = [...picked, ...typed.split(/[,;]/)].map((text) => text.trim().toLowerCase()).filter(Boolean);
+  const interests = [...new Set(all)];
+  if (interests.some((text) => text.length > MAX_INTEREST_CHARS)) return { error: "too_long" };
+  if (interests.length > MAX_INTERESTS) return { error: "too_many" };
+  return { interests };
+}
+
+/** An address shown without giving it away: its first two letters, «•••», and the domain. */
+export function maskEmail(address) {
+  const [name, domain] = String(address).trim().split("@");
+  if (!name || !domain) return "";
+  return `${name.slice(0, 2)}•••@${domain}`;
+}
+
+/** The six digits of a code typed or pasted any way ("519 042", "519-042"): digits only, six at most. */
+export function codeDigits(text) {
+  return String(text).replace(/\D/g, "").slice(0, 6);
+}
+
+/** What P13 says first: a welcome back only for a browser that signed in before (Nota · P13 · Saludo). */
+export function greeting(returning) {
+  return returning ? "¡Qué bueno que estés de vuelta!" : "Te damos la bienvenida";
+}
+
+const DAY_MS = 86_400_000;
+const sessions = (n) => (n === 1 ? "1 sesión" : `${n} sesiones`);
+const date = (iso) => new Date(iso).toLocaleDateString("es-PE", { day: "numeric", month: "long" });
+
+/** What the family's plan allows now, in a line; and whether a session can start. */
+export function planLine(plan, lang = "es", now = Date.now()) {
+  if (!plan) return { text: "", open: true };
+  if (plan.plan === "team") return { text: "Equipo de Aule: sesiones sin límite.", open: true };
+  if (plan.plan === "free") {
+    return { text: lang.startsWith("en") ? "Free access: unlimited sessions." : "Acceso gratuito: sesiones sin límite.", open: true };
+  }
+  const left = plan.left ?? 0;
+  if (plan.plan === "trial" && !plan.ends_at) {
+    return { text: "Prueba gratis de 7 días: empieza con tu primera sesión. Una sesión al día.", open: true };
+  }
+  if (plan.plan === "trial") {
+    const days = Math.max(1, Math.ceil((new Date(plan.ends_at) - now) / DAY_MS));
+    const today = left > 0 ? "hoy tienes tu sesión" : "la sesión de hoy ya la usaste: vuelve mañana";
+    return { text: `Prueba gratis: te ${days === 1 ? "queda 1 día" : `quedan ${days} días`}, y ${today}.`, open: left > 0 };
+  }
+  if (plan.plan === "paid" || plan.plan === "granted") {
+    const kind = plan.plan === "paid" ? "Plan Aule" : "Plan Aule (regalado)";
+    const week =
+      left > 0
+        ? `te ${left === 1 ? "queda" : "quedan"} ${sessions(left)} de ${plan.allowed} en estos 7 días`
+        : `ya usaste las ${plan.allowed} sesiones de estos 7 días; cada una vuelve a los 7 días de usarla`;
+    return { text: `${kind} hasta el ${date(plan.ends_at)}: ${week}.`, open: left > 0 };
+  }
+  const price = (plan.price?.amount_cents ?? 5900) / 100;
+  return {
+    text: `Tu prueba gratis terminó. El plan Aule cuesta S/${price} al mes, con 3 sesiones por semana. Muy pronto podrás suscribirte aquí; mientras tanto, escríbenos a admin@meetaule.com.`,
+    open: false,
+  };
+}
