@@ -16,6 +16,7 @@ from aule_agent.tutor import (
     INSTRUCTIONS,
     MAX_TYPED_CHARS,
     UNCHECKED,
+    UNCUT_WAIT_SECONDS,
     Persona,
     Tutor,
     checked,
@@ -110,9 +111,18 @@ class Session:
     def __init__(self):
         self.said = []
         self.interrupted = False
+        # What the voice is saying now; nothing between lines.
+        self.current_speech = None
+        # Waits, interruptions and replies, in the order they happened.
+        self.order = []
 
     def interrupt(self):
+        speech = self.current_speech
+        if speech is not None and not speech.done() and not speech.allow_interruptions:
+            # As livekit-agents does while a line said with allow_interruptions=False plays.
+            raise RuntimeError("This generation handle does not allow interruptions")
         self.interrupts = getattr(self, "interrupts", 0) + 1
+        self.order.append("interrupt")
 
         async def done():
             return None
@@ -121,6 +131,7 @@ class Session:
 
     def generate_reply(self, *, user_input):
         self.replies_to = [*getattr(self, "replies_to", []), user_input]
+        self.order.append("reply")
 
     def say(self, text, *, add_to_chat_ctx, allow_interruptions):
         self.said.append((text, add_to_chat_ctx, allow_interruptions))
@@ -129,6 +140,29 @@ class Session:
             return SimpleNamespace(interrupted=self.interrupted)
 
         return played()
+
+
+class Speaking:
+    """A line the voice is saying. One said with allow_interruptions=False cannot be cut."""
+
+    def __init__(self, session, *, allow_interruptions=False, then=None):
+        self.session, self.allow_interruptions, self.then = session, allow_interruptions, then
+        self.finished = False
+
+    def done(self):
+        return self.finished
+
+    async def wait_for_playout(self):
+        self.session.order.append("played out")
+        self.finished = True
+        self.session.current_speech = self.then
+
+
+class Endless(Speaking):
+    """A line that cannot be cut and goes on for longer than anyone waits."""
+
+    async def wait_for_playout(self):
+        await asyncio.Event().wait()
 
 
 ALLOW = Decision(Action.ALLOW)
@@ -309,6 +343,44 @@ async def test_a_typed_message_the_gates_stop_never_reaches_the_model(decision):
     assert not hasattr(session, "replies_to")
     key = ADULT_HELP_SEQUENCE[0] if decision is HAZARD else "redirect"
     assert [said[0] for said in session.said] == [reply(key, "es")]
+
+
+async def test_a_message_typed_while_a_line_that_cannot_be_cut_is_said_waits_for_it_to_end():
+    # A gate's reply, "unavailable" or pace's lines are said with allow_interruptions=False.
+    # Interrupting one raises, and the message the page already shows as sent was lost.
+    gates, session = ScriptedGates(ALLOW), Session()
+    session.current_speech = Speaking(session)
+
+    await type_to(Tutor(language="es", gates=gates), session, "¿y 2/3 + 1/3?")
+
+    assert session.order == ["played out", "interrupt", "reply"]
+    # Judged and answered once, after the line.
+    assert gates.heard_texts == ["¿y 2/3 + 1/3?"]
+    assert session.replies_to == ["¿y 2/3 + 1/3?"]
+    assert session.interrupts == 1
+
+
+async def test_a_typed_message_waits_for_each_line_that_cannot_be_cut_and_still_passes_the_gates():
+    gates, session = ScriptedGates(Decision(Action.REDIRECT, "redirect")), Session()
+    session.current_speech = Speaking(session, then=Speaking(session))
+
+    await type_to(Tutor(language="es", gates=gates), session, "¿lo desenchufo?")
+
+    assert session.order == ["played out", "played out", "interrupt"]
+    assert gates.heard_texts == ["¿lo desenchufo?"]
+    assert not hasattr(session, "replies_to")
+    assert [said[0] for said in session.said] == [reply("redirect", "es")]
+
+
+async def test_a_line_that_may_be_cut_is_cut_at_once_for_a_typed_message():
+    gates, session = ScriptedGates(ALLOW), Session()
+    speaking = Speaking(session, allow_interruptions=True)
+    session.current_speech = speaking
+
+    await type_to(Tutor(language="es", gates=gates), session, "espera")
+
+    assert session.order == ["interrupt", "reply"]
+    assert not speaking.finished
 
 
 async def test_an_empty_typed_message_is_ignored_and_a_long_one_is_cut():
@@ -866,6 +938,40 @@ async def test_the_button_that_shows_work_gets_a_look_and_an_answer_at_once():
     turn = conversation(("user", "Mira mi trabajo."))
     assert tutor._frame_for(turn) == "the page of the notebook"
     assert tutor._frame_for(conversation(("user", "¿Está bien?"))) is None
+
+
+async def test_work_shown_while_a_line_that_cannot_be_cut_is_said_waits_for_it_to_end():
+    lens, session = Lens(fresh="the page of the notebook"), Session()
+    session.current_speech = Speaking(session)
+    tutor = Tutor(language="es", gates=ScriptedGates(), camera=lens)
+
+    with patch.object(Tutor, "session", new_callable=PropertyMock, return_value=session):
+        assert await tutor.show_work() is True
+
+    assert session.order == ["played out", "interrupt", "reply"]
+    assert session.replies_to == ["Mira mi trabajo."]
+
+
+async def test_work_shown_during_a_long_line_that_cannot_be_cut_is_answered_in_time_after_it():
+    # The page stops waiting for the button's answer after a while. A line that cannot be cut
+    # and lasts longer than the tutor waits is not cut: the reply is queued behind it.
+    lens, session = Lens(fresh="the page of the notebook"), Session()
+    session.current_speech = Endless(session)
+    tutor = Tutor(language="es", gates=ScriptedGates(), camera=lens)
+
+    with (
+        patch.object(Tutor, "session", new_callable=PropertyMock, return_value=session),
+        patch("aule_agent.tutor.UNCUT_WAIT_SECONDS", 0.01),
+    ):
+        assert await asyncio.wait_for(tutor.show_work(), 1) is True
+
+    assert session.order == ["reply"]
+    assert session.replies_to == ["Mira mi trabajo."]
+
+
+def test_the_button_waits_for_the_camera_and_such_lines_for_less_than_the_page_waits_for_it():
+    # livekit-client's performRpc gives up after 15 s and keeps 7 s of them for the transport.
+    assert FRESH_FRAME_SECONDS + UNCUT_WAIT_SECONDS < 15 - 7
 
 
 async def test_a_camera_with_nothing_to_show_gets_no_answer():
