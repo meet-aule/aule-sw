@@ -70,6 +70,22 @@ def persona_of(dispatch_metadata: str) -> Persona:
     )
 
 
+async def someone_joined(ctx: JobContext) -> bool:
+    """Waits for the person the session is for. False when the room closed
+    before anyone came.
+
+    The platform opens a session's room before the person joins it, so that
+    what the agent is told never travels in the person's token. Nothing starts
+    until they are in it: the platform is not asked to start the session and
+    there is no greeting to pay for. LiveKit closes a room nobody joins.
+    """
+    try:
+        await ctx.wait_for_participant()
+    except RuntimeError:
+        return False
+    return True
+
+
 # How long a released talk button waits for the last final transcript.
 COMMIT_TRANSCRIPT_TIMEOUT_SECONDS = 0.8
 
@@ -176,6 +192,17 @@ async def entrypoint(ctx: JobContext) -> None:
         return
 
     await ctx.connect()
+    if not await someone_joined(ctx):
+        logger.info("session not started: nobody joined the room")
+        await gates.close()
+        if platform:
+            # It can never start now: a later join opens a room with no tutor.
+            # Closed at once, as the platform closes a session left open, it
+            # counts for nothing and the family can start another without waiting.
+            platform.end_reason = "device_offline"
+            await platform.end()
+        ctx.shutdown(reason="nobody joined the room")
+        return
     camera = Camera(ctx.room)
     context = await platform.start() if platform else ""
     if platform and platform.gone:

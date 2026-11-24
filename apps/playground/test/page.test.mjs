@@ -120,6 +120,28 @@ test("only signin.js touches the browser's storage, and only where a refusal is 
   assert.match(signin, /try \{\s*store\(\)\.removeItem\(key\);\s*\} catch/);
 });
 
+test("Google's sign-in script is fetched only where a guardian signs in, never with the page", () => {
+  // Not preloaded and not loaded by the page: a student's session never asks Google for anything.
+  assert.doesNotMatch(html, /accounts\.google\.com|gsi\/client/);
+  for (const [name, text] of Object.entries(scripts)) {
+    if (name !== "signin.js") assert.doesNotMatch(text, /accounts\.google\.com/, name);
+  }
+  const signin = scripts["signin.js"];
+  // One function fetches it, and nothing at the top of the module does.
+  assert.equal(signin.match(/\bloadGoogleScript\(\)/g).length, 2, "its definition and one call");
+  assert.match(blocks(signin, "function needGoogle()")[0], /\bloadGoogleScript\(\)/);
+  // That function is called from the guardian's way in only: C01, then P01 and P13.
+  const asked = (text) => (text.match(/\bneedGoogle\b/g) ?? []).length;
+  const guardian =
+    asked(signin.match(/onShow\("c01", needGoogle\);/)?.[0] ?? "") +
+    asked(blocks(signin, 'onShow("p01"')[0]) +
+    asked(blocks(signin, 'onShow("p13"')[0]);
+  assert.equal(guardian, 3);
+  assert.equal(asked(signin), guardian + 1, "the definition and those three, nothing else");
+  // And it does nothing for a family that is already signed in.
+  assert.match(blocks(signin, "function needGoogle()")[0], /account\.signed_in/);
+});
+
 /** Every innermost rule of a stylesheet: [what comes before its brace, its body]. */
 const rules = (text) => [...text.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map(([, selector, body]) => [selector.trim(), body]);
 

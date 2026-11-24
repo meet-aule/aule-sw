@@ -16,12 +16,13 @@
     <link rel="stylesheet" href="style.css" />
     <link rel="preload" as="font" type="font/woff2" href="fonts/sans.woff2" crossorigin />
     <link rel="preload" as="font" type="font/woff2" href="fonts/serif.woff2" crossorigin />
-    <!-- Signing in comes first: its scripts and Google's are fetched at once. -->
+    <!-- Signing in comes first: its scripts are fetched at once. Google's is
+         not: signin.js fetches it only where a guardian signs in, never on a
+         student's screens. -->
     <link rel="modulepreload" href="students.js" />
     <link rel="modulepreload" href="steps.js" />
     <link rel="modulepreload" href="screens.js" />
     <link rel="modulepreload" href="signin.js" />
-    <link rel="preload" as="script" href="https://accounts.google.com/gsi/client" />
   </head>
   <body>
     <!--

@@ -8,6 +8,7 @@ use uuid::Uuid;
 
 use crate::config::Config;
 use crate::google::{Google, IdentityProvider};
+use crate::livekit::{LiveKitRooms, Rooms};
 use crate::llm::{Anthropic, Llm};
 use crate::mail::{Mailer, SmtpMailer};
 use crate::memory::{Embedder, HttpEmbedder};
@@ -20,6 +21,8 @@ pub struct AppState {
     /// The same pool, for the code that goes through SeaORM.
     pub db: sea_orm::DatabaseConnection,
     pub config: Arc<Config>,
+    /// Opens sessions' rooms. Without LiveKit settings no session can start.
+    pub rooms: Option<Arc<dyn Rooms>>,
     /// The supervisor's model. Without one, plans come from the learner model
     /// alone and there is no guidance or review.
     pub llm: Option<Arc<dyn Llm>>,
@@ -46,6 +49,8 @@ pub struct AppState {
 impl AppState {
     pub fn new(pool: PgPool, config: Config) -> Self {
         let db = sea_orm::SqlxPostgresConnector::from_sqlx_postgres_pool(pool.clone());
+        let rooms =
+            config.livekit.clone().map(|livekit| Arc::new(LiveKitRooms::new(livekit)) as Arc<dyn Rooms>);
         let llm = config
             .supervisor
             .clone()
@@ -99,6 +104,7 @@ impl AppState {
             db,
             pool,
             config: Arc::new(config),
+            rooms,
             llm,
             embedder,
             mailer,

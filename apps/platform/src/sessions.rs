@@ -26,7 +26,7 @@ use crate::entity::{
 };
 use crate::error::{ApiError, ApiResult};
 use crate::families::{Child, child_for, current_consent, find_child};
-use crate::livekit::{RoomToken, room_token};
+use crate::livekit::{NewRoom, RoomToken, room_token};
 use crate::state::AppState;
 use crate::supervisor::{self, Brief, PlanInputs, Turn};
 use crate::{engine, events, jobs, learning, llm, memory};
@@ -184,8 +184,8 @@ pub async fn create_session(
     Ok((StatusCode::CREATED, Json(session)))
 }
 
-/// Creates a session and its room token. Every way of starting one comes
-/// through here, so the consent rule is in one place.
+/// Creates a session, opens its room and makes the token to join it. Every
+/// way of starting one comes through here, so the consent rule is in one place.
 pub async fn open_session(
     state: &AppState,
     child: Option<Child>,
@@ -198,6 +198,7 @@ pub async fn open_session(
     engine: bool,
 ) -> ApiResult<Value> {
     let livekit = state.config.livekit.as_ref().ok_or(ApiError::Unavailable("LiveKit is not configured"))?;
+    let rooms = state.rooms.as_ref().ok_or(ApiError::Unavailable("LiveKit is not configured"))?;
 
     // A child's profile is only used with the guardian's consent, whoever is
     // at the microphone. Without consent for voice there is no session.
@@ -253,7 +254,33 @@ pub async fn open_session(
     .await?;
     txn.commit().await?;
 
+    // The room is opened here, with the tutor asked for in it, so that the
+    // agent's token and the family's note reach the agent's job and nobody
+    // else. The person's own token is only a key to the room.
     let tutor = crate::families::tutor(child.as_ref());
+    let dispatch_metadata = json!({
+        "audience": audience,
+        "language": language,
+        "session_id": session_id,
+        "platform_token": agent_token,
+        "tutor_name": tutor["name"],
+        "tutor_persona": tutor["persona"],
+        "tutor_persona_note": tutor["note"],
+    });
+    let opened = rooms
+        .open(&NewRoom {
+            name: &room,
+            agent_name: &state.config.agent_name,
+            dispatch_metadata: &dispatch_metadata,
+        })
+        .await;
+    if let Err(error) = opened {
+        tracing::warn!(%session_id, %error, "the session's room could not be opened");
+        // Nobody can join it. Closed now, it never started and counts for nothing.
+        end_session(&state.db, session_id, None, "error").await?;
+        return Err(ApiError::Unavailable("the session's room could not be opened"));
+    }
+
     // The plan is written while the person connects, so nobody waits for it.
     if let Some(child) = child {
         let state = state.clone();
@@ -268,15 +295,6 @@ pub async fn open_session(
     // few minutes so the goodbye is never cut by an expired token.
     let session_seconds = i64::from(state.config.session_minutes) * 60;
     let ttl_seconds = session_seconds + TOKEN_GRACE_SECONDS;
-    let dispatch_metadata = json!({
-        "audience": audience,
-        "language": language,
-        "session_id": session_id,
-        "platform_token": agent_token,
-        "tutor_name": tutor["name"],
-        "tutor_persona": tutor["persona"],
-        "tutor_persona_note": tutor["note"],
-    });
     let token = room_token(
         livekit,
         &RoomToken {
@@ -284,8 +302,6 @@ pub async fn open_session(
             identity: &format!("{audience}-{}", session_id.simple()),
             name: if audience == "child" { "Student" } else { "Operator" },
             ttl_seconds,
-            agent_name: &state.config.agent_name,
-            dispatch_metadata: &dispatch_metadata,
         },
         Utc::now().timestamp(),
     );

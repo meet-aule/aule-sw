@@ -5,5 +5,7 @@
   "main": "src/livekit.js",
   "compatibility_date": "2025-11-01",
   "routes": [{ "pattern": "livekit.meetaule.com", "custom_domain": true }],
-  "observability": { "enabled": true }
+  // No line per request in Cloudflare's logs: the browser sends its room token
+  // in the address it connects to. Errors and uncaught exceptions are still logged.
+  "observability": { "enabled": true, "logs": { "invocation_logs": false } }
 }

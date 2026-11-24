@@ -8,6 +8,7 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use aule_platform::config::{Config, EventsWebhook, LiveKit};
 use aule_platform::google::{Identity, IdentityError, IdentityProvider};
+use aule_platform::livekit::{NewRoom, RoomError, Rooms};
 use aule_platform::llm::{Llm, LlmError, Request as LlmRequest};
 use aule_platform::mail::{MailError, Mailer};
 use aule_platform::memory::{DIMENSIONS, Embedder, MemoryError, NewMemory};
@@ -131,6 +132,29 @@ impl Pusher for Phones {
     }
 }
 
+/// Stands in for LiveKit's server API: keeps each room it is asked to open
+/// with the dispatch the agent's job would get, and can play an outage.
+#[derive(Default)]
+struct PretendLiveKit {
+    opened: Mutex<Vec<(String, String, Value)>>,
+    down: std::sync::atomic::AtomicBool,
+}
+
+#[async_trait]
+impl Rooms for PretendLiveKit {
+    async fn open(&self, room: &NewRoom<'_>) -> Result<(), RoomError> {
+        if self.down.load(std::sync::atomic::Ordering::SeqCst) {
+            return Err(RoomError("pretend outage".into()));
+        }
+        self.opened.lock().unwrap().push((
+            room.name.to_string(),
+            room.agent_name.to_string(),
+            room.dispatch_metadata.clone(),
+        ));
+        Ok(())
+    }
+}
+
 const GOOGLE_CLIENT: &str = "1234-test.apps.googleusercontent.com";
 
 /// Stands in for GitHub: a code is `ok:<email>:<name>`, `down` plays an outage,
@@ -172,6 +196,7 @@ impl IdentityProvider for PretendGoogle {
 
 struct App {
     phones: Arc<Phones>,
+    rooms: Arc<PretendLiveKit>,
     router: Router,
     state: AppState,
     llm: Arc<ScriptedLlm>,
@@ -189,6 +214,7 @@ fn app_with(pool: PgPool, events_webhook: Option<EventsWebhook>) -> App {
         admin_token: ADMIN.to_string(),
         livekit: Some(LiveKit {
             public_url: "wss://live.example.org".into(),
+            service_url: "http://127.0.0.1:7880".into(),
             api_key: "key".into(),
             api_secret: "secret".into(),
         }),
@@ -213,10 +239,12 @@ fn app_with(pool: PgPool, events_webhook: Option<EventsWebhook>) -> App {
     let mail = Arc::new(Outbox::default());
     let phones = Arc::new(Phones::default());
     let llm = Arc::new(ScriptedLlm { asked: Mutex::new(Vec::new()) });
+    let rooms = Arc::new(PretendLiveKit::default());
     let state = AppState {
         db: sea_orm::SqlxPostgresConnector::from_sqlx_postgres_pool(pool.clone()),
         pool,
         config: Arc::new(config),
+        rooms: Some(rooms.clone()),
         llm: Some(llm.clone()),
         embedder: Some(Arc::new(WordEmbedder)),
         mailer: Some(mail.clone()),
@@ -229,7 +257,7 @@ fn app_with(pool: PgPool, events_webhook: Option<EventsWebhook>) -> App {
         claim_attempts: Arc::new(Mutex::new(HashMap::new())),
         engines: Default::default(),
     };
-    App { phones, router: http::router(state.clone()), state, llm, mail }
+    App { phones, rooms, router: http::router(state.clone()), state, llm, mail }
 }
 
 impl App {
@@ -294,24 +322,30 @@ impl App {
     }
 
     /// Starts a session and returns its id and the agent's token, read from
-    /// the dispatch metadata inside the room token like the agent does.
+    /// the dispatch its room was opened with, as the agent's job gets it.
     async fn session(&self, child: &str) -> (String, String) {
         let (status, session) = self
             .admin(Method::POST, "/v1/sessions", Some(json!({ "child_id": child, "audience": "operator" })))
             .await;
         assert_eq!(status, StatusCode::CREATED, "{session}");
-        let claims = session["token"].as_str().unwrap().split('.').nth(1).unwrap().to_string();
-        let claims: Value =
-            serde_json::from_slice(&base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(claims).unwrap())
-                .unwrap();
-        let dispatch: Value =
-            serde_json::from_str(claims["roomConfig"]["agents"][0]["metadata"].as_str().unwrap()).unwrap();
+        assert_eq!(claims(&session)["video"]["room"], session["room"]);
+        let dispatch = self.dispatched(&session);
         assert_eq!(dispatch["audience"], "operator");
-        assert_eq!(claims["video"]["room"], session["room"]);
         (
             session["session_id"].as_str().unwrap().to_string(),
             dispatch["platform_token"].as_str().unwrap().to_string(),
         )
+    }
+
+    /// What the agent's job is given for this session: the dispatch its room
+    /// was opened with, which the person's token never carries.
+    fn dispatched(&self, session: &Value) -> Value {
+        let opened = self.rooms.opened.lock().unwrap();
+        let rooms: Vec<&(String, String, Value)> =
+            opened.iter().filter(|(room, ..)| session["room"] == room.as_str()).collect();
+        assert_eq!(rooms.len(), 1, "each session opens its own room once");
+        assert_eq!(rooms[0].1, "aule-tutor");
+        rooms[0].2.clone()
     }
 
     /// Signs a guardian in with the code from their email; returns their token.
@@ -355,6 +389,13 @@ impl App {
     async fn count(&self, sql: &'static str) -> i64 {
         sqlx::query_scalar(sql).fetch_one(&self.state.pool).await.unwrap()
     }
+}
+
+/// The claims of a room token as anyone holding it can read them: a JWT is
+/// signed, not encrypted.
+fn claims(session: &Value) -> Value {
+    let claims = session["token"].as_str().unwrap().split('.').nth(1).unwrap().to_string();
+    serde_json::from_slice(&base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(claims).unwrap()).unwrap()
 }
 
 /// Waits for something a background task writes.
@@ -1340,17 +1381,15 @@ async fn a_device_is_linked_by_its_code_and_its_key_and_then_starts_sessions(poo
     assert_eq!(session(now - 3600, signed(now - 3600)).await.0, StatusCode::FORBIDDEN, "too old");
     let (status, started) = session(now + 2, signed(now + 2)).await;
     assert_eq!(status, StatusCode::CREATED, "{started}");
-    let claims = started["token"].as_str().unwrap().split('.').nth(1).unwrap().to_string();
-    let claims: Value =
-        serde_json::from_slice(&base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(claims).unwrap())
-            .unwrap();
     // Rejoining after a brief Wi-Fi loss reuses this room and token, without
-    // calling /ota/session again and creating another tutoring session.
-    assert_eq!(claims["roomConfig"]["departureTimeout"], 120);
-    assert_eq!(claims["video"]["room"], started["room"]);
-    let dispatch: Value =
-        serde_json::from_str(claims["roomConfig"]["agents"][0]["metadata"].as_str().unwrap()).unwrap();
+    // calling /ota/session again and creating another tutoring session: the
+    // room waits for it (see livekit.rs), and the token is only its key.
+    let readable = claims(&started);
+    assert_eq!(readable["video"]["room"], started["room"]);
+    assert!(readable.get("roomConfig").is_none());
+    let dispatch = app.dispatched(&started);
     assert_eq!(dispatch["audience"], "child");
+    assert!(!readable.to_string().contains(dispatch["platform_token"].as_str().unwrap()));
 
     // The session's end is an event, and so was the claim.
     let agent = dispatch["platform_token"].as_str().unwrap();
@@ -1895,13 +1934,6 @@ async fn a_family_names_its_tutor_and_the_agent_is_told(pool: PgPool) {
         body.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
         body
     };
-    let dispatch_of = |session: &Value| -> Value {
-        let claims = session["token"].as_str().unwrap().split('.').nth(1).unwrap().to_string();
-        let claims: Value =
-            serde_json::from_slice(&base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(claims).unwrap())
-                .unwrap();
-        serde_json::from_str(claims["roomConfig"]["agents"][0]["metadata"].as_str().unwrap()).unwrap()
-    };
 
     // A child starts with the tutor as it comes.
     let (_, fresh) = app.admin(Method::GET, &path, None).await;
@@ -1944,7 +1976,7 @@ async fn a_family_names_its_tutor_and_the_agent_is_told(pool: PgPool) {
         .admin(Method::POST, "/v1/sessions", Some(json!({ "child_id": child, "audience": "operator" })))
         .await;
     assert_eq!(status, StatusCode::CREATED, "{session}");
-    let dispatch = dispatch_of(&session);
+    let dispatch = app.dispatched(&session);
     assert_eq!(
         (&dispatch["tutor_name"], &dispatch["tutor_persona"], &dispatch["tutor_persona_note"]),
         (&json!("Ñawi-Luz"), &json!("aventurero"), &json!("Le gusta que le hablen de dinosaurios"))
@@ -1969,7 +2001,7 @@ async fn a_family_names_its_tutor_and_the_agent_is_told(pool: PgPool) {
     // A session with no child gets the tutor as it comes.
     let (_, anonymous) =
         app.admin(Method::POST, "/v1/sessions", Some(json!({ "audience": "operator" }))).await;
-    let dispatch = dispatch_of(&anonymous);
+    let dispatch = app.dispatched(&anonymous);
     assert_eq!(
         (&dispatch["tutor_name"], &dispatch["tutor_persona"], &dispatch["tutor_persona_note"]),
         (&json!("Aule"), &json!("calido"), &Value::Null)
@@ -1977,6 +2009,92 @@ async fn a_family_names_its_tutor_and_the_agent_is_told(pool: PgPool) {
     let (_, start) =
         app.call(Method::GET, "/v1/agent/session", dispatch["platform_token"].as_str(), None).await;
     assert_eq!(start["tutor"], json!({ "name": "Aule", "persona": "calido", "note": null }));
+}
+
+#[sqlx::test(migrator = "aule_platform::MIGRATOR")]
+async fn the_token_a_family_s_browser_holds_opens_the_room_and_says_nothing_else(pool: PgPool) {
+    let app = app(pool);
+    let child = app.child().await;
+    app.consent(&child, "voice", true).await;
+    let note = "Le gusta que le hablen de dinosaurios";
+    let profile = json!({ "nickname": "Mateo", "birth_year": 2016, "grade": "P4", "tutor_name": "Ñawi-Luz",
+                          "tutor_persona_note": note });
+    assert_eq!(
+        app.admin(Method::PUT, &format!("/v1/children/{child}"), Some(profile)).await.0,
+        StatusCode::OK
+    );
+    let ana = app.sign_in("ana@example.org", "Ana").await;
+
+    let (status, session) = app
+        .call(
+            Method::POST,
+            "/v1/sessions",
+            Some(&ana),
+            Some(json!({ "child_id": child, "audience": "child" })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{session}");
+
+    // The agent's job gets its token and the family's note with the room.
+    let dispatch = app.dispatched(&session);
+    let agent = dispatch["platform_token"].as_str().unwrap().to_string();
+    assert_eq!(
+        (dispatch["audience"].as_str(), dispatch["tutor_persona_note"].as_str()),
+        (Some("child"), Some(note))
+    );
+    let (status, start) = app.call(Method::GET, "/v1/agent/session", Some(&agent), None).await;
+    assert_eq!(status, StatusCode::OK, "{start}");
+    assert_eq!(start["tutor"]["note"], note);
+
+    // The browser can read all of its token, and the token travels in the
+    // address of a WebSocket that proxies log. It names the room and a
+    // participant, and carries neither the agent's token nor anything of the
+    // family's: no note, no tutor's name, no child's name.
+    let readable = claims(&session);
+    let mut fields: Vec<&str> = readable.as_object().unwrap().keys().map(String::as_str).collect();
+    fields.sort_unstable();
+    assert_eq!(fields, ["exp", "iss", "name", "nbf", "sub", "video"], "{readable}");
+    assert_eq!(readable["name"], "Student");
+    assert_eq!(readable["video"]["room"], session["room"]);
+    for kept in [agent.as_str(), note, "dinosaurios", "Ñawi-Luz", "Mateo"] {
+        assert!(!readable.to_string().contains(kept), "{kept} is in the token: {readable}");
+        assert!(!session.to_string().contains(kept), "{kept} is in the answer: {session}");
+    }
+}
+
+#[sqlx::test(migrator = "aule_platform::MIGRATOR")]
+async fn a_room_livekit_cannot_open_is_no_session(pool: PgPool) {
+    let app = app(pool);
+    let child = app.child().await;
+    app.consent(&child, "voice", true).await;
+    let start = || {
+        let body = json!({ "child_id": child, "audience": "operator" });
+        app.admin(Method::POST, "/v1/sessions", Some(body))
+    };
+
+    app.rooms.down.store(true, std::sync::atomic::Ordering::SeqCst);
+    let (status, refused) = start().await;
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE, "{refused}");
+    assert!(refused.get("token").is_none());
+    // Closed at once and never started, so a family's plan does not count it.
+    assert_eq!(
+        app.count("select count(*) from sessions where status = 'ended' and end_reason = 'error' and started_at is null")
+            .await,
+        1
+    );
+
+    app.rooms.down.store(false, std::sync::atomic::Ordering::SeqCst);
+    let (status, session) = start().await;
+    assert_eq!(status, StatusCode::CREATED, "{session}");
+    // Only the session that has a room is planned: the supervisor is not paid
+    // for one nobody can join.
+    eventually("the plan of the session that opened", || async {
+        app.count("select count(*) from session_briefs").await == 1
+    })
+    .await;
+    let planned: uuid::Uuid =
+        sqlx::query_scalar("select session_id from session_briefs").fetch_one(&app.state.pool).await.unwrap();
+    assert_eq!(planned.to_string(), session["session_id"].as_str().unwrap());
 }
 
 #[sqlx::test(migrator = "aule_platform::MIGRATOR")]
@@ -2155,15 +2273,9 @@ async fn the_platform_checks_the_tutors_exercises_and_says_what_to_do_next(pool:
 
 // ------------------------------------------------ the session engine
 
-/// The agent's token of a session, from the dispatch metadata in its room token.
-fn agent_token(session: &Value) -> String {
-    let claims = session["token"].as_str().unwrap().split('.').nth(1).unwrap().to_string();
-    let claims: Value =
-        serde_json::from_slice(&base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(claims).unwrap())
-            .unwrap();
-    let dispatch: Value =
-        serde_json::from_str(claims["roomConfig"]["agents"][0]["metadata"].as_str().unwrap()).unwrap();
-    dispatch["platform_token"].as_str().unwrap().to_string()
+/// The agent's token of a session, from the dispatch its room was opened with.
+fn agent_token(app: &App, session: &Value) -> String {
+    app.dispatched(session)["platform_token"].as_str().unwrap().to_string()
 }
 
 fn fractions(kind: &str) -> Value {
@@ -2175,7 +2287,7 @@ async fn engine_session(app: &App, child: &str, objective: Value) -> (Value, Str
     let body = json!({ "child_id": child, "audience": "child", "objective": objective, "engine": true });
     let (status, session) = app.admin(Method::POST, "/v1/sessions", Some(body)).await;
     assert_eq!(status, StatusCode::CREATED, "{session}");
-    let token = agent_token(&session);
+    let token = agent_token(app, &session);
     (session, token)
 }
 
@@ -2336,7 +2448,7 @@ async fn the_session_engine_runs_a_session_from_the_greeting_to_the_family_repor
         let (status, session) = app.admin(Method::POST, "/v1/sessions", Some(body)).await;
         assert_eq!(status, StatusCode::CREATED, "{why}: {session}");
         assert_eq!(session["engine"], false, "{why}");
-        let token = agent_token(&session);
+        let token = agent_token(&app, &session);
         let (status, start) = app.call(Method::GET, "/v1/agent/session", Some(&token), None).await;
         assert_eq!(status, StatusCode::OK);
         assert!(start.get("script").is_none(), "{why}: {start}");
