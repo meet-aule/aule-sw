@@ -8,15 +8,19 @@ import pytest
 
 from aule_agent.moderation import (
     MAX_CHARS,
+    PROBE_TEXT,
     SELF_HARM_FAINT_BELOW,
     SELF_HARM_FAINT_FROM,
     THRESHOLDS,
     Action,
+    Decision,
     Finding,
     Moderator,
+    Probe,
     classify_heard,
     classify_spoken,
     local_category,
+    probe_of,
 )
 
 
@@ -98,10 +102,87 @@ def test_local_patterns_find_their_category(text, category):
         "estoy asustado",
         "el teorema de Pitágoras",
         "12345",
+        # Ordinary words in Peru that an earlier list took for swearing.
+        "Amarra el globo con una pita.",
+        "Mide el borde de la mesa con una pita y luego con la regla.",
+        "El árbitro pitó y se acabó el partido.",
+        "Sopla el pito cuando termine la carrera.",
+        "Mi abuela muele el ají en el batán con el chungo.",
+        "No te molestes, lo dije de chunga.",
+        "Soy culé, me encanta el Barça.",
+        "El cangrejo ermitaño busca una concha de su tamaño.",
+        "¿Dónde guardó la concha tu hermano?",
+        "La concha de tu caracol es muy bonita.",
+        "Jodie es mi mejor amiga.",
+        # And in English.
+        "We are reading Moby Dick in class.",
+        "Moby-Dick is a very long book.",
+        "Can I have pita bread for lunch?",
+        "I passed the class and I'm glad.",
+        "The beaver built a dam across the river.",
     ],
 )
 def test_ordinary_text_matches_no_local_pattern(text):
     assert local_category(text) is None
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # Spanish, as a child in Peru or elsewhere might say it.
+        "eres un cojudo",
+        "qué huevón eres",
+        "ese webón",
+        "conchatumare",
+        "concha de tu madre",
+        "conche su mare",
+        "concha'e tu madre",
+        "la concha de tu hermana",
+        "la concha de tu vieja",
+        "la concha de tu abuela",
+        "la concha de tu mami",
+        "¡la concha de tu...!",
+        "¡conchasu!",
+        "conchesumadre",
+        "ctm",
+        "hijo de puta",
+        "hijueputa",
+        "puta madre",
+        "malparido",
+        "pendejo",
+        "mierda",
+        "carajo",
+        "chucha",
+        "pinga",
+        "verga",
+        "maricón",
+        "imbécil",
+        "idiota",
+        "estúpidos",
+        "maldito",
+        "mamón",
+        "me caí de culo",
+        "jódete",
+        "no me jodas",
+        "qué jodido estoy",
+        # "jodí" is "jodi" once its accent is gone.
+        "ya la jodí",
+        "me jodí la rodilla",
+        "¡Jodí todo!",
+        "chinga tu madre",
+        "chingaaa",
+        # English.
+        "fuck off",
+        "this is shit",
+        "you bitch",
+        "asshole",
+        "damn it",
+        "whore",
+        "don't be a dick",
+    ],
+)
+def test_insults_are_still_found(text):
+    assert local_category(text) == "profanity"
 
 
 async def test_clean_text_is_available_and_not_flagged():
@@ -382,3 +463,96 @@ async def test_a_word_of_our_own_list_is_never_unsure():
     finding = await guard.check("te odio")
 
     assert finding.flagged and not finding.unsure
+
+
+async def test_a_reply_with_an_everyday_word_of_peru_is_spoken():
+    guard, _ = moderator()
+
+    finding = await guard.check("Toma una pita y mide el borde de la mesa, como en el cole.")
+
+    assert finding == Finding()
+    assert classify_spoken(finding).allowed
+
+
+@pytest.mark.parametrize(
+    "reply",
+    [
+        "¡Uy, ya la jodí! Perdón, empecemos otra vez.",
+        "Y el gaucho gritó: ¡la concha de tu vieja!",
+        "La concha de tu abuela, dijo el pirata.",
+    ],
+)
+async def test_a_reply_with_swearing_is_not_spoken_even_when_the_provider_finds_nothing(reply):
+    guard, _ = moderator()
+
+    finding = await guard.check(reply)
+
+    assert finding.profanity
+    assert classify_spoken(finding) == Decision(Action.REDIRECT, "redirect")
+
+
+class Refused(Exception):
+    """Shaped like the provider client's error for an HTTP answer it refused."""
+
+    def __init__(self, status_code):
+        super().__init__(f"status {status_code}")
+        self.status_code = status_code
+
+
+async def test_the_probe_reads_one_word_and_leaves_the_first_check_its_longer_wait(monkeypatch):
+    monkeypatch.setattr("aule_agent.moderation.INITIAL_TIMEOUT_SECONDS", 0.5)
+    monkeypatch.setattr("aule_agent.moderation.TIMEOUT_SECONDS", 0.01)
+    guard, client = moderator(delay=0.05)
+
+    assert await guard.probe() is Probe.ANSWERS
+    assert client.calls == [{"model": "omni-moderation-latest", "input": PROBE_TEXT}]
+    assert local_category(PROBE_TEXT) is None
+    # The probe had the longer wait, and so has the first check: the
+    # connection the probe opened may be closed by the time a turn comes.
+    assert (await guard.check("hola")).available
+    # The turns after it have the short one.
+    assert not (await guard.check("hola")).available
+
+
+@pytest.mark.parametrize(
+    ("answer", "probe"),
+    [
+        (Refused(401), Probe.KEY_REFUSED),
+        (Refused(403), Probe.KEY_REFUSED),
+        (Refused(429), Probe.UNEXPECTED),
+        (Refused(500), Probe.UNEXPECTED),
+        (RuntimeError("down"), Probe.UNREACHABLE),
+        (TimeoutError(), Probe.UNREACHABLE),
+        (provider_response(flagged="no"), Probe.UNEXPECTED),
+        (provider_response(sexual_minors=float("nan")), Probe.UNEXPECTED),
+    ],
+)
+async def test_a_probe_without_a_usable_answer_says_why(answer, probe):
+    guard, _ = moderator(answer)
+
+    assert await guard.probe() is probe
+
+
+async def test_a_probe_with_no_answer_in_time_is_unreachable(monkeypatch):
+    monkeypatch.setattr("aule_agent.moderation.INITIAL_TIMEOUT_SECONDS", 0.01)
+    guard, client = moderator(delay=5)
+
+    assert await guard.probe() is Probe.UNREACHABLE
+    assert len(client.calls) == 1
+
+
+async def test_the_probe_logs_what_happened_and_never_the_key(caplog):
+    guard, _ = moderator(Refused(401))
+
+    with caplog.at_level("DEBUG"):
+        await guard.probe()
+
+    (record,) = caplog.records
+    assert (record.levelname, record.probe, record.status) == ("WARNING", "key_refused", 401)
+    assert "test-key" not in logged(record)
+
+
+def test_a_status_says_whether_the_key_was_refused():
+    assert probe_of(401) is probe_of(403) is Probe.KEY_REFUSED
+    assert probe_of(422) is probe_of(500) is Probe.UNEXPECTED
+    assert probe_of(None) is Probe.UNREACHABLE

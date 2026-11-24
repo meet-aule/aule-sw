@@ -20,6 +20,7 @@ use axum::Router;
 use axum::body::Body;
 use axum::http::{Method, Request, StatusCode};
 use base64::Engine;
+use chrono::Datelike;
 use serde_json::{Value, json};
 use sqlx::PgPool;
 use tower::ServiceExt;
@@ -571,6 +572,9 @@ async fn a_session_is_planned_watched_and_reviewed(pool: PgPool) {
     assert!(instructions.contains("The student's name is Mateo."), "{instructions}");
     assert!(instructions.contains("Review adding fractions with football examples."), "{instructions}");
     assert_eq!(app.count("select count(*) from sessions where status = 'active'").await, 1);
+    // The physical-safety gate judges for the child's age: the agent is told it, and the grade.
+    assert_eq!(start["student_age"], chrono::Utc::now().year() - 2016);
+    assert_eq!(start["student_grade"], "P4");
 
     // During: reporting a turn returns at once; the guidance comes with a later call.
     let turns = json!({ "turns": [
@@ -1981,6 +1985,8 @@ async fn a_family_names_its_tutor_and_the_agent_is_told(pool: PgPool) {
         (&dispatch["tutor_name"], &dispatch["tutor_persona"], &dispatch["tutor_persona_note"]),
         (&json!("Ñawi-Luz"), &json!("aventurero"), &json!("Le gusta que le hablen de dinosaurios"))
     );
+    // The child's profile is never in the room's metadata, which every participant can read.
+    assert_eq!((&dispatch["student_age"], &dispatch["student_grade"]), (&Value::Null, &Value::Null));
     let (status, start) =
         app.call(Method::GET, "/v1/agent/session", dispatch["platform_token"].as_str(), None).await;
     assert_eq!(status, StatusCode::OK, "{start}");
@@ -2009,6 +2015,8 @@ async fn a_family_names_its_tutor_and_the_agent_is_told(pool: PgPool) {
     let (_, start) =
         app.call(Method::GET, "/v1/agent/session", dispatch["platform_token"].as_str(), None).await;
     assert_eq!(start["tutor"], json!({ "name": "Aule", "persona": "calido", "note": null }));
+    // With no child there is no age to tell.
+    assert_eq!((&start["student_age"], &start["student_grade"]), (&Value::Null, &Value::Null));
 }
 
 #[sqlx::test(migrator = "aule_platform::MIGRATOR")]
