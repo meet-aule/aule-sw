@@ -1,6 +1,8 @@
-// A family's students on the entry screen: the words for what can be chosen,
-// and the editor where a guardian says who a student is for Aule and what is
-// kept about them. Nothing is saved until the guardian presses the button.
+// A family's students: the words for what can be chosen, and the editor where
+// a guardian says who a student is for Aule and what is kept about them.
+// Nothing is saved until the guardian presses the button. A new student is
+// made by the onboarding (onboarding.js), never here: the editor is for the
+// students a family already has.
 
 export const $ = (id) => document.getElementById(id);
 
@@ -76,10 +78,12 @@ export async function call(path, body) {
   return answer;
 }
 
-export function say(text) {
+/** Writes the message line: an error unless `tone` is "info"; nothing hides it. */
+export function say(text, tone = "error") {
   const message = $("message");
   message.textContent = text;
   message.hidden = !text;
+  message.dataset.tone = tone;
 }
 
 /** A choice drawn as a chip: a checkbox or a radio the person presses by its label. */
@@ -100,7 +104,7 @@ export function chip(type, name, value, text, checked) {
 const checked = (name) =>
   [...document.querySelectorAll(`input[name="${name}"]:checked`)].map((input) => input.value);
 
-/** One line about a student for their card: what the family told Aule. */
+/** One line about a student for their row: what the family told Aule. */
 export function describe(student) {
   const parts = [];
   if (student.grade) parts.push(GRADES[student.grade]);
@@ -111,6 +115,11 @@ export function describe(student) {
 
 let editing = null;
 let done = () => {};
+
+/** The student the editor is open for, or null. */
+export function editingStudent() {
+  return editing;
+}
 
 function count(number, one, many) {
   return `${number} ${number === 1 ? one : many}`;
@@ -143,12 +152,12 @@ async function showKnown(student) {
     ? `Domina ${count(known.mastered, "habilidad", "habilidades")} y está practicando ${known.practising}.`
     : "Todavía no hay ejercicios resueltos.";
   if (known.next.length) progress += ` Lo que viene: ${known.next.join(", ")}.`;
-  $("progress").textContent = progress;
+  $("progress-known").textContent = progress;
   for (const memory of known.memories) {
     const item = document.createElement("li");
     const forget = document.createElement("button");
     forget.type = "button";
-    forget.className = "quiet";
+    forget.className = "small";
     forget.textContent = "Olvidar";
     forget.addEventListener("click", async () => {
       forget.disabled = true;
@@ -185,28 +194,28 @@ async function showKnown(student) {
 }
 
 function fill(student, subjects) {
-  $("editor-title").textContent = student ? `Configurar a ${student.name}` : "Nuevo alumno";
-  $("student-name").value = student?.name ?? "";
+  $("editor-title").textContent = `Configurar a ${student.name}`;
+  $("student-name").value = student.name ?? "";
   $("student-grade").replaceChildren(
     new Option("Prefiero no decirlo", ""),
     ...Object.entries(GRADES).map(([value, text]) => new Option(text, value)),
   );
-  $("student-grade").value = student?.grade ?? "";
-  $("relationship-label").textContent = student ? `¿Qué eres de ${student.name}?` : "¿Qué eres del alumno?";
+  $("student-grade").value = student.grade ?? "";
+  $("relationship-label").textContent = `¿Qué eres de ${student.name}?`;
   $("student-relationship").replaceChildren(
     new Option("Prefiero no decirlo", ""),
     ...Object.entries(RELATIONSHIPS).map(([value, text]) => new Option(text, value)),
   );
-  $("student-relationship").value = student?.relationship ?? "";
+  $("student-relationship").value = student.relationship ?? "";
   $("subjects-field").hidden = !subjects;
   $("student-subjects").replaceChildren(
     ...(subjects ?? []).map((value) =>
-      chip("checkbox", "subjects", value, SUBJECTS[value], student?.subjects?.includes(value) ?? false),
+      chip("checkbox", "subjects", value, SUBJECTS[value], student.subjects?.includes(value) ?? false),
     ),
   );
   // The student's own come first and keep their order: the first ones are
   // what the tutor reaches for.
-  const liked = student?.interests ?? [];
+  const liked = student.interests ?? [];
   $("student-interests").replaceChildren(
     ...[...new Set([...liked, ...INTERESTS])].map((interest) =>
       chip("checkbox", "interests", interest, interest, liked.includes(interest)),
@@ -215,7 +224,7 @@ function fill(student, subjects) {
   $("interest-new").value = "";
   $("student-tone").replaceChildren(
     ...Object.entries(TONES).map(([value, [title, text]]) => {
-      const label = chip("radio", "tone", value, "", (student?.tone ?? "calido") === value);
+      const label = chip("radio", "tone", value, "", (student.tone ?? "calido") === value);
       label.className = "tone";
       const strong = document.createElement("b");
       strong.textContent = title;
@@ -223,38 +232,52 @@ function fill(student, subjects) {
       return label;
     }),
   );
-  $("student-note").value = student?.note ?? "";
-  $("student-language").value = student?.language ?? "es";
-  $("student-remembers").checked = student?.remembers ?? true;
-  $("student-transcripts").checked = student?.keepsTranscripts ?? false;
-  $("consent").checked = false;
-  $("consent-line").hidden = Boolean(student);
-  $("remove-student").hidden = !student;
+  $("student-note").value = student.note ?? "";
+  $("student-language").value = student.language ?? "es";
+  // Ticked only where the family said yes: a choice never made is shown as not made.
+  $("student-remembers").checked = student.remembers === true;
+  $("student-transcripts").checked = student.keepsTranscripts === true;
   $("known").hidden = true;
 }
 
 /**
- * Opens the editor for a student, or for a new one. `subjects` are the ones
+ * Fills the editor for one of the family's students. `subjects` are the ones
  * that can be kept for a student, null when none can. `finished` is told the
- * id of the student that was saved, null when one was removed, and undefined
- * when the guardian went back without changing anything.
+ * id of the student that was saved, or null when the student was removed;
+ * going back (the screen's «← Atrás») changes nothing and tells nobody.
  */
 export function openEditor(student, subjects, finished) {
   editing = student;
   done = finished;
-  say("");
   fill(student, subjects);
-  $("who").hidden = true;
-  $("account").hidden = true;
-  $("student-editor").hidden = false;
-  $("student-name").focus();
-  if (student) showKnown(student);
+  showKnown(student);
+}
+
+/** Forgets the student being edited and empties the editor, as on signing out. */
+export function clearEditor() {
+  editing = null;
+  done = () => {};
+  $("editor-title").textContent = "";
+  // The question names the student («¿Qué eres de …?»), and the two lists hold
+  // the student's grade and what the guardian is to them.
+  $("relationship-label").textContent = "";
+  for (const id of ["student-name", "student-note", "interest-new"]) $(id).value = "";
+  for (const id of ["student-grade", "student-relationship", "student-subjects", "student-interests", "student-tone", "memories", "past"]) {
+    $(id).replaceChildren();
+  }
+  $("student-language").value = "es";
+  $("student-remembers").checked = false;
+  $("student-transcripts").checked = false;
+  $("known-title").textContent = "";
+  $("progress-known").textContent = "";
+  $("known").hidden = true;
 }
 
 function close(result) {
-  $("student-editor").hidden = true;
+  const finished = done;
   editing = null;
-  done(result);
+  done = () => {};
+  finished(result);
 }
 
 $("interest-add").addEventListener("click", () => {
@@ -277,10 +300,10 @@ $("interest-new").addEventListener("keydown", (event) => {
 
 $("student-editor").addEventListener("submit", async (event) => {
   event.preventDefault();
+  if (!editing) return;
   say("");
   const interests = checked("interests");
   if (interests.length > MAX_INTERESTS) return say("Elige hasta diez cosas que le gusten.");
-  if (!editing && !$("consent").checked) return say("Para crear al alumno hace falta tu aceptación.");
   const profile = {
     name: $("student-name").value.trim(),
     grade: $("student-grade").value || null,
@@ -296,9 +319,7 @@ $("student-editor").addEventListener("submit", async (event) => {
   if (!profile.name) return say("Escribe cómo quieres que llamemos al alumno.");
   $("save-student").disabled = true;
   try {
-    const saved = editing
-      ? await call("api/student/save", { student_id: editing.id, ...profile })
-      : await call("api/student", { consent: true, ...profile });
+    const saved = await call("api/student/save", { student_id: editing.id, ...profile });
     close(saved.id);
   } catch {
     say("No se pudo guardar. Inténtalo otra vez.");
@@ -306,8 +327,6 @@ $("student-editor").addEventListener("submit", async (event) => {
     $("save-student").disabled = false;
   }
 });
-
-$("cancel-student").addEventListener("click", () => close(undefined));
 
 $("remove-student").addEventListener("click", async () => {
   const student = editing;

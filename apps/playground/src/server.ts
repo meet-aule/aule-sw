@@ -63,28 +63,29 @@ const livekitClient = join(
   "livekit-client.umd.js",
 );
 
-// The serif the tutor's words are set in, from its own package: no font is
-// fetched from anywhere else.
+// The page's two typefaces, each from its own package: no font is fetched
+// from anywhere else. Source Serif 4 for titles, Inter for everything else.
 const serif = join(
   dirname(createRequire(import.meta.url).resolve("@fontsource-variable/source-serif-4/package.json")),
   "files",
 );
+const sans = join(dirname(createRequire(import.meta.url).resolve("@fontsource-variable/inter/package.json")), "files");
 
 const STATIC: Record<string, { file: string | URL; type: string }> = {
   "/": { file: new URL("index.html", publicDir), type: "text/html; charset=utf-8" },
   "/app.js": { file: new URL("app.js", publicDir), type: "text/javascript; charset=utf-8" },
   "/students.js": { file: new URL("students.js", publicDir), type: "text/javascript; charset=utf-8" },
   "/signin.js": { file: new URL("signin.js", publicDir), type: "text/javascript; charset=utf-8" },
+  // The screens of the Figma «Login-Aule» v8 (FIGMA.md): their table, the
+  // router, the onboarding and the family's home.
+  "/steps.js": { file: new URL("steps.js", publicDir), type: "text/javascript; charset=utf-8" },
+  "/screens.js": { file: new URL("screens.js", publicDir), type: "text/javascript; charset=utf-8" },
+  "/onboarding.js": { file: new URL("onboarding.js", publicDir), type: "text/javascript; charset=utf-8" },
+  "/home.js": { file: new URL("home.js", publicDir), type: "text/javascript; charset=utf-8" },
+  // The fixed words for a session that can be resumed or has ended.
   "/session-messages.js": { file: new URL("session-messages.js", publicDir), type: "text/javascript; charset=utf-8" },
   "/visuals.js": { file: new URL("visuals.js", publicDir), type: "text/javascript; charset=utf-8" },
   "/style.css": { file: new URL("style.css", publicDir), type: "text/css; charset=utf-8" },
-  // The page's pixels: the wall, what is drawn behind the page, the dancing cuyes,
-  // their manta and the frame (Kenney's Fantasy UI Borders, CC0).
-  "/wall.png": { file: new URL("wall.png", publicDir), type: "image/png" },
-  "/motifs.png": { file: new URL("motifs.png", publicDir), type: "image/png" },
-  "/dancers.png": { file: new URL("dancers.png", publicDir), type: "image/png" },
-  "/manta.png": { file: new URL("manta.png", publicDir), type: "image/png" },
-  "/frame.png": { file: new URL("frame.png", publicDir), type: "image/png" },
   "/icon.svg": { file: new URL("icon.svg", publicDir), type: "image/svg+xml" },
   // The cuy with glasses for a phone's home screen and for launchers.
   "/apple-touch-icon.png": { file: new URL("apple-touch-icon.png", publicDir), type: "image/png" },
@@ -97,6 +98,8 @@ const STATIC: Record<string, { file: string | URL; type: string }> = {
   "/admin.js": { file: new URL("admin.js", publicDir), type: "text/javascript; charset=utf-8" },
   "/fonts/serif.woff2": { file: join(serif, "source-serif-4-latin-wght-normal.woff2"), type: "font/woff2" },
   "/fonts/serif-italic.woff2": { file: join(serif, "source-serif-4-latin-wght-italic.woff2"), type: "font/woff2" },
+  "/fonts/sans.woff2": { file: join(sans, "inter-latin-wght-normal.woff2"), type: "font/woff2" },
+  "/fonts/sans-italic.woff2": { file: join(sans, "inter-latin-wght-italic.woff2"), type: "font/woff2" },
   "/livekit-client.js": { file: livekitClient, type: "text/javascript; charset=utf-8" },
   "/wobnimo.js": { file: mascot, type: "text/javascript; charset=utf-8" },
 };
@@ -191,7 +194,18 @@ function addressOf(target: string): URL | undefined {
 
 // The page's own scripts: their imports of each other are rewritten to the
 // fingerprinted addresses. The packages' bundles are versioned but left as they are.
-const OWN_SCRIPTS = new Set(["/app.js", "/students.js", "/signin.js", "/visuals.js", "/admin.js", "/session-messages.js"]);
+const OWN_SCRIPTS = new Set([
+  "/app.js",
+  "/students.js",
+  "/signin.js",
+  "/steps.js",
+  "/screens.js",
+  "/onboarding.js",
+  "/home.js",
+  "/session-messages.js",
+  "/visuals.js",
+  "/admin.js",
+]);
 
 export function createPlayground(
   settings: Settings,

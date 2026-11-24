@@ -33,7 +33,8 @@ test("the page points at fingerprinted files, and those are kept for a year", as
   assert.equal(style.headers.get("cache-control"), YEAR);
   const text = await style.text();
 
-  for (const name of ["wall.png", "motifs.png", "dancers.png", "manta.png", "frame.png", "fonts/serif.woff2"]) {
+  // The page's own fonts are the only files its stylesheet names.
+  for (const name of ["fonts/sans.woff2", "fonts/sans-italic.woff2", "fonts/serif.woff2", "fonts/serif-italic.woff2"]) {
     const version = versionOf(text, name);
     assert.ok(version, `${name} is fingerprinted in the stylesheet`);
     const file = await fetch(`${base}/${name}?v=${version}`);
@@ -47,20 +48,35 @@ test("the page points at fingerprinted files, and those are kept for a year", as
 
 test("a module has one address wherever it is named, so it runs once", async () => {
   const html = await (await fetch(`${base}/`)).text();
-  const signin = versionOf(html, "signin.js");
-  const app = versionOf(html, "app.js");
-  const students = versionOf(html, "students.js");
-  assert.ok(signin && app && students);
-
-  const appText = await (await fetch(`${base}/app.js?v=${app}`)).text();
-  assert.match(appText, new RegExp(`from "\\./signin\\.js\\?v=${signin}"`));
+  const version = Object.fromEntries(
+    ["signin.js", "onboarding.js", "home.js", "app.js", "students.js", "steps.js", "screens.js"].map((name) => [name, versionOf(html, name)]),
+  );
+  for (const [name, hash] of Object.entries(version)) assert.ok(hash, `${name} is fingerprinted in the page`);
+  // Each module names the others at the same address the page does.
+  const imports = {
+    "app.js": ["home.js", "screens.js"],
+    "signin.js": ["students.js", "steps.js", "screens.js"],
+    "onboarding.js": ["students.js", "steps.js", "screens.js"],
+    "home.js": ["students.js", "steps.js", "screens.js"],
+    "screens.js": ["steps.js"],
+  };
+  for (const [name, wanted] of Object.entries(imports)) {
+    const text = await (await fetch(`${base}/${name}?v=${version[name]}`)).text();
+    for (const other of wanted) {
+      assert.match(text, new RegExp(`from "\\./${other.replace(".", "\\.")}\\?v=${version[other]}"`), `${name} imports ${other}`);
+    }
+  }
+  const appText = await (await fetch(`${base}/app.js?v=${version["app.js"]}`)).text();
   const visuals = versionOf(appText, "visuals.js");
   assert.ok(visuals, "app.js imports visuals.js at its fingerprint");
   const visualsFile = await fetch(`${base}/visuals.js?v=${visuals}`);
   assert.equal(visualsFile.headers.get("cache-control"), YEAR);
   await visualsFile.arrayBuffer();
-  const signinText = await (await fetch(`${base}/signin.js?v=${signin}`)).text();
-  assert.match(signinText, new RegExp(`from "\\./students\\.js\\?v=${students}"`));
+  const messages = versionOf(appText, "session-messages.js");
+  assert.ok(messages, "app.js imports session-messages.js at its fingerprint");
+  const messagesFile = await fetch(`${base}/session-messages.js?v=${messages}`);
+  assert.equal(messagesFile.headers.get("cache-control"), YEAR);
+  await messagesFile.arrayBuffer();
 
   const manifest = await (await fetch(`${base}/manifest.webmanifest?v=${versionOf(html, "manifest.webmanifest")}`)).text();
   assert.ok(versionOf(manifest, "icon.svg"), "the manifest's icon is fingerprinted");
@@ -113,14 +129,14 @@ test("answers about people are never kept", async () => {
 test("rewrite versions whole names in quotes and url(), and nothing else", () => {
   const versions = new Map([
     ["app.js", "aaa"],
-    ["wall.png", "bbb"],
+    ["paper.png", "bbb"],
   ]);
   assert.equal(rewrite(`<script src="app.js"></script>`, versions), `<script src="app.js?v=aaa"></script>`);
   assert.equal(rewrite(`import { x } from "./app.js";`, versions), `import { x } from "./app.js?v=aaa";`);
-  assert.equal(rewrite(`background: url("wall.png");`, versions), `background: url("wall.png?v=bbb");`);
+  assert.equal(rewrite(`background: url("paper.png");`, versions), `background: url("paper.png?v=bbb");`);
   assert.equal(
-    rewrite(`url(wall.png) url(./wall.png) url('wall.png')`, versions),
-    `url(wall.png?v=bbb) url(./wall.png?v=bbb) url('wall.png?v=bbb')`,
+    rewrite(`url(paper.png) url(./paper.png) url('paper.png')`, versions),
+    `url(paper.png?v=bbb) url(./paper.png?v=bbb) url('paper.png?v=bbb')`,
   );
   assert.equal(rewrite(`"myapp.js" 'app.json' "app.jsx"`, versions), `"myapp.js" 'app.json' "app.jsx"`);
   assert.equal(rewrite(`// It stays at the bottom (app.js).`, versions), `// It stays at the bottom (app.js).`);

@@ -6,6 +6,8 @@ It is a small Node server with no database. It serves the page and has one endpo
 
 When the tutor shows something (an exercise, fraction bars, a number line...), the page draws it under the video from the description it receives; `public/visuals.js` is that drawing code, a plain function from the description to SVG.
 
+The page's screens follow the Figma file «Login-Aule» v8: the parent's on paper (who is here, the ways in, the emailed code, the authorisation, a short interview, the child's name), the student's in the device's black on white (what today's session is for, the microphone before it, the session). [FIGMA.md](FIGMA.md) maps each screen, component, token and icon to the code, and says where the page differs from the file.
+
 ## Settings
 
 | Variable | Meaning |
@@ -62,13 +64,15 @@ node --env-file=../../.env src/server.ts
 
 ### Reload recovery and session endings
 
-A signed-in family can reload, select the same student and choose “Continuar
-sesión anterior” within the room's 120-second departure window. The agent stays
-alive with its conversation context; an abandoned partial push-to-talk turn is
-cancelled. Resume uses the same room and participant identity, with no agent
-dispatch, no new platform session, no extra quota charge and no clock reset.
-Another tab that is still connected must leave before resume succeeds. Choosing
-a new session explicitly closes the previous one first.
+A signed-in family can reload, select the same student and choose «Seguir con
+la sesión» within the room's 120-second departure window: that student goes
+straight to A05, which asks «¿Seguimos donde nos quedamos?» (FIGMA.md, D22).
+The agent stays alive with its conversation context; an abandoned partial
+push-to-talk turn is cancelled. Resume uses the same room and participant
+identity, with no agent dispatch, no new platform session, no extra quota charge
+and no clock reset. Another tab that is still connected must leave before resume
+succeeds. Choosing a new session («Empezar otra sesión») explicitly closes the
+previous one first, then asks A04 what the new one is for, as any new session is.
 
 The browser holds an opaque HttpOnly/Secure/SameSite cookie, scoped to the app.
 The BFF keeps at most 512 entries with room routing, a hashed sign-in owner and
@@ -81,5 +85,6 @@ flow has been tested by this change.
 
 `LIVEKIT_URL` is also the server-side RoomService address (converted to HTTP);
 the browser still uses `AULE_LIVEKIT_PUBLIC_URL`. Session lifecycle responses are
-`no-store`. The page explains known endings using fixed Spanish/English text;
+`no-store`. The page explains known endings on the student's end screen
+(FIGMA.md, D23) using fixed Spanish/English text in `public/session-messages.js`;
 it never renders raw provider errors. Old sessions may have no stored reason.

@@ -1,202 +1,140 @@
-// Signing in with Google, GitHub, Facebook or Apple, choosing the student a
-// session is for and saying
-// what the session is for. The page never holds the session itself: the server
-// keeps it in a cookie it alone reads.
+// The screens before an account (Figma «Login-Aule» v8, page 160:1345): who
+// is here (C00, C01), the ways in (P01, and P13 for a family coming back), the
+// emailed code (P02, P03, and a name the first time), and the help when it
+// does not arrive (P14, P15). Also the first look at who is signed in, where
+// the page starts, signing out and erasing the account. The page never holds
+// the session itself: the server keeps it in a cookie it alone reads.
 
-import { $, SUBJECTS, call, chip, describe, openEditor, say } from "./students.js";
+import { $, call, say } from "./students.js";
+import { codeDigits, greeting, maskEmail } from "./steps.js";
+import { current, getAccount, go, landing, need, onShow, setAccount } from "./screens.js";
 
 const GOOGLE_SCRIPT = "https://accounts.google.com/gsi/client";
 // Sign-ins that leave the page for the provider's and come back with a code.
 const CODE_PROVIDERS = ["github", "meta", "apple"];
+// This browser has signed in before: P13 then says welcome back (Nota · P13 · Saludo).
+const RETURNING = "aule.returning";
+// The screen a person left from for GitHub, Facebook or Apple, to come back to it.
+const FROM = "aule.from";
+// An address that looks like one; the platform checks it properly.
+const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+// «Reenviar» rests this long after a code is sent again.
+const RESEND_REST_MS = 30_000;
 
-// What a family can say a session is for. The first leaves the choice to Aule.
-const KINDS = {
-  "": "Seguir donde quedamos",
-  homework: "Hacer una tarea",
-  exam_prep: "Preparar una evaluación",
-  exam_review: "Revisar una evaluación",
-  explore: "Aprender algo nuevo",
-};
-// A day matters for these: when the homework is due, when the evaluation is.
-const DATED = ["homework", "exam_prep"];
-// The one subject Aule has its own exercises for today.
-const OWN_SUBJECT = "matematica";
+const WRONG_CODE = "Ese código no es correcto o ya venció. Pide uno nuevo si hace falta.";
+const NOT_SENT = "No se pudo enviar el código. Inténtalo otra vez en un momento.";
+const NOT_CHECKED = "No se pudo revisar el código. Inténtalo otra vez en un momento.";
 
-// What the next session is asked with; null until a student is chosen.
-let request = null;
-let students = [];
-// The subjects the platform keeps for a student; null when it keeps none, and
-// then neither they nor what a session is for are offered.
-let subjects = null;
-// Signing in runs before the rest of the page has loaded: a choice made in
-// that moment waits for it.
-let waiting = false;
-let enter = () => {
-  waiting = true;
-};
-
-/** What the page does once a signed-in person has chosen a student. */
-export function onEnter(callback) {
-  enter = callback;
-  if (waiting) callback();
+// What the browser keeps for the page, read and written where it may refuse.
+function recall(store, key) {
+  try {
+    return store().getItem(key);
+  } catch {
+    return null;
+  }
 }
 
-/** The body of the request for a session: the chosen student's. */
-export function sessionRequest() {
-  return request;
+function remember(store, key, value) {
+  try {
+    store().setItem(key, value);
+  } catch {
+    // Not kept: the page just does not know it next time.
+  }
 }
 
-const chosen = (name) => document.querySelector(`input[name="${name}"]:checked`)?.value ?? "";
-
-/** What the family said the session is for, or null when they left it to Aule. */
-function objective() {
-  const kind = chosen("kind");
-  if ($("today").hidden || !kind) return null;
-  return {
-    kind,
-    subject: $("subject").value,
-    topic: $("topic").value.trim(),
-    due: DATED.includes(kind) && $("due").value ? $("due").value : null,
-  };
+function forget(store, key) {
+  try {
+    store().removeItem(key);
+  } catch {
+    // Nothing kept that could be removed.
+  }
 }
 
-function showToday() {
-  const kind = chosen("kind");
-  $("today-details").hidden = !kind;
-  $("due-line").hidden = !DATED.includes(kind);
-  $("subject-note").hidden = $("subject").value === OWN_SUBJECT;
+const local = () => localStorage;
+const tab = () => sessionStorage;
+
+// The address the code goes to, held in memory only, for P03, P14 and P15.
+let emailAddress = "";
+need("email", () => Boolean(emailAddress));
+
+/** Forgets the address, and P02's field that held it: signed in it is not needed, signed out it is not to be left behind. */
+function forgetAddress() {
+  emailAddress = "";
+  $("email-address").value = "";
 }
 
-// The subject a session starts on: one the family wants reinforced. Among
-// those, the one Aule has exercises for; the platform keeps them in its own
-// order, so "the first" would not be the family's first.
-function showSubject() {
-  const student = students.find((one) => one.id === chosen("student"));
-  const wanted = (student?.subjects ?? []).filter((subject) => subjects?.includes(subject));
-  const offered = wanted.length ? wanted : (subjects ?? []);
-  $("subject").value = offered.includes(OWN_SUBJECT) ? OWN_SUBJECT : (offered[0] ?? "other");
-  showToday();
+// --- C00 ¿Quién eres? and C01 ¿Ya tienes cuenta? ------------------------------
+
+$("c00-parent").addEventListener("click", () => go("c01"));
+$("c00-child").addEventListener("click", () => go("c00-student"));
+$("c01-new").addEventListener("click", () => go("p01", { flow: "new" }));
+$("c01-back").addEventListener("click", () => go("p13", { flow: "back" }));
+
+// --- P01 and P13: the ways in --------------------------------------------------
+
+/** Shows each way in only where the server has it set up; GitHub, Facebook and Apple fold away under «Otras formas de entrar». */
+function showWays(account) {
+  const providers = account.providers ?? [];
+  const google = Boolean(account.google_client_id) && !googleFailed;
+  const email = providers.includes("email");
+  const others = CODE_PROVIDERS.filter((provider) => providers.includes(provider));
+  for (const slot of document.querySelectorAll("[data-google]")) slot.hidden = !google;
+  for (const button of document.querySelectorAll('[data-way="email"]')) button.hidden = !email;
+  for (const details of document.querySelectorAll(".other-ways")) {
+    details.hidden = others.length === 0;
+    // When they are the only ways in, they show open.
+    if (!google && !email) details.open = true;
+    for (const link of details.querySelectorAll("[data-provider]")) link.hidden = !others.includes(link.dataset.provider);
+  }
 }
 
-function edit(student) {
-  openEditor(student, subjects, async (saved) => {
-    try {
-      // Saved or removed: the list is read again. Going back changes nothing.
-      if (saved !== undefined) return show(await call("api/account"), saved);
-    } catch {
-      say("No se pudo leer tu cuenta. Carga la página otra vez.");
-    }
-    $("who").hidden = false;
-    $("account").hidden = false;
+for (const button of document.querySelectorAll('[data-way="email"]')) {
+  button.addEventListener("click", () => {
+    $("email-address").value = emailAddress;
+    go("p02");
   });
 }
 
-// Each student is a row to press, with a way into their settings.
-function showStudents(preferred) {
-  const before = preferred ?? chosen("student");
-  const list = $("student-list");
-  list.replaceChildren();
-  for (const student of students) {
-    const row = document.createElement("div");
-    row.className = "student";
-    const label = document.createElement("label");
-    const input = document.createElement("input");
-    input.type = "radio";
-    input.name = "student";
-    input.value = student.id;
-    input.addEventListener("change", showSubject);
-    const face = document.createElement("span");
-    const name = document.createElement("b");
-    name.textContent = student.name;
-    const about = document.createElement("small");
-    about.textContent = describe(student) || "Sin configurar todavía";
-    face.append(name, about);
-    label.append(input, face);
-    const configure = document.createElement("button");
-    configure.type = "button";
-    configure.className = "quiet";
-    configure.textContent = "Configurar";
-    configure.setAttribute("aria-label", `Configurar a ${student.name}`);
-    configure.addEventListener("click", () => edit(student));
-    row.append(label, configure);
-    list.append(row);
-  }
-  const inputs = [...list.querySelectorAll("input")];
-  const first = inputs.find((input) => input.value === before) ?? inputs[0];
-  if (first) first.checked = true;
-  $("no-students").hidden = students.length > 0;
-  $("add-student").classList.toggle("quiet", students.length > 0);
-  $("enter").hidden = students.length === 0;
-  $("today").hidden = students.length === 0 || !subjects;
-  showSubject();
+// Coming back from the provider, the page returns to the screen the person left.
+for (const link of document.querySelectorAll("[data-provider]")) {
+  link.addEventListener("click", () => remember(tab, FROM, current() ?? "p13"));
 }
 
-const DAY_MS = 86_400_000;
-const sessions = (n) => (n === 1 ? "1 sesión" : `${n} sesiones`);
-const date = (iso) => new Date(iso).toLocaleDateString("es-PE", { day: "numeric", month: "long" });
+let googleReady = false;
+let googleFailed = false;
 
-/** What the family's plan allows now, in a line; and whether a session can start. */
-function planLine(plan) {
-  if (!plan) return { text: "", open: true };
-  if (plan.plan === "team") return { text: "Equipo de Aule: sesiones sin límite.", open: true };
-  if (plan.plan === "free") return {
-    text: document.documentElement.lang.startsWith("en")
-      ? "Free access: unlimited sessions."
-      : "Acceso gratuito: sesiones sin límite.",
-    open: true,
-  };
-  const left = plan.left ?? 0;
-  if (plan.plan === "trial" && !plan.ends_at) {
-    return { text: "Prueba gratis de 7 días: empieza con tu primera sesión. Una sesión al día.", open: true };
-  }
-  if (plan.plan === "trial") {
-    const days = Math.max(1, Math.ceil((new Date(plan.ends_at) - Date.now()) / DAY_MS));
-    const today = left > 0 ? "hoy tienes tu sesión" : "la sesión de hoy ya la usaste: vuelve mañana";
-    return { text: `Prueba gratis: te ${days === 1 ? "queda 1 día" : `quedan ${days} días`}, y ${today}.`, open: left > 0 };
-  }
-  if (plan.plan === "paid" || plan.plan === "granted") {
-    const kind = plan.plan === "paid" ? "Plan Aule" : "Plan Aule (regalado)";
-    const week =
-      left > 0
-        ? `te ${left === 1 ? "queda" : "quedan"} ${sessions(left)} de ${plan.allowed} en estos 7 días`
-        : `ya usaste las ${plan.allowed} sesiones de estos 7 días; cada una vuelve a los 7 días de usarla`;
-    return { text: `${kind} hasta el ${date(plan.ends_at)}: ${week}.`, open: left > 0 };
-  }
-  const price = (plan.price?.amount_cents ?? 5900) / 100;
-  return {
-    text: `Tu prueba gratis terminó. El plan Aule cuesta S/${price} al mes, con 3 sesiones por semana. Muy pronto podrás suscribirte aquí; mientras tanto, escríbenos a admin@meetaule.com.`,
-    open: false,
-  };
+// Google draws its own button (Figma: Botón/Google 168:991, «no restyle»):
+// only its options and its slot's width are ours, up to Google's 400 px.
+function renderGoogle(id) {
+  const slot = $(id);
+  if (!googleReady || slot.hidden) return;
+  const width = Math.min(400, Math.max(200, Math.round(slot.getBoundingClientRect().width) || 342));
+  window.google.accounts.id.renderButton(slot, {
+    type: "standard",
+    theme: "outline",
+    size: "large",
+    text: "continue_with",
+    shape: "rectangular",
+    logo_alignment: "center",
+    locale: "es",
+    width,
+  });
 }
 
-function show(account, preferred) {
-  const signedIn = account.signed_in === true;
-  const providers = account.providers ?? [];
-  $("signed-out").hidden = signedIn || (!account.google_client_id && providers.length === 0);
-  for (const provider of CODE_PROVIDERS) $(`signin-${provider}`).hidden = !providers.includes(provider);
-  $("email-way").hidden = !providers.includes("email");
-  $("who").hidden = !signedIn;
-  $("account").hidden = !signedIn;
-  $("student-editor").hidden = true;
-  if (!signedIn) return;
-  students = account.students ?? [];
-  subjects = Array.isArray(account.subjects)
-    ? account.subjects.filter((subject) => subject in SUBJECTS)
-    : null;
-  // A name that already ends in a full stop ("Gonzalo G.") keeps just the one.
-  const name = (account.name ?? "").trim().replace(/\.+$/, "");
-  $("hello").textContent = name ? `Hola, ${name}.` : "Hola.";
-  const plan = planLine(account.plan);
-  $("plan-line").textContent = plan.text;
-  $("plan-line").hidden = !plan.text;
-  $("enter").disabled = !plan.open;
-  $("team-panel").hidden = account.team !== true;
-  $("subject").replaceChildren(
-    ...(subjects ?? []).map((subject) => new Option(SUBJECTS[subject], subject)),
-    new Option("Otra", "other"),
-  );
-  showStudents(typeof preferred === "string" ? preferred : undefined);
+function googleTrouble() {
+  if (googleFailed && !getAccount().signed_in) say("No se pudo cargar el botón de Google.");
 }
+
+onShow("p01", () => {
+  renderGoogle("google-p01");
+  googleTrouble();
+});
+
+onShow("p13", () => {
+  $("p13-greeting").textContent = greeting(recall(local, RETURNING) === "1");
+  renderGoogle("google-p13");
+  googleTrouble();
+});
 
 // Google's script is fetched while the page asks who is here; the button is
 // drawn once both are in.
@@ -211,194 +149,303 @@ function loadGoogleScript() {
   });
 }
 
-// Creating an account and coming back are the same steps (the first sign-in
-// makes the account); the tabs only change what the page says.
-const MODES = {
-  new: { title: "Crea tu cuenta de familia", lead: "7 días gratis, sin tarjeta. Luego decides.", google: "signup_with" },
-  back: { title: "Qué bueno verte de nuevo", lead: "Entra con la misma cuenta con la que la creaste.", google: "signin_with" },
-};
-let mode = "new";
-let googleClient = null;
-
-function setMode(next) {
-  mode = next;
-  for (const [id, value] of [["tab-new", "new"], ["tab-back", "back"]]) {
-    $(id).setAttribute("aria-selected", String(value === mode));
-  }
-  $("signin-title").textContent = MODES[mode].title;
-  $("signin-lead").textContent = MODES[mode].lead;
-  for (const label of document.querySelectorAll("#signed-out [data-new]")) {
-    label.textContent = label.dataset[mode];
-  }
-  // Coming back, the name is already known; a new address asks for it.
-  $("email-name").hidden = mode === "back";
-  if (googleClient && window.google?.accounts) renderGoogle();
-}
-
-$("tab-new").addEventListener("click", () => setMode("new"));
-$("tab-back").addEventListener("click", () => setMode("back"));
-
-function renderGoogle() {
-  $("google").replaceChildren();
-  window.google.accounts.id.renderButton($("google"), {
-    theme: "outline",
-    size: "large",
-    text: MODES[mode].google,
-    shape: "pill",
-    locale: "es",
-  });
-}
-
-// The emailed code: the address, then the six digits (and a name, the first time).
-let emailAddress = "";
-
-$("email-start").addEventListener("submit", async (event) => {
-  event.preventDefault();
-  say("");
-  emailAddress = $("email-address").value.trim();
-  try {
-    await call("api/signin/email/start", { email: emailAddress });
-  } catch {
-    say("Revisa el correo: no parece una dirección válida.");
-    return;
-  }
-  $("email-sent").textContent = `Te enviamos un código a ${emailAddress}. Si no llega en un minuto, revisa la carpeta de spam.`;
-  $("email-start").hidden = true;
-  $("email-verify").hidden = false;
-  $("email-code").focus();
-});
-
-$("email-verify").addEventListener("submit", async (event) => {
-  event.preventDefault();
-  say("");
-  const body = { email: emailAddress, code: $("email-code").value.trim(), name: $("email-name").value.trim() };
-  try {
-    const account = await call("api/signin/email/verify", body);
-    show(account);
-    if (account.signed_in && !account.students?.length) edit(null);
-  } catch (error) {
-    if (error.message === "name_needed") {
-      $("email-name").hidden = false;
-      $("email-name").focus();
-      say("Ese correo todavía no tiene cuenta: escribe tu nombre para crearla.");
-    } else {
-      say("Ese código no es correcto o ya venció. Pide uno nuevo si hace falta.");
-    }
-  }
-});
-
-$("email-back").addEventListener("click", () => {
-  $("email-verify").hidden = true;
-  $("email-start").hidden = false;
-  $("email-code").value = "";
-  $("email-address").focus();
-});
-
 function drawGoogle(clientId) {
-  googleClient = clientId;
   window.google.accounts.id.initialize({
     client_id: clientId,
     ux_mode: "popup",
     callback: async ({ credential }) => {
       say("");
       try {
-        const account = await call("api/signin", { credential });
-        show(account);
-        // A family with no student yet starts by adding one.
-        if (account.signed_in && !account.students?.length) edit(null);
+        entered(await call("api/signin", { credential }));
       } catch {
         say("No se pudo entrar con esa cuenta de Google. Inténtalo otra vez.");
       }
     },
   });
-  renderGoogle();
+  googleReady = true;
+  if (current() === "p01") renderGoogle("google-p01");
+  if (current() === "p13") renderGoogle("google-p13");
 }
 
-$("kind").replaceChildren(
-  ...Object.entries(KINDS).map(([value, text]) => chip("radio", "kind", value, text, value === "")),
-);
-$("kind").addEventListener("change", showToday);
-$("subject").addEventListener("change", showToday);
-$("add-student").addEventListener("click", () => edit(null));
+/** Signed in, by any way: a family with students goes to them, a new one starts by adding one. */
+function entered(account) {
+  remember(local, RETURNING, "1");
+  forgetAddress();
+  clearCode();
+  $("email-name").value = "";
+  setAccount(account);
+  // What came before (the ways in, the code) is over: Back does not go into it.
+  go(account.students?.length ? "home" : "p04", { replace: true, fresh: true });
+}
 
-$("who").addEventListener("submit", (event) => {
-  event.preventDefault();
-  say("");
-  const student = students.find((one) => one.id === chosen("student"));
-  if (!student) return say("Agrega un alumno para empezar.");
-  const today = objective();
-  request = {
-    student_id: student.id,
-    language: student.language ?? "es",
-    ...(today ? { objective: today } : {}),
-  };
-  enter();
+// --- P02 Tu correo ------------------------------------------------------------
+
+function emailError(on) {
+  $("email-address").setAttribute("aria-invalid", String(on));
+  $("email-error").hidden = !on;
+  if (on) $("email-address").focus();
+}
+
+$("email-address").addEventListener("input", () => {
+  if ($("email-address").getAttribute("aria-invalid") === "true") emailError(false);
 });
 
+$("email-start").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const address = $("email-address").value.trim();
+  if (!EMAIL.test(address) || address.length > 254) return emailError(true);
+  emailError(false);
+  say("");
+  const send = event.submitter ?? $("email-start").querySelector("[type=submit]");
+  send.disabled = true;
+  try {
+    await call("api/signin/email/start", { email: address });
+  } catch (error) {
+    if (error.message === "bad_email") return emailError(true);
+    return say(NOT_SENT);
+  } finally {
+    send.disabled = false;
+  }
+  emailAddress = address;
+  clearCode();
+  go("p03");
+});
+
+// --- P03 Código: six boxes over one field ---------------------------------------
+
+const codeInput = $("email-code");
+const boxes = [...document.querySelectorAll(".digit-boxes span")];
+let verifying = false;
+
+// The boxes mirror the field: a digit in each, and the copper border on the
+// next one to fill while the field has the focus (Dígito/Base · Foco).
+function drawDigits() {
+  const digits = codeInput.value;
+  const focused = document.activeElement === codeInput;
+  boxes.forEach((box, index) => {
+    box.textContent = digits[index] ?? "";
+    box.classList.toggle("focus", focused && digits.length < 6 && index === digits.length);
+  });
+}
+
+function clearCode() {
+  codeInput.value = "";
+  drawDigits();
+}
+
+function waiting(on) {
+  $("code-wait").hidden = !on;
+  codeInput.disabled = on;
+  $("code-continue").disabled = on;
+}
+
+// Typed, pasted as «519 042» or «519-042», or filled by the browser: the
+// digits are kept, and the sixth sends it.
+codeInput.addEventListener("input", () => {
+  // Typing again, the last error no longer holds.
+  say("");
+  const digits = codeDigits(codeInput.value);
+  if (codeInput.value !== digits) codeInput.value = digits;
+  drawDigits();
+  if (digits.length === 6) verify();
+});
+codeInput.addEventListener("focus", drawDigits);
+codeInput.addEventListener("blur", drawDigits);
+
+async function verify(name) {
+  if (verifying) return;
+  const code = codeDigits(codeInput.value);
+  if (code.length !== 6) {
+    say("Escribe los seis dígitos del código.");
+    codeInput.focus();
+    return;
+  }
+  verifying = true;
+  waiting(true);
+  say("");
+  let account = null;
+  let failure = null;
+  try {
+    account = await call("api/signin/email/verify", { email: emailAddress, code, ...(name ? { name } : {}) });
+  } catch (error) {
+    failure = error.message;
+  } finally {
+    verifying = false;
+    waiting(false);
+  }
+  if (account) return entered(account);
+  // A new address: its name first (the code is not used up by asking).
+  if (failure === "name_needed") return go("p03-name");
+  if (current() === "p03-name") {
+    clearCode();
+    return go("p03", { replace: true, direction: "back", message: WRONG_CODE });
+  }
+  say(failure === "wrong_code" ? WRONG_CODE : NOT_CHECKED);
+  clearCode();
+  codeInput.focus();
+}
+
+$("email-verify").addEventListener("submit", (event) => {
+  event.preventDefault();
+  verify();
+});
+
+$("code-resend").addEventListener("click", async () => {
+  const resend = $("code-resend");
+  resend.disabled = true;
+  setTimeout(() => (resend.disabled = false), RESEND_REST_MS);
+  try {
+    await call("api/signin/email/start", { email: emailAddress });
+    clearCode();
+    say("Te enviamos un código nuevo.", "info");
+  } catch {
+    say(NOT_SENT);
+  }
+});
+
+$("code-missing").addEventListener("click", () => go("p14"));
+
+// --- P03 · Tu nombre (web-only): the platform needs it for a new family --------
+
+$("email-name-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  const name = $("email-name").value.trim();
+  const empty = !name;
+  $("email-name").setAttribute("aria-invalid", String(empty));
+  $("email-name-error").hidden = !empty;
+  if (empty) return $("email-name").focus();
+  verify(name.slice(0, 120));
+});
+
+// --- P14 Revisa tu correo and P15 Escríbenos -----------------------------------
+
+onShow("p14", () => {
+  $("masked-email").textContent = maskEmail(emailAddress);
+});
+
+$("write-us-go").addEventListener("click", () => go("p15"));
+
+$("other-email").addEventListener("click", () => {
+  emailAddress = "";
+  $("email-address").value = "";
+  go("p02");
+});
+
+// Help by email, with the address that was tried already written in.
+onShow("p15", () => {
+  const subject = encodeURIComponent("No me llega el código");
+  const body = emailAddress ? `&body=${encodeURIComponent(`Intenté entrar con ${emailAddress}.`)}` : "";
+  $("write-us").href = `mailto:admin@meetaule.com?subject=${subject}${body}`;
+});
+
+// --- Signing out and erasing --------------------------------------------------
+
+async function signedOut(message) {
+  // Nothing typed while signed in stays in a hidden field: the address, the one to erase with.
+  forgetAddress();
+  $("erase-email").value = "";
+  const account = await call("api/account").catch(() => ({ signed_in: false }));
+  // Each module forgets what it drew about the family before the first question shows.
+  setAccount(account);
+  showWays(account);
+  go(landing(), { replace: true, fresh: true, message, tone: "info" });
+}
+
 $("sign-out").addEventListener("click", async () => {
-  request = null;
   await call("api/signout", {}).catch(() => undefined);
-  show(await call("api/account").catch(() => ({ signed_in: false })));
+  await signedOut("");
 });
 
 $("erase").addEventListener("submit", async (event) => {
   event.preventDefault();
   say("");
-  const sure = window.confirm(
-    "¿Borrar tu cuenta, tus alumnos y todo lo guardado? No se puede deshacer.",
-  );
+  // No address, or not one: said here, before the question that cannot be undone.
+  if (!EMAIL.test($("erase-email").value.trim())) {
+    $("erase-email").focus();
+    return say("Escribe el correo con el que entraste.");
+  }
+  const sure = window.confirm("¿Borrar tu cuenta, tus alumnos y todo lo guardado? No se puede deshacer.");
   if (!sure) return;
   try {
     await call("api/account/erase", { email: $("erase-email").value });
-    request = null;
-    $("erase-email").value = "";
-    show(await call("api/account").catch(() => ({ signed_in: false })));
-    say("Tu cuenta y tus datos se borraron.");
   } catch (error) {
-    say(
+    return say(
       error?.message === "wrong_email"
         ? "Ese no es el correo con el que entraste."
         : "No se pudo borrar la cuenta. Inténtalo otra vez.",
     );
   }
+  $("erase-email").value = "";
+  // The account is gone: this browser no longer greets it as coming back
+  // (signing out keeps that, as P13's note asks), nor returns to a provider's screen.
+  forget(local, RETURNING);
+  forget(tab, FROM);
+  await signedOut("Tu cuenta y tus datos se borraron.");
 });
+
+// --- The cookie notice ----------------------------------------------------------
+
+// Shown until the person says they have read it. Remembered in this browser
+// only; where the browser keeps nothing, it is shown each time. While it
+// shows, the screens leave it room at the bottom.
+const COOKIES_READ = "aule.cookies";
+
+function noticeRoom() {
+  const notice = $("cookies");
+  // Not drawn on a student's screen: the room it needs back on paper is kept.
+  if (!notice.hidden && notice.offsetHeight === 0) return;
+  const room = notice.hidden ? 0 : Math.round(notice.getBoundingClientRect().height) + 32;
+  document.documentElement.style.setProperty("--notice-room", `${room}px`);
+}
+
+$("cookies").hidden = recall(local, COOKIES_READ) === "read";
+noticeRoom();
+// Measured again whenever the notice changes size: a narrower window wraps it,
+// and a paper screen draws it again after a student's.
+new ResizeObserver(() => noticeRoom()).observe($("cookies"));
+$("cookies-ok").addEventListener("click", () => {
+  $("cookies").hidden = true;
+  remember(local, COOKIES_READ, "read");
+  noticeRoom();
+});
+
+// --- Where the page starts ---------------------------------------------------------
 
 // Back from GitHub, Facebook or Apple without having signed in. The address
 // is cleaned so that reloading the page does not say it again.
 const outcome = new URLSearchParams(location.search).get("signin");
-if (outcome) {
-  history.replaceState(null, "", location.pathname);
-  if (outcome === "failed") say("No se pudo entrar con esa cuenta. Inténtalo otra vez o usa otra.");
-}
+if (outcome) history.replaceState(null, "", location.pathname);
 
-// The cookie notice, until the person says they have read it. Remembered in
-// this browser only; where the browser keeps nothing, it is shown each time.
-const COOKIES_READ = "aule.cookies";
-try {
-  $("cookies").hidden = localStorage.getItem(COOKIES_READ) === "read";
-} catch {
-  $("cookies").hidden = false;
-}
-$("cookies-ok").addEventListener("click", () => {
-  $("cookies").hidden = true;
-  try {
-    localStorage.setItem(COOKIES_READ, "read");
-  } catch {
-    // Not remembered: it shows again next time.
+function start(account) {
+  setAccount(account);
+  showWays(account);
+  if (account.signed_in) {
+    remember(local, RETURNING, "1");
+    return go(account.students?.length ? "home" : "p04", { fresh: true });
   }
-});
+  if (outcome && landing()) {
+    const from = recall(tab, FROM) === "p01" ? "p01" : "p13";
+    const message = outcome === "failed" ? "No se pudo entrar con esa cuenta. Inténtalo otra vez o usa otra." : "";
+    return go(from, { flow: from === "p01" ? "new" : "back", message });
+  }
+  go(landing());
+}
 
 const googleScript = loadGoogleScript();
+// A script that fails before the account is read is dealt with below, not reported as unhandled.
+googleScript.catch(() => undefined);
 call("api/account")
   .then((account) => {
-    show(account);
+    start(account);
     if (!account.google_client_id) return;
     googleScript.then(
       () => drawGoogle(account.google_client_id),
       // Somebody already signed in has no use for the button, nor for its failure.
       () => {
-        if (!$("signed-out").hidden) say("No se pudo cargar el botón de Google.");
+        googleFailed = true;
+        showWays(getAccount());
+        if (["p01", "p13"].includes(current())) googleTrouble();
       },
     );
   })
-  .catch(() => show({ signed_in: false, google_client_id: null }));
+  .catch(() => start({ signed_in: false, google_client_id: null, providers: [] }));

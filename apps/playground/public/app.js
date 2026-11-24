@@ -1,10 +1,11 @@
-// The playground page: lets the person check their camera and microphone,
-// asks the server for a room token, joins the room, and shows what the tutor
-// is doing.
+// The playground page: lets the person check their camera and microphone
+// (A05 Antes de empezar), asks the server for a room token, joins the room,
+// and shows what the tutor is doing (A15 La sesión empezó, then the session).
 
-import { onEnter, sessionRequest } from "./signin.js";
+import { purposeAsked, sessionRequest } from "./home.js";
+import { current, go, need, onAccount, onHide, onShow } from "./screens.js";
 import { TOPIC as VISUAL_TOPIC, renderVisual } from "./visuals.js";
-import { endedMessage, recoveryMessage } from "./session-messages.js";
+import { endedMessage, languageOf, recoveryMessage } from "./session-messages.js";
 
 const { Room, RoomEvent, Track, ParticipantKind, DisconnectReason } = LivekitClient;
 
@@ -67,10 +68,6 @@ const ERRORS = {
 };
 
 const $ = (id) => document.getElementById(id);
-// Everything shown before a session: signing in and choosing the student.
-const entry = $("welcome");
-const lobby = $("lobby");
-const stage = $("stage");
 const message = $("message");
 
 // What the person chose before joining. Both start on.
@@ -99,78 +96,145 @@ let stepTimer = null;
 let cardShown = "";
 // The platform's id for the session being shown, when there is one.
 let sessionId = null;
+// A session a reload left open, as api/session/recovery offers it; null when there is none.
 let recoverable = null;
+// Whether A05's devices have answered and can be used.
 let mediaReady = false;
-const recoveryText = (key) => recoveryMessage(key, sessionRequest()?.language);
+// The language a session's words are in: the student's, when the page has
+// words in it, else Spanish, the page's own.
+const sessionLanguage = () => languageOf(sessionRequest()?.language);
+// The words for how a session ends or goes on, in that language unless another is given.
+const recoveryText = (key, language = sessionLanguage()) => recoveryMessage(key, language);
 
+/**
+ * Writes words of session-messages.js into an element and marks it with the
+ * language they are in, so a screen reader reads English words in English on
+ * a page that is otherwise Spanish (WCAG 3.1.2).
+ */
+function write(element, text, language = sessionLanguage()) {
+  element.textContent = text;
+  element.lang = languageOf(language);
+}
+
+// Carrying on or closing a session; what went wrong is always one of the fixed
+// messages, never the browser's or a server's own words.
 async function sessionAction(action, body) {
-  const response = await fetch(`api/session/${action}`, {
-    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
-  });
-  const answer = await response.json();
+  let response;
+  let answer;
+  try {
+    response = await fetch(`api/session/${action}`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+    });
+    answer = await response.json();
+  } catch {
+    throw new Error(recoveryText("failed"));
+  }
   if (!response.ok) throw new Error(recoveryText(answer.error));
   return answer;
 }
 
+// A05 as index.html has it, to come back to from its web-only state.
+const A05_TITLE = $("a05-title").textContent;
+
+/**
+ * A05, or its web-only state when this student's session is still open:
+ * «¿Seguimos donde nos quedamos?», what carrying on keeps, «Seguir con la
+ * sesión» where «Empezar la sesión» was, and a link to start another.
+ */
+function showRecoverable(answer) {
+  recoverable = answer;
+  const open = answer !== null;
+  if (open) write($("a05-title"), recoveryText("resume_title"));
+  else write($("a05-title"), A05_TITLE, "es");
+  $("a05-text").hidden = open;
+  // The status line is never hidden, only empty, so it is in the accessibility
+  // tree before its words arrive and a screen reader reads them as they come
+  // (empty, style.css takes it out of the flow).
+  write($("recovery-note"), open ? recoveryText("available") : "");
+  $("join").hidden = open;
+  $("resume").hidden = !open;
+  $("restart").hidden = !open;
+}
+
 async function offerRecovery() {
   const student = sessionRequest()?.student_id;
-  recoverable = null;
-  $("resume").textContent = recoveryText("resume");
-  $("resume").hidden = true;
-  $("resume").disabled = !mediaReady;
-  $("join").textContent = recoveryText("start");
-  $("recovery-note").hidden = true;
+  showRecoverable(null);
+  write($("join"), recoveryText("start"));
+  write($("resume"), recoveryText("resume"));
+  write($("restart"), recoveryText("restart"));
+  // An answer for another student, or one that comes after A05 was left, is not shown.
+  const stale = () => student !== sessionRequest()?.student_id || room || current() !== "a05";
   try {
     const response = await fetch("api/session/recovery");
     if (!response.ok) throw new Error("unavailable");
     const answer = await response.json();
-    if (student !== sessionRequest()?.student_id || room) return;
+    if (stale()) return;
     if (answer.available && answer.student_id === student) {
-      recoverable = answer;
-      $("resume").hidden = false;
-      $("join").textContent = recoveryText("restart");
-      $("recovery-note").textContent = recoveryText("available");
-      $("recovery-note").hidden = false;
+      // The title took the focus as A05 showed, still «Antes de empezar»: it
+      // takes it again, so a screen reader names the state A05 is in now.
+      const title = $("a05-title");
+      const focused = document.activeElement === title;
+      showRecoverable(answer);
+      if (focused) {
+        title.blur();
+        title.focus({ preventScroll: true });
+      }
     }
   } catch {
-    if (student !== sessionRequest()?.student_id || room) return;
-    $("recovery-note").textContent = recoveryText("check_failed");
-    $("recovery-note").hidden = false;
+    if (stale()) return;
+    write($("recovery-note"), recoveryText("check_failed"));
   }
 }
 
+// Why a session that was not ended here ended, or whether it can still go on.
+// A session the platform did not start has nothing to ask about.
 async function explainClose(id, connectionLost) {
-  for (const delay of [0, 500, 1500]) {
+  for (const delay of id ? [0, 500, 1500] : []) {
     if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
-    if (room || !id) return;
+    if (room) return;
     try {
       const response = await fetch("api/session/recovery");
       if (!response.ok) break;
       const answer = await response.json();
-      if (room || (answer.session_id && answer.session_id !== id)) return;
-      if (answer.available) {
-        showMessage(recoveryText("lost"));
-        return;
+      if (room) return;
+      // Another session is this sign-in's now: this one's reason is not known here.
+      if (answer.session_id && answer.session_id !== id) break;
+      if (answer.available) return tellEnded(recoveryText("lost_title"), recoveryText("lost"), { resumable: true });
+      if (answer.end_reason) {
+        // In the session's language as the platform kept it: the title and the line alike.
+        const language = answer.language ?? sessionRequest()?.language;
+        return tellEnded(recoveryText("ended", language), endedMessage(answer.end_reason, language), { language });
       }
-      if (answer.end_reason) return showMessage(endedMessage(answer.end_reason, answer.language));
     } catch { break; }
   }
-  if (!room) showMessage(connectionLost
-    ? recoveryText("lost_unknown")
-    : endedMessage(null, sessionRequest()?.language));
+  if (room) return;
+  if (connectionLost) tellEnded(recoveryText("lost_title"), recoveryText("lost_unknown"));
+  else tellEnded(recoveryText("ended"), endedMessage(null, sessionRequest()?.language));
 }
 
-function finishSession(message = endedMessage("child_ended", sessionRequest()?.language)) {
+// «Terminar», or the time is up: the platform is told, and the end screen says so.
+function finishSession(line = endedMessage("child_ended", sessionRequest()?.language)) {
   const id = sessionId;
-  leave(message);
+  leave(line);
   if (id) sessionAction("end", { session_id: id }).catch(() => {
-    if (!room) showMessage(recoveryText("close_failed"));
+    if (!room) tellEnded(recoveryText("ended"), recoveryText("close_failed"));
   });
 }
 
-function showMessage(text) {
-  message.textContent = text;
+// `language`: given when the words are session-messages.js's, in the session's
+// language. They go in a span marked with it, which leaves with them as soon as
+// anything else writes the line (screens.js, students.js), so the mark never
+// outlives its words.
+function showMessage(text, tone = "error", language) {
+  if (text && language) {
+    const words = document.createElement("span");
+    write(words, text, language);
+    message.replaceChildren(words);
+  } else {
+    message.textContent = text;
+  }
   message.hidden = !text;
+  message.dataset.tone = tone;
 }
 
 // For something that went wrong once and can be tried again: it does not stay
@@ -205,11 +269,38 @@ function setTutorState(state) {
   $("mascot").setAttribute("state", MASCOT_STATE[state] ?? "idle");
 }
 
+// The icon a compact toggle (Botón/Compacto 191:1396) shows beside its label,
+// crossed when it is off, as on A05; one without an icon says it in words only.
+const TOGGLE_ICONS = { Cámara: "videocam" };
+
 function setToggle(button, label, on) {
   button.setAttribute("aria-pressed", String(on));
-  // "Cámara apagada", "Micrófono apagado": the word follows the thing's gender.
+  // "Cámara apagada", "Modo tinta apagado": the word follows the thing's gender.
   const off = label.split(" ")[0].endsWith("a") ? "apagada" : "apagado";
-  button.textContent = on ? label : `${label} ${off}`;
+  const words = on ? label : `${label} ${off}`;
+  const base = TOGGLE_ICONS[label];
+  if (!base) {
+    button.textContent = words;
+    return;
+  }
+  const icon = document.createElement("span");
+  icon.className = "icon";
+  icon.dataset.icon = on ? base : CROSSED[base];
+  icon.setAttribute("aria-hidden", "true");
+  button.replaceChildren(icon, words);
+}
+
+// A round control (Botón/Micrófono 193:709): black with its icon when on,
+// white with the icon crossed when off. Its name stays («Micrófono»,
+// «Cámara»); the sentence next to it, which describes it, says which.
+const CROSSED = { mic: "mic_off", videocam: "videocam_off" };
+function setRound(button, on) {
+  button.setAttribute("aria-pressed", String(on));
+  const icon = button.querySelector(".icon");
+  const base = icon.dataset.icon.replace("_off", "");
+  icon.dataset.icon = on ? base : CROSSED[base];
+  const says = $(button.getAttribute("aria-describedby"));
+  says.textContent = on ? says.dataset.on : says.dataset.off;
 }
 
 function startClock(seconds) {
@@ -385,6 +476,8 @@ $("answer").addEventListener("submit", async (event) => {
   try {
     const explanation = $("explanation-text").value.trim();
     const next = await engineCall("api/answer", id, explanation ? { answer: written, explanation } : { answer: written });
+    // The session ended while the answer was on its way: its words went with it.
+    if (id !== sessionId) return;
     // What they wrote is part of the conversation too.
     const line = item(explanation ? `${written}. ${explanation}` : written);
     line.dataset.who = "you";
@@ -471,7 +564,7 @@ function watchTutor(participant) {
   // the microphone was switched off in the lobby.
   if (manual && !manualTurns) {
     wanted.mic = true;
-    setToggle($("mic"), "Micrófono", true);
+    setRound($("mic"), true);
   }
   manualTurns = manual;
   tutorReady = ready;
@@ -504,7 +597,7 @@ const touchOnly = matchMedia("(pointer: coarse)").matches && !matchMedia("(point
 // talk button is the only microphone button.
 function showTalk() {
   $("talk").hidden = !manualTurns;
-  $("mic").hidden = manualTurns;
+  $("mic-group").hidden = manualTurns;
   // On a phone the button then stays at the bottom of the screen (style.css).
   document.querySelector("main").classList.toggle("push-to-talk", manualTurns);
   $("talk").disabled = !wanted.mic;
@@ -646,7 +739,8 @@ async function join(session) {
     .on(RoomEvent.Disconnected, (reason) => {
       if (room !== connectedRoom) return;
       const id = sessionId;
-      leave(recoveryText("checking"));
+      // The end screen waits on why while the page asks the platform.
+      leave(recoveryText("checking"), recoveryText("checking_title"));
       explainClose(id, LOST.has(reason));
     });
   room.registerTextStreamHandler(TRANSCRIPTION_TOPIC, (reader, participant) => {
@@ -665,16 +759,13 @@ async function join(session) {
   sessionId = session.session_id ?? null;
   startClock(session.expiresInSeconds);
   if (session.session_id && session.engine === true) followSteps(session.session_id);
-  lobby.hidden = true;
-  stage.hidden = false;
+  // A15: «La sesión empezó.», with the microphone as A05 left it.
+  go("session");
   if (inkMode) showInk();
   play(hello);
-  // The layout of a session hangs on this class, not on :has(), which older
-  // Firefox and Safari do not know.
-  document.querySelector("main").classList.toggle("in-session", true);
 
   await syncMicrophone();
-  setToggle($("mic"), "Micrófono", wanted.mic);
+  setRound($("mic"), wanted.mic);
   showTalk();
   try {
     await room.localParticipant.setCameraEnabled(wanted.cam);
@@ -702,8 +793,8 @@ function showPreview() {
   $("preview").hidden = !seen;
   $("preview-off").hidden = seen;
   $("level").hidden = !(audio && wanted.mic);
-  setToggle($("lobby-mic"), "Micrófono", wanted.mic);
-  setToggle($("lobby-cam"), "Cámara", wanted.cam);
+  setRound($("lobby-mic"), wanted.mic);
+  setRound($("lobby-cam"), wanted.cam);
 }
 
 // Moves a bar with the loudness of the microphone, so the person can tell it
@@ -726,19 +817,23 @@ function startMeter(stream) {
   draw();
 }
 
+// Each showing of A05 asks for the devices once; an answer to an earlier
+// showing that comes late lets its devices go.
+let lobbyAsked = 0;
+
 async function openLobby() {
+  const asked = ++lobbyAsked;
   mediaReady = false;
-  $("resume").disabled = true;
   wanted.mic = true;
   wanted.cam = true;
   $("lobby-note").textContent = "";
-  entry.hidden = true;
-  lobby.hidden = false;
-  // Joining waits until the devices have answered, so only one thing holds them.
-  $("join").disabled = true;
+  // Joining, carrying on and starting another wait until the devices have
+  // answered, so only one thing holds them.
+  for (const id of ["join", "resume", "restart"]) $(id).disabled = true;
   let usable = true;
+  let stream = null;
   try {
-    preview = await navigator.mediaDevices.getUserMedia({
+    stream = await navigator.mediaDevices.getUserMedia({
       audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
       video: { facingMode: { ideal: "environment" } },
     });
@@ -746,7 +841,7 @@ async function openLobby() {
     // No camera, or only the camera was refused: try the microphone alone.
     wanted.cam = false;
     try {
-      preview = await navigator.mediaDevices.getUserMedia({
+      stream = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
       });
       $("lobby-note").textContent = "No se encontró o no se permitió la cámara. Igual puedes entrar con voz.";
@@ -757,10 +852,14 @@ async function openLobby() {
       usable = false;
     }
   }
-  if (lobby.hidden) return stopPreview();
+  // Left while the browser asked, or asked again since: nothing keeps these devices.
+  if (asked !== lobbyAsked || current() !== "a05") {
+    stream?.getTracks().forEach((track) => track.stop());
+    return;
+  }
+  preview = stream;
   mediaReady = usable;
-  $("join").disabled = !usable;
-  $("resume").disabled = !usable;
+  for (const id of ["join", "resume", "restart"]) $(id).disabled = !usable;
   if (preview) {
     $("preview").srcObject = preview;
     if (preview.getAudioTracks().length) startMeter(preview);
@@ -768,12 +867,16 @@ async function openLobby() {
   showPreview();
 }
 
-function closeLobby() {
+// A05 shows the devices each time it shows, and asks whether a session this
+// student had is still open; leaving it lets the devices go.
+onShow("a05", () => {
+  openLobby();
+  offerRecovery();
+});
+onHide("a05", () => {
   mediaReady = false;
   stopPreview();
-  lobby.hidden = true;
-  entry.hidden = false;
-}
+});
 
 // Joining and leaving have their sound, as in a video call, and it is a
 // video game's: synths through resonant filters, a sub bass, an echo and a
@@ -901,8 +1004,9 @@ function play(tune) {
   }
 }
 
-function leave(reason) {
-  if (!room) return;
+/** Closes the room and clears what the session showed; false when there was none. */
+function teardown() {
+  if (!room) return false;
   const leaving = room;
   room = null;
   play(goodbye);
@@ -922,20 +1026,83 @@ function leave(reason) {
   $("board").hidden = true;
   boardShows = null;
   lastExercise = null;
-  stage.hidden = true;
-  document.querySelector("main").classList.toggle("in-session", false);
-  lobby.hidden = true;
-  entry.hidden = false;
-  showMessage(reason ?? "");
+  forgetWords();
   sessionId = null;
+  return true;
 }
 
-// A signed-in person who has chosen a student goes to the lobby.
-onEnter(() => {
-  showMessage("");
-  openLobby();
-  offerRecovery();
+/**
+ * Empties what a session held of the student's words: the conversation, the
+ * exercise card and its route, and anything half typed. None of it stays in
+ * the page once the session is over, nor for the next family on this tab; the
+ * end screen never shows it, and a new or resumed session starts its own.
+ */
+function forgetWords() {
+  $("transcript").replaceChildren();
+  lines.clear();
+  heldLines = [];
+  for (const id of ["typed", "answer-text", "explanation-text"]) $(id).value = "";
+  for (const id of ["card-title", "card-statement", "card-help"]) $(id).textContent = "";
+  $("route").replaceChildren();
+}
+
+/** A session that ended: the end screen says how, in place of the session. */
+function leave(line, title = recoveryText("ended")) {
+  if (!teardown()) return;
+  tellEnded(title, line);
+  // The session is over: Back steps neither into it nor into the lobby before it.
+  go("session-end", { replace: true, fresh: true });
+}
+
+/**
+ * A session that could not start: back to the family's students, with why
+ * (the plan, the browser); `language` when the words are session-messages.js's.
+ */
+function joinFailed(text, language) {
+  const opened = teardown();
+  go("home", { replace: opened, message: text });
+  if (language) showMessage(text, "error", language);
+}
+
+// --- The end screen (web-only, after A15) ------------------------------------------------
+
+// What the end screen shows; null until a session of this page has ended.
+let ended = null;
+need("ended", () => ended !== null);
+
+/**
+ * Writes the end screen: its title and line, from session-messages.js, in
+ * `language` (the session's unless the platform said another), and whether
+ * the session can still go on. One that can offers «Seguir con la sesión»,
+ * which leads to A05 and its web-only state; «Volver» then becomes the link.
+ */
+function tellEnded(title, line, { resumable = false, language = sessionLanguage() } = {}) {
+  ended = { resumable };
+  write($("ended-title"), title, language);
+  write($("ended-text"), line, language);
+  write($("ended-resume"), recoveryText("resume", language), language);
+  $("ended-resume").hidden = !resumable;
+  $("ended-back").hidden = !resumable;
+  $("ended-spacer").hidden = resumable;
+  $("ended-home").hidden = resumable;
+}
+
+// The student is still chosen, so A05 asks again whether the session is open.
+$("ended-resume").addEventListener("click", () => go("a05"));
+
+// Back at the family's students, or signed out, the end screen has nothing to
+// say; signed out, nothing a session held stays either (plan §4.6).
+onShow("home", () => {
+  ended = null;
 });
+onAccount((account) => {
+  if (account.signed_in === true) return;
+  ended = null;
+  forgetWords();
+});
+
+// A session can show only while its room is open.
+need("session", () => room !== null);
 
 $("lobby-mic").addEventListener("click", () => {
   wanted.mic = !wanted.mic;
@@ -948,20 +1115,29 @@ $("lobby-cam").addEventListener("click", () => {
   showPreview();
 });
 
-$("back").addEventListener("click", closeLobby);
-
-$("join").addEventListener("click", async () => {
+// «Empezar la sesión», and in A05's web-only state «Empezar otra sesión»,
+// which closes the open session first. An A05 reached past A04 (a session a
+// reload left open, or one that closed since) has not asked what a new
+// session is for: A04 asks it, in A05's place, before any session is asked for.
+async function startSession() {
   readySounds();
-  $("join").disabled = true;
+  for (const id of ["join", "resume", "restart"]) $(id).disabled = true;
   $("transcript").replaceChildren();
   following = true;
   lines.clear();
-  try {
-    if (recoverable) {
+  if (recoverable) {
+    try {
       await sessionAction("end", { session_id: recoverable.session_id });
-      recoverable = null;
-      $("resume").hidden = true;
+    } catch (error) {
+      // Still on A05: what went wrong is said here, and either way can be tried again.
+      showMessage(error.message, "error", sessionLanguage());
+      for (const id of ["join", "resume", "restart"]) $(id).disabled = !mediaReady;
+      return;
     }
+    showRecoverable(null);
+  }
+  if (!purposeAsked()) return go("a04", { replace: true });
+  try {
     const response = await fetch("api/session", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -976,44 +1152,54 @@ $("join").addEventListener("click", async () => {
     stopPreview();
     await join(body);
   } catch (error) {
-    const text =
+    joinFailed(
       error?.name === "NotAllowedError"
         ? "El navegador bloqueó el micrófono. Permítelo y empieza otra vez."
-        : (error?.message ?? "No se pudo empezar la sesión.");
-    if (room) leave(text);
-    else {
-      closeLobby();
-      showMessage(text);
-    }
+        : (error?.message ?? "No se pudo empezar la sesión."),
+    );
   }
-});
+}
 
+$("join").addEventListener("click", startSession);
+$("restart").addEventListener("click", startSession);
+
+// «Seguir con la sesión»: the same room, its tutor and the time that was left.
 $("resume").addEventListener("click", async () => {
   if (!recoverable || room || !mediaReady) return;
-  $("resume").disabled = true;
-  $("join").disabled = true;
+  for (const id of ["join", "resume", "restart"]) $(id).disabled = true;
   readySounds();
+  let session;
   try {
-    const session = await sessionAction("resume", {
+    session = await sessionAction("resume", {
       session_id: recoverable.session_id, student_id: sessionRequest()?.student_id,
     });
-    if (!session.token) throw new Error(endedMessage(session.end_reason, session.language));
-    stopPreview();
-    $("transcript").replaceChildren();
-    lines.clear();
-    following = true;
+  } catch (error) {
+    showMessage(error?.message ?? recoveryText("failed"), "error", sessionLanguage());
+    for (const id of ["join", "resume", "restart"]) $(id).disabled = !mediaReady;
+    return;
+  }
+  // It ended in the meantime: the end screen says why.
+  if (!session.token) {
+    showRecoverable(null);
+    const language = session.language ?? sessionRequest()?.language;
+    tellEnded(recoveryText("ended", language), endedMessage(session.end_reason, language), { language });
+    return go("session-end", { replace: true, fresh: true });
+  }
+  stopPreview();
+  $("transcript").replaceChildren();
+  lines.clear();
+  following = true;
+  try {
     await join(session);
   } catch (error) {
-    if (room) leave(error?.message);
-    else showMessage(error?.message ?? recoveryText("failed"));
-    $("resume").disabled = !mediaReady;
-    $("join").disabled = !mediaReady;
+    if (error?.name === "NotAllowedError") joinFailed("El navegador bloqueó el micrófono. Permítelo y empieza otra vez.");
+    else joinFailed(recoveryText("failed"), sessionLanguage());
   }
 });
 
 $("mic").addEventListener("click", async () => {
   wanted.mic = !wanted.mic;
-  setToggle($("mic"), "Micrófono", wanted.mic);
+  setRound($("mic"), wanted.mic);
   if (manualTurns) {
     if (!wanted.mic) await stopTalking("cancel_turn");
     showTalk();
@@ -1034,7 +1220,7 @@ $("talk").addEventListener("contextmenu", (event) => event.preventDefault());
 // The space bar is the button too, except while typing or on another control.
 const typing = (target) => ["INPUT", "SELECT", "TEXTAREA", "BUTTON"].includes(target?.tagName);
 document.addEventListener("keydown", (event) => {
-  if (event.code !== "Space" || event.repeat || !manualTurns || stage.hidden || typing(event.target)) return;
+  if (event.code !== "Space" || event.repeat || !manualTurns || current() !== "session" || typing(event.target)) return;
   event.preventDefault();
   startTalking();
 });
@@ -1066,10 +1252,13 @@ $("cam").addEventListener("click", async () => {
 $("type").addEventListener("submit", async (event) => {
   event.preventDefault();
   const text = $("typed").value.trim();
-  if (!text || !room) return;
+  const sending = room;
+  if (!text || !sending) return;
   $("typed").value = "";
   try {
-    await room.localParticipant.sendText(text, { topic: CHAT_TOPIC });
+    await sending.localParticipant.sendText(text, { topic: CHAT_TOPIC });
+    // The session ended while the message was on its way: its words went with it.
+    if (sending !== room) return;
     // Typed words are not transcribed back, so the page writes them itself.
     const line = item(text);
     line.dataset.who = "you";

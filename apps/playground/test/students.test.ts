@@ -135,6 +135,7 @@ const PROFILE = {
 };
 
 test("a profile is a name and, at most, what the page offers", () => {
+  // What was not chosen is not kept: remembering needs an explicit yes.
   assert.deepEqual(profileFrom({ name: " Liam " }), {
     name: "Liam",
     grade: null,
@@ -143,10 +144,11 @@ test("a profile is a name and, at most, what the page offers", () => {
     tone: "calido",
     note: "",
     subjects: null,
-    remembers: true,
+    remembers: false,
     keepsTranscripts: false,
     relationship: null,
   });
+  assert.equal(profileFrom({ name: "Liam", remembers: true })?.remembers, true);
   assert.deepEqual(profileFrom({ name: "Liam", interests: [" fútbol ", "fútbol"] })?.interests, ["fútbol"]);
   assert.equal(profileFrom({ name: "Liam", grade: "" })?.grade, null, "the grade can be left out");
   assert.equal(profileFrom({ name: "Liam", relationship: "" })?.relationship, null, "so can the relationship");
@@ -262,12 +264,51 @@ test("a new student carries the profile and the consents the guardian chose", as
   assert.deepEqual(
     seen.filter((call) => call.path.endsWith("/consents")).map((call) => call.body),
     [
-      { purpose: "voice", granted: true, policy_version: "playground-2026-11" },
-      { purpose: "memory", granted: false, policy_version: "playground-2026-11" },
-      { purpose: "transcripts", granted: true, policy_version: "playground-2026-11" },
+      { purpose: "voice", granted: true, policy_version: "playground-2026-11-v8" },
+      { purpose: "memory", granted: false, policy_version: "playground-2026-11-v8" },
+      { purpose: "transcripts", granted: true, policy_version: "playground-2026-11-v8" },
     ],
   );
   assert.ok(seen.every((call) => call.auth === `Bearer ${TOKEN}`), "every call is the guardian's own");
+});
+
+test("a student made in the onboarding carries its answers, and the consents follow its creation", async () => {
+  seen.length = 0;
+  // What p10-name sends: the interview's note, grade and likes (the six
+  // options in lower case, then what was typed), and P04's two choices.
+  const response = await post("student", {
+    consent: true,
+    name: "Mati",
+    grade: "P4",
+    language: "es",
+    interests: ["deportes", "espacio y ciencia", "dinosaurios", "ajedrez"],
+    tone: "calido",
+    note: "Que le ayude con las tareas sin darle las respuestas.",
+    remembers: true,
+    keeps_transcripts: false,
+  });
+
+  assert.equal(response.status, 201);
+  assert.deepEqual(await response.json(), { id: NEW, name: "Mati" });
+  const made = seen.findIndex((call) => call.path.endsWith("/children"));
+  assert.deepEqual(seen[made]?.body, {
+    nickname: "Mati",
+    grade: "P4",
+    language: "es",
+    interests: ["deportes", "espacio y ciencia", "dinosaurios", "ajedrez"],
+    tutor_persona: "calido",
+    tutor_persona_note: "Que le ayude con las tareas sin darle las respuestas.",
+    relationship: "",
+  });
+  const consents = seen.map((call, index) => ({ ...call, index })).filter((call) => call.path.endsWith("/consents"));
+  assert.ok(consents.every((call) => call.index > made), "the consents come after the child");
+  assert.deepEqual(
+    consents.map((call) => [call.path, call.body]),
+    ["voice", "memory", "transcripts"].map((purpose) => [
+      `/v1/children/${NEW}/consents`,
+      { purpose, granted: purpose !== "transcripts", policy_version: "playground-2026-11-v8" },
+    ]),
+  );
 });
 
 test("saving keeps what the page does not show and records only the consent that changed", async () => {
@@ -295,7 +336,7 @@ test("saving keeps what the page does not show and records only the consent that
   });
   assert.deepEqual(
     seen.filter((call) => call.path.endsWith("/consents")).map((call) => call.body),
-    [{ purpose: "memory", granted: false, policy_version: "playground-2026-11" }],
+    [{ purpose: "memory", granted: false, policy_version: "playground-2026-11-v8" }],
   );
   assert.ok(seen.every((call) => call.auth === `Bearer ${TOKEN}`), "every call is the guardian's own");
 });

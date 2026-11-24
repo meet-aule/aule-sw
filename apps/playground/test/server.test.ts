@@ -46,12 +46,20 @@ test("serves the page and its scripts with a strict policy", async () => {
     "/",
     "/app.js",
     "/signin.js",
+    "/steps.js",
+    "/screens.js",
+    "/onboarding.js",
+    "/home.js",
+    "/session-messages.js",
+    "/students.js",
     "/visuals.js",
     "/style.css",
     "/livekit-client.js",
     "/wobnimo.js",
     "/fonts/serif.woff2",
     "/fonts/serif-italic.woff2",
+    "/fonts/sans.woff2",
+    "/fonts/sans-italic.woff2",
   ]) {
     const response = await fetch(base + path);
     assert.equal(response.status, 200, path);
@@ -68,6 +76,23 @@ test("serves the page and its scripts with a strict policy", async () => {
   }
   const policy = (await fetch(`${base}/`)).headers.get("content-security-policy") ?? "";
   assert.match(policy, /connect-src 'self' wss:\/\/livekit\.example\.org https:\/\/livekit\.example\.org/);
+  assert.match(policy, /font-src 'self'/);
+  const font = await fetch(`${base}/fonts/sans.woff2`);
+  assert.equal(font.headers.get("content-type"), "font/woff2");
+  await font.arrayBuffer();
+});
+
+test("the pictures of the old Andean page are gone, and the icons stay", async () => {
+  for (const name of ["wall.png", "motifs.png", "dancers.png", "manta.png", "frame.png"]) {
+    const response = await fetch(`${base}/${name}`);
+    assert.equal(response.status, 404, name);
+    await response.arrayBuffer();
+  }
+  for (const name of ["icon.svg", "apple-touch-icon.png", "icon-192.png", "icon-512.png", "icon-maskable-512.png", "manifest.webmanifest"]) {
+    const response = await fetch(`${base}/${name}`);
+    assert.equal(response.status, 200, name);
+    await response.arrayBuffer();
+  }
 });
 
 test("redirects the bare path and hides everything outside it", async () => {

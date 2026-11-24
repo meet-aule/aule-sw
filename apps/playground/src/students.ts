@@ -70,7 +70,9 @@ const MAX_INTEREST_CHARS = 40;
 const MAX_NOTE_CHARS = 200;
 const MAX_TOPIC_CHARS = 200;
 // The terms a guardian agrees to on this page; recorded with each consent.
-const POLICY_VERSION = "playground-2026-11";
+// "-v8": the text of the Figma's P04 (voice, and the notebook's pictures when
+// the camera is used), so each record says which text the guardian saw.
+const POLICY_VERSION = "playground-2026-11-v8";
 
 function oneOf<T extends string>(known: readonly T[], value: unknown): T | null {
   return known.find((item) => item === value) ?? null;
@@ -126,7 +128,8 @@ export function profileFrom(body: Record<string, unknown>): Profile | null {
     tone,
     note,
     subjects: absent(body.subjects) ? null : (subjects as Subject[]),
-    remembers: body.remembers !== false,
+    // Kept only on the guardian's own yes: what was not sent was not chosen.
+    remembers: body.remembers === true,
     keepsTranscripts: body.keeps_transcripts === true,
     relationship,
   };
