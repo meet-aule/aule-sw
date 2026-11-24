@@ -1,6 +1,7 @@
 //! What the team reads to know how the tutor is doing: one row of numbers per
-//! day. Everything here is a count, a rate or a duration. No name, no id of a
-//! child and nothing anybody said is read or returned.
+//! day, and the pilot's four numbers per week of sign-ups. Everything here is a
+//! count, a rate or a duration. No name, no id of a child and nothing anybody
+//! said is read or returned.
 
 use axum::Json;
 use axum::extract::{Query, State};
@@ -10,6 +11,8 @@ use serde_json::{Map, Value, json};
 
 use crate::auth::Staff;
 use crate::error::ApiResult;
+use crate::jobs::STALE_SESSION_HOURS;
+use crate::plans::{SHORT_MINUTES, TRIAL_DAYS};
 use crate::state::AppState;
 
 const MAX_METRICS: usize = 40;
@@ -294,6 +297,133 @@ pub async fn daily(
         })
         .collect::<Result<_, DbErr>>()?;
     Ok(Json(json!({ "timezone_offset_minutes": offset, "days": days })))
+}
+
+// The pilot's four numbers ---------------------------------------------------------
+
+/// A family has started once one of its sessions lasted this long.
+const STARTED_MINUTES: i32 = 10;
+/// Sessions in the seven days from its first that make a family one that came back.
+const REPEAT_SESSIONS: i64 = 3;
+/// A plan the team ended this soon after granting it was undone, not paid for.
+const UNDONE_GRANT_HOURS: i32 = 24;
+
+#[derive(Deserialize)]
+pub struct WeeklyQuery {
+    #[serde(default)]
+    weeks: Option<i32>,
+}
+
+/// The families that signed up each week, in the server's local time, newest
+/// first, by the link they came from, and the pilot's four numbers for them.
+/// A number that takes time is counted only among the families whose time for
+/// it is over, so a week still running does not read low:
+///
+/// - `started`: a session of ten minutes or more, out of all of them;
+/// - `repeated`: three sessions in the seven days from their first, out of
+///   `week1_over`, those whose seven days are over (their trial with them);
+/// - `week4`: a session on days 21 to 27 from their first, out of
+///   `week4_over`, those whose fourth week is over;
+/// - `paying`: out of `week1_over` as well. Nobody can pay in the app yet, so
+///   a plan the team granted once a family's trial was over counts as paid,
+///   unless the team ended it within a day.
+///
+/// Sessions count as they do for the plan (`plans`), and the team's own
+/// families are left out.
+pub async fn weekly(
+    _: Staff,
+    State(state): State<AppState>,
+    Query(query): Query<WeeklyQuery>,
+) -> ApiResult<Json<Value>> {
+    let weeks = query.weeks.unwrap_or(12).clamp(1, 52);
+    let offset = state.config.timezone_offset_minutes;
+    // The addresses were checked at start: none has a comma.
+    let team = state.config.admin_emails.join(",");
+    let rows = state
+        .db
+        .query_all_raw(Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            "with counted as (
+           select children.family_id, sessions.started_at
+           from sessions join children on children.id = sessions.child_id
+           where sessions.started_at is not null
+             and (sessions.ended_at is null or sessions.ended_at - sessions.started_at >= make_interval(mins => $3))
+         ),
+         cohort as (
+           select families.id, families.source,
+                  date_trunc('week', (families.created_at at time zone 'UTC') + make_interval(mins => $1))::date as week,
+                  (select min(counted.started_at) from counted where counted.family_id = families.id) as first
+           from families
+           where not exists (select 1 from guardians where guardians.family_id = families.id
+                               and guardians.email = any(string_to_array($2, ',')))
+         ),
+         -- One line per family. A family with no session yet has no first one,
+         -- so its weeks are null: never over.
+         per_family as (
+           select cohort.week, cohort.source,
+             exists (
+               select 1 from sessions join children on children.id = sessions.child_id
+               where children.family_id = cohort.id
+                 and sessions.ended_at - sessions.started_at >= make_interval(mins => $5)
+                 -- One the housekeeping closed hours later has no known length.
+                 and sessions.ended_at < sessions.created_at + make_interval(hours => $6)) as started,
+             cohort.first <= now() - interval '7 days' as week1_over,
+             (select count(*) from counted where counted.family_id = cohort.id
+                and counted.started_at < cohort.first + interval '7 days') >= $7 as repeated,
+             cohort.first <= now() - interval '28 days' as week4_over,
+             exists (
+               select 1 from counted where counted.family_id = cohort.id
+                 and counted.started_at >= cohort.first + interval '21 days'
+                 and counted.started_at < cohort.first + interval '28 days') as week4,
+             exists (
+               select 1 from subscriptions where subscriptions.family_id = cohort.id
+                 and subscriptions.ends_at - subscriptions.starts_at >= make_interval(hours => $9)
+                 and (subscriptions.plan = 'paid'
+                      or subscriptions.starts_at >= cohort.first + make_interval(days => $8))) as paying
+           from cohort
+           where cohort.week > date_trunc('week', (now() at time zone 'UTC') + make_interval(mins => $1))::date - 7 * $4
+         )
+         select week::text as week, source, count(*) as families,
+           count(*) filter (where started) as started,
+           count(*) filter (where week1_over) as week1_over,
+           count(*) filter (where week1_over and repeated) as repeated,
+           count(*) filter (where week4_over) as week4_over,
+           count(*) filter (where week4_over and week4) as week4,
+           count(*) filter (where week1_over and paying) as paying
+         from per_family
+         group by week, source
+         order by week desc, source nulls last",
+            [
+                offset.into(),
+                team.into(),
+                SHORT_MINUTES.into(),
+                weeks.into(),
+                STARTED_MINUTES.into(),
+                STALE_SESSION_HOURS.into(),
+                REPEAT_SESSIONS.into(),
+                (TRIAL_DAYS as i32).into(),
+                UNDONE_GRANT_HOURS.into(),
+            ],
+        ))
+        .await?;
+    let count = |row: &sea_orm::QueryResult, name: &str| row.try_get::<i64>("", name);
+    let cohorts: Vec<Value> = rows
+        .iter()
+        .map(|row| {
+            Ok(json!({
+                "week": row.try_get::<String>("", "week")?,
+                "source": row.try_get::<Option<String>>("", "source")?,
+                "families": count(row, "families")?,
+                "started": count(row, "started")?,
+                "week1_over": count(row, "week1_over")?,
+                "repeated": count(row, "repeated")?,
+                "week4_over": count(row, "week4_over")?,
+                "week4": count(row, "week4")?,
+                "paying": count(row, "paying")?,
+            }))
+        })
+        .collect::<Result<_, DbErr>>()?;
+    Ok(Json(json!({ "timezone_offset_minutes": offset, "weeks": weeks, "cohorts": cohorts })))
 }
 
 #[cfg(test)]

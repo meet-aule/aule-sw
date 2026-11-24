@@ -2199,6 +2199,132 @@ html[data-screen="session"] .site-footer {
   display: none;
 }
 
+/* ---- The family guide (guia.html, guide.html): one column of paper -------- */
+
+/* The parent's screens' column and type: the wordmark over the plain line,
+   Source Serif titles, Inter text, copper for what leads. */
+.guide {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 24px 24px 8px;
+}
+
+@media (max-width: 359px) {
+  .guide {
+    padding-inline: 16px;
+  }
+}
+
+.guide-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 25px;
+  border-bottom: 2px solid var(--line);
+}
+
+.guide-head .link {
+  font-size: 14px;
+}
+
+.guide h1 {
+  margin: 40px 0 10px;
+  font: 500 32px/38px var(--serif);
+  color: var(--ink);
+}
+
+.guide-lead {
+  font: 400 17px/26px var(--sans);
+}
+
+.guide section {
+  margin-top: 32px;
+  padding-top: 24px;
+  border-top: 1px solid var(--line);
+}
+
+.guide h2 {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin: 0 0 12px;
+  font: 500 22px/28px var(--serif);
+}
+
+.guide-number {
+  flex: none;
+  color: var(--copper);
+  font: 600 15px/1 var(--sans);
+}
+
+.guide h3 {
+  margin: 20px 0 8px;
+  font: 600 16px/1.35 var(--sans);
+}
+
+.guide section p,
+.guide li {
+  font: 400 16px/24px var(--sans);
+}
+
+.guide section > p + p {
+  margin-top: 10px;
+}
+
+.guide ol,
+.guide ul {
+  margin: 0;
+  padding-left: 22px;
+}
+
+.guide li + li {
+  margin-top: 8px;
+}
+
+.guide ol + p,
+.guide ul + p {
+  margin-top: 12px;
+}
+
+.guide a:not(.primary, .link) {
+  color: var(--ink);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+
+/* The plan's price on a card, as the landing shows it. */
+.guide-plan {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 12px;
+  padding: 16px;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.guide .guide-price {
+  font: 500 28px/34px var(--serif);
+}
+
+.guide-price span {
+  color: var(--muted);
+  font: 400 16px/1 var(--sans);
+}
+
+.guide-foot {
+  display: grid;
+  gap: 14px;
+  margin-top: 40px;
+  padding-top: 24px;
+  border-top: 1px solid var(--line);
+}
+
+.guide-note {
+  color: var(--muted);
+  font: 400 13px/1.45 var(--sans);
+}
+
 /* ---- The team's panel: wide tables on plain paper ------------------------ */
 
 .admin {
@@ -2269,6 +2395,7 @@ html[data-screen="session"] .site-footer {
 }
 
 .admin input[type="search"] {
+  width: 100%;
   max-width: 320px;
   margin: 8px 0 12px;
   padding: 8px 12px;
@@ -2293,4 +2420,39 @@ html[data-screen="session"] .site-footer {
 
 .admin .message {
   margin: 12px 0;
+}
+
+/* The pilot's numbers: a week's total in bold over its links, and what each column means. */
+.admin h3 {
+  margin: 24px 0 8px;
+  font: 600 16px/1.3 var(--sans);
+}
+
+.admin .lead {
+  max-width: 72ch;
+  margin: 8px 0 12px;
+  color: var(--muted);
+}
+
+.admin tr.week td {
+  font-weight: 600;
+}
+
+/* On a phone the pilot's tables scroll sideways rather than grow tall, and a link's code stays whole. */
+.admin table.pilot th,
+.admin table.pilot td,
+.admin td.code {
+  white-space: nowrap;
+}
+
+.admin .notes {
+  max-width: 72ch;
+  margin: 16px 0 32px;
+  padding-left: 20px;
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+.admin .notes li + li {
+  margin-top: 4px;
 }

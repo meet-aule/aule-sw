@@ -59,6 +59,13 @@ Devices do not use a bearer token: they sign with the key burned into them.
 | `GET /v1/notices`, `POST /v1/notices/{id}/read` | What the family has been told |
 | `PUT`, `DELETE /v1/push/tokens` | The app registers this phone for pushes each time it starts, and forgets it on sign-out. Body: `{"token", "platform"}` with `android`, `ios` or `web` |
 
+Every way of signing in also takes an optional `source`: the code of the link
+a family came from, which the playground passes on from `?src=` on its page. A
+new family keeps it when it is a short code of lower-case letters, digits and
+hyphens that starts with a letter, 24 at most (`signin::source_code`, and a
+check in the database). Anything else is dropped and the sign-in goes on; a
+family that already exists keeps the one it came with.
+
 ### Children and learning (guardian for their family, or operator)
 
 | Route | What it does |
@@ -125,6 +132,7 @@ physical microphone switch. Do not replay buffered speech after reconnecting.
 | `POST /v1/families` | A family and its first guardian, without sign-in |
 | `PUT /v1/skills` | Loads skills into the catalog (`aule-platform import-skills <file>` does the same from a file) |
 | `GET /v1/sessions/{id}/supervisor` | The plan and guidance of one session and, once it has been reviewed, `review`: the summary and next step written for the family, and `exercises`: each checked exercise with its answer, tries, hints and outcome |
+| `GET /v1/metrics/weekly?weeks=12` | The pilot's four numbers, for the families that signed up each week (Monday to Sunday, in the configured local time) and by the link they came from: how many there are and how many `started` (a session of 10 minutes or more; one the housekeeping closed has no known length). A number that takes time counts only the families whose time for it is over, so a week still running does not read low: `repeated` (3 sessions in the 7 days from their first) out of `week1_over`, those whose 7 days, and so their trial, are over; `week4` (a session on days 21 to 27 from their first) out of `week4_over`, those whose fourth week is over; and `paying`, out of `week1_over` too. Nobody can pay in the app yet, so a plan the team granted once a family's trial was over counts as paid, even one given as a gift, unless the team ended it within a day. Sessions count as they do for the plan, and the team's own families (`AULE_ADMIN_EMAILS`) are left out. Counts and link codes only. Also for the team, like the daily numbers |
 | `GET /v1/metrics/daily?days=14` | One object per day, newest first: sessions (started, never started, under a minute, median length, seconds to start), how the talk was shared, exercises (posed, not checkable, correct, failed, first-try rate, hints, and how many had their answer said by the tutor while still open), turns stopped by each safety gate, sessions warned and closed for not working, what the agent measured, what reached the family, and `cost_usd`: what the day's sessions cost by service (the tutor's model, speech to text, the voice, the platform's own model calls), in total and per hour of session, from the measured usage and the dated list prices in `metrics.rs`. Counts, rates, durations and dollars only |
 
 ### Agent
@@ -148,7 +156,7 @@ written without changing them. Nothing is served as FHIR yet.
 
 | Table | FHIR R4 | How |
 |---|---|---|
-| `families` | `Group` (`type: person`, `actual: true`) | Its members are the family's children. Siblings are children of the same family; they are not stored as a relationship |
+| `families` | `Group` (`type: person`, `actual: true`) | Its members are the family's children. Siblings are children of the same family; they are not stored as a relationship. `source`, the link it signed up from, is Aule's own |
 | `children` | `Patient` | `nickname` is `name.text`, `birth_year` is `birthDate` (a year alone is a valid FHIR date), `language` is `communication.language` |
 | `guardians` | `RelatedPerson`, one per child | `name`, and `email` as `telecom` with `system: email`; `patient` is the child |
 | `guardian_children` | `RelatedPerson.relationship` | A code of `http://terminology.hl7.org/CodeSystem/v3-RoleCode`: `MTH`, `FTH`, `STPMTH`, `STPFTH`, `GRMTH`, `GRFTH`, `AUNT`, `UNCLE`, `SIB`, `GUARD` or `FAMMEMB`. No row: the guardian has not said. Who may see a child does not depend on it |
@@ -357,7 +365,17 @@ Only skills present in the platform's catalog are recorded.
 
 When the session is reviewed, the family's summary (`session_reviews.guardian_summary`, and the notice made from it) is the engine's report, word for word. The supervisor's review still records its next step and flags, not its own summary. A session that ended before anything happened has no engine report and is summarized by the supervisor as before.
 
+Migration 0021 adds nullable `families.source`, the link a family signed up
+from, with a check on its form; families from before keep null.
+
 Migration 0020 adds nullable `sessions.end_reason`. Existing sessions keep null;
 new closures persist the same fixed reason published in `session.ended.v1`, now
 including `provider_error`. No transcript is returned by the lifecycle endpoint.
-The additive migration is compatible with the preceding application version.
+
+Both only add to the schema, and still an image from before one of them does
+not start on a database that has run it: every command migrates first, and
+sqlx refuses a database with a migration the image does not know
+(`VersionMissing`). To roll the image back past one, undo it and delete its row
+from `_sqlx_migrations` first; for 0021, `alter table families drop column
+source` (the links families came from are lost) and `delete from
+_sqlx_migrations where version = 21`.

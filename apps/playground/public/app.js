@@ -52,11 +52,13 @@ const STEP_POLL_MS = 3000;
 // Typed messages go to the tutor on the topic LiveKit agents read.
 const CHAT_TOPIC = "lk.chat";
 
-// Why the family's plan has no session now, as the platform says it.
+// Why the family's plan has no session now, as the platform says it, in the
+// plan's own words (steps.js's planLine): the team activates the plan of a
+// family who writes in, since nobody can pay in the app yet.
 const PLAN_LIMITS = {
   trial_day_used: "Hoy ya usaste la sesión de tu prueba gratis. Vuelve mañana.",
-  week_used: "Ya usaste las sesiones de tu plan de estos 7 días. Cada una vuelve a los 7 días de usarla.",
-  trial_over: "Tu prueba gratis de 7 días terminó. Suscríbete para seguir con Aule.",
+  week_used: "Ya usaste las sesiones del plan Aule de estos 7 días. Cada una vuelve a los 7 días de usarla.",
+  trial_over: "Tu prueba gratis de 7 días terminó. Para seguir, escríbenos a admin@meetaule.com y te activamos el plan Aule.",
 };
 
 const ERRORS = {

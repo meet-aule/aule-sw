@@ -115,18 +115,23 @@ export async function emailCode(settings: Settings, email: string): Promise<void
   await platform(settings, "/v1/auth/start", { email, language: "es" });
 }
 
-/** Trades an emailed code for a session; a new address needs the guardian's name. */
+/**
+ * Trades an emailed code for a session; a new address needs the guardian's
+ * name. `source` is the link a new family came from (signin.ts).
+ */
 export async function signInWithEmail(
   settings: Settings,
   email: string,
   code: string,
   name: string | null,
+  source: string | null = null,
 ): Promise<SignedIn> {
   const answer = (await platform(settings, "/v1/auth/verify", {
     email,
     code,
     language: "es",
     ...(name ? { name } : {}),
+    ...(source ? { source } : {}),
   })) as { token?: unknown; expires_in_days?: unknown };
   if (typeof answer.token !== "string") throw new PlatformError("the platform sent no session");
   return { token: answer.token, days: typeof answer.expires_in_days === "number" ? answer.expires_in_days : 1 };
@@ -139,11 +144,13 @@ export async function signInWithCode(
   code: string,
   redirectUri: string,
   name: string | null,
+  source: string | null = null,
 ): Promise<SignedIn> {
   const answer = (await platform(settings, `/v1/auth/${provider}`, {
     code,
     redirect_uri: redirectUri,
     ...(name ? { name } : {}),
+    ...(source ? { source } : {}),
   })) as { token?: unknown; expires_in_days?: unknown };
   if (typeof answer.token !== "string") throw new PlatformError("the platform sent no session");
   return { token: answer.token, days: typeof answer.expires_in_days === "number" ? answer.expires_in_days : 1 };
@@ -152,8 +159,8 @@ export async function signInWithCode(
 export type SignedIn = { token: string; days: number };
 
 /** Trades what Google gave the page for a session of the person it names. */
-export async function signIn(settings: Settings, credential: string): Promise<SignedIn> {
-  const answer = (await platform(settings, "/v1/auth/google", { credential })) as {
+export async function signIn(settings: Settings, credential: string, source: string | null = null): Promise<SignedIn> {
+  const answer = (await platform(settings, "/v1/auth/google", { credential, ...(source ? { source } : {}) })) as {
     token?: unknown;
     expires_in_days?: unknown;
   };

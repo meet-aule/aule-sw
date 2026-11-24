@@ -27,6 +27,40 @@ export function signedOutCookie(basePath: string): string {
   return `${COOKIE}=; Max-Age=0; Path=${basePath}/; HttpOnly; Secure; SameSite=Strict`;
 }
 
+// The link a family came from: a page opened as ?src=cesar keeps "cesar" here
+// until someone signs in, and the platform writes it on the family it creates.
+const SOURCE_COOKIE = "aule_source";
+// A family may sign up days after it first opens the link.
+const SOURCE_DAYS = 30;
+// The platform's rule (signin::source_code): lower-case letters, digits and
+// hyphens, starting with a letter, 24 at most.
+const SOURCE = /^[a-z][a-z0-9-]{0,23}$/;
+
+/** The link's code when it is a short lower-case one; anything else is ignored. */
+export function sourceCode(value: string | null | undefined): string | null {
+  return typeof value === "string" && SOURCE.test(value) ? value : null;
+}
+
+/** The link a signing-in family came from, or null. */
+export function sourceOf(request: IncomingMessage): string | null {
+  for (const part of (request.headers.cookie ?? "").split(";")) {
+    const [name, value] = part.trim().split("=");
+    if (name === SOURCE_COOKIE) return sourceCode(value);
+  }
+  return null;
+}
+
+// Apple answers with a form posted from its own site, so this cookie travels
+// on cross-site requests too, as the sign-in state does (providers.ts). It
+// holds nothing but the link's code, and nothing is decided by it.
+export function sourceCookie(source: string, basePath: string): string {
+  return `${SOURCE_COOKIE}=${source}; Max-Age=${SOURCE_DAYS * 24 * 60 * 60}; Path=${basePath}/; HttpOnly; Secure; SameSite=None`;
+}
+
+export function clearedSourceCookie(basePath: string): string {
+  return `${SOURCE_COOKIE}=; Max-Age=0; Path=${basePath}/; HttpOnly; Secure; SameSite=None`;
+}
+
 /**
  * How many sessions one sign-in may start in a day. The page is open to anyone
  * with a Google account and every session costs speech and model time, so this

@@ -157,7 +157,13 @@ const DAY_MS = 86_400_000;
 const sessions = (n) => (n === 1 ? "1 sesión" : `${n} sesiones`);
 const date = (iso) => new Date(iso).toLocaleDateString("es-PE", { day: "numeric", month: "long" });
 
-/** What the family's plan allows now, in a line; and whether a session can start. */
+/**
+ * What the family's plan allows now, in a line; and whether a session can
+ * start. The words are the plan's own, as the landing and the family guide say
+ * them: «el plan Aule», S/59 al mes, 3 sesiones cada 7 días, 7 días gratis.
+ * Nobody can pay in the app yet: the team activates the plan of a family who
+ * writes in, so a granted plan reads like a paid one.
+ */
 export function planLine(plan, lang = "es", now = Date.now()) {
   if (!plan) return { text: "", open: true };
   if (plan.plan === "team") return { text: "Equipo de Aule: sesiones sin límite.", open: true };
@@ -166,7 +172,7 @@ export function planLine(plan, lang = "es", now = Date.now()) {
   }
   const left = plan.left ?? 0;
   if (plan.plan === "trial" && !plan.ends_at) {
-    return { text: "Prueba gratis de 7 días: empieza con tu primera sesión. Una sesión al día.", open: true };
+    return { text: "Tu prueba: 7 días gratis desde la primera sesión, una sesión al día, sin tarjeta.", open: true };
   }
   if (plan.plan === "trial") {
     const days = Math.max(1, Math.ceil((new Date(plan.ends_at) - now) / DAY_MS));
@@ -174,16 +180,16 @@ export function planLine(plan, lang = "es", now = Date.now()) {
     return { text: `Prueba gratis: te ${days === 1 ? "queda 1 día" : `quedan ${days} días`}, y ${today}.`, open: left > 0 };
   }
   if (plan.plan === "paid" || plan.plan === "granted") {
-    const kind = plan.plan === "paid" ? "Plan Aule" : "Plan Aule (regalado)";
     const week =
       left > 0
         ? `te ${left === 1 ? "queda" : "quedan"} ${sessions(left)} de ${plan.allowed} en estos 7 días`
         : `ya usaste las ${plan.allowed} sesiones de estos 7 días; cada una vuelve a los 7 días de usarla`;
-    return { text: `${kind} hasta el ${date(plan.ends_at)}: ${week}.`, open: left > 0 };
+    return { text: `El plan Aule hasta el ${date(plan.ends_at)}: ${week}.`, open: left > 0 };
   }
   const price = (plan.price?.amount_cents ?? 5900) / 100;
+  const perWeek = plan.price?.sessions_per_week ?? 3;
   return {
-    text: `Tu prueba gratis terminó. El plan Aule cuesta S/${price} al mes, con 3 sesiones por semana. Muy pronto podrás suscribirte aquí; mientras tanto, escríbenos a admin@meetaule.com.`,
+    text: `Tu prueba gratis terminó. Para seguir, escríbenos a admin@meetaule.com y te activamos el plan Aule: S/${price} al mes, ${perWeek} sesiones cada 7 días. Todavía no se puede pagar desde la app.`,
     open: false,
   };
 }

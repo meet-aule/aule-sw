@@ -27,9 +27,30 @@ Put it behind a reverse proxy with HTTPS: browsers only give the microphone and 
 
 The team's panel is at `<base path>/admin`. `/admin`, `/admin/` and a trailing
 slash on the panel redirect to that address; its data still requires a team
-sign-in. An unknown page opened by a browser returns to the start page. Unknown
-API routes, files and write requests keep their error responses. These redirects
-are not cached and do not accept a destination from the request.
+sign-in. Besides the daily numbers and the families, with the link each came
+from, it shows the pilot's four numbers per week of sign-up and per link, from
+the platform's `GET /v1/metrics/weekly`; `public/pilot.js` adds them up. An
+unknown page opened by a browser returns to the start page. Unknown API routes,
+files and write requests keep their error responses. These redirects are not
+cached and do not accept a destination from the request.
+
+### Links per source and the family guide
+
+A link to the page can say where it was shared: `<page>/?src=cesar`. While
+nobody is signed in, the page, and the family guide, keep a short lower-case
+code (letters, digits and hyphens, starting with a letter, 24 at most) in an
+HttpOnly cookie, `aule_source`, for 30 days; anything else in `src` is ignored.
+The next sign-in, by any provider, passes it to the platform, which keeps it
+on the family it creates, and the cookie is cleared. Every redirect on the way
+keeps the query: the bare host's (the Worker in `infra/edge`), the base path's
+and the guide's.
+
+The guide for families is `<base path>/guia`, and in English `<base path>/guide`:
+two static pages in the paper look, with no script. Like the panel, they are
+also reached with a trailing slash or without the base path. They say how to
+sign in, the trial, what a session is like, the plan and how to continue after
+the trial in the landing's words, and privacy in two sentences; change both
+together.
 
 Rooms wait up to two minutes after a network disconnect so LiveKit can rejoin
 the same session. This applies both with the platform and to operator sessions

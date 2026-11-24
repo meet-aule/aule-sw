@@ -10,7 +10,8 @@ const files = await readdir(pub);
 const read = (name) => readFile(new URL(name, pub), "utf8");
 const html = await read("index.html");
 const css = await read("style.css");
-const ownScripts = ["app.js", "students.js", "signin.js", "steps.js", "screens.js", "onboarding.js", "home.js", "session-messages.js", "visuals.js", "admin.js"];
+const guides = { es: await read("guia.html"), en: await read("guide.html") };
+const ownScripts = ["app.js", "students.js", "signin.js", "steps.js", "screens.js", "onboarding.js", "home.js", "session-messages.js", "visuals.js", "admin.js", "pilot.js"];
 const scripts = Object.fromEntries(await Promise.all(ownScripts.map(async (name) => [name, await read(name)])));
 
 /** The body of every block that starts with `opening`, braces and all. */
@@ -290,4 +291,65 @@ test("the words of session-messages.js are marked with the language they are in 
   assert.match(app, /const language = session\.language \?\? sessionRequest\(\)\?\.language;/);
   // On the shared message line, in a span of their own that goes as soon as anything else writes the line.
   assert.match(bodyOf(app, "showMessage"), /write\(words, text, language\);\s*message\.replaceChildren\(words\);/);
+});
+
+test("the family guide is a page of its own, in Spanish and in English, with the same parts and links", () => {
+  const ids = (page) => [...page.matchAll(/<section id="([^"]+)"/g)].map(([, id]) => id);
+  assert.deepEqual(ids(guides.es), ["entrar", "prueba", "sesion", "plan", "seguir", "privacidad"]);
+  assert.equal(ids(guides.en).length, ids(guides.es).length);
+  const links = (page) => [...page.matchAll(/href="([^"]+)"/g)].map(([, href]) => href).filter((href) => !/^(guia|guide)$/.test(href));
+  assert.deepEqual(links(guides.en), links(guides.es), "the same links, in the same order");
+  for (const [lang, page] of Object.entries(guides)) {
+    assert.match(page, new RegExp(`<html lang="${lang}"`), lang);
+    assert.match(page, /<link rel="stylesheet" href="style\.css" \/>/, lang);
+    // Nothing the policy would refuse: no script at all, no style attribute, no handler.
+    assert.doesNotMatch(page, /<script\b/, lang);
+    assert.doesNotMatch(page, /\sstyle="|\son[a-z]+="/, lang);
+    assert.match(page, /href="https:\/\/meetaule\.com\/legal\/privacy"/, `${lang} links the privacy policy`);
+    assert.match(page, /href="mailto:admin@meetaule\.com"/, lang);
+    assert.match(page, /class="primary" href="\.\/"/, `${lang} leads into Aule`);
+  }
+  assert.match(guides.es, /href="guide" hreflang="en"/);
+  assert.match(guides.en, /href="guia" hreflang="es"/);
+});
+
+test("the guide says the plan in the landing's words, and the child's needs", () => {
+  const text = (page) => page.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
+  const es = text(guides.es);
+  for (const words of [
+    "El plan Aule",
+    "S/59 al mes",
+    "3 sesiones cada 7 días",
+    "7 días gratis desde la primera sesión, una sesión al día, sin tarjeta",
+    "escríbenos a admin@meetaule.com y te activamos el plan",
+    "Todavía no se puede pagar desde la app",
+    "Un lugar tranquilo",
+    "Audífonos, si quieres: son opcionales",
+  ]) {
+    assert.ok(es.includes(words), words);
+  }
+  const en = text(guides.en);
+  for (const words of ["The Aule plan", "S/59 a month", "3 sessions in any 7 days", "7 days free from the first session", "admin@meetaule.com", "A quiet place", "Headphones, if you like"]) {
+    assert.ok(en.includes(words), words);
+  }
+  // Privacy says what Aule itself does with the audio and the video; the
+  // services it uses are the policy's to describe, so nothing absolute.
+  assert.ok(es.includes("y no guarda el audio ni el video de la sesión"));
+  assert.ok(en.includes("and doesn't store the session's audio or video"));
+  assert.doesNotMatch(es + en, /nunca se guarda|never stored|are never/);
+  // Privacy in two sentences, with the policy linked from the second.
+  for (const [lang, page] of Object.entries(guides)) {
+    const privacy = page.match(/<section id="(?:privacidad|privacy)"[\s\S]*?<p>([\s\S]*?)<\/p>/)?.[1] ?? "";
+    assert.equal(text(privacy).trim().split(/[.;:]\s+(?=[A-ZÁÉÍÓÚ])/).length, 2, lang);
+    assert.match(privacy, /legal\/privacy/, lang);
+  }
+});
+
+test("the page's words for an ended trial and a used week are the plan's, and the cookie notice names the link's cookie", () => {
+  const app = scripts["app.js"];
+  assert.match(app, /trial_over: "Tu prueba gratis de 7 días terminó\. Para seguir, escríbenos a admin@meetaule\.com y te activamos el plan Aule\."/);
+  assert.match(app, /week_used: "Ya usaste las sesiones del plan Aule de estos 7 días\./);
+  assert.doesNotMatch(app + scripts["steps.js"], /Suscríbete|suscribirte|por semana/);
+  const notice = html.match(/<div id="cookies"[\s\S]*?<\/div>/)?.[0] ?? "";
+  assert.match(notice.replace(/\s+/g, " "), /si llegaste por un enlace de invitación, una que lo recuerda hasta que entres/);
 });
