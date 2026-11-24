@@ -28,6 +28,9 @@ TIMEOUT_SECONDS = 2.0
 # The first check of a session also opens the connection. It gets one longer
 # attempt rather than a first turn that always fails.
 INITIAL_TIMEOUT_SECONDS = 8.0
+# What a child's session sends before it starts, to know that the provider
+# answers: a word that is in no category.
+PROBE_TEXT = "hola"
 
 _PATTERN_DEFINITIONS: list[tuple[str, str]] = [
     # Self-harm and aggression come first so the gravest match wins.
@@ -55,21 +58,32 @@ _PATTERN_DEFINITIONS: list[tuple[str, str]] = [
         r"\b(?:show|reveal|print)\s+(?:your|the)\s+(?:system\s+prompt|hidden\s+instructions)\b",
     ),
     ("prompt_injection", r"\bact[uú]a\s+como\s+si\s+no\s+tuvieras\s+reglas\b"),
+    # A word of this list stops a reply of the tutor, so it holds only whole
+    # words and phrases that are swearing wherever they are said. Ordinary
+    # words stay out, many of them everyday Spanish in Peru: "pita" (string)
+    # and "pito" (a whistle), "chunga" (a joke) and "chungo" (the stone of a
+    # batán), "concha" (a shell) without the insult around it, "culé" (a
+    # Barcelona supporter), and the names Jodie and Moby Dick. The name Jodi
+    # is still taken for swearing: without its accent it is "jodí".
     *[
         ("profanity", pattern)
         for pattern in [
             r"\bmi[e3]rda\b",
             r"\bput[ao]s?\b",
             r"\bpend[e3]j[ao]s?\b",
-            r"\bch[iu]ng[ao]+\b",
-            r"\bcul[oe]s?\b",
+            r"\bching[ao]+\b",
+            r"\bculos?\b",
             r"\bver[gq]a\b",
             r"\bc[ao]j[ou]d[ao]\b",
             r"\bhij[ou][e3]?\s*(?:de\s+)?put[ao]\b",
             r"\bmal\s*parid[ao]\b",
             r"\bcar[a]j[o]\b",
-            r"\bjod[ae3ir]\w*\b",
-            r"\bconch[ae]\s*(?:de\s+)?(?:tu|su)\b",
+            r"\bjod(?!ie\b)[ae3ir]\w*\b",
+            # The insult names a woman of the family; a shell of a brother or
+            # of the right size is not one. Cut short, it is an insult too.
+            r"\bconch[ae]\s*(?:de\s*|['’]e\s*)?(?:tu|su)\s*"
+            r"(?:madre|mare|mama|mami|vieja|abuela|hermana)\b",
+            r"\bconch[ae]\s*(?:de\s*|['’]e\s*)?(?:tu|su)\b(?!\s*\w)",
             r"\bmaric[oó]n\b",
             r"\bhue?v[oó]n\b",
             r"\bimb[eé]cil\b",
@@ -77,12 +91,10 @@ _PATTERN_DEFINITIONS: list[tuple[str, str]] = [
             r"\bidiot[ao]s?\b",
             r"\bweb[oó]n\b",
             r"\bchucha\b",
-            r"\bconchatumadre\b",
             r"\bctm\b",
             r"\bptm\b",
             r"\bcsm\b",
             r"\bmaldito\b",
-            r"\bpit[ao]\b",
             r"\bping[ao]\b",
             r"\bmam[oó]n\b",
             r"\bfuck\w*\b",
@@ -91,7 +103,7 @@ _PATTERN_DEFINITIONS: list[tuple[str, str]] = [
             r"\bass\s*hole\b",
             r"\bdamn\b",
             r"\bwh[o0]re\b",
-            r"\bd[i1]ck\b",
+            r"(?<!moby )(?<!moby-)\bd[i1]ck\b",
         ]
     ],
 ]
@@ -123,6 +135,24 @@ class Action(StrEnum):
     REDIRECT = "redirect"
     SUPPORT = "support"
     UNAVAILABLE = "unavailable"
+
+
+class Probe(StrEnum):
+    """What a gate's provider did when asked, before a session, whether it answers."""
+
+    ANSWERS = "answers"
+    KEY_REFUSED = "key_refused"
+    UNREACHABLE = "unreachable"
+    UNEXPECTED = "unexpected"
+
+
+def probe_of(status: object) -> Probe:
+    """What a request that got no usable answer says about the provider, from
+    the HTTP status it answered with, if any: the key was refused, it answered
+    something the gate does not take, or it did not answer at all."""
+    if status in (401, 403):
+        return Probe.KEY_REFUSED
+    return Probe.UNEXPECTED if isinstance(status, int) else Probe.UNREACHABLE
 
 
 @dataclass(frozen=True)
@@ -301,6 +331,43 @@ class Moderator:
                 },
             )
         return finding
+
+    async def probe(self) -> Probe:
+        """Whether the provider answers now, asked once before a child's session
+        starts, with the longer wait of a first check. The endpoint is free,
+        and the word it reads is in no category.
+
+        It does not count as the session's first check: the client closes a
+        connection left idle for a few seconds, so the first turn may have to
+        open one again, and it keeps the longer wait for that."""
+        started = time.monotonic()
+        status: int | None = None
+        try:
+            async with asyncio.timeout(INITIAL_TIMEOUT_SECONDS):
+                response = await self._client.moderations.create(model=MODEL, input=PROBE_TEXT)
+        except asyncio.CancelledError:
+            raise
+        except Exception as error:
+            # The provider's client keeps the status of an answer it refused.
+            code = getattr(error, "status_code", None)
+            status = code if isinstance(code, int) else None
+            probe = probe_of(status)
+        else:
+            try:
+                provider_categories(response)
+                probe = Probe.ANSWERS
+            except Exception:
+                probe = Probe.UNEXPECTED
+        logger.log(
+            logging.INFO if probe is Probe.ANSWERS else logging.WARNING,
+            "moderation probed",
+            extra={
+                "probe": probe.value,
+                "status": status,
+                "duration_ms": round((time.monotonic() - started) * 1000),
+            },
+        )
+        return probe
 
     async def close(self) -> None:
         await self._client.close()

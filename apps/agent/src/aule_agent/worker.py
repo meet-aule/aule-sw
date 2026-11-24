@@ -14,6 +14,7 @@ from typing import Any
 
 from livekit import rtc
 from livekit.agents import (
+    Agent,
     AgentServer,
     AgentSession,
     CloseEvent,
@@ -33,7 +34,7 @@ from .platform import Platform, platform_session
 from .providers import build_llm, build_stt, build_tts
 from .reconnect import ReconnectGrace
 from .replies import reply
-from .safety import audience_of, build_gates
+from .safety import Audience, Gates, audience_of, build_gates, check_at_start
 from .script import Reply
 from .timing import Timing
 from .tutor import Persona, Tutor, persona_from
@@ -165,10 +166,151 @@ server = AgentServer(
 )
 
 
+# Tasks the worker runs beside its sessions, kept until they finish.
+_background: set[asyncio.Task[None]] = set()
+
+
 @server.once("worker_started")
 def announce() -> None:
     # Once LiveKit has set up the logs, so the line is in them like any other.
     logger.info("aule-agent %s (%s)", __version__, build_commit())
+    task = asyncio.create_task(check_gates())
+    _background.add(task)
+    task.add_done_callback(_background.discard)
+
+
+async def check_gates() -> None:
+    """Says in the log, once when the worker starts, whether each configured
+    gate answers: a refused key or a provider out of reach shows now, not
+    first when a child is waiting. Every child's session asks again."""
+    try:
+        settings = Settings.from_env()
+    except ConfigError:
+        return  # main() has said what is missing
+    await check_at_start(settings)
+
+
+# How long a refused session waits for its one line to be heard. The voice
+# waits until the page listens; a page that never does is waited for this long.
+REFUSAL_SECONDS = 20.0
+
+
+async def refuse(
+    ctx: JobContext, settings: Settings, language: str, platform: Platform | None
+) -> None:
+    """Ends a child's session that cannot have both safety gates, before the
+    tutor starts.
+
+    The child hears the fixed line for a tutor that cannot answer safely, in
+    their language, and reads it in the transcript; the platform is told the
+    tutor's service failed, which the page's end screen explains. Only the
+    voice runs: no model, no speech recognition and no session host, and
+    nothing the child says or types is read, so nothing gets around the gates.
+    """
+    session: AgentSession | None = None
+    try:
+        await ctx.connect()
+        # The room opens before the person joins it: the line waits for them,
+        # and a room nobody joins just ends.
+        if not await someone_joined(ctx):
+            return
+        session = AgentSession(
+            tts=build_tts(settings, language),
+            vad=None,
+            turn_handling={"turn_detection": "manual"},
+        )
+        await session.start(
+            agent=Agent(instructions=""),
+            room=ctx.room,
+            room_options=room_io.RoomOptions(
+                audio_input=False, text_input=False, video_input=False
+            ),
+            session_host=False,
+            record=False,
+        )
+        async with asyncio.timeout(REFUSAL_SECONDS):
+            await session.say(
+                reply("unavailable", language), allow_interruptions=False, add_to_chat_ctx=False
+            )
+    except Exception as error:
+        # Said or not, the session ends: no tutor starts without its gates.
+        logger.warning("refusal not said", extra={"error": type(error).__name__})
+    finally:
+        try:
+            # Before the room goes, so the page finds out why when it asks.
+            if platform:
+                platform.end_reason = "provider_error"
+                await platform.end()
+            if session is not None:
+                await session.aclose()
+        finally:
+            await ctx.delete_room(ctx.job.room.name)
+            ctx.shutdown(reason="the safety gates are not ready")
+
+
+async def admit(
+    ctx: JobContext,
+    settings: Settings,
+    audience: Audience,
+    language: str,
+    platform: Platform | None,
+) -> tuple[Gates, str] | None:
+    """The session's gates and what the platform says the tutor should know,
+    or None when the session ends before it starts.
+
+    A child's session needs both gates configured and answering now (see
+    ``safety``); without them the child is told, and the platform too. An
+    operator's runs the gates that are configured.
+    """
+    gates = build_gates(settings, report=platform.flag if platform else None)
+    if not gates.may_start(audience):
+        logger.warning("session refused: the safety gates are not configured")
+        await gates.close()
+        await refuse(ctx, settings, language, platform)
+        return None
+
+    # The gates are asked while the room is joined, the person comes in and
+    # the platform is asked about the student, so the check adds nothing to
+    # the wait when they answer in time.
+    answering = asyncio.create_task(gates.ready()) if audience == "child" else None
+    try:
+        await ctx.connect()
+        if not await someone_joined(ctx):
+            logger.info("session not started: nobody joined the room")
+            if answering is not None:
+                answering.cancel()
+            await gates.close()
+            if platform:
+                # It can never start now: a later join opens a room with no tutor.
+                # Closed at once, as the platform closes a session left open, it
+                # counts for nothing and the family can start another without waiting.
+                platform.end_reason = "device_offline"
+                await platform.end()
+            ctx.shutdown(reason="nobody joined the room")
+            return None
+        context = await platform.start() if platform else ""
+        ready = await answering if answering is not None else True
+    except BaseException:
+        if answering is not None:
+            answering.cancel()
+        await gates.close()
+        raise
+    if platform and platform.gone:
+        # The session is over for the platform and a page came back to its
+        # room. Nobody is greeted: there is no session to hold.
+        logger.warning("session refused: the platform no longer serves it")
+        await gates.close()
+        await platform.end()
+        ctx.shutdown(reason="the platform no longer serves this session")
+        return None
+    if not ready:
+        logger.warning("session refused: a safety gate does not answer")
+        await gates.close()
+        await refuse(ctx, settings, language, platform)
+        return None
+    if platform:
+        gates.for_student(platform.student_age, platform.student_grade, platform.student_name)
+    return gates, context
 
 
 @server.rtc_session(agent_name=AGENT_NAME)
@@ -182,37 +324,11 @@ async def entrypoint(ctx: JobContext) -> None:
     linked = platform_session(ctx.job.metadata)
     platform = Platform(linked) if linked else None
 
-    # A child's session needs both gates (see safety.py); an operator's runs
-    # the ones that are configured.
-    gates = build_gates(settings, report=platform.flag if platform else None)
-    if not gates.may_start(audience):
-        logger.warning("session refused: the safety gates are not configured")
-        await gates.close()
-        ctx.shutdown(reason="safety gates not configured")
+    admitted = await admit(ctx, settings, audience, language, platform)
+    if admitted is None:
         return
-
-    await ctx.connect()
-    if not await someone_joined(ctx):
-        logger.info("session not started: nobody joined the room")
-        await gates.close()
-        if platform:
-            # It can never start now: a later join opens a room with no tutor.
-            # Closed at once, as the platform closes a session left open, it
-            # counts for nothing and the family can start another without waiting.
-            platform.end_reason = "device_offline"
-            await platform.end()
-        ctx.shutdown(reason="nobody joined the room")
-        return
+    gates, context = admitted
     camera = Camera(ctx.room)
-    context = await platform.start() if platform else ""
-    if platform and platform.gone:
-        # The session is over for the platform and a page came back to its
-        # room. Nobody is greeted: there is no session to hold.
-        logger.warning("session refused: the platform no longer serves it")
-        await gates.close()
-        await platform.end()
-        ctx.shutdown(reason="the platform no longer serves this session")
-        return
 
     async def show(visual: dict[str, Any]) -> None:
         # Every Aule screen (the playground today, the device's e-ink
@@ -411,6 +527,10 @@ async def entrypoint(ctx: JobContext) -> None:
                 text_input_cb=lambda _, event: tutor.typed(event.text)
             ),
         ),
+        # LiveKit would otherwise let anyone in the room drive the session:
+        # send the model text that no gate reads, and read the tutor's
+        # instructions, which hold the student's profile.
+        session_host=False,
         record=False,
     )
     camera.start()
@@ -442,7 +562,8 @@ async def entrypoint(ctx: JobContext) -> None:
 def main() -> None:
     # Checked here too so a misconfigured worker exits with one clear message
     # instead of registering and failing on its first session.
-    if len(sys.argv) > 1 and sys.argv[1] in {"start", "dev"}:
+    command = sys.argv[1] if len(sys.argv) > 1 else ""
+    if command in {"start", "dev", "check"}:
         try:
             settings = Settings.from_env()
         except ConfigError as error:
@@ -452,6 +573,11 @@ def main() -> None:
                 "OPENAI_API_KEY and TYPESAFE_API_KEY are not both set: "
                 "only operator sessions will be accepted"
             )
+        if command == "check":
+            # The start-up check alone, without joining LiveKit: it exits 0
+            # only when a child's session could start now.
+            logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+            sys.exit(0 if asyncio.run(check_at_start(settings)) else 1)
     cli.run_app(server)
 
 
