@@ -25,8 +25,9 @@ from livekit.agents import (
 from livekit.plugins import silero
 
 from . import visuals
+from ._version import __version__
 from .camera import Camera
-from .config import LANGUAGES, ConfigError, Settings
+from .config import LANGUAGES, ConfigError, Settings, build_commit
 from .pace import Pace
 from .platform import Platform, platform_session
 from .providers import build_llm, build_stt, build_tts
@@ -146,6 +147,12 @@ server = AgentServer(
     host=os.environ.get("AULE_HEALTH_HOST", "127.0.0.1"),
     port=int(os.environ.get("AULE_HEALTH_PORT", "8081")),
 )
+
+
+@server.once("worker_started")
+def announce() -> None:
+    # Once LiveKit has set up the logs, so the line is in them like any other.
+    logger.info("aule-agent %s (%s)", __version__, build_commit())
 
 
 @server.rtc_session(agent_name=AGENT_NAME)

@@ -4,7 +4,7 @@ members = ["crates/aule-core", "crates/contenido"]
 
 [workspace.package]
 edition = "2021"
-version = "0.0.1"
+version = "0.0.1"  # x-aule-version
 
 [workspace.dependencies]
 serde = { version = "1", features = ["derive"] }

@@ -11,6 +11,8 @@
 #   AULE_DB_PORT, AULE_EMBEDDINGS_PORT   loopback ports, if 5433 or 11435 are taken
 #   AULE_FCM_KEY_FILE                         the Firebase service account key, for pushes
 #   AULE_UID, AULE_GID                   who the platform runs as, to read that key
+#   AULE_COMMIT                          the commit the images are built from, which they
+#                                        report (RELEASING.md); "unknown" if left out
 #
 # The services of this repository use the host network (Linux) and listen on
 # loopback only: put your reverse proxy in front of the playground. The
@@ -47,6 +49,8 @@ services:
     build:
       context: .
       dockerfile: apps/agent/Dockerfile
+      args:
+        AULE_COMMIT: ${AULE_COMMIT:-unknown}
     # Each session in progress is its own process: about 110 MB on top of
     # roughly 900 MB for the idle worker, so 2g holds eight to ten sessions.
     mem_limit: ${AULE_AGENT_MEMORY:-2g}
@@ -86,6 +90,8 @@ services:
     build:
       context: .
       dockerfile: apps/platform/Dockerfile
+      args:
+        AULE_COMMIT: ${AULE_COMMIT:-unknown}
     # One image for the API and the worker, so they are never out of step.
     image: aule-platform
     command: ["serve"]
@@ -99,6 +105,8 @@ services:
     build:
       context: .
       dockerfile: apps/platform/Dockerfile
+      args:
+        AULE_COMMIT: ${AULE_COMMIT:-unknown}
     # One image for the API and the worker, so they are never out of step.
     image: aule-platform
     command: ["worker"]
@@ -114,6 +122,8 @@ services:
     build:
       context: .
       dockerfile: apps/playground/Dockerfile
+      args:
+        AULE_COMMIT: ${AULE_COMMIT:-unknown}
     mem_limit: 256m
     healthcheck:
       test:

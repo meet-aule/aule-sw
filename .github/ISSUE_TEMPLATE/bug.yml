@@ -1,0 +1,33 @@
+name: Bug report
+description: Something in the tutor, the platform or the page does not work as it should.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: >-
+        This repository is public. Leave out anything about a child or a family
+        (a name, what a child said, an email address) and any key or access code.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: >-
+        The last line of «Mi cuenta y mis datos» on the page, or the version and
+        commit at https://playground.meetaule.com/session/healthz.
+      placeholder: Aule 0.0.1 · abc1234
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, what you saw, and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Sign in and choose a student
+        2. ...

@@ -6,6 +6,7 @@ refuses to start.
 """
 
 import os
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 
@@ -34,6 +35,14 @@ LANGUAGES = ("es", "en")
 
 class ConfigError(ValueError):
     """The environment cannot run a worker. The message lists every problem."""
+
+
+def build_commit(env: Mapping[str, str] | None = None) -> str:
+    """The commit the image was built from: ``AULE_COMMIT``, a build argument,
+    when it is a commit's hex digits, and "unknown" otherwise."""
+    env = os.environ if env is None else env
+    commit = env.get("AULE_COMMIT", "").strip()
+    return commit if re.fullmatch(r"[0-9a-f]{7,40}", commit) else "unknown"
 
 
 @dataclass(frozen=True)

@@ -37,11 +37,14 @@ jobs:
               r"(\([a-z0-9][a-z0-9._/-]*\))?!?: (.+)",
               title,
           )
+          # A release pull request's title names the version, and nothing else
+          # (scripts/version.py release).
+          release = re.fullmatch(r"chore\(release\): \d+\.\d+\.\d+", title)
           if not match:
               errors.append("Use type(scope): concrete change; the scope is optional.")
           else:
               subject = match.group(3)
-              if len(subject) < 10 or len(subject.split()) < 2:
+              if not release and (len(subject) < 10 or len(subject.split()) < 2):
                   errors.append("Describe the action and what it changes.")
               if re.match(r"(?i)^(wip|draft|todo|tbd)\b", subject):
                   errors.append("Replace the placeholder with the actual change.")

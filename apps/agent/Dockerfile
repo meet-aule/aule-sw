@@ -17,4 +17,7 @@ ENV PATH=/app/.venv/bin:$PATH \
     HOME=/tmp \
     PYTHONUNBUFFERED=1
 USER aule
+# The commit it is built from (RELEASING.md). Last, so a new one rebuilds no layer.
+ARG AULE_COMMIT=unknown
+ENV AULE_COMMIT=$AULE_COMMIT
 CMD ["python", "-m", "aule_agent.worker", "start"]

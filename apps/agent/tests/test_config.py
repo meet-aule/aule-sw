@@ -1,6 +1,6 @@
 import pytest
 
-from aule_agent.config import ConfigError, Settings
+from aule_agent.config import ConfigError, Settings, build_commit
 
 COMPLETE = {
     "LIVEKIT_URL": "ws://127.0.0.1:7880",
@@ -129,3 +129,11 @@ def test_the_tutor_model_answers_with_text_not_only_thinking(monkeypatch):
     built.chat(chat_ctx=None)
     assert "extra_kwargs" not in seen
     assert built._opts.max_tokens == providers.MAX_TOKENS_WITH_THINKING
+
+
+def test_the_commit_is_the_one_the_image_was_given_or_unknown():
+    assert build_commit({}) == "unknown"
+    assert build_commit({"AULE_COMMIT": " 0123456789ab "}) == "0123456789ab"
+    assert build_commit({"AULE_COMMIT": "a" * 40}) == "a" * 40
+    for odd in ("abc12", "0123456789AB", '"><script>', "0123456789ab-dirty", "a" * 41):
+        assert build_commit({"AULE_COMMIT": odd}) == "unknown", odd

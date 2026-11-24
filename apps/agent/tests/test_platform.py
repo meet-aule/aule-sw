@@ -2,7 +2,10 @@ import asyncio
 import json
 
 import pytest
+from aiohttp import web
+from aiohttp.test_utils import TestServer
 
+from aule_agent._version import __version__
 from aule_agent.platform import (
     FLAG_COOLDOWN_SECONDS,
     MAX_FLAGS_IN_FLIGHT,
@@ -11,6 +14,7 @@ from aule_agent.platform import (
     PlatformSession,
     Refused,
     platform_session,
+    user_agent,
 )
 
 SESSION = PlatformSession(url="http://platform", token="t")
@@ -40,6 +44,26 @@ def test_a_job_belongs_to_a_platform_session_only_with_a_url_and_a_token():
     assert platform_session('{"audience": "operator"}', ENV) is None
     assert platform_session('{"platform_token": 7}', ENV) is None
     assert platform_session("not json", ENV) is None
+
+
+async def test_every_call_says_which_build_of_the_agent_makes_it(monkeypatch):
+    monkeypatch.setenv("AULE_COMMIT", "0123456789ab")
+    heard = []
+
+    async def answer(request):
+        heard.append((request.path, request.headers.get("User-Agent")))
+        return web.json_response({"instructions": "Plan"})
+
+    app = web.Application()
+    app.router.add_route("*", "/{path:.*}", answer)
+    async with TestServer(app) as server:
+        platform = Platform(PlatformSession(url=str(server.make_url("")).rstrip("/"), token="t"))
+        assert await platform.start() == "Plan"
+        await platform.end()
+
+    named = f"aule-agent/{__version__} (+0123456)"
+    assert heard == [("/v1/agent/session", named), ("/v1/agent/session/end", named)]
+    assert user_agent("unknown") == f"aule-agent/{__version__} (+unknown)"
 
 
 async def test_start_returns_the_instructions_or_nothing(monkeypatch):

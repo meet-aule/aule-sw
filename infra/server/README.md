@@ -10,6 +10,11 @@ What runs on aule-prod outside the containers, kept here so a new server can be 
 | `aule-restore-check.sh` | `/etc/aule/aule-restore-check.sh` | Weekly restore of a new backup into a temporary database |
 | `backup-tests.sh` | (run from the Mac with the key) | Backup and restore tests |
 
+Each image carries the commit it is built from ([RELEASING.md](../../RELEASING.md)), so
+after any new commit a rebuilt service restarts even when its own code did not change.
+Name only the services that changed. Restarting `agent` ends the sessions in progress,
+so name it, or no service (which rebuilds them all), only when no session is open.
+
 The alerts are in `infra/watch`.
 
 ## Offsite copy health

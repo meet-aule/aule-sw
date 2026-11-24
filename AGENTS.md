@@ -57,6 +57,10 @@ cd apps/platform
 cargo fmt --check
 cargo clippy --all-targets --locked -- -D warnings
 cargo test --locked
+
+# the version's copies and the changelog (RELEASING.md)
+python3 scripts/version.py check
+python3 -m unittest discover -s scripts -p 'test_*.py'
 ```
 
 ## Rules that are not negotiable
@@ -93,6 +97,7 @@ cargo test --locked
   dependency or a setting for something a constant or a function can do.
 - A setting is read in one place (`config.py` in the agent, `config.rs` in the
   platform), documented in `.env.example`, and its default keeps current behaviour.
+- Never edit version numbers by hand; use `scripts/version.py` (RELEASING.md).
 - State what you verified and how. "Tests pass" is one claim; "works with the real
   model, in a real session" is another, and the pull request says which was done.
 - Do not turn off, skip or loosen a failing check to get a change through.

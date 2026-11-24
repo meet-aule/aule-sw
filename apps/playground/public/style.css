@@ -927,6 +927,13 @@ h2[tabindex="-1"]:focus {
   font-size: 18px;
 }
 
+/* The build, last in the account's details and under the panel's title: small
+   and faint, and left selectable, to be copied into a report. */
+.build {
+  font: 400 12px/16px var(--sans);
+  color: var(--muted);
+}
+
 /* The editor: the same fields as before, on paper. */
 .editor-fields {
   gap: 24px;

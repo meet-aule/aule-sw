@@ -14,4 +14,7 @@ WORKDIR /repo/apps/playground
 COPY apps/playground/src ./src
 COPY apps/playground/public ./public
 USER node
+# The commit it is built from (RELEASING.md). Last, so a new one rebuilds no layer.
+ARG AULE_COMMIT=unknown
+ENV AULE_COMMIT=$AULE_COMMIT
 CMD ["node", "src/server.ts"]

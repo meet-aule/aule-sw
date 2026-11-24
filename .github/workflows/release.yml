@@ -1,0 +1,51 @@
+name: Release
+
+# Tags a version and publishes its GitHub Release once the release pull request
+# that set it is merged (RELEASING.md). It runs when version.txt changes on
+# main, or by hand to try again; a version already tagged is left alone.
+on:
+  push:
+    branches: [main]
+    paths: [version.txt]
+  workflow_dispatch:
+
+permissions: {}
+
+# One release at a time, and one never cut short by the next.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Tag and release
+    # Only this repository's main releases: never a fork, a mirror or a branch.
+    if: ${{ github.repository == 'meet-aule/aule-sw' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The whole history, to find the commit that set the version.
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check the version's copies and the changelog
+        run: python3 scripts/version.py check
+      - name: Tag the version and publish its release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="$(python3 scripts/version.py current)"
+          tag="v$version"
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" --silent 2>/dev/null; then
+            echo "$tag is already tagged; nothing to do."
+            exit 0
+          fi
+          # The release pull request's commit, even when this runs by hand later.
+          commit="$(git log -1 --format=%H -- version.txt)"
+          # The body is the version's section of CHANGELOG.md, heading and all.
+          python3 scripts/version.py section "$version" > "$RUNNER_TEMP/notes.md"
+          gh release create "$tag" --repo "$GITHUB_REPOSITORY" --target "$commit" --title "$tag" --notes-file "$RUNNER_TEMP/notes.md"
+          printf 'Released [%s](%s/%s/releases/tag/%s) at %s.\n' "$tag" "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$tag" "$commit" >> "$GITHUB_STEP_SUMMARY"

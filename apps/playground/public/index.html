@@ -4,6 +4,9 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="robots" content="noindex, nofollow" />
+    <!-- The build this page comes from, written in by the server (src/build.ts). -->
+    <meta name="aule-version" content="{{version}}" />
+    <meta name="aule-commit" content="{{commit}}" />
     <title>Aule · Tu tutor con IA</title>
     <meta name="description" content="Aule, el tutor con IA que conversa por voz con tu hijo y practica matemática sin darle la respuesta." />
     <meta name="theme-color" content="#f5f2ea" />
@@ -569,6 +572,8 @@
                   <button type="submit" class="primary danger">Borrar mi cuenta</button>
                   <p class="small-help">No se puede deshacer.</p>
                 </form>
+                <!-- The build, for a report to the team: the name and numbers only (src/build.ts). -->
+                <p class="build">{{build}}</p>
               </details>
               <button type="button" class="link" id="sign-out">Salir de la cuenta</button>
               <a class="link" id="team-panel" href="admin" hidden>Panel del equipo</a>
