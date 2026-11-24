@@ -7,6 +7,7 @@ aule-platform serve     # the API
 aule-platform worker    # session reviews, retention, housekeeping
 aule-platform migrate   # only bring the database up to date
 aule-platform import-skills curriculum/math-primaria.json
+aule-platform version   # which build this is (also --version); needs no settings
 ```
 
 `serve` and `worker` migrate on start, so either is enough for an empty database. [ARCHITECTURE.md](../../ARCHITECTURE.md) explains how the pieces think together.

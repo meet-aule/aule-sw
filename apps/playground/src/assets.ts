@@ -36,15 +36,25 @@ export function rewrite(text: string, versions: ReadonlyMap<string, string>): st
   return out;
 }
 
+/** Writes each value at its place, like the build's version at "{{version}}". */
+export function stamp(text: string, values: ReadonlyMap<string, string>): string {
+  let out = text;
+  for (const [place, value] of values) out = out.replaceAll(place, value);
+  return out;
+}
+
 /**
  * Reads the files and settles their hashes. A file's hash depends on the
  * hashes it writes into its references, so they are worked out from the
  * leaves up, repeating until nothing changes. A file that cannot be read is
- * left out, and asking for it is a 404.
+ * left out, and asking for it is a 404. Pages, and only pages, are stamped
+ * with `stamps` (see build.ts): a page is never fingerprinted or kept, so what
+ * it says about the build moves no other file's address.
  */
 export async function loadAssets(
   sources: Record<string, AssetSource>,
   own: ReadonlySet<string>,
+  stamps: ReadonlyMap<string, string> = new Map(),
 ): Promise<Map<string, Asset>> {
   const raw = new Map<string, { body: Buffer; type: string }>();
   await Promise.all(
@@ -64,8 +74,11 @@ export async function loadAssets(
     let changed = false;
     for (const [path, { body, type }] of raw) {
       const next = rewritten(path, type) ? Buffer.from(rewrite(body.toString("utf8"), versions)) : body;
+      if (isPage(type)) {
+        bodies.set(path, Buffer.from(stamp(next.toString("utf8"), stamps)));
+        continue;
+      }
       bodies.set(path, next);
-      if (isPage(type)) continue;
       const hash = fingerprint(next);
       const name = path.slice(1);
       if (versions.get(name) !== hash) {

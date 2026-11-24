@@ -10,6 +10,7 @@ import { RoomServiceClient } from "livekit-server-sdk";
 
 import { GuessLimiter, sameCode } from "./access.ts";
 import { cacheFor, keptUntilEdited, loadAssets, stillFresh } from "./assets.ts";
+import { stamps, VERSION } from "./build.ts";
 import { ConfigError, LANGUAGES, readSettings, type Language, type Settings } from "./config.ts";
 import {
   account,
@@ -17,6 +18,7 @@ import {
   createSession,
   eraseAccount,
   platform,
+  platformBuild,
   PlatformError,
   readPlan,
   emailCode,
@@ -215,8 +217,9 @@ export function createPlayground(
 ): Server {
   const headers = securityHeaders(settings);
   // Read on the first request and kept in memory until a file in public/
-  // changes, so an edit to the page shows on the next reload.
-  const assets = keptUntilEdited(publicDir, () => loadAssets(STATIC, OWN_SCRIPTS));
+  // changes, so an edit to the page shows on the next reload. The pages say
+  // which build they come from.
+  const assets = keptUntilEdited(publicDir, () => loadAssets(STATIC, OWN_SCRIPTS, stamps(settings.commit)));
   const assetFor = async (path: string) => (await assets.get()).get(path);
   const limiter = new GuessLimiter();
   const daily = new DailyLimit(settings.dailySessions);
@@ -580,6 +583,14 @@ export function createPlayground(
       if (request.method === "GET" && path === "/api/admin/metrics") {
         return json(response, 200, await platform(settings, "/v1/metrics/daily?days=14", undefined, token));
       }
+      if (request.method === "GET" && path === "/api/admin/build") {
+        // The platform's health probe is on loopback; only the team is told what it says.
+        if (!(await readPlan(settings, token)).team) return json(response, 403, { error: "not_team" });
+        return json(response, 200, {
+          playground: { version: VERSION, commit: settings.commit },
+          platform: await platformBuild(settings),
+        });
+      }
       if (request.method !== "POST" || !["/api/admin/grant", "/api/admin/ungrant"].includes(path)) {
         return json(response, 404, { error: "not_found" });
       }
@@ -699,7 +710,10 @@ export function createPlayground(
     const path = pathname.slice(settings.basePath.length);
 
     const handle = async () => {
-      if (path === "/healthz" && request.method === "GET") return json(response, 200, { ok: true });
+      // Watchers read only the status; a person can read which build answers.
+      if (path === "/healthz" && request.method === "GET") {
+        return json(response, 200, { ok: true, version: VERSION, commit: settings.commit });
+      }
       if (path === "/api/account" && request.method === "GET") return whoIsHere(request, response);
       if (["/api/session/recovery", "/api/session/resume", "/api/session/end"].includes(path)) {
         const expected = path === "/api/session/recovery" ? "GET" : "POST";
@@ -779,7 +793,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   }
   const server = createPlayground(settings);
   server.listen(settings.port, settings.host, () => {
-    console.log(`playground on http://${settings.host}:${settings.port}${settings.basePath}/`);
+    console.log(`aule-playground ${VERSION} (${settings.commit}) on http://${settings.host}:${settings.port}${settings.basePath}/`);
   });
   for (const signal of ["SIGINT", "SIGTERM"] as const) {
     process.on(signal, () => server.close(() => process.exit(0)));

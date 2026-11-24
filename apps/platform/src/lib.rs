@@ -30,6 +30,15 @@ pub mod signin;
 pub mod state;
 pub mod supervisor;
 
+/// The platform's version: Cargo.toml's, which `scripts/version.py` keeps
+/// equal to the repository's version.txt.
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// How the platform names its build: `aule-platform 0.0.1 (abc123456789)`.
+pub fn version_line(commit: &str) -> String {
+    format!("aule-platform {VERSION} ({commit})")
+}
+
 pub static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./migrations");
 
 /// The migration that replaced 0001 to 0016 (see `migrations/0017_baseline.sql`).

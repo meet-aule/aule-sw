@@ -39,6 +39,8 @@ pub struct Config {
     pub apple: Option<AppleSignIn>,
     /// Minutes east of UTC that devices are told, for their clock.
     pub timezone_offset_minutes: i32,
+    /// The commit the image was built from (see [`commit`]).
+    pub commit: String,
 }
 
 #[derive(Clone, Debug)]
@@ -100,6 +102,18 @@ pub struct Embeddings {
 pub struct ConfigError(pub String);
 
 pub const MIN_ADMIN_TOKEN_LENGTH: usize = 32;
+
+/// The commit the image was built from: `AULE_COMMIT`, a build argument, when
+/// it is a commit's hex digits, and "unknown" otherwise. Read on its own, so
+/// that `aule-platform version` needs no other setting.
+pub fn commit(env: &HashMap<String, String>) -> String {
+    env.get("AULE_COMMIT")
+        .map(|value| value.trim())
+        .filter(|value| (7..=40).contains(&value.len()))
+        .filter(|value| value.bytes().all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f')))
+        .unwrap_or("unknown")
+        .to_string()
+}
 
 impl Config {
     pub fn from_env() -> Result<Self, ConfigError> {
@@ -317,6 +331,7 @@ impl Config {
             meta,
             apple,
             timezone_offset_minutes,
+            commit: commit(env),
         })
     }
 }
@@ -363,6 +378,25 @@ mod tests {
         env.insert("AULE_ADMIN_EMAILS".into(), "admin@example.org; nobody".into());
         assert!(Config::from_map(&env).unwrap_err().to_string().contains("AULE_ADMIN_EMAILS"));
         assert_eq!(config.timezone_offset_minutes, -300);
+    }
+
+    #[test]
+    fn the_commit_is_the_one_the_image_was_given_or_unknown() {
+        let mut env = complete();
+        assert_eq!(Config::from_map(&env).unwrap().commit, "unknown");
+        env.insert("AULE_COMMIT".into(), " 0123456789ab ".into());
+        assert_eq!(Config::from_map(&env).unwrap().commit, "0123456789ab");
+        env.insert("AULE_COMMIT".into(), "a".repeat(40));
+        assert_eq!(commit(&env), "a".repeat(40));
+        // It is shown as it is, so anything that is not a commit is not taken.
+        for odd in ["", "abc12", "0123456789AB", "\"><script>", "0123456789ab-dirty", &"a".repeat(41)] {
+            env.insert("AULE_COMMIT".into(), odd.into());
+            assert_eq!(Config::from_map(&env).unwrap().commit, "unknown", "{odd}");
+        }
+        assert_eq!(
+            crate::version_line("0123456789ab"),
+            format!("aule-platform {} (0123456789ab)", crate::VERSION)
+        );
     }
 
     #[test]

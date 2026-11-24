@@ -31,10 +31,17 @@ check out or execute PR code.
 PRs are squash-merged. The default commit subject is the PR title, and its body is
 the PR description. Keep that description focused on the final change and evidence.
 
+## Releases
+
+The titles decide the next version and what the changelog says about it.
+[RELEASING.md](RELEASING.md) says how a release is cut. Never edit a version number
+by hand; `scripts/version.py` writes them all.
+
 ## Required checks
 
 - `Software CI`: Node contracts/playground/curriculum tests, Python tests, Rust
   formatting and tests against PostgreSQL 17 with pgvector, all three Docker builds,
+  the version's copies and the changelog with the tests of `scripts/version.py`,
   and the reproducible student performance benchmark on pinned public data.
 - `Ruff`: Python lint and formatting.
 - `Clippy and RustSec`: Rust lint and the dependency audit.

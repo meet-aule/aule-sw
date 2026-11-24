@@ -35,6 +35,11 @@ export type Settings = {
    * Meta and Apple send them back to it. Without it those sign-ins are off.
    */
   publicUrl: string | null;
+  /**
+   * The commit the image was built from (AULE_COMMIT, given when it is built),
+   * or "unknown". It goes into pages, so only hex digits are taken.
+   */
+  commit: string;
 };
 
 export class ConfigError extends Error {}
@@ -129,5 +134,6 @@ export function readSettings(env: Record<string, string | undefined>): Settings 
     engine: engine === "1",
     platform: platformUrl ? { url: platformUrl, adminToken, childId: childId || null } : null,
     publicUrl: publicUrl || null,
+    commit: /^[0-9a-f]{7,40}$/.test(get("AULE_COMMIT")) ? get("AULE_COMMIT") : "unknown",
   };
 }

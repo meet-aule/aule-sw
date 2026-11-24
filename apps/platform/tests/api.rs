@@ -208,6 +208,7 @@ fn app_with(pool: PgPool, events_webhook: Option<EventsWebhook>) -> App {
         meta: None,
         apple: None,
         timezone_offset_minutes: -300,
+        commit: "0123456789ab".into(),
     };
     let mail = Arc::new(Outbox::default());
     let phones = Arc::new(Phones::default());
@@ -393,7 +394,13 @@ async fn a_guardian_address_belongs_to_one_family(pool: PgPool) {
 async fn every_route_needs_its_credentials(pool: PgPool) {
     let app = app(pool);
 
-    assert_eq!(app.call(Method::GET, "/healthz", None, None).await.0, StatusCode::OK);
+    let (status, health) = app.call(Method::GET, "/healthz", None, None).await;
+    assert_eq!(status, StatusCode::OK);
+    // Which build answers, next to what it has always said.
+    assert_eq!(health["version"], env!("CARGO_PKG_VERSION"));
+    assert_eq!(health["commit"], "0123456789ab");
+    assert_eq!(health["ok"], true);
+    assert_eq!(health["livekit"], true);
     for (method, path) in [
         (Method::POST, "/v1/families"),
         (Method::GET, "/v1/skills"),

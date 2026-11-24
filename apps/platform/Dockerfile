@@ -22,5 +22,9 @@ COPY --from=build /src/apps/platform/target/release/aule-platform /usr/local/bin
 # The skill catalogs, loaded by `serve` at start (see main.rs).
 COPY curriculum/*.json /usr/share/aule/curriculum/
 USER aule
+# The commit it is built from (RELEASING.md), read when it runs. Last, so a new
+# one rebuilds no layer and recompiles nothing.
+ARG AULE_COMMIT=unknown
+ENV AULE_COMMIT=$AULE_COMMIT
 ENTRYPOINT ["aule-platform"]
 CMD ["serve"]

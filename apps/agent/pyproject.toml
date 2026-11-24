@@ -1,6 +1,6 @@
 [project]
 name = "aule-agent"
-version = "0.0.1"
+version = "0.0.1"  # x-aule-version
 description = "Aule's voice tutor, a LiveKit Agents worker"
 requires-python = ">=3.13,<3.15"
 license = "Apache-2.0"

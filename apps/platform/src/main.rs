@@ -3,9 +3,10 @@
 //! skill catalog such as `curriculum/math-primaria.json`. `serve` and `worker`
 //! also migrate first, so one of them is enough to start from an empty database,
 //! and `serve` loads the catalogs the image carries, so a new or restored
-//! server has the same skills as the repository.
+//! server has the same skills as the repository. `version` (or `--version`)
+//! prints which build this is and needs nothing else.
 
-use aule_platform::config::Config;
+use aule_platform::config::{self, Config};
 use aule_platform::state::AppState;
 use aule_platform::{http, jobs, learning};
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
@@ -57,8 +58,12 @@ async fn main() {
         .init();
 
     let command = std::env::args().nth(1).unwrap_or_else(|| "serve".to_string());
+    if command == "version" || command == "--version" {
+        println!("{}", aule_platform::version_line(&config::commit(&std::env::vars().collect())));
+        return;
+    }
     if !["serve", "worker", "migrate", "import-skills"].contains(&command.as_str()) {
-        eprintln!("usage: aule-platform [serve|worker|migrate|import-skills <file>]");
+        eprintln!("usage: aule-platform [serve|worker|migrate|import-skills <file>|version]");
         std::process::exit(2);
     }
     let config = Config::from_env().unwrap_or_else(|error| {
@@ -94,7 +99,7 @@ async fn main() {
             println!("{stored} skills stored from {path}");
         }
         "worker" => {
-            tracing::info!("worker started");
+            tracing::info!(version = aule_platform::VERSION, commit = %state.config.commit, "worker started");
             tokio::select! {
                 () = jobs::run_worker(state) => {}
                 () = shutdown() => {}
@@ -106,7 +111,7 @@ async fn main() {
             let listener = tokio::net::TcpListener::bind(addr)
                 .await
                 .unwrap_or_else(|error| fail("the address could not be bound", error));
-            tracing::info!(%addr, "platform listening");
+            tracing::info!(%addr, version = aule_platform::VERSION, commit = %state.config.commit, "platform listening");
             axum::serve(listener, http::router(state))
                 .with_graceful_shutdown(shutdown())
                 .await

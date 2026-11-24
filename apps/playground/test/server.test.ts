@@ -323,7 +323,7 @@ test("served at the root, the page and its health probe still answer", async () 
     assert.equal((await fetch(`${origin}/healthz`)).status, 200);
     // What the compose healthcheck asks for when the base path is "/": the
     // probe itself, not the page.
-    assert.deepEqual(await (await fetch(`${origin}//healthz`)).json(), { ok: true });
+    assert.equal((await (await fetch(`${origin}//healthz`)).json()).ok, true);
     assert.equal(await raw(root, "//"), 200);
     const panel = await fetch(`${origin}/admin/`, { redirect: "manual" });
     assert.equal(panel.headers.get("location"), "/admin");

@@ -4,6 +4,9 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="robots" content="noindex, nofollow" />
+    <!-- The build this page comes from, written in by the server (src/build.ts). -->
+    <meta name="aule-version" content="{{version}}" />
+    <meta name="aule-commit" content="{{commit}}" />
     <title>Aule · Panel del equipo</title>
     <link rel="icon" href="icon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="style.css" />
@@ -13,6 +16,8 @@
       <header>
         <h1>Panel del equipo</h1>
         <p><a href="./">Volver a Aule</a></p>
+        <!-- Which builds of this page and of the platform answer (admin.js). -->
+        <p class="build" id="build" hidden></p>
       </header>
 
       <p id="message" class="message" role="alert" hidden></p>

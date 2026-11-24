@@ -132,7 +132,20 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - run: docker build --file apps/${{ matrix.app }}/Dockerfile --tag aule-${{ matrix.app }}:ci .
+      - run: docker build --file apps/${{ matrix.app }}/Dockerfile --build-arg AULE_COMMIT=${{ github.sha }} --tag aule-${{ matrix.app }}:ci .
+
+  version:
+    name: Version and changelog
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Every copy of the version and the changelog agree
+        run: python3 scripts/version.py check
+      - name: The version tool's tests
+        run: python3 -m unittest discover -s scripts -p 'test_*.py' -v
 
   research:
     name: Student performance benchmark
@@ -158,7 +171,7 @@ jobs:
 
   required:
     name: Software CI
-    needs: [contracts, agent, platform, engine, images, research]
+    needs: [contracts, agent, platform, engine, images, version, research]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     timeout-minutes: 2
@@ -170,12 +183,14 @@ jobs:
           RUST_RESULT: ${{ needs.platform.result }}
           ENGINE_RESULT: ${{ needs.engine.result }}
           IMAGES_RESULT: ${{ needs.images.result }}
+          VERSION_RESULT: ${{ needs.version.result }}
           RESEARCH_RESULT: ${{ needs.research.result }}
         run: |
-          printf 'Node=%s Python=%s Rust=%s Engine=%s Images=%s\n' "$NODE_RESULT" "$PYTHON_RESULT" "$RUST_RESULT" "$ENGINE_RESULT" "$IMAGES_RESULT"
+          printf 'Node=%s Python=%s Rust=%s Engine=%s Images=%s Version=%s\n' "$NODE_RESULT" "$PYTHON_RESULT" "$RUST_RESULT" "$ENGINE_RESULT" "$IMAGES_RESULT" "$VERSION_RESULT"
           test "$NODE_RESULT" = success
           test "$PYTHON_RESULT" = success
           test "$RUST_RESULT" = success
           test "$ENGINE_RESULT" = success
           test "$IMAGES_RESULT" = success
+          test "$VERSION_RESULT" = success
           test "$RESEARCH_RESULT" = success

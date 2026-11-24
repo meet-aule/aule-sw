@@ -20,6 +20,8 @@ from typing import Any
 
 import aiohttp
 
+from ._version import __version__
+from .config import build_commit
 from .safety import FLAG_ACTIONS, FLAG_CATEGORIES, FLAG_GATES
 from .script import Line, Reply, lines_from, reply_from
 from .tutor import Persona, persona_from
@@ -72,6 +74,12 @@ class PlatformSession:
     token: str
 
 
+def user_agent(commit: str) -> str:
+    """What the agent calls itself on every request to the platform, as
+    Anthropic's SDKs do: its version and the start of its commit."""
+    return f"aule-agent/{__version__} (+{commit[:7]})"
+
+
 def platform_session(
     dispatch_metadata: str, env: Mapping[str, str] | None = None
 ) -> PlatformSession | None:
@@ -102,6 +110,8 @@ class Platform:
     ) -> None:
         self._session = session
         self._send = send or self._http
+        # Which build of the agent makes each call, for the platform's side of a problem.
+        self._user_agent = user_agent(build_commit())
         # Filled by ``start`` from the agent-session body; the tutor's persona.
         self.persona: Persona | None = None
         # For the greeting only: what to call the student and which of their
@@ -151,7 +161,10 @@ class Platform:
             method,
             f"{self._session.url}{path}",
             json=body,
-            headers={"Authorization": f"Bearer {self._session.token}"},
+            headers={
+                "Authorization": f"Bearer {self._session.token}",
+                "User-Agent": self._user_agent,
+            },
             timeout=aiohttp.ClientTimeout(total=timeout),
             allow_redirects=False,
         ) as response:

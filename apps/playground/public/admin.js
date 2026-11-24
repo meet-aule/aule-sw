@@ -144,6 +144,13 @@ function showFamilies() {
   $("families-section").hidden = false;
 }
 
+// Which builds answer: this page's and the platform's, as their logs name them.
+function showBuild(build) {
+  const named = (name, part) => `${name} ${part?.version ?? "?"} (${(part?.commit ?? "?").slice(0, 7)})`;
+  $("build").textContent = `${named("aule-playground", build.playground)} · ${named("aule-platform", build.platform)}`;
+  $("build").hidden = false;
+}
+
 async function load() {
   try {
     const [list, metrics] = await Promise.all([get("api/admin/families"), get("api/admin/metrics")]);
@@ -156,7 +163,11 @@ async function load() {
         ? "Este panel es para el equipo de Aule. Entra con tu cuenta del equipo en la página de Aule."
         : "No se pudo cargar el panel. Recarga la página.",
     );
+    return;
   }
+  // Only the team is told which builds answer, so they are asked for once the
+  // panel has loaded. The panel works without this line: a failure leaves it out.
+  get("api/admin/build").then(showBuild, () => {});
 }
 
 $("filter").addEventListener("input", showFamilies);

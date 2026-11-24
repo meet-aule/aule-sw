@@ -82,10 +82,14 @@ pub fn router(state: AppState) -> Router {
         .with_state(state)
 }
 
+/// Whether the platform can answer, and which build it is. It listens on
+/// loopback only; the playground shows the build to the team.
 async fn health(State(state): State<AppState>) -> ApiResult<Json<Value>> {
     state.db.ping().await?;
     Ok(Json(json!({
         "ok": true,
+        "version": crate::VERSION,
+        "commit": state.config.commit,
         "supervisor": state.llm.is_some(),
         "embeddings": state.embedder.is_some(),
         "livekit": state.config.livekit.is_some(),
