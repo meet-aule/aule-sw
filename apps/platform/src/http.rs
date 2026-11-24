@@ -42,6 +42,7 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/sessions/{session_id}/step", get(engine::step))
         .route("/v1/sessions/{session_id}/answers", post(engine::typed))
         .route("/v1/metrics/daily", get(crate::metrics::daily))
+        .route("/v1/metrics/weekly", get(crate::metrics::weekly))
         // Guardians: sign-in, their account, their notices
         .route("/v1/auth/start", post(signin::start))
         .route("/v1/auth/verify", post(signin::verify))

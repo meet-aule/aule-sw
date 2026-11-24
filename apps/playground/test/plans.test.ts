@@ -39,6 +39,9 @@ const platform = createServer(async (request, response) => {
     if (!team) return answer(403, { error: { code: "forbidden", message: "this route is for Aule's team" } });
     if (path === "/v1/admin/families") return answer(200, { families: [{ id: FAMILY, name: "Quispe" }] });
     if (path.startsWith("/v1/metrics/daily")) return answer(200, { days: [] });
+    if (path === "/v1/metrics/weekly?weeks=12") {
+      return answer(200, { timezone_offset_minutes: -300, weeks: 12, cohorts: [{ week: "2026-11-23", source: "cesar", families: 2 }] });
+    }
     if (path === `/v1/admin/families/${FAMILY}/grant`) return answer(request.method === "DELETE" ? 200 : 201, { plan: "granted" });
   }
   answer(404, { error: { message: "no such path" } });
@@ -96,6 +99,17 @@ test("the team's panel answers only the team", async () => {
   const team = await fetch(`${base}/api/admin/families`, { headers: as(TEAM_TOKEN) });
   assert.deepEqual(await team.json(), { families: [{ id: FAMILY, name: "Quispe" }] });
   assert.equal((await fetch(`${base}/api/admin/metrics`, { headers: as(TEAM_TOKEN) })).status, 200);
+});
+
+test("the pilot's weekly numbers are the team's only, for the last twelve weeks", async () => {
+  assert.equal((await fetch(`${base}/api/admin/weekly`)).status, 401);
+  const family = await fetch(`${base}/api/admin/weekly`, { headers: as(FAMILY_TOKEN) });
+  assert.deepEqual([family.status, await family.json()], [403, { error: "not_team" }]);
+
+  const team = await fetch(`${base}/api/admin/weekly`, { headers: as(TEAM_TOKEN) });
+  assert.equal(team.status, 200);
+  assert.deepEqual((await team.json()).cohorts, [{ week: "2026-11-23", source: "cesar", families: 2 }]);
+  assert.equal((await fetch(`${base}/api/admin/weekly`, { method: "POST", headers: as(TEAM_TOKEN) })).status, 404);
 });
 
 test("granting and ending a plan pass on only what the platform needs", async () => {

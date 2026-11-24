@@ -1,5 +1,8 @@
-// The team's panel: how Aule is used and what it costs, every family with its
-// plan, and a plan granted for free. The platform decides who is on the team.
+// The team's panel: how Aule is used and what it costs, the pilot's four
+// numbers, every family with its plan and the link it came from, and a plan
+// granted for free. The platform decides who is on the team.
+
+import { byWeek, bySource, outOf, share, weekLabel, zoneLabel } from "./pilot.js";
 
 const $ = (id) => document.getElementById(id);
 const PLANS = { trial: "Prueba", paid: "Pagado", granted: "Regalado", none: "Sin plan", team: "Equipo", free: "Gratis ilimitado" };
@@ -28,9 +31,10 @@ async function post(path, body) {
   return response.json();
 }
 
-function cell(text) {
+function cell(text, className) {
   const element = document.createElement("td");
   element.textContent = text ?? "";
+  if (className) element.className = className;
   return element;
 }
 
@@ -72,6 +76,59 @@ function showOverview(metrics) {
   $("overview").hidden = false;
 }
 
+// The pilot: a line per week with its total, and under it a line per link
+// when its families came by more than one; then each link over all the weeks.
+const NO_LINK = "sin enlace";
+
+function pilotCells(line) {
+  return [
+    cell(line.families),
+    cell(share(line.started, line.families)),
+    cell(outOf(line.repeated, line.week1_over)),
+    cell(outOf(line.week4, line.week4_over)),
+    cell(outOf(line.paying, line.week1_over)),
+  ];
+}
+
+function showPilot(weekly) {
+  const cohorts = weekly.cohorts ?? [];
+  $("pilot-zone").textContent = zoneLabel(weekly.timezone_offset_minutes);
+  $("weeks").replaceChildren(
+    ...byWeek(cohorts).flatMap((week) => {
+      // A week whose families all came the same way names it on its own line.
+      const [only, ...others] = week.sources;
+      const split = others.length > 0;
+      const total = document.createElement("tr");
+      total.className = "week";
+      const name = split ? "todos" : only ? (only.source ?? NO_LINK) : NO_LINK;
+      total.append(cell(weekLabel(week.week)), cell(name, "code"), ...pilotCells(week.total));
+      const lines = split ? week.sources : [];
+      return [
+        total,
+        ...lines.map((line) => {
+          const row = document.createElement("tr");
+          row.append(cell(""), cell(line.source ?? NO_LINK, "code"), ...pilotCells(line));
+          return row;
+        }),
+      ];
+    }),
+  );
+  $("sources").replaceChildren(
+    ...bySource(cohorts).map((line) => {
+      const row = document.createElement("tr");
+      row.append(cell(line.source ?? NO_LINK, "code"), ...pilotCells(line));
+      return row;
+    }),
+  );
+  pilotSays(cohorts.length ? "" : "Todavía no hay familias en estas semanas.");
+  $("pilot").hidden = false;
+}
+
+function pilotSays(text) {
+  $("pilot-message").textContent = text;
+  $("pilot-message").hidden = !text;
+}
+
 function planText(standing) {
   if (!standing) return "";
   const name = PLANS[standing.plan] ?? standing.plan;
@@ -81,10 +138,17 @@ function planText(standing) {
   return `${name}${until}${left}`;
 }
 
+// Nobody can pay in the app yet, so the pilot's numbers count a plan granted
+// after a family's trial as paid; the team is told so before granting one.
 async function grant(family) {
-  const days = Number(window.prompt(`¿Cuántos días de plan regalar a ${family.name}?`, "30"));
+  const days = Number(
+    window.prompt(
+      `¿Cuántos días de plan regalar a ${family.name}?\n\nEn las cifras del piloto, un plan activado después de la prueba cuenta como pagado, aunque sea un regalo.`,
+      "30",
+    ),
+  );
   if (!Number.isInteger(days) || days < 1) return;
-  const note = window.prompt("¿Por qué? (opcional: piloto, beca, equipo…)", "") ?? "";
+  const note = window.prompt("¿Por qué? (opcional: pagó con Yape o Plin, beca, equipo…)", "") ?? "";
   try {
     await post("api/admin/grant", { family_id: family.id, days, note });
     say("");
@@ -108,7 +172,7 @@ async function ungrant(family) {
 function showFamilies() {
   const wanted = $("filter").value.trim().toLowerCase();
   const shown = families.filter(
-    (family) => !wanted || `${family.name} ${family.emails ?? ""}`.toLowerCase().includes(wanted),
+    (family) => !wanted || `${family.name} ${family.emails ?? ""} ${family.source ?? ""}`.toLowerCase().includes(wanted),
   );
   $("families").replaceChildren(
     ...shown.map((family) => {
@@ -129,6 +193,7 @@ function showFamilies() {
       }
       line.append(
         cell(family.name),
+        cell(family.source ?? "", "code"),
         cell(family.emails),
         cell(family.children),
         cell(planText(family.standing)),
@@ -165,6 +230,11 @@ async function load() {
     );
     return;
   }
+  // The pilot's numbers come on their own: without them the rest still shows.
+  get("api/admin/weekly").then(showPilot, () => {
+    pilotSays("No se pudieron cargar las cifras del piloto. Recarga la página.");
+    $("pilot").hidden = false;
+  });
   // Only the team is told which builds answer, so they are asked for once the
   // panel has loaded. The panel works without this line: a failure leaves it out.
   get("api/admin/build").then(showBuild, () => {});

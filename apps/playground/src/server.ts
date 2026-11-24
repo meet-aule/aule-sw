@@ -52,7 +52,16 @@ import {
   stateCookie,
   stateMatches,
 } from "./providers.ts";
-import { DailyLimit, guardianToken, signedInCookie, signedOutCookie } from "./signin.ts";
+import {
+  clearedSourceCookie,
+  DailyLimit,
+  guardianToken,
+  signedInCookie,
+  signedOutCookie,
+  sourceCode,
+  sourceCookie,
+  sourceOf,
+} from "./signin.ts";
 import { RecoveryStore, recoveryCookie, recoveryTicket, resumeToken, STATUS_GRACE_SECONDS } from "./recovery.ts";
 
 const publicDir = new URL("../public/", import.meta.url);
@@ -98,6 +107,11 @@ const STATIC: Record<string, { file: string | URL; type: string }> = {
   // The team's panel. The page is the same for anyone; its data only for the team.
   "/admin": { file: new URL("admin.html", publicDir), type: "text/html; charset=utf-8" },
   "/admin.js": { file: new URL("admin.js", publicDir), type: "text/javascript; charset=utf-8" },
+  // The panel's arithmetic for the pilot's four numbers, kept apart so it is tested.
+  "/pilot.js": { file: new URL("pilot.js", publicDir), type: "text/javascript; charset=utf-8" },
+  // The one-page guide the team sends families, in Spanish and in English.
+  "/guia": { file: new URL("guia.html", publicDir), type: "text/html; charset=utf-8" },
+  "/guide": { file: new URL("guide.html", publicDir), type: "text/html; charset=utf-8" },
   "/fonts/serif.woff2": { file: join(serif, "source-serif-4-latin-wght-normal.woff2"), type: "font/woff2" },
   "/fonts/serif-italic.woff2": { file: join(serif, "source-serif-4-latin-wght-italic.woff2"), type: "font/woff2" },
   "/fonts/sans.woff2": { file: join(sans, "inter-latin-wght-normal.woff2"), type: "font/woff2" },
@@ -207,7 +221,14 @@ const OWN_SCRIPTS = new Set([
   "/session-messages.js",
   "/visuals.js",
   "/admin.js",
+  "/pilot.js",
 ]);
+
+// The pages a family may be sent to with a link's code (?src=cesar), which is
+// kept until they sign in.
+const LINKED_PAGES = new Set(["/", "/guia", "/guide"]);
+// Pages reached from an address typed or shared by hand (see the redirects).
+const TYPED_PAGES = ["/admin", "/guia", "/guide"];
 
 export function createPlayground(
   settings: Settings,
@@ -324,9 +345,9 @@ export function createPlayground(
   async function whoIsHere(
     request: IncomingMessage,
     response: ServerResponse,
-    entered?: { token: string; cookie: string },
+    entered?: { token: string; cookies: string[] },
   ) {
-    const extra = entered ? { "Set-Cookie": entered.cookie } : {};
+    const extra = entered ? { "Set-Cookie": entered.cookies } : {};
     const reply = (body: unknown, more: Record<string, string> = {}) => {
       response.writeHead(200, { ...headers, ...extra, ...more, "Content-Type": "application/json; charset=utf-8" });
       response.end(JSON.stringify(body));
@@ -363,6 +384,12 @@ export function createPlayground(
     }
   }
 
+  // Signed in, the link a family came from has done its work: it goes.
+  const enteredCookies = (token: string, days: number, source: string | null) => [
+    signedInCookie(token, settings.basePath, days),
+    ...(source ? [clearedSourceCookie(settings.basePath)] : []),
+  ];
+
   async function signedIn(path: string, request: IncomingMessage, response: ServerResponse) {
     if (!settings.platform) return json(response, 404, { error: "not_found" });
     let body: Record<string, unknown>;
@@ -376,9 +403,10 @@ export function createPlayground(
       if (typeof body.credential !== "string" || !body.credential) {
         return json(response, 400, { error: "bad_request" });
       }
+      const source = sourceOf(request);
       let entered;
       try {
-        entered = await signIn(settings, body.credential);
+        entered = await signIn(settings, body.credential, source);
       } catch (error) {
         if (error instanceof PlatformError && error.status < 500) {
           return json(response, 403, { error: "sign_in_refused" });
@@ -387,7 +415,7 @@ export function createPlayground(
       }
       return whoIsHere(request, response, {
         token: entered.token,
-        cookie: signedInCookie(entered.token, settings.basePath, entered.days),
+        cookies: enteredCookies(entered.token, entered.days, source),
       });
     }
     if (path === "/api/signin/email/start") {
@@ -406,9 +434,10 @@ export function createPlayground(
       const code = typeof body.code === "string" ? body.code.trim() : "";
       const name = typeof body.name === "string" && body.name.trim() ? body.name.trim().slice(0, 120) : null;
       if (!EMAIL.test(email) || !/^\d{6}$/.test(code)) return json(response, 400, { error: "bad_request" });
+      const source = sourceOf(request);
       let entered;
       try {
-        entered = await signInWithEmail(settings, email, code, name);
+        entered = await signInWithEmail(settings, email, code, name, source);
       } catch (error) {
         if (!(error instanceof PlatformError) || error.status >= 500) throw error;
         // A new address needs a name; a wrong or used code is refused.
@@ -417,7 +446,7 @@ export function createPlayground(
       }
       return whoIsHere(request, response, {
         token: entered.token,
-        cookie: signedInCookie(entered.token, settings.basePath, entered.days),
+        cookies: enteredCookies(entered.token, entered.days, source),
       });
     }
     const token = guardianToken(request);
@@ -583,6 +612,9 @@ export function createPlayground(
       if (request.method === "GET" && path === "/api/admin/metrics") {
         return json(response, 200, await platform(settings, "/v1/metrics/daily?days=14", undefined, token));
       }
+      if (request.method === "GET" && path === "/api/admin/weekly") {
+        return json(response, 200, await platform(settings, "/v1/metrics/weekly?weeks=12", undefined, token));
+      }
       if (request.method === "GET" && path === "/api/admin/build") {
         // The platform's health probe is on loopback; only the team is told what it says.
         if (!(await readPlan(settings, token)).team) return json(response, 403, { error: "not_team" });
@@ -667,8 +699,9 @@ export function createPlayground(
     // Without a code the person said no at the provider, or it failed there.
     if (!code) return back([], answer.get("error") ? "cancelled" : "failed");
     try {
-      const entered = await signInWithCode(settings, provider, code, redirectUri, appleName(answer.get("user")));
-      return back([signedInCookie(entered.token, settings.basePath, entered.days)]);
+      const source = sourceOf(request);
+      const entered = await signInWithCode(settings, provider, code, redirectUri, appleName(answer.get("user")), source);
+      return back(enteredCookies(entered.token, entered.days, source));
     } catch (error) {
       if (!(error instanceof PlatformError)) throw error;
       console.error(`sign-in with ${provider} failed: ${error.message}`);
@@ -684,13 +717,18 @@ export function createPlayground(
     // "//healthz" mean the same thing.
     const pathname = url.pathname.replace(/\/{2,}/g, "/");
     const reading = request.method === "GET" || request.method === "HEAD";
-    const panel = `${settings.basePath}/admin`;
     const redirect = (status: number, location: string) => {
       response.writeHead(status, { ...headers, Location: location });
       response.end();
     };
-    if (reading && (pathname === `${panel}/` || (settings.basePath && ["/admin", "/admin/"].includes(pathname)))) {
-      return redirect(308, panel + url.search);
+    // The panel and the family guide are addresses people type and share: with
+    // a trailing slash, or without the base path, they still reach the page,
+    // and keep the query (a guide's ?src=).
+    for (const page of TYPED_PAGES) {
+      const target = `${settings.basePath}${page}`;
+      if (reading && (pathname === `${target}/` || (settings.basePath && [page, `${page}/`].includes(pathname)))) {
+        return redirect(308, target + url.search);
+      }
     }
     const missing = () => {
       const wantsPage = (request.headers.accept ?? "").split(",").some((type) => type.trim().split(";")[0] === "text/html");
@@ -757,7 +795,15 @@ export function createPlayground(
         // has nothing to be checked against.
         const cache = cacheFor(asset, url.searchParams.get("v"));
         const etag = cache === "no-store" ? undefined : `"${asset.hash}"`;
-        const sent = { ...headers, "Cache-Control": cache, ...(etag ? { ETag: etag } : {}) };
+        // A family who has not signed in keeps the link it came from; a code
+        // that is not a short lower-case one is ignored.
+        const source = LINKED_PAGES.has(path) && !guardianToken(request) ? sourceCode(url.searchParams.get("src")) : null;
+        const sent = {
+          ...headers,
+          "Cache-Control": cache,
+          ...(etag ? { ETag: etag } : {}),
+          ...(source ? { "Set-Cookie": sourceCookie(source, settings.basePath) } : {}),
+        };
         if (etag && stillFresh(request.headers["if-none-match"], etag)) {
           response.writeHead(304, sent);
           return response.end();

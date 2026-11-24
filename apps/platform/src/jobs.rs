@@ -20,7 +20,7 @@ const MAX_ATTEMPTS: i32 = 5;
 /// guardian did not agree to keep transcripts.
 const UNREVIEWED_TRANSCRIPT_HOURS: i32 = 2;
 /// Hours after which a session that never reported its end is closed.
-const STALE_SESSION_HOURS: i32 = 3;
+pub const STALE_SESSION_HOURS: i32 = 3;
 
 /// Queues a job, in the caller's transaction.
 pub async fn enqueue(db: &impl ConnectionTrait, kind: &str, payload: &Value) -> Result<(), sea_orm::DbErr> {

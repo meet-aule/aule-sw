@@ -152,6 +152,31 @@ test("the plan line: free access is open with no number in both languages, and a
   assert.deepEqual(planLine(null), { text: "", open: true });
 });
 
+test("the plan line says the plan in its own words: «el plan Aule», S/59 al mes, 3 sesiones cada 7 días, 7 días gratis", () => {
+  const now = Date.parse("2026-11-23T12:00:00Z");
+  const price = { amount_cents: 5900, currency: "PEN", sessions_per_week: 3 };
+  assert.deepEqual(planLine({ plan: "trial", ends_at: null, left: 1, price }, "es", now), {
+    text: "Tu prueba: 7 días gratis desde la primera sesión, una sesión al día, sin tarjeta.",
+    open: true,
+  });
+  // Paid or activated by the team after writing in, it is the same plan: nobody can pay in the app yet.
+  for (const kind of ["paid", "granted"]) {
+    const line = planLine({ plan: kind, ends_at: "2026-12-20T12:00:00Z", left: 2, allowed: 3, price }, "es", now);
+    assert.equal(line.open, true);
+    assert.match(line.text, /^El plan Aule hasta el 20 de diciembre: te quedan 2 sesiones de 3 en estos 7 días\.$/, kind);
+    assert.doesNotMatch(line.text, /regalado/);
+  }
+  const used = planLine({ plan: "granted", ends_at: "2026-12-20T12:00:00Z", left: 0, allowed: 3, price }, "es", now);
+  assert.equal(used.open, false);
+  assert.match(used.text, /ya usaste las 3 sesiones de estos 7 días; cada una vuelve a los 7 días de usarla\.$/);
+  // After the trial: how to go on, the way it works today.
+  assert.deepEqual(planLine({ plan: "none", left: 0, allowed: 0, price }, "es", now), {
+    text: "Tu prueba gratis terminó. Para seguir, escríbenos a admin@meetaule.com y te activamos el plan Aule: S/59 al mes, 3 sesiones cada 7 días. Todavía no se puede pagar desde la app.",
+    open: false,
+  });
+  assert.doesNotMatch(planLine({ plan: "none", left: 0 }).text, /suscrib|por semana|pronto/i);
+});
+
 test("P13 welcomes back only a browser that signed in before", () => {
   assert.equal(greeting(true), "¡Qué bueno que estés de vuelta!");
   assert.equal(greeting(false), "Te damos la bienvenida");
