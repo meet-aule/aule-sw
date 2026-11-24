@@ -1,6 +1,6 @@
 {
   "name": "@aule/playground",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "private": true,
   "type": "module",
   "description": "A web page to talk to the Aule tutor with a microphone and a camera, for the people running a server",

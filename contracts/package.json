@@ -1,6 +1,6 @@
 {
   "name": "@aule/contracts",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "private": true,
   "type": "module",
   "description": "Event contracts for Aule: JSON Schema, shared by the Node platform and the Python agent",
