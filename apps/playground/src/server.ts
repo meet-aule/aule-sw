@@ -95,6 +95,8 @@ const STATIC: Record<string, { file: string | URL; type: string }> = {
   "/home.js": { file: new URL("home.js", publicDir), type: "text/javascript; charset=utf-8" },
   // The fixed words for a session that can be resumed or has ended.
   "/session-messages.js": { file: new URL("session-messages.js", publicDir), type: "text/javascript; charset=utf-8" },
+  // A child's first steps: the hand-off, the microphone check on the device and the coached first turn.
+  "/first-steps.js": { file: new URL("first-steps.js", publicDir), type: "text/javascript; charset=utf-8" },
   "/visuals.js": { file: new URL("visuals.js", publicDir), type: "text/javascript; charset=utf-8" },
   "/style.css": { file: new URL("style.css", publicDir), type: "text/css; charset=utf-8" },
   "/icon.svg": { file: new URL("icon.svg", publicDir), type: "image/svg+xml" },
@@ -219,6 +221,7 @@ const OWN_SCRIPTS = new Set([
   "/onboarding.js",
   "/home.js",
   "/session-messages.js",
+  "/first-steps.js",
   "/visuals.js",
   "/admin.js",
   "/pilot.js",
@@ -290,10 +293,15 @@ export function createPlayground(
       throw error;
     }
     if (path === "/api/session/end") {
+      // A session its tutor never started (the platform still has it "created")
+      // has nothing to flush and cost no speech or model time: it closes at
+      // once, and the day's session it took is given back, so a family whose
+      // tutor did not arrive can try again (the plan does not count it either).
+      const started = state.status !== "created";
       // Let the tutor flush its final turns and usage before the platform closes.
       // If room teardown or agent cleanup fails, the authorized stop still wins.
       const removed = await rooms.deleteRoom(saved.session.room).then(() => true, () => false);
-      if (removed) {
+      if (removed && started) {
         for (let attempt = 0; attempt < 20; attempt++) {
           const current = await platform(settings, endpoint, undefined, token) as typeof state;
           if (current.status === "ended") break;
@@ -301,6 +309,7 @@ export function createPlayground(
         }
       }
       await platform(settings, `${endpoint}/end`, {}, token);
+      if (!started) daily.giveBack(token);
       clear();
       return json(response, 200, { ended: true });
     }

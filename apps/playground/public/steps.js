@@ -29,9 +29,8 @@ export const SEGMENTS = [
  * - needs: what the page must hold for the screen to make sense (see screens.js).
  */
 export const SCREENS = {
-  c00: { code: "C00", name: "¿Quién eres?", nodes: ["160:1649", "160:1727"], surface: "paper", auth: "out", progress: null, back: null },
-  "c00-student": { code: "", name: "Soy alumno", nodes: ["190:1035", "190:834"], surface: "ink", auth: "out", progress: null, back: "c00" },
-  c01: { code: "C01", name: "¿Ya tienes cuenta?", nodes: ["160:1661", "160:1741"], surface: "paper", auth: "out", progress: null, back: "c00" },
+  // A signed-out visit starts here: César retired C00 «¿Quién eres?» on 24 Nov, since the student no longer comes in by the web.
+  c01: { code: "C01", name: "¿Ya tienes cuenta?", nodes: ["160:1661", "160:1741"], surface: "paper", auth: "out", progress: null, back: null },
   p01: { code: "P01", name: "¿Cómo quieres entrar?", nodes: ["160:1636", "160:1455"], surface: "paper", auth: "out", progress: [0, 1], back: "c01" },
   p02: { code: "P02", name: "Tu correo", nodes: ["160:1624", "160:1755"], surface: "paper", auth: "out", progress: [0, 2], plainComingBack: true, back: "p01" },
   p03: { code: "P03", name: "Código", nodes: ["160:1604", "160:1768"], surface: "paper", auth: "out", progress: [0, 3], plainComingBack: true, back: "p02", needs: "email" },
@@ -48,6 +47,8 @@ export const SCREENS = {
   p15: { code: "P15", name: "Escríbenos", nodes: ["160:1701", "160:1962"], surface: "paper", auth: "out", progress: null, back: "p14" },
   home: { code: "", name: "Tus alumnos", nodes: ["161:2101", "161:2110", "161:2104", "161:2096"], surface: "paper", auth: "in", progress: null, back: null },
   editor: { code: "", name: "Configurar", nodes: ["161:2101", "160:1355", "160:1374", "160:1397", "160:1392", "161:2104"], surface: "paper", auth: "in", progress: null, back: "home", needs: "editing" },
+  // The hand-off from P12's «Empezar su primera sesión»: the parent's browser becomes the child's screen.
+  a02: { code: "A02", name: "¿Eres tú?", nodes: ["410:629"], surface: "ink", auth: "in", progress: null, back: "p12", needs: "handoff" },
   a04: { code: "A04", name: "¿Qué hacemos hoy?", nodes: ["190:891"], surface: "ink", auth: "in", progress: null, back: "home", needs: "student" },
   "a04-details": { code: "", name: "Detalles", nodes: ["190:891", "191:1333", "190:834"], surface: "ink", auth: "in", progress: null, back: "a04", needs: "objective" },
   a05: { code: "A05", name: "Antes de empezar", nodes: ["190:899", "190:1005"], surface: "ink", auth: "in", progress: null, back: "a04", needs: "student" },

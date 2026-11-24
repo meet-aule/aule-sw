@@ -59,7 +59,7 @@ test("the progress has three named parts of 4, 4 and 2 steps, filled up to the s
 });
 
 test("outside the onboarding, and for a family coming back, the header is the plain line", () => {
-  for (const id of ["c00", "c01", "p13", "p14", "p15", "home", "editor"]) assert.equal(drawn(id), "plain", id);
+  for (const id of ["c01", "p13", "p14", "p15", "home", "editor"]) assert.equal(drawn(id), "plain", id);
   for (const id of ["p02", "p03", "p03-name"]) assert.equal(drawn(id, "back"), "plain", `${id} coming back`);
   assert.equal(drawn("p04", "back"), "4/4* 0/4 0/2", "adding a child is onboarding, whoever starts it");
 });
@@ -189,4 +189,24 @@ test("every screen has its surface, a way back that exists, and the Figma nodes 
     if (screen.back) assert.ok(screen.back in SCREENS, `${id} goes back to ${screen.back}`);
     assert.ok(screen.nodes.length > 0 && screen.nodes.every((node) => /^\d+:\d+$/.test(node)), id);
   }
+});
+
+test("a signed-out visit starts at C01, which has no way back: C00 was retired on 24 Nov", () => {
+  assert.ok(!("c00" in SCREENS) && !("c00-student" in SCREENS));
+  assert.equal(SCREENS.c01.back, null);
+  assert.equal(SCREENS.p13.back, "c01", "P13's «← Atrás» still reaches C01");
+  // Nothing leads back to a screen that is gone.
+  for (const [id, screen] of Object.entries(SCREENS)) assert.ok(!String(screen.back).startsWith("c00"), id);
+});
+
+test("a02, the hand-off, is the device's A02 on ink: no progress, it needs the child handed over, and it goes back to P12", () => {
+  const { a02 } = SCREENS;
+  assert.equal(a02.code, "A02");
+  assert.deepEqual(a02.nodes, ["410:629"]);
+  assert.equal(a02.surface, "ink");
+  assert.equal(a02.auth, "in");
+  assert.equal(a02.progress, null);
+  assert.equal(drawn("a02"), "plain");
+  assert.equal(a02.needs, "handoff");
+  assert.equal(a02.back, "p12");
 });

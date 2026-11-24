@@ -206,6 +206,28 @@ test("the daily limit counts per sign-in and starts over the next day", () => {
   assert.equal(limit.take("a"), true);
 });
 
+test("a day's session its tutor never started is given back, at most as many times as the day has", () => {
+  let now = 0;
+  const limit = new DailyLimit(1, () => now);
+
+  // Nothing taken, nothing to give back.
+  limit.giveBack("a");
+  assert.equal(limit.take("a"), true);
+  assert.equal(limit.take("a"), false);
+  limit.giveBack("a");
+  assert.equal(limit.take("a"), true);
+  // Starting and closing sessions at once has an end.
+  limit.giveBack("a");
+  assert.equal(limit.take("a"), false);
+  // Another sign-in's is its own, and a new day starts over.
+  limit.giveBack("b");
+  assert.equal(limit.take("b"), true);
+  now = 86_400_000;
+  assert.equal(limit.take("a"), true);
+  limit.giveBack("a");
+  assert.equal(limit.take("a"), true);
+});
+
 test("a student is removed only signed in, as the guardian", async () => {
   assert.equal((await post("student/remove", { student_id: STUDENT })).status, 401);
   assert.equal((await post("student/remove", { student_id: "nope" }, COOKIE)).status, 400);

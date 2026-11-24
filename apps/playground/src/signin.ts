@@ -69,26 +69,47 @@ export function clearedSourceCookie(basePath: string): string {
 export class DailyLimit {
   readonly #perDay: number;
   readonly #now: () => number;
-  readonly #used = new Map<string, { day: number; count: number }>();
+  // `returned`: how many of the day's sessions were given back (giveBack).
+  readonly #used = new Map<string, { day: number; count: number; returned: number }>();
 
   constructor(perDay: number, now: () => number = Date.now) {
     this.#perDay = perDay;
     this.#now = now;
   }
 
+  #today(): number {
+    return Math.floor(this.#now() / 86_400_000);
+  }
+
+  // The token itself is never kept, only what tells two sign-ins apart.
+  #key(token: string): string {
+    return createHash("sha256").update(token).digest("base64url");
+  }
+
   /** Counts one session for this sign-in. False when the day's sessions are used up. */
   take(token: string): boolean {
-    const day = Math.floor(this.#now() / 86_400_000);
-    // The token itself is never kept, only what tells two sign-ins apart.
-    const key = createHash("sha256").update(token).digest("base64url");
+    const day = this.#today();
+    const key = this.#key(token);
     const entry = this.#used.get(key);
     if (!entry || entry.day !== day) {
       for (const [other, value] of this.#used) if (value.day !== day) this.#used.delete(other);
-      this.#used.set(key, { day, count: 1 });
+      this.#used.set(key, { day, count: 1, returned: 0 });
       return this.#perDay >= 1;
     }
     if (entry.count >= this.#perDay) return false;
     entry.count += 1;
     return true;
+  }
+
+  /**
+   * Gives back one of today's sessions of this sign-in: one its tutor never
+   * started, which cost no speech or model time. At most as many a day as the
+   * day allows, so starting and closing sessions at once cannot go on forever.
+   */
+  giveBack(token: string): void {
+    const entry = this.#used.get(this.#key(token));
+    if (!entry || entry.day !== this.#today() || entry.count === 0 || entry.returned >= this.#perDay) return;
+    entry.count -= 1;
+    entry.returned += 1;
   }
 }

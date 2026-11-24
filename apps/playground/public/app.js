@@ -1,11 +1,13 @@
-// The playground page: lets the person check their camera and microphone
-// (A05 Antes de empezar), asks the server for a room token, joins the room,
-// and shows what the tutor is doing (A15 La sesión empezó, then the session).
+// The playground page: lets the person check their microphone, on this device
+// only, and their camera (A05 Antes de empezar), asks the server for a room
+// token, joins the room, and shows what the tutor is doing (A15 La sesión
+// empezó, or A16 Hola, soy Aule on a first run, then the session).
 
-import { purposeAsked, sessionRequest } from "./home.js";
-import { current, go, need, onAccount, onHide, onShow } from "./screens.js";
+import { firstRun, purposeAsked, sessionRequest } from "./home.js";
+import { back, current, go, need, onAccount, onHide, onShow } from "./screens.js";
 import { TOPIC as VISUAL_TOPIC, renderVisual } from "./visuals.js";
 import { endedMessage, languageOf, recoveryMessage } from "./session-messages.js";
+import { COACH_HOLD_MS, HINTS_MS, VOICE, WINDOW_MS, cameraProblem, heard, isTap, levelOf, micProblem, words } from "./first-steps.js";
 
 const { Room, RoomEvent, Track, ParticipantKind, DisconnectReason } = LivekitClient;
 
@@ -23,16 +25,20 @@ const SHOWN_MS = 1500;
 // How long the microphone stays open after the button is let go, so the last
 // syllable is not cut.
 const TALK_TAIL_MS = 200;
+// How long the page waits for the tutor before it says Aule did not arrive.
 const TUTOR_WAIT_MS = 15_000;
+// How long a new session waits for an attempt that is still closing (see retry-session),
+// and after how long of that wait A05 says «Un momento…».
+const ENDING_WAIT_MS = 8000;
+const CLOSING_NOTE_MS = 300;
 
+// The tutor's tile; Aule not arriving is said in the session's language (session-messages.js).
 const STATE_TEXT = {
   waiting: "Esperando a Aule…",
   initializing: "Aule se está preparando…",
   listening: "Te escucho",
   thinking: "Pensando…",
   speaking: "Hablando",
-  missing:
-    "Aule no pudo entrar a la sesión. Inténtalo otra vez en un momento.",
   left: "Aule salió de la sesión.",
   reconnecting: "Se perdió la conexión. Reconectando…",
 };
@@ -72,10 +78,14 @@ const ERRORS = {
 const $ = (id) => document.getElementById(id);
 const message = $("message");
 
-// What the person chose before joining. Both start on.
-const wanted = { mic: true, cam: true };
+// What the person chose before joining. The microphone starts on; the camera
+// starts off and is asked for only when it is turned on (D12). A05's camera
+// only shows what it sees: the session never turns the camera on for it.
+const wanted = { mic: true, cam: false };
+// A05's microphone, its meter, and the camera when it was turned on there.
 let preview = null;
 let meter = null;
+let lobbyCamera = null;
 
 // Push-to-talk, when the tutor works that way.
 let tutorIdentity = null;
@@ -88,6 +98,18 @@ let showing = false;
 let tutorReady = false;
 let manualTurns = false;
 let talking = false;
+// Whether the tutor has come into this session at all; until it has, the clock
+// does not show and the session's «Cámara» cannot be pressed.
+let tutorCame = false;
+// Whether Aule did not arrive in time (tutorMissing): the session says so until it does.
+let tutorLate = false;
+// A first run (home.js firstRun()): A16's words in the title, and the coach.
+let firstSession = false;
+// An attempt Aule did not arrive at, while the platform closes it.
+let ending = Promise.resolve();
+// Until that close is done, or for ENDING_WAIT_MS at most: the platform starts no other
+// session until then, and the closing one must not be offered to carry on.
+const closing = () => Promise.race([ending, new Promise((resolve) => setTimeout(resolve, ENDING_WAIT_MS))]);
 
 let room = null;
 let clock = null;
@@ -116,6 +138,12 @@ const recoveryText = (key, language = sessionLanguage()) => recoveryMessage(key,
 function write(element, text, language = sessionLanguage()) {
   element.textContent = text;
   element.lang = languageOf(language);
+}
+
+/** first-steps.js's words for `key`, in the session's language, written as write() does. */
+function writeWords(element, key) {
+  const language = sessionLanguage();
+  write(element, words(key, language), language);
 }
 
 // Carrying on or closing a session; what went wrong is always one of the fixed
@@ -166,6 +194,9 @@ async function offerRecovery() {
   write($("restart"), recoveryText("restart"));
   // An answer for another student, or one that comes after A05 was left, is not shown.
   const stale = () => student !== sessionRequest()?.student_id || room || current() !== "a05";
+  // An attempt Aule did not arrive at is not offered to carry on while it closes.
+  await closing();
+  if (stale()) return;
   try {
     const response = await fetch("api/session/recovery");
     if (!response.ok) throw new Error("unavailable");
@@ -214,10 +245,12 @@ async function explainClose(id, connectionLost) {
   else tellEnded(recoveryText("ended"), endedMessage(null, sessionRequest()?.language));
 }
 
-// «Terminar», or the time is up: the platform is told, and the end screen says so.
-function finishSession(line = endedMessage("child_ended", sessionRequest()?.language)) {
+// «Terminar», or the time is up: the platform is told, and the end screen says
+// so. A session Aule never came to says that it does not count, and it does
+// not: the platform counts only a session that started (plans.rs).
+function finishSession(line) {
   const id = sessionId;
-  leave(line);
+  leave(line ?? (tutorCame ? endedMessage("child_ended", sessionRequest()?.language) : recoveryText("no_tutor")));
   if (id) sessionAction("end", { session_id: id }).catch(() => {
     if (!room) tellEnded(recoveryText("ended"), recoveryText("close_failed"));
   });
@@ -242,11 +275,21 @@ function showMessage(text, tone = "error", language) {
 // For something that went wrong once and can be tried again: it does not stay
 // on the screen for the rest of the session.
 const PASSING_MS = 8000;
-function showPassingMessage(text) {
-  showMessage(text);
+function showPassingMessage(text, language) {
+  showMessage(text, "error", language);
   setTimeout(() => {
     if (message.textContent === text) showMessage("");
   }, PASSING_MS);
+}
+
+/**
+ * Hides a button that goes when what it offers is done. If it has the focus,
+ * the screen's title takes it, so the keyboard's place is not lost to the page.
+ */
+function hideKeepingFocus(button, title) {
+  if (button.hidden) return;
+  if (document.activeElement === button) title.focus({ preventScroll: true });
+  button.hidden = true;
 }
 
 // What Aule's face does in each state of the session.
@@ -262,12 +305,24 @@ const MASCOT_STATE = {
 };
 
 // The face takes the dot's place once its script has loaded; in a browser
-// that cannot run it, the dot stays.
-customElements.whenDefined("wobnimo-mascot").then(() => $("tutor").classList.add("has-mascot"));
+// that cannot run it, the dot stays, and A05's check does without a face.
+customElements.whenDefined("wobnimo-mascot").then(() => {
+  $("tutor").classList.add("has-mascot");
+  $("mic-check").classList.add("has-mascot");
+});
 
 function setTutorState(state) {
   $("tutor").dataset.state = state;
-  $("tutor-state").textContent = STATE_TEXT[state] ?? state;
+  const line = $("tutor-state");
+  if (state === "missing") {
+    // Said once, politely, in the line under the title (showIntro): the tile
+    // shows it without saying it again.
+    line.setAttribute("aria-live", "off");
+    write(line, recoveryText("tutor_missing_short"));
+  } else {
+    line.removeAttribute("aria-live");
+    write(line, STATE_TEXT[state] ?? state, "es");
+  }
   $("mascot").setAttribute("state", MASCOT_STATE[state] ?? "idle");
 }
 
@@ -303,6 +358,8 @@ function setRound(button, on) {
   icon.dataset.icon = on ? base : CROSSED[base];
   const says = $(button.getAttribute("aria-describedby"));
   says.textContent = on ? says.dataset.on : says.dataset.off;
+  // César's sentences are the page's own Spanish.
+  says.removeAttribute("lang");
 }
 
 function startClock(seconds) {
@@ -555,6 +612,7 @@ function watchTutor(participant) {
   if (participant.kind !== ParticipantKind.AGENT) return;
   clearTimeout(tutorTimer);
   tutorIdentity = participant.identity;
+  if (!tutorCame) tutorArrived();
   const state = participant.attributes[AGENT_STATE] ?? "initializing";
   setTutorState(state);
   usePhotos(participant.attributes[SHOW_WORK] === "rpc");
@@ -604,13 +662,91 @@ function showTalk() {
   document.querySelector("main").classList.toggle("push-to-talk", manualTurns);
   $("talk").disabled = !wanted.mic;
   $("talk").setAttribute("aria-pressed", String(talking));
-  $("talk").textContent = !wanted.mic
-    ? "El micrófono está apagado"
-    : talking
-      ? "Te escucho… suelta para enviar"
-      : touchOnly
-        ? "Mantén apretado para hablar"
-        : "Mantén apretado para hablar (o la barra espaciadora)";
+  // The label has a span of its own: the level bar sits next to it, in the
+  // button. In the student's language, like the coach above it.
+  writeWords($("talk-label"), !wanted.mic ? "talk_off" : talking ? "talk_listening" : touchOnly ? "talk_hold" : "talk_hold_key");
+  showCoach();
+}
+
+// --- The talk button's coach (a web-only state of the talk button) -------------
+//
+// Holding is taught where it is used, at the first turns: on a first run a line
+// above the button says how, until a hold long enough to carry a voice; in any
+// session, a press too short to carry one gets a hint, three times at most.
+// What the button sends does not change. The line is a status, in the
+// student's language, never hidden, only empty.
+
+const COACH_DONE_MS = 2000;
+const TAP_HINT_MS = 4000;
+const TAP_HINTS = 3;
+let coaching = false;
+// A passing line (a tap's hint, or «Eso es.») over the coach's own, and how many taps were hinted.
+let coachHint = null;
+let coachTimer = 0;
+let taps = 0;
+
+function showCoach() {
+  const key = manualTurns && tutorReady && wanted.mic ? (coachHint ?? (coaching ? "coach" : "")) : "";
+  const line = $("talk-coach");
+  const text = words(key, sessionLanguage());
+  if (line.textContent !== text) write(line, text);
+  // On a phone the line sits over the page, above the fixed button: the session leaves it room.
+  document.querySelector("main").classList.toggle("coached", Boolean(text));
+}
+
+function coachSays(key, ms) {
+  clearTimeout(coachTimer);
+  coachHint = key;
+  coachTimer = setTimeout(() => {
+    coachHint = null;
+    showCoach();
+  }, ms);
+  showCoach();
+}
+
+/** Looks at a hold of the talk button once it is let go: `voiced` is null when nothing could measure it. */
+function coachAfter(held, voiced) {
+  if (isTap(held, voiced === true)) {
+    if (taps < TAP_HINTS) {
+      taps += 1;
+      coachSays("coach_tap", TAP_HINT_MS);
+    }
+    return;
+  }
+  if (coaching && held >= COACH_HOLD_MS && voiced !== false) {
+    coaching = false;
+    coachSays("coach_done", COACH_DONE_MS);
+  }
+}
+
+function stopCoach() {
+  clearTimeout(coachTimer);
+  coachHint = null;
+  coaching = false;
+  taps = 0;
+}
+
+// While the button is held, a bar in it follows the microphone's level: the
+// session's own track, measured in this browser as A05's is.
+let heldAt = 0;
+// Whether the hold had a voice in it; null when nothing measured it.
+let talkVoice = null;
+let talkMeter = null;
+
+function startTalkMeter() {
+  stopTalkMeter();
+  const track = room?.localParticipant.getTrackPublication(Track.Source.Microphone)?.track?.mediaStreamTrack;
+  if (!track) return;
+  talkMeter = startMeter(new MediaStream([track]), $("talk-bar"), (level) => {
+    if (level >= VOICE) talkVoice = true;
+  });
+  if (talkMeter && talkVoice === null) talkVoice = false;
+}
+
+function stopTalkMeter() {
+  stopMeter(talkMeter);
+  talkMeter = null;
+  $("talk-bar").style.width = "0%";
 }
 
 function turn(method) {
@@ -620,10 +756,13 @@ function turn(method) {
 async function startTalking() {
   if (!room || !manualTurns || talking || !wanted.mic || !tutorIdentity) return;
   talking = true;
+  heldAt = performance.now();
+  talkVoice = null;
   heldLines = [];
   showTalk();
   try {
     await room.localParticipant.setMicrophoneEnabled(true);
+    if (talking) startTalkMeter();
     await turn("start_turn");
   } catch {
     await stopTalking("cancel_turn");
@@ -634,6 +773,9 @@ async function startTalking() {
 async function stopTalking(method = "end_turn") {
   if (!talking) return;
   talking = false;
+  // Let go: the coach looks at the hold as it was, before the tail.
+  if (method === "end_turn") coachAfter(performance.now() - heldAt, talkVoice);
+  stopTalkMeter();
   showTalk();
   const speaking = room;
   if (method === "end_turn") await new Promise((done) => setTimeout(done, TALK_TAIL_MS));
@@ -652,33 +794,94 @@ function showCamera() {
   if (on) publication.track.attach($("camera"));
   $("camera").hidden = !on;
   $("camera-off").hidden = on;
-  $("camera-off").textContent = photos ? "La cámara se enciende solo cuando muestras tu tarea" : "Cámara apagada";
+  if (photos) writeWords($("camera-off"), "camera_note");
+  else write($("camera-off"), "Cámara apagada", "es");
   if (photos) {
     $("cam").setAttribute("aria-pressed", String(showing));
-    $("cam").textContent = showing ? "Mostrando…" : "Mostrar mi tarea";
+    writeWords($("cam"), showing ? "showing_work" : "show_work");
     $("cam").disabled = showing;
   } else {
-    $("cam").disabled = false;
+    // Nothing is filmed for a room the tutor has not reached.
+    $("cam").disabled = !tutorCame;
+    $("cam").removeAttribute("lang");
     setToggle($("cam"), "Cámara", on);
   }
 }
 
-// With a tutor that takes pictures, nothing is filmed between them.
+// With a tutor that takes pictures, nothing is filmed between them. The camera
+// never goes on by itself: not as the session joins, nor as the tutor comes in
+// or says how it works, since a tutor says it takes pictures only at the end
+// of its start-up, and until then every tutor looks like one that takes none.
+// It goes on when the child asks: «Mostrar mi tarea», or, with a tutor that
+// takes no pictures, the session's «Cámara» once the tutor is in.
 function usePhotos(on) {
-  if (on === photos || !room) return;
+  if (!room || on === photos) return;
   photos = on;
   if (on && !showing) room.localParticipant.setCameraEnabled(false).then(showCamera, showCamera);
   else showCamera();
 }
 
+// The tutor is in: the clock shows, the session's «Cámara» can be pressed, and
+// a session that said Aule did not arrive says what it says when Aule does.
+function tutorArrived() {
+  tutorCame = true;
+  $("clock").hidden = false;
+  hideKeepingFocus($("retry-session"), $("session-title"));
+  if (tutorLate) {
+    tutorLate = false;
+    showIntro();
+  }
+  if (room) showCamera();
+}
+
+// Aule did not arrive in time: its tile says so, the line under A15's title
+// says it is nobody's fault, and «Intentar otra vez» goes back to A05.
+function tutorMissing() {
+  if (!room || tutorCame) return;
+  tutorLate = true;
+  setTutorState("missing");
+  showIntro();
+  writeWords($("retry-session"), "retry");
+  $("retry-session").hidden = false;
+}
+
+// The session's title, and the line under it.
+const SESSION_TITLE = $("session-title").textContent;
+
+/**
+ * The session's title and the line under it: A15's «La sesión empezó.», or on
+ * a first run A16's «Hola, soy Aule» and «Soy tu tutor. Soy una inteligencia
+ * artificial.», in the student's language. While Aule does not arrive, A15's
+ * title and the line that says so (a web-only state): A16's words wait for
+ * Aule. The line is a status, never hidden, only empty, so that Aule not
+ * arriving is said once, and politely.
+ */
+function showIntro() {
+  if (tutorLate) {
+    write($("session-title"), SESSION_TITLE, "es");
+    write($("session-intro"), recoveryText("tutor_missing"));
+  } else if (firstSession) {
+    writeWords($("session-title"), "intro_title");
+    writeWords($("session-intro"), "intro_line");
+  } else {
+    write($("session-title"), SESSION_TITLE, "es");
+    write($("session-intro"), "", "es");
+  }
+}
+
 // One picture of the work: the camera goes on, the tutor is told to look, and
-// the camera goes off again.
+// the camera goes off again. This may be the first time the browser is asked
+// for the camera: what it says is said as such (first-steps.js cameraProblem).
 async function showWork() {
   if (showing || !room || !tutorIdentity) return;
   showing = true;
   showMessage("");
+  let trouble = "camera_unseen";
   try {
-    await room.localParticipant.setCameraEnabled(true);
+    await room.localParticipant.setCameraEnabled(true).catch((error) => {
+      trouble = cameraProblem(error?.name);
+      throw error;
+    });
     showCamera();
     // The default timeout on purpose: the tutor waits up to two seconds for a
     // frame, and a shorter limit here would cut that wait.
@@ -689,14 +892,16 @@ async function showWork() {
     });
     if (seen !== "ok") throw new Error("no frame");
     // The tutor hears a fixed line for this; the page writes the same one.
-    const line = item("Mira mi trabajo.");
+    const line = item("");
+    writeWords(line, "shown_work");
     line.dataset.who = "you";
     line.dataset.name = "Tú";
     $("transcript").append(line);
     followTranscript(true);
     await new Promise((resolve) => setTimeout(resolve, SHOWN_MS));
   } catch {
-    showPassingMessage("Aule no pudo ver la cámara. Acerca la hoja e inténtalo otra vez.");
+    const language = sessionLanguage();
+    showPassingMessage(words(trouble, language), language);
   } finally {
     showing = false;
     await room?.localParticipant.setCameraEnabled(false).catch(() => undefined);
@@ -704,7 +909,16 @@ async function showWork() {
   }
 }
 
-async function join(session) {
+async function join(session, { resumed = false } = {}) {
+  // The clock shows once the tutor is in, counting to the same deadline: it may
+  // come in while the room connects.
+  tutorCame = false;
+  tutorLate = false;
+  $("clock").hidden = true;
+  $("retry-session").hidden = true;
+  // A session carried on after a reload has had its first turns already.
+  firstSession = !resumed && firstRun();
+  coaching = firstSession;
   room = new Room({
     adaptiveStream: true,
     dynacast: true,
@@ -756,12 +970,14 @@ async function join(session) {
   await room.connect(session.serverUrl, session.token);
   await room.startAudio();
   setTutorState("waiting");
-  tutorTimer = setTimeout(() => setTutorState("missing"), TUTOR_WAIT_MS);
+  // Until the tutor is in, after a while, the page says Aule did not arrive.
+  tutorTimer = setTimeout(tutorMissing, TUTOR_WAIT_MS);
+  showIntro();
   room.remoteParticipants.forEach(watchTutor);
   sessionId = session.session_id ?? null;
   startClock(session.expiresInSeconds);
   if (session.session_id && session.engine === true) followSteps(session.session_id);
-  // A15: «La sesión empezó.», with the microphone as A05 left it.
+  // A15: «La sesión empezó.» (A16 on a first run), with the microphone as A05 left it.
   go("session");
   if (inkMode) showInk();
   play(hello);
@@ -769,114 +985,248 @@ async function join(session) {
   await syncMicrophone();
   setRound($("mic"), wanted.mic);
   showTalk();
-  try {
-    await room.localParticipant.setCameraEnabled(wanted.cam);
-  } catch {
-    // No camera, or the person said no: the tutor still works by voice.
-  }
+  // The camera stays off: it goes on only when the child asks (usePhotos).
   showCamera();
 }
 
-function stopPreview() {
-  cancelAnimationFrame(meter?.frame);
-  meter?.context.close().catch(() => undefined);
+// --- A05: the microphone, checked on this device only --------------------------
+//
+// The level of A05's own microphone moves the bar; once a voice has been heard
+// for long enough (first-steps.js heard()), the status line says «Te escucho.»
+// and Aule's face answers. An AnalyserNode reads the stream and is never
+// connected to the speakers; the page keeps the last moments' levels, numbers
+// only, while A05 shows. Nothing reaches a room, a server or a recording. The
+// check never holds back «Empezar la sesión».
+
+// How long Aule's face speaks when «Te escucho.» appears, and listens after the last voice.
+const FACE_SPEAKS_MS = 1200;
+const FACE_LISTENS_MS = 400;
+// hello() and its echo, then a little more: the chime cannot pass the check for the child.
+const HELLO_MS = 1600;
+const AFTER_CHIME_MS = 300;
+
+// The check while A05's microphone works: its levels, since when it listens,
+// the last voice, and whether one was heard (once per showing).
+let check = null;
+// Why the microphone cannot be used (a key of first-steps.js), or null.
+let micTrouble = null;
+// What the status line says now, a key of first-steps.js.
+let checkLine = null;
+let faceSpeaksUntil = 0;
+
+function startCheck() {
+  check = { levels: [], since: performance.now(), voiceAt: null, heard: false, quietUntil: 0 };
+}
+
+function onLobbyLevel(level, now) {
+  if (!check) return;
+  // Nothing counts while the microphone is off, nor while the chime plays.
+  const counted = wanted.mic && now >= check.quietUntil ? level : 0;
+  check.levels.push({ at: now, level: counted });
+  while (check.levels.length && check.levels[0].at < now - WINDOW_MS - 200) check.levels.shift();
+  if (counted >= VOICE) check.voiceAt = now;
+  if (!check.heard && heard(check.levels, now)) {
+    check.heard = true;
+    faceSpeaksUntil = Math.max(faceSpeaksUntil, now + FACE_SPEAKS_MS);
+  }
+  showCheck(now);
+}
+
+// The status line, «Intentar otra vez» and Aule's face, as things stand: one
+// line at a time, each written once.
+function showCheck(now = performance.now()) {
+  let key = "";
+  if (micTrouble) key = micTrouble;
+  else if (check && wanted.mic) {
+    const quiet = now - (check.voiceAt ?? check.since);
+    if (check.heard) key = "check_heard";
+    else if (quiet >= HINTS_MS[1]) key = "check_other_app";
+    else if (quiet >= HINTS_MS[0]) key = "check_quiet";
+    else key = "check_prompt";
+  }
+  if (key !== checkLine) {
+    checkLine = key;
+    writeWords($("check-status"), key);
+  }
+  // It runs on every frame of the meter: only what changes is written. Once the
+  // microphone works, «Intentar otra vez» goes, and its focus to A05's title.
+  const retry = Boolean(micTrouble) || key === "check_other_app";
+  if (!retry) hideKeepingFocus($("mic-retry"), $("a05-title"));
+  else if ($("mic-retry").hidden) $("mic-retry").hidden = false;
+  const listening = check?.voiceAt != null && now - check.voiceAt < FACE_LISTENS_MS;
+  const face = now < faceSpeaksUntil ? "speaking" : listening ? "listening" : "idle";
+  if ($("check-face").getAttribute("state") !== face) $("check-face").setAttribute("state", face);
+}
+
+function stopLobbyMicrophone() {
+  stopMeter(meter);
   meter = null;
+  check = null;
   preview?.getTracks().forEach((track) => track.stop());
   preview = null;
+}
+
+function stopLobbyCamera() {
+  lobbyCamera?.getTracks().forEach((track) => track.stop());
+  lobbyCamera = null;
   $("preview").srcObject = null;
 }
 
+function stopPreview() {
+  stopLobbyMicrophone();
+  stopLobbyCamera();
+}
+
 function showPreview() {
-  const video = preview?.getVideoTracks()[0];
   const audio = preview?.getAudioTracks()[0];
-  if (video) video.enabled = wanted.cam;
   if (audio) audio.enabled = wanted.mic;
-  const seen = Boolean(video) && wanted.cam;
-  $("preview").hidden = !seen;
-  $("preview-off").hidden = seen;
-  $("level").hidden = !(audio && wanted.mic);
-  setRound($("lobby-mic"), wanted.mic);
+  // What the camera sees, while it is on; off, the sentence says so.
+  $("preview-frame").hidden = !(Boolean(lobbyCamera?.getVideoTracks()[0]) && wanted.cam);
+  // The bar and its line, while there is a microphone on to measure.
+  const measured = Boolean(audio) && wanted.mic;
+  $("level").hidden = !measured;
+  $("level-line").hidden = !measured;
+  // A microphone that cannot be used is neither on nor off: its button cannot
+  // be pressed (dashed, D14), and its sentence says so.
+  setRound($("lobby-mic"), wanted.mic && !micTrouble);
+  $("lobby-mic").disabled = Boolean(micTrouble);
+  if (micTrouble) writeWords($("lobby-mic-text"), "mic_unavailable");
   setRound($("lobby-cam"), wanted.cam);
 }
 
-// Moves a bar with the loudness of the microphone, so the person can tell it
-// hears them before they join.
-function startMeter(stream) {
-  const context = new AudioContext();
-  const analyser = context.createAnalyser();
-  analyser.fftSize = 512;
-  context.createMediaStreamSource(stream).connect(analyser);
-  const samples = new Uint8Array(analyser.fftSize);
-  const bar = $("level").firstElementChild;
-  meter = { context, frame: 0 };
-  const draw = () => {
-    analyser.getByteTimeDomainData(samples);
-    let peak = 0;
-    for (const sample of samples) peak = Math.max(peak, Math.abs(sample - 128));
-    bar.style.width = `${Math.min(100, Math.round((peak / 128) * 250))}%`;
-    if (meter) meter.frame = requestAnimationFrame(draw);
-  };
-  draw();
+/**
+ * Moves `bar` with the loudness of a microphone's stream and tells `onLevel`
+ * each frame's level, 0 to 1. The analyser is not connected to the speakers,
+ * and nothing it hears is kept or sent. Null where the browser cannot measure.
+ */
+function startMeter(stream, bar, onLevel) {
+  let context = null;
+  try {
+    context = new AudioContext();
+    const analyser = context.createAnalyser();
+    analyser.fftSize = 512;
+    context.createMediaStreamSource(stream).connect(analyser);
+    const samples = new Uint8Array(analyser.fftSize);
+    const running = { context, frame: 0, stopped: false };
+    const draw = () => {
+      if (running.stopped) return;
+      analyser.getByteTimeDomainData(samples);
+      const level = levelOf(samples);
+      bar.style.width = `${Math.round(level * 100)}%`;
+      onLevel(level, performance.now());
+      running.frame = requestAnimationFrame(draw);
+    };
+    context.resume().catch(() => undefined);
+    draw();
+    return running;
+  } catch {
+    context?.close().catch(() => undefined);
+    return null;
+  }
 }
 
-// Each showing of A05 asks for the devices once; an answer to an earlier
-// showing that comes late lets its devices go.
-let lobbyAsked = 0;
+function stopMeter(running) {
+  if (!running) return;
+  running.stopped = true;
+  cancelAnimationFrame(running.frame);
+  running.context.close().catch(() => undefined);
+}
 
-async function openLobby() {
-  const asked = ++lobbyAsked;
-  mediaReady = false;
+// Each ask for the microphone, and each showing of A05: an answer that comes
+// after another ask, or after A05 was left, lets its device go.
+let lobbyAsked = 0;
+let lobbyShown = 0;
+let cameraAsking = false;
+
+function openLobby() {
   wanted.mic = true;
-  wanted.cam = true;
-  $("lobby-note").textContent = "";
-  // Joining, carrying on and starting another wait until the devices have
-  // answered, so only one thing holds them.
+  wanted.cam = false;
+  faceSpeaksUntil = 0;
+  writeWords($("lobby-note"), "");
+  writeWords($("sound-line"), "");
+  // The check's own words, in the student's language; nothing of the last showing's.
+  writeWords($("level-line"), "check_line");
+  writeWords($("mic-retry"), "retry");
+  writeWords($("sound-test"), "sound_test");
+  writeWords($("lobby-cam-note"), "camera_note");
+  checkLine = null;
+  showCheck();
+  showPreview();
+  askMicrophone();
+}
+
+// The microphone alone: the camera is asked for only when it is turned on.
+async function askMicrophone() {
+  const asked = ++lobbyAsked;
+  stopLobbyMicrophone();
+  mediaReady = false;
+  micTrouble = null;
+  checkLine = null;
+  // Joining, carrying on and starting another wait until the microphone has
+  // answered, so only one thing holds it.
   for (const id of ["join", "resume", "restart"]) $(id).disabled = true;
-  let usable = true;
   let stream = null;
+  let trouble = null;
   try {
     stream = await navigator.mediaDevices.getUserMedia({
       audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-      video: { facingMode: { ideal: "environment" } },
     });
-  } catch {
-    // No camera, or only the camera was refused: try the microphone alone.
-    wanted.cam = false;
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-      });
-      $("lobby-note").textContent = "No se encontró o no se permitió la cámara. Igual puedes entrar con voz.";
-    } catch {
-      wanted.mic = false;
-      $("lobby-note").textContent =
-        "El navegador bloqueó el micrófono. Permítelo en la barra de direcciones y vuelve a intentarlo.";
-      usable = false;
-    }
+  } catch (error) {
+    trouble = micProblem(error?.name);
   }
-  // Left while the browser asked, or asked again since: nothing keeps these devices.
+  // Left while the browser asked, or asked again since: nothing keeps this microphone.
   if (asked !== lobbyAsked || current() !== "a05") {
     stream?.getTracks().forEach((track) => track.stop());
     return;
   }
   preview = stream;
-  mediaReady = usable;
-  for (const id of ["join", "resume", "restart"]) $(id).disabled = !usable;
+  micTrouble = trouble;
+  mediaReady = !trouble;
+  for (const id of ["join", "resume", "restart"]) $(id).disabled = !mediaReady;
   if (preview) {
-    $("preview").srcObject = preview;
-    if (preview.getAudioTracks().length) startMeter(preview);
+    startCheck();
+    meter = startMeter(preview, $("level").firstElementChild, onLobbyLevel);
+    if (!meter) check = null;
   }
   showPreview();
+  showCheck();
+}
+
+// A microphone the browser refused may be allowed in its settings meanwhile:
+// A05 asks again when the page comes back into view, and as soon as the
+// browser says it is allowed, where the browser says so.
+function askAgain() {
+  if (current() === "a05" && micTrouble) askMicrophone();
+}
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") askAgain();
+});
+
+try {
+  navigator.permissions
+    ?.query({ name: "microphone" })
+    .then((status) => {
+      status.addEventListener("change", () => {
+        if (status.state === "granted") askAgain();
+      });
+    })
+    .catch(() => undefined);
+} catch {
+  // A browser that does not know this permission: «Intentar otra vez» and coming back still ask.
 }
 
 // A05 shows the devices each time it shows, and asks whether a session this
 // student had is still open; leaving it lets the devices go.
 onShow("a05", () => {
+  lobbyShown += 1;
   openLobby();
   offerRecovery();
 });
 onHide("a05", () => {
+  lobbyShown += 1;
   mediaReady = false;
+  micTrouble = null;
   stopPreview();
 });
 
@@ -1006,22 +1356,30 @@ function play(tune) {
   }
 }
 
-/** Closes the room and clears what the session showed; false when there was none. */
-function teardown() {
+/**
+ * Closes the room and clears what the session showed; false when there was
+ * none. `quiet`: without the goodbye, for an attempt Aule never came to.
+ */
+function teardown({ quiet = false } = {}) {
   if (!room) return false;
   const leaving = room;
   room = null;
-  play(goodbye);
+  if (!quiet) play(goodbye);
   clearInterval(clock);
   clearTimeout(tutorTimer);
   stopSteps();
+  stopTalkMeter();
+  stopCoach();
   tutorIdentity = null;
+  tutorCame = false;
+  tutorLate = false;
   photos = false;
   showing = false;
   tutorReady = false;
   manualTurns = false;
   talking = false;
   showTalk();
+  $("retry-session").hidden = true;
   leaving.disconnect();
   $("audio").replaceChildren();
   $("board").replaceChildren();
@@ -1107,14 +1465,63 @@ onAccount((account) => {
 need("session", () => room !== null);
 
 $("lobby-mic").addEventListener("click", () => {
+  if (micTrouble) return;
   wanted.mic = !wanted.mic;
+  // On again, the hints count from now.
+  if (wanted.mic && check) {
+    check.since = performance.now();
+    check.voiceAt = null;
+  }
+  showPreview();
+  showCheck();
+});
+
+$("mic-retry").addEventListener("click", () => askMicrophone());
+
+// The camera, asked for only now that it is turned on; off, it is let go, so
+// its light goes out.
+$("lobby-cam").addEventListener("click", async () => {
+  if (wanted.cam) {
+    wanted.cam = false;
+    stopLobbyCamera();
+    return showPreview();
+  }
+  if (cameraAsking) return;
+  cameraAsking = true;
+  const shown = lobbyShown;
+  let stream = null;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" } } });
+  } catch {
+    // No camera, or the person said no: the tutor still works by voice.
+  }
+  cameraAsking = false;
+  if (shown !== lobbyShown || current() !== "a05") {
+    stream?.getTracks().forEach((track) => track.stop());
+    return;
+  }
+  writeWords($("lobby-note"), stream ? "" : "camera_none");
+  if (stream) {
+    lobbyCamera = stream;
+    $("preview").srcObject = stream;
+    wanted.cam = true;
+  }
   showPreview();
 });
 
-$("lobby-cam").addEventListener("click", () => {
-  if (!preview?.getVideoTracks().length) return;
-  wanted.cam = !wanted.cam;
-  showPreview();
+// «Probar el sonido»: the chime Aule joins with, drawn here, and the line that
+// says so. Aule's face speaks while it plays, and the check does not count it.
+$("sound-test").addEventListener("click", () => {
+  readySounds();
+  play(hello);
+  const now = performance.now();
+  if (check) check.quietUntil = now + HELLO_MS + AFTER_CHIME_MS;
+  faceSpeaksUntil = now + HELLO_MS;
+  writeWords($("sound-line"), "sound_line");
+  showCheck(now);
+  setTimeout(() => {
+    if (current() === "a05") showCheck();
+  }, HELLO_MS + 50);
 });
 
 // «Empezar la sesión», and in A05's web-only state «Empezar otra sesión»,
@@ -1139,6 +1546,15 @@ async function startSession() {
     showRecoverable(null);
   }
   if (!purposeAsked()) return go("a04", { replace: true });
+  // An attempt Aule did not arrive at may still be closing: the platform starts
+  // no other session until it has. If that takes a moment, A05's status line
+  // says so, so the disabled buttons are not a silent wait.
+  const note = $("recovery-note");
+  const waiting = setTimeout(() => write(note, recoveryText("checking_title")), CLOSING_NOTE_MS);
+  await closing();
+  clearTimeout(waiting);
+  if (note.textContent === recoveryText("checking_title")) write(note, "");
+  if (current() !== "a05") return;
   try {
     const response = await fetch("api/session", {
       method: "POST",
@@ -1192,7 +1608,7 @@ $("resume").addEventListener("click", async () => {
   lines.clear();
   following = true;
   try {
-    await join(session);
+    await join(session, { resumed: true });
   } catch (error) {
     if (error?.name === "NotAllowedError") joinFailed("El navegador bloqueó el micrófono. Permítelo y empieza otra vez.");
     else joinFailed(recoveryText("failed"), sessionLanguage());
@@ -1245,10 +1661,18 @@ $("device").addEventListener("click", () => {
   }
 });
 
+// «Mostrar mi tarea»; with a tutor that takes no pictures, the camera on and off.
 $("cam").addEventListener("click", async () => {
   if (photos) return showWork();
-  await room.localParticipant.setCameraEnabled(!room.localParticipant.isCameraEnabled);
-  showCamera();
+  const turning = room;
+  if (!turning) return;
+  try {
+    await turning.localParticipant.setCameraEnabled(!turning.localParticipant.isCameraEnabled);
+  } catch (error) {
+    const language = sessionLanguage();
+    showPassingMessage(words(cameraProblem(error?.name), language), language);
+  }
+  if (turning === room) showCamera();
 });
 
 $("type").addEventListener("submit", async (event) => {
@@ -1274,3 +1698,14 @@ $("type").addEventListener("submit", async (event) => {
 });
 
 $("end").addEventListener("click", () => finishSession());
+
+// «Intentar otra vez» when Aule did not arrive: this attempt is closed with the
+// platform, without the goodbye, and A05 shows again with the same purpose. It
+// never started, so the plan does not count it. A new session waits for the
+// close (startSession), since the platform starts no other until then.
+$("retry-session").addEventListener("click", () => {
+  const id = sessionId;
+  if (tutorCame || !teardown({ quiet: true })) return;
+  if (id) ending = sessionAction("end", { session_id: id }).catch(() => undefined);
+  back();
+});

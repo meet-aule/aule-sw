@@ -1,9 +1,10 @@
-// The fixed words for how a session ends and for one a reload left open, in
-// the session's language. They show on the student's screens, in two web-only
-// states the Figma does not draw (FIGMA.md): the end screen after A15 and A05's
-// «¿Seguimos donde nos quedamos?». So they speak as the device does and as the
-// tutor's own lines (apps/agent replies.py) do: to the student, short, warm.
-// They never carry a provider's exception or anything the session held.
+// The fixed words for how a session ends, for one a reload left open and for
+// one whose tutor did not arrive, in the session's language. They show on the
+// student's screens, in web-only states the Figma does not draw (FIGMA.md): the
+// end screen after A15, A05's «¿Seguimos donde nos quedamos?» and the session
+// waiting for Aule. So they speak as the device does and as the tutor's own
+// lines (apps/agent replies.py) do: to the student, short, warm. They never
+// carry a provider's exception or anything the session held.
 
 // Each ending under the end screen's «La sesión terminó.», by the platform's
 // end_reason; "unknown" for a session with no reason kept.
@@ -73,6 +74,11 @@ const RECOVERY = {
     session_active: "Tu sesión está abierta en otra pestaña. Ciérrala o sigue desde allí.",
     session_changed: "Esta sesión cambió en otra pestaña. Vuelve atrás y entra otra vez.",
     recovery_unavailable: "No pudimos revisar tu sesión. Vuelve a intentarlo en un momento.",
+    // The session while Aule does not arrive: the tutor's tile, the line under the
+    // title (with «Intentar otra vez»), and the end screen of a session it never came to.
+    tutor_missing_short: "Aule no pudo llegar.",
+    tutor_missing: "Aule no pudo llegar esta vez. No es tu culpa. Puedes intentarlo otra vez.",
+    no_tutor: "Aule no llegó a esta sesión, así que no cuenta. Cuando quieras, intentamos otra vez.",
   },
   en: {
     resume_title: "Shall we carry on where we left off?",
@@ -92,6 +98,9 @@ const RECOVERY = {
     session_active: "Your session is open in another tab. Close it or carry on from there.",
     session_changed: "This session changed in another tab. Go back and come in again.",
     recovery_unavailable: "We could not check your session. Try again in a moment.",
+    tutor_missing_short: "Aule couldn't make it.",
+    tutor_missing: "Aule couldn't make it this time. It's not your fault. You can try again.",
+    no_tutor: "Aule didn't make it to this session, so it doesn't count. We can try again whenever you like.",
   },
 };
 
