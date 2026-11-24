@@ -823,18 +823,21 @@ h2[tabindex="-1"]:focus {
   height: 18px;
 }
 
-/* P04's «Qué guardamos»: the two choices and what is never kept. */
+/* P04's «Qué guardamos»: the two choices and what is never kept. Open from the
+   start, and tight enough that «Autorizo» stays on a 390×844 phone's screen. */
 .keep-panel {
   display: grid;
-  gap: 14px;
-  padding: 16px;
+  gap: 10px;
+  padding: 14px 16px;
   border: 1.5px solid var(--line);
   border-radius: var(--radius);
   background: var(--surface);
 }
 
+/* Its 44 px target reaches into the space around it, as «← Atrás»'s does. */
 .keep-panel .link {
   justify-self: start;
+  margin-block: -8px;
 }
 
 /* ---- Paper: the family's account and a student's settings ---------------- */
@@ -1148,6 +1151,13 @@ h2[tabindex="-1"]:focus {
   display: none;
 }
 
+/* A05's web-only status line (D22) stays in the accessibility tree while it
+   is empty, so its words are read as they arrive (a live region that appears
+   already filled may not be); out of the flow, it takes no room until then. */
+#recovery-note:empty {
+  position: absolute;
+}
+
 .ink-foot {
   display: flex;
   flex-direction: column;
@@ -1237,6 +1247,19 @@ h2[tabindex="-1"]:focus {
   text-align: left;
   text-decoration: underline;
   text-underline-offset: 4px;
+}
+
+/* A link that cannot be followed yet (A05's «Empezar otra sesión» before the
+   devices answer): dashed, as a disabled device button is (D14), never grey. */
+.ink-link:disabled {
+  text-decoration-style: dashed;
+}
+
+/* Two device links side by side at the bottom left (A05's web-only state). */
+.ink-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 32px;
 }
 
 /* Figma: Íconos · Aparato 190:995 (Material Icons, Apache 2.0), drawn as masks in the control's colour. */
@@ -1395,6 +1418,13 @@ h2[tabindex="-1"]:focus {
 
 .ink-field input:focus-visible,
 .ink-field select:focus-visible {
+  outline: 3px solid var(--device-ink);
+  outline-offset: 3px;
+}
+
+/* A04 · Detalles' day: its last stop is the calendar button inside the field,
+   where the field is :focus-within but neither :focus nor :focus-visible. */
+.ink-field input[type="date"]:focus-within {
   outline: 3px solid var(--device-ink);
   outline-offset: 3px;
 }

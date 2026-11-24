@@ -38,7 +38,9 @@ pub fn room_token(livekit: &LiveKit, token: &RoomToken, now: i64) -> String {
         // The room is created when the person joins, already asking for the tutor.
         "roomConfig": {
             "emptyTimeout": 30,
-            "departureTimeout": 10,
+            // The browser and device must have time to reconnect to this same
+            // room. Closing it early also ends the platform session.
+            "departureTimeout": 120,
             "maxParticipants": 2,
             "agents": [{
                 "agentName": token.agent_name,
@@ -94,6 +96,9 @@ mod tests {
         assert_eq!(claims["exp"], 1_600);
         assert_eq!(claims["video"]["room"], "session-abc");
         assert!(claims["video"].get("roomAdmin").is_none());
+        assert_eq!(claims["roomConfig"]["departureTimeout"], 120);
+        assert_eq!(claims["roomConfig"]["emptyTimeout"], 30);
+        assert_eq!(claims["roomConfig"]["maxParticipants"], 2);
         let dispatch = &claims["roomConfig"]["agents"][0];
         assert_eq!(dispatch["agentName"], "aule-tutor");
         assert_eq!(serde_json::from_str::<Value>(dispatch["metadata"].as_str().unwrap()).unwrap(), metadata);

@@ -15,6 +15,7 @@ export type Session = {
   room: string;
   agentName: string;
   expiresInSeconds: number;
+  engine?: boolean;
 };
 
 export class PlatformError extends Error {
@@ -240,7 +241,8 @@ export async function createSession(settings: Settings, language: Language): Pro
   // other session until the safety gates exist.
   token.roomConfig = new RoomConfiguration({
     emptyTimeout: 30,
-    departureTimeout: 10,
+    // Keep the room while the client reconnects, as platform-issued rooms do.
+    departureTimeout: 120,
     maxParticipants: 2,
     agents: [
       new RoomAgentDispatch({

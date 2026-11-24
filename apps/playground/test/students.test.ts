@@ -135,6 +135,7 @@ const PROFILE = {
 };
 
 test("a profile is a name and, at most, what the page offers", () => {
+  // What was not chosen is not kept: remembering needs an explicit yes.
   assert.deepEqual(profileFrom({ name: " Liam " }), {
     name: "Liam",
     grade: null,
@@ -143,10 +144,11 @@ test("a profile is a name and, at most, what the page offers", () => {
     tone: "calido",
     note: "",
     subjects: null,
-    remembers: true,
+    remembers: false,
     keepsTranscripts: false,
     relationship: null,
   });
+  assert.equal(profileFrom({ name: "Liam", remembers: true })?.remembers, true);
   assert.deepEqual(profileFrom({ name: "Liam", interests: [" fútbol ", "fútbol"] })?.interests, ["fútbol"]);
   assert.equal(profileFrom({ name: "Liam", grade: "" })?.grade, null, "the grade can be left out");
   assert.equal(profileFrom({ name: "Liam", relationship: "" })?.relationship, null, "so can the relationship");

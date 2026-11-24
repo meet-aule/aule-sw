@@ -79,3 +79,18 @@ uv run python -m aule_agent.worker dev
 ```
 
 The contracts are read from `contracts/` at the repository root, or from `AULE_CONTRACTS_DIR` when the agent runs outside the repository (for example, in a container).
+
+### Participant departure
+
+For child sessions, `RoomOptions.close_on_disconnect` is disabled. A 120-second
+grace period preserves the tutor through a page reload; the original session
+clock keeps running. Departure interrupts output and clears uncommitted input;
+the same participant returning cancels the grace timer. An explicit web end
+closes the platform session and deletes the room. Operator sessions keep the
+SDK's immediate disconnect behavior.
+
+Cleanup reports fixed end reasons for the deadline, inactivity, a goodbye,
+provider failure or a participant that did not return. A previously recorded
+platform closure reason wins. Provider exceptions and conversation contents
+are never included in these status messages. Tests use synthetic participants;
+no physical IoT device has been validated for the reload UI.

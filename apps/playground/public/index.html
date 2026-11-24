@@ -254,12 +254,12 @@
                 <span>Soy su padre, madre o apoderado y autorizo que Aule procese su voz para conversar con él y, si usa la cámara, las imágenes de su cuaderno para revisar sus ejercicios.</span>
               </label>
               <button type="button" class="link" id="keep-toggle" aria-expanded="true" aria-controls="keep-panel">Qué guardamos</button>
-              <!-- The Figma does not draw where «Qué guardamos» goes: the two choices the editor keeps, here,
-                   with the editor's defaults (D5): remembering ticked, the written conversation not. Open before
-                   «Autorizo», so the parent sees both and can change either; only the consent above starts unticked. -->
+              <!-- The Figma does not draw where «Qué guardamos» goes: the two choices the editor keeps, here (D5).
+                   Both start unticked: keeping anything is the parent's express choice, a tick of their own
+                   (Ley 29733, DS 016-2024-JUS), like the consent above. Open before «Autorizo», so both are seen. -->
               <div class="keep-panel" id="keep-panel">
                 <label class="check">
-                  <input type="checkbox" id="keep-memory" checked />
+                  <input type="checkbox" id="keep-memory" />
                   <span class="box" aria-hidden="true"></span>
                   <span>Recordar entre sesiones lo que aprende y lo que le gusta</span>
                 </label>
@@ -638,7 +638,7 @@
               <fieldset class="group">
                 <legend>Lo que guardamos</legend>
                 <label class="check">
-                  <input id="student-remembers" type="checkbox" checked />
+                  <input id="student-remembers" type="checkbox" />
                   <span class="box" aria-hidden="true"></span>
                   <span>Recordar entre sesiones lo que aprende y lo que le gusta</span>
                 </label>
@@ -720,7 +720,13 @@
         <div class="ink-frame">
           <div class="ink-body">
             <h2 class="ink-title" id="a05-title" tabindex="-1">Antes de empezar</h2>
-            <p class="ink-text">Recuerda que Aule necesita escucharte para responderte al instante. Si necesitas silenciarte, solo presiona el botón de micrófono.</p>
+            <p class="ink-text" id="a05-text">Recuerda que Aule necesita escucharte para responderte al instante. Si necesitas silenciarte, solo presiona el botón de micrófono.</p>
+            <!-- Figma: web-only state of A05 (190:899), for a session a reload left open: the title asks
+                 «¿Seguimos donde nos quedamos?», this line takes the place of the paragraph above, and the
+                 foot offers Botón/Negro 190:834 «Seguir con la sesión» and a device link (195:513) to start
+                 another. The words are session-messages.js's, in the session's language. The line is
+                 never hidden, only empty, so a screen reader reads its words as they arrive. -->
+            <p class="ink-text" id="recovery-note" role="status"></p>
             <div class="device-rows">
               <!-- Figma: Botón/Micrófono 193:709 (Encendido 193:705, Apagado 193:708); A05 · Silenciado 190:1005 when it is off -->
               <div class="device-row">
@@ -749,8 +755,13 @@
             <p id="lobby-note" class="ink-note" role="status"></p>
           </div>
           <div class="ink-foot">
-            <button type="button" class="ink-link" id="lobby-back" data-back>Volver</button>
+            <div class="ink-links">
+              <button type="button" class="ink-link" id="lobby-back" data-back>Volver</button>
+              <!-- The web-only state's second way: the open session is closed first, then a new one starts. -->
+              <button type="button" class="ink-link" id="restart" hidden>Empezar otra sesión</button>
+            </div>
             <button type="button" class="ink-button" id="join">Empezar la sesión</button>
+            <button type="button" class="ink-button" id="resume" hidden>Seguir con la sesión</button>
           </div>
         </div>
       </section>
@@ -821,6 +832,24 @@
             <input id="typed" type="text" maxlength="500" aria-label="Mensaje para Aule" placeholder="O escríbele a Aule…" />
             <button type="submit" class="compact">Enviar</button>
           </form>
+        </div>
+      </section>
+
+      <!-- Figma: web-only, after A15 La sesión empieza (190:1069): how the session ended, or that its connection was cut while it can still go on; built from A15's title, Botón/Negro 190:834 and the device's link 195:513. The words are session-messages.js's, in the session's language. -->
+      <section class="screen" data-screen="session-end" data-surface="ink" hidden aria-labelledby="ended-title">
+        <div class="ink-frame">
+          <div class="ink-body">
+            <h2 class="ink-title" id="ended-title" tabindex="-1">La sesión terminó.</h2>
+            <p class="ink-text" id="ended-text" role="status"></p>
+          </div>
+          <div class="ink-foot">
+            <!-- Ended: «Volver» is the one button, as on C00 · Padre (190:1035). Cut but still open:
+                 «Seguir con la sesión» takes its place and «Volver» becomes the link. -->
+            <span id="ended-spacer"></span>
+            <button type="button" class="ink-link" id="ended-back" data-back hidden>Volver</button>
+            <button type="button" class="ink-button" id="ended-resume" hidden>Seguir con la sesión</button>
+            <button type="button" class="ink-button" id="ended-home" data-back>Volver</button>
+          </div>
         </div>
       </section>
     </main>

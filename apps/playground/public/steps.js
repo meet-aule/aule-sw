@@ -52,6 +52,7 @@ export const SCREENS = {
   "a04-details": { code: "", name: "Detalles", nodes: ["190:891", "191:1333", "190:834"], surface: "ink", auth: "in", progress: null, back: "a04", needs: "objective" },
   a05: { code: "A05", name: "Antes de empezar", nodes: ["190:899", "190:1005"], surface: "ink", auth: "in", progress: null, back: "a04", needs: "student" },
   session: { code: "A15", name: "La sesión empieza", nodes: ["190:1069", "194:509"], surface: "ink", auth: "in", progress: null, back: "home", needs: "session" },
+  "session-end": { code: "", name: "La sesión terminó", nodes: ["190:1069", "190:834", "195:513"], surface: "ink", auth: "in", progress: null, back: "home", needs: "ended" },
 };
 
 /**

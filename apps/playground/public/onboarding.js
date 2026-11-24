@@ -18,9 +18,11 @@ need("consent", () => held !== null);
 need("created", () => created !== null);
 
 // What is kept about the child is the parent's to choose: «Qué guardamos» shows
-// both choices before «Autorizo», with the editor's defaults (D5): remembering
-// between sessions on, the written conversation off.
-const DEFAULTS = { remembers: true, keepsTranscripts: false };
+// both choices before «Autorizo», and both start off (D5). Remembering between
+// sessions is recorded only when the parent ticks it: under Peru's data
+// protection rules (Ley 29733, DS 016-2024-JUS) consent is an affirmative act,
+// and a box ticked for them is not one.
+const DEFAULTS = { remembers: false, keepsTranscripts: false };
 // P12's line when the child can start a session now; the plan's own line otherwise.
 const P12_HELP = $("p12-help").textContent;
 

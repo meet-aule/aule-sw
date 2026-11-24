@@ -234,8 +234,9 @@ function fill(student, subjects) {
   );
   $("student-note").value = student.note ?? "";
   $("student-language").value = student.language ?? "es";
-  $("student-remembers").checked = student.remembers ?? true;
-  $("student-transcripts").checked = student.keepsTranscripts ?? false;
+  // Ticked only where the family said yes: a choice never made is shown as not made.
+  $("student-remembers").checked = student.remembers === true;
+  $("student-transcripts").checked = student.keepsTranscripts === true;
   $("known").hidden = true;
 }
 
@@ -257,8 +258,16 @@ export function clearEditor() {
   editing = null;
   done = () => {};
   $("editor-title").textContent = "";
+  // The question names the student («¿Qué eres de …?»), and the two lists hold
+  // the student's grade and what the guardian is to them.
+  $("relationship-label").textContent = "";
   for (const id of ["student-name", "student-note", "interest-new"]) $(id).value = "";
-  for (const id of ["student-subjects", "student-interests", "student-tone", "memories", "past"]) $(id).replaceChildren();
+  for (const id of ["student-grade", "student-relationship", "student-subjects", "student-interests", "student-tone", "memories", "past"]) {
+    $(id).replaceChildren();
+  }
+  $("student-language").value = "es";
+  $("student-remembers").checked = false;
+  $("student-transcripts").checked = false;
   $("known-title").textContent = "";
   $("progress-known").textContent = "";
   $("known").hidden = true;

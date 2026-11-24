@@ -21,6 +21,8 @@ pub struct Model {
     pub created_at: DateTimeUtc,
     pub started_at: Option<DateTimeUtc>,
     pub ended_at: Option<DateTimeUtc>,
+    #[sea_orm(column_type = "Text")]
+    pub end_reason: Option<String>,
     pub speaking_seconds: Option<i32>,
     pub reviewed_at: Option<DateTimeUtc>,
     pub device_id: Option<Uuid>,

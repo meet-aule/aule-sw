@@ -16,6 +16,11 @@ let kind;
 let request = null;
 // Whose details the details screen holds, so coming back to it keeps them.
 let detailsOf = "";
+// The student whose session a reload left open, or null. Choosing them goes
+// straight to A05, which offers to carry on with it (app.js), instead of
+// asking again what a session that already has its purpose is for. Starting
+// another from there has no purpose yet, so A04 asks it then (purposeAsked).
+let resumable = null;
 
 need("student", () => chosen !== null);
 need("objective", () => chosen !== null && Boolean(kind));
@@ -30,6 +35,16 @@ export function sessionRequest() {
 function subjectsKept() {
   const kept = getAccount().subjects;
   return Array.isArray(kept) ? kept.filter((subject) => subject in SUBJECTS) : null;
+}
+
+/**
+ * Whether the next session has been asked what it is for: a tile chosen on
+ * A04 («No lo sé» too), or nothing to ask when the platform keeps no subjects.
+ * Not yet on an A05 reached past A04 (a session a reload left open): carrying
+ * that one on keeps its purpose, but starting another asks A04 first (app.js).
+ */
+export function purposeAsked() {
+  return kind !== undefined || subjectsKept() === null;
 }
 
 const asked = (objective) => ({
@@ -90,18 +105,33 @@ onShow("home", () => {
   kind = undefined;
   request = null;
   drawHome();
+  findResumable();
 });
+
+async function findResumable() {
+  resumable = null;
+  try {
+    const answer = await call("api/session/recovery");
+    if (answer.available) resumable = answer.student_id;
+  } catch {
+    // A05 asks again when it shows.
+  }
+}
 
 for (const id of ["add-student", "add-first"]) $(id).addEventListener("click", () => go("p04"));
 
-/** A session for one of the family's students: what for first, unless the platform keeps no subjects. */
+/**
+ * A session for one of the family's students: what for first, unless the
+ * platform keeps no subjects or the student's last session is still open
+ * (then A05 offers to carry it on, and asks A04 only to start another).
+ */
 function study(id) {
   const student = (getAccount().students ?? []).find((one) => one.id === id);
   if (!student) return;
   chosen = student;
   kind = undefined;
   request = asked(null);
-  go(subjectsKept() ? "a04" : "a05");
+  go(subjectsKept() && id !== resumable ? "a04" : "a05");
 }
 
 // P12's «Empezar su primera sesión», for the child just made.
@@ -202,12 +232,15 @@ onAccount((account) => {
   chosen = null;
   kind = undefined;
   request = null;
+  resumable = null;
   detailsOf = "";
   $("hello").textContent = "";
   $("plan-line").textContent = "";
   $("student-list").replaceChildren();
   $("team-panel").hidden = true;
   $("a04-title").textContent = "";
+  // A04 · Detalles' subject is the child's default one; it is drawn again for the next family.
+  $("subject").replaceChildren();
   $("topic").value = "";
   $("due").value = "";
   clearEditor();

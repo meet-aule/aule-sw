@@ -31,6 +31,12 @@ sign-in. An unknown page opened by a browser returns to the start page. Unknown
 API routes, files and write requests keep their error responses. These redirects
 are not cached and do not accept a destination from the request.
 
+Rooms wait up to two minutes after a network disconnect so LiveKit can rejoin
+the same session. This applies both with the platform and to operator sessions
+issued by the playground. The page shows its reconnecting state while the SDK
+retries; a failed recovery still reports that the connection was lost. This
+does not resume a session after a page reload or after its tutor has ended.
+
 ## What it does not do
 
 - It is not a way for children to use the tutor. The session it opens is marked as an operator's, which is the only kind the agent accepts while the safety gates are missing.
@@ -55,3 +61,30 @@ node --env-file=../../.env src/server.ts
 
 - **Typing** to the tutor works at any time, next to speaking. A typed message passes the same safety gates as a spoken one.
 - **Report for the family**: with the team box ticked and a platform, the page shows, after the session ends, the summary and next step the review wrote for the family.
+
+### Reload recovery and session endings
+
+A signed-in family can reload, select the same student and choose «Seguir con
+la sesión» within the room's 120-second departure window: that student goes
+straight to A05, which asks «¿Seguimos donde nos quedamos?» (FIGMA.md, D22).
+The agent stays alive with its conversation context; an abandoned partial
+push-to-talk turn is cancelled. Resume uses the same room and participant
+identity, with no agent dispatch, no new platform session, no extra quota charge
+and no clock reset. Another tab that is still connected must leave before resume
+succeeds. Choosing a new session («Empezar otra sesión») explicitly closes the
+previous one first, then asks A04 what the new one is for, as any new session is.
+
+The browser holds an opaque HttpOnly/Secure/SameSite cookie, scoped to the app.
+The BFF keeps at most 512 entries with room routing, a hashed sign-in owner and
+the original deadline, never the original room JWT or transcript. Each recovery
+rechecks family authorization, voice consent, remaining time and the live tutor.
+Tickets expire five minutes after the deadline so the final reason can be read;
+those extra minutes never allow a resume. A BFF restart loses tickets. Operator
+access-code sessions do not support reload recovery. No hardware IoT reconnection
+flow has been tested by this change.
+
+`LIVEKIT_URL` is also the server-side RoomService address (converted to HTTP);
+the browser still uses `AULE_LIVEKIT_PUBLIC_URL`. Session lifecycle responses are
+`no-store`. The page explains known endings on the student's end screen
+(FIGMA.md, D23) using fixed Spanish/English text in `public/session-messages.js`;
+it never renders raw provider errors. Old sessions may have no stored reason.

@@ -13,7 +13,15 @@ from dataclasses import replace
 from typing import Any
 
 from livekit import rtc
-from livekit.agents import AgentServer, AgentSession, JobContext, JobProcess, cli, room_io
+from livekit.agents import (
+    AgentServer,
+    AgentSession,
+    CloseEvent,
+    JobContext,
+    JobProcess,
+    cli,
+    room_io,
+)
 from livekit.plugins import silero
 
 from . import visuals
@@ -22,6 +30,7 @@ from .config import LANGUAGES, ConfigError, Settings
 from .pace import Pace
 from .platform import Platform, platform_session
 from .providers import build_llm, build_stt, build_tts
+from .reconnect import ReconnectGrace
 from .replies import reply
 from .safety import audience_of, build_gates
 from .script import Reply
@@ -309,7 +318,17 @@ async def entrypoint(ctx: JobContext) -> None:
             )
         )
 
+    reconnect = ReconnectGrace(ctx.room, session) if audience == "child" else None
+    provider_failed = False
+
+    @session.on("close")
+    def closed(event: CloseEvent) -> None:
+        nonlocal provider_failed
+        provider_failed = event.error is not None
+
     async def cleanup() -> None:
+        if reconnect:
+            reconnect.close()
         pace.close()
         for task in [*tasks, *asides]:
             task.cancel()
@@ -319,6 +338,20 @@ async def entrypoint(ctx: JobContext) -> None:
         logger.info("session timing", extra=timing.summary())
         await gates.close()
         if platform:
+            if not platform.end_reason:
+                platform.end_reason = (
+                    "provider_error"
+                    if provider_failed
+                    else "budget_reached"
+                    if pace.closed_for_time
+                    else "idle"
+                    if pace.closed_for_inactivity
+                    else "child_ended"
+                    if pace.closed_after_goodbye
+                    else "device_offline"
+                    if reconnect and reconnect.absent
+                    else "child_ended"
+                )
             measures = {
                 "minutes": round(pace.minutes(), 1),
                 "breaks_taken": pace.breaks_taken,
@@ -337,6 +370,7 @@ async def entrypoint(ctx: JobContext) -> None:
         room_options=room_io.RoomOptions(
             video_input=False,
             delete_room_on_close=True,
+            close_on_disconnect=audience != "child",
             # A typed message is judged like a spoken one. LiveKit's own
             # handler would hand it to the model unchecked.
             text_input=room_io.TextInputOptions(

@@ -128,7 +128,8 @@ export function profileFrom(body: Record<string, unknown>): Profile | null {
     tone,
     note,
     subjects: absent(body.subjects) ? null : (subjects as Subject[]),
-    remembers: body.remembers !== false,
+    // Kept only on the guardian's own yes: what was not sent was not chosen.
+    remembers: body.remembers === true,
     keepsTranscripts: body.keeps_transcripts === true,
     relationship,
   };

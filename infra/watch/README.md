@@ -4,10 +4,27 @@ Two scripts that mail the team when Aule stops working, and again when it works 
 
 | Script | Runs on | What it checks | Mails through |
 |---|---|---|---|
-| `aule-watch.sh` | the server (`/etc/aule/aule-watch.sh`, root-owned, run by `aule-admin`'s cron every 5 minutes) | the platform, the session page, the voice agent, LiveKit, the database, the worker, embeddings, the public page, the shop, disk use under 85 % and a nightly backup younger than 26 hours | the platform's own SMTP settings in `/etc/aule/aule.env` |
+| `aule-watch.sh` | the server (`/etc/aule/aule-watch.sh`, root-owned, run by `aule-admin`'s cron every 5 minutes) | the platform, the session page, the voice agent, LiveKit, the database, the worker, embeddings, the public page, the shop, disk use under 85 % and a backup younger than 7 hours (taken every 6 hours) | the platform's own SMTP settings in `/etc/aule/aule.env` |
 | `aule-watch-outside.sh` | the home server (`~/bin/aule-watch-outside.sh`, its user's cron every 5 minutes) | the public session page, LiveKit and the shop, from outside: the case where the whole server or its network is down | Resend's HTTP API, with the key in `~/.config/aule/resend-key` (mode 600) |
 
 A failure is mailed when it starts and then every six hours while it lasts; a recovery is mailed once. The mail says which check failed and nothing about any family or child. `--test` sends one test mail.
+
+Only a successful send updates the last notified state and time. If delivery
+fails, the next check retries the current change, including a recovery; it does
+not wait six hours. A successful send means the mail service accepted it, not
+that it reached an inbox. Existing state files are kept on upgrade.
+
+The server also checks the review queue, even if its worker container is running.
+An unfinished job alerts when it exhausts all five attempts or its scheduled run
+is more than 15 minutes overdue. Future retries and completed jobs do not alert.
+The database query is read-only, has a five-second statement timeout and returns
+only a count; a failed query alerts too. It never retries a job or changes its data.
+
+Run the delivery regression tests without contacting a server or sending mail:
+
+```sh
+python3 -m unittest discover -s infra/watch -p 'test_*.py' -v
+```
 
 To install or update on the server:
 
@@ -18,4 +35,14 @@ ssh aule-prod 'sudo install -o root -g root -m 755 /tmp/aule-watch.sh /etc/aule/
 # */5 * * * * /usr/bin/flock -n /home/aule-admin/.local/state/aule/watch.lock /etc/aule/aule-watch.sh 2>&1 | /usr/bin/logger -t aule-watch
 ```
 
-Not watched yet: whether the home server pulled last night's backup (its pull user's files are not readable by the watch).
+The outside watch also reads `/var/tmp/aule-backup-health/latest.json`. The backup
+pull user publishes only a success flag and verification/backup timestamps after
+the nightly copy. Failed pulls, missing/corrupt files, a newest backup older than
+seven hours at copy time, or a verification older than 26 hours alert. The watch
+cannot read the backups or the decryption key. See the offsite installation in
+[`infra/server/README.md`](../server/README.md).
+
+The primary watch checks weekly restore completion as well. A missing or failed
+restore, or one not completed in eight days, uses the same alert/recovery delivery.
+New primary backups must be `.sql.gz`; an old encrypted file cannot mask failure
+to create the newly configured format.

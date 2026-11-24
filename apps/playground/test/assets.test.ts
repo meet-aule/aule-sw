@@ -72,6 +72,11 @@ test("a module has one address wherever it is named, so it runs once", async () 
   const visualsFile = await fetch(`${base}/visuals.js?v=${visuals}`);
   assert.equal(visualsFile.headers.get("cache-control"), YEAR);
   await visualsFile.arrayBuffer();
+  const messages = versionOf(appText, "session-messages.js");
+  assert.ok(messages, "app.js imports session-messages.js at its fingerprint");
+  const messagesFile = await fetch(`${base}/session-messages.js?v=${messages}`);
+  assert.equal(messagesFile.headers.get("cache-control"), YEAR);
+  await messagesFile.arrayBuffer();
 
   const manifest = await (await fetch(`${base}/manifest.webmanifest?v=${versionOf(html, "manifest.webmanifest")}`)).text();
   assert.ok(versionOf(manifest, "icon.svg"), "the manifest's icon is fingerprinted");

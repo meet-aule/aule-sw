@@ -125,11 +125,12 @@ test("a student is created only signed in, with a name and the guardian's yes", 
   assert.equal(response.status, 201);
   assert.deepEqual(await response.json(), { id: STUDENT, name: "Liam" });
   assert.ok(seen.every((call) => call.auth === `Bearer ${TOKEN}`), "every call is the guardian's own");
+  // Nothing ticked, nothing kept: remembering is recorded only on the guardian's own yes.
   assert.deepEqual(
     seen.filter((call) => call.path.endsWith("/consents")).map((call) => call.body),
     [
       { purpose: "voice", granted: true, policy_version: "playground-2026-11-v8" },
-      { purpose: "memory", granted: true, policy_version: "playground-2026-11-v8" },
+      { purpose: "memory", granted: false, policy_version: "playground-2026-11-v8" },
       { purpose: "transcripts", granted: false, policy_version: "playground-2026-11-v8" },
     ],
   );

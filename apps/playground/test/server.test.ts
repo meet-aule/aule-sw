@@ -50,6 +50,7 @@ test("serves the page and its scripts with a strict policy", async () => {
     "/screens.js",
     "/onboarding.js",
     "/home.js",
+    "/session-messages.js",
     "/students.js",
     "/visuals.js",
     "/style.css",
@@ -185,6 +186,9 @@ test("the right code gets a token for one room that asks for the tutor as an ope
   assert.equal(claims.video?.roomJoin, true);
   assert.deepEqual(claims.video?.canPublishSources, ["microphone", "camera"]);
   assert.ok(!claims.video?.roomAdmin && !claims.video?.roomCreate && !claims.video?.roomList);
+  assert.equal(claims.roomConfig?.departureTimeout, 120);
+  assert.equal(claims.roomConfig?.emptyTimeout, 30);
+  assert.equal(claims.roomConfig?.maxParticipants, 2);
 
   const [dispatch] = claims.roomConfig?.agents ?? [];
   assert.equal(dispatch?.agentName, "aule-tutor");

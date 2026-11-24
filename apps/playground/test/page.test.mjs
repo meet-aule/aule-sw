@@ -10,7 +10,7 @@ const files = await readdir(pub);
 const read = (name) => readFile(new URL(name, pub), "utf8");
 const html = await read("index.html");
 const css = await read("style.css");
-const ownScripts = ["app.js", "students.js", "signin.js", "steps.js", "screens.js", "onboarding.js", "home.js", "visuals.js", "admin.js"];
+const ownScripts = ["app.js", "students.js", "signin.js", "steps.js", "screens.js", "onboarding.js", "home.js", "session-messages.js", "visuals.js", "admin.js"];
 const scripts = Object.fromEntries(await Promise.all(ownScripts.map(async (name) => [name, await read(name)])));
 
 /** The body of every block that starts with `opening`, braces and all. */
@@ -88,10 +88,11 @@ test("the page's own modules import each other without a cycle, as the plan draw
   assert.deepEqual(graph["screens.js"], ["steps.js"]);
   assert.deepEqual(graph["steps.js"], []);
   assert.deepEqual(graph["students.js"], []);
+  assert.deepEqual(graph["session-messages.js"], []);
   for (const name of ["signin.js", "onboarding.js", "home.js"]) {
     assert.deepEqual([...graph[name]].sort(), ["screens.js", "steps.js", "students.js"], name);
   }
-  assert.deepEqual([...graph["app.js"]].sort(), ["home.js", "screens.js", "visuals.js"]);
+  assert.deepEqual([...graph["app.js"]].sort(), ["home.js", "screens.js", "session-messages.js", "visuals.js"]);
   // And none, followed through, comes back to itself.
   const visiting = new Set();
   const done = new Set();
@@ -122,24 +123,26 @@ test("only signin.js touches the browser's storage, and only where a refusal is 
 /** Every innermost rule of a stylesheet: [what comes before its brace, its body]. */
 const rules = (text) => [...text.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map(([, selector, body]) => [selector.trim(), body]);
 
-test("what is kept about a child is the parent's to choose: both choices show before «Autorizo», with the editor's defaults (D5)", () => {
+test("what is kept about a child is the parent's to choose: both choices show before «Autorizo», and neither is ticked for them (D5)", () => {
   const panel = html.match(/<div class="keep-panel" id="keep-panel"[^>]*>/)?.[0];
   assert.ok(panel, "P04 has the panel");
   assert.doesNotMatch(panel, /\bhidden\b/, "the panel shows from the start");
   assert.match(html, /id="keep-toggle"[^>]*aria-expanded="true"/);
   const box = (id) => html.match(new RegExp(`<input[^>]*id="${id}"[^>]*>`))?.[0] ?? "";
-  // Remembering between sessions starts ticked and the written conversation does not, on P04 as in the editor.
-  for (const [ticked, unticked] of [["keep-memory", "keep-transcripts"], ["student-remembers", "student-transcripts"]]) {
-    assert.match(box(ticked), /\bchecked\b/, `${ticked} is ticked by default`);
-    assert.match(box(unticked), /type="checkbox"/, unticked);
-    assert.doesNotMatch(box(unticked), /\bchecked\b/, `${unticked} is not ticked by default`);
+  // Remembering between sessions and the written conversation both start unticked, on P04 as in the
+  // editor: consent is the parent's own tick (Ley 29733, DS 016-2024-JUS), never one made for them.
+  for (const id of ["keep-memory", "keep-transcripts", "student-remembers", "student-transcripts"]) {
+    assert.match(box(id), /type="checkbox"/, id);
+    assert.doesNotMatch(box(id), /\bchecked\b/, `${id} is not ticked by default`);
   }
   // The parent's own consent is never ticked for them.
   assert.match(box("consent"), /type="checkbox"/, "P04's box");
   assert.doesNotMatch(box("consent"), /\bchecked\b/, "P04's box is not ticked by default");
   assert.ok(html.indexOf('id="keep-panel"') < html.indexOf('id="consent-ok"'), "the choices come before «Autorizo»");
-  // And the onboarding sets them back to those defaults, and open, each time it starts again.
-  assert.match(scripts["onboarding.js"], /const DEFAULTS = \{ remembers: true, keepsTranscripts: false \};/);
+  // And the onboarding sets them back to those defaults, and open, each time it starts again;
+  // the editor shows a choice ticked only where the family made it.
+  assert.match(scripts["onboarding.js"], /const DEFAULTS = \{ remembers: false, keepsTranscripts: false \};/);
+  assert.match(scripts["students.js"], /\$\("student-remembers"\)\.checked = student\.remembers === true;/);
   assert.match(scripts["onboarding.js"], /\$\("keep-panel"\)\.hidden = false;/);
 });
 
@@ -157,6 +160,12 @@ test("focus on paper is a solid copper outline, which forced colours keep", () =
   assert.doesNotMatch(css, /box-shadow: 0 0 0 3px/, "no ring drawn as a shadow");
 });
 
+test("A04 · Detalles' day keeps the black ring on its calendar button, where the field is only :focus-within", () => {
+  const ring = rules(css).find(([selector]) => selector.includes('.ink-field input[type="date"]:focus-within'));
+  assert.ok(ring, "the date field has a :focus-within ring");
+  assert.match(ring[1], /outline: 3px solid var\(--device-ink\)/);
+});
+
 test("a toggle that is off is drawn as a control, not as a disabled button", () => {
   for (const [selector, body] of rules(css)) {
     if (selector.includes('[aria-pressed="false"]')) assert.doesNotMatch(body, /dashed/, selector);
@@ -172,4 +181,91 @@ test("A05 ignores taps for longer than the other student screens, so a late tap 
 test("a control reached by Tab is scrolled clear of the cookie notice", () => {
   const [, root] = rules(css).find(([selector]) => selector.endsWith("html")) ?? [];
   assert.match(root ?? "", /scroll-padding-bottom: var\(--notice-room\)/);
+});
+
+/** The body of `function name(…)` in a script, past its parameters, which may hold braces of their own. */
+function bodyOf(text, name) {
+  const start = text.indexOf(`function ${name}(`);
+  assert.notEqual(start, -1, `function ${name}`);
+  let i = text.indexOf("(", start);
+  for (let depth = 0; i < text.length; i++) {
+    if (text[i] === "(") depth += 1;
+    else if (text[i] === ")" && --depth === 0) break;
+  }
+  return blocks(text.slice(i), "{")[0];
+}
+
+test("a session started from an A05 reached past A04 is asked what it is for on A04 before api/session is (D22)", () => {
+  // After a reload, a student whose session is still open comes to A05 past A04. Carrying that
+  // session on keeps its purpose; starting another, or one from an A05 whose session closed
+  // meanwhile, has none yet, so A04 asks it first, in A05's place.
+  const app = scripts["app.js"];
+  const start = bodyOf(app, "startSession");
+  const asks = start.indexOf('if (!purposeAsked()) return go("a04", { replace: true });');
+  assert.notEqual(asks, -1, "a start with no purpose goes to A04");
+  assert.ok(start.indexOf("showRecoverable(null);") < asks, "after the open session is closed");
+  assert.ok(asks < start.indexOf('fetch("api/session"'), "before api/session is asked for a session");
+  // A tile («No lo sé» among them) is an answer; a platform that keeps no subjects asks nothing.
+  assert.match(scripts["home.js"], /export function purposeAsked\(\) \{\s*return kind !== undefined \|\| subjectsKept\(\) === null;\s*\}/);
+  // «Seguir con la sesión» carries the session on with its own purpose: A04 is not asked again.
+  const [resume] = blocks(app, '$("resume").addEventListener("click"');
+  assert.doesNotMatch(resume, /purposeAsked|"a04"/);
+});
+
+test("a session's words go with it: the conversation, the card and anything half typed are emptied when it ends and on signing out", () => {
+  const app = scripts["app.js"];
+  const forget = bodyOf(app, "forgetWords");
+  assert.match(forget, /\$\("transcript"\)\.replaceChildren\(\);/);
+  assert.match(forget, /lines\.clear\(\);/);
+  assert.match(forget, /heldLines = \[\];/);
+  assert.match(forget, /\$\("route"\)\.replaceChildren\(\);/);
+  assert.match(forget, /for \(const id of \["card-title", "card-statement", "card-help"\]\) \$\(id\)\.textContent = "";/);
+  // Every field the session has is emptied, so one added later is too or this fails.
+  const session = html.slice(html.indexOf('data-screen="session"'), html.indexOf('data-screen="session-end"'));
+  const fields = [...session.matchAll(/<(?:input|textarea)\b[^>]*\bid="([^"]+)"/g)].map(([, id]) => id).sort();
+  assert.deepEqual(fields, ["answer-text", "explanation-text", "typed"]);
+  assert.match(forget, /for \(const id of \["typed", "answer-text", "explanation-text"\]\) \$\(id\)\.value = "";/);
+  // Every way a session ends closes it through teardown(), and signing out forgets too,
+  // with what A04 · Detalles held (its subject is the child's default one).
+  assert.match(bodyOf(app, "teardown"), /\bforgetWords\(\);/);
+  assert.match(blocks(app, "onAccount((account) =>").join("\n"), /\bforgetWords\(\);/);
+  const signedOut = blocks(scripts["home.js"], "onAccount((account) =>").join("\n");
+  for (const clear of ['$("subject").replaceChildren();', '$("topic").value = "";', '$("due").value = "";']) assert.ok(signedOut.includes(clear), clear);
+  // An answer or a message still on its way when the session ends is not written back after it.
+  const [answer] = blocks(app, '$("answer").addEventListener("submit"');
+  const answerGuard = answer.indexOf("if (id !== sessionId) return;");
+  assert.ok(answerGuard !== -1 && answerGuard < answer.indexOf('$("transcript").append('));
+  const [typed] = blocks(app, '$("type").addEventListener("submit"');
+  const typedGuard = typed.indexOf("if (sending !== room) return;");
+  assert.ok(typedGuard !== -1 && typedGuard < typed.indexOf('$("transcript").append('));
+});
+
+test("A05's web-only state names itself to a screen reader: its status line is in the tree before its words, and its title takes the focus again", () => {
+  const note = html.match(/<p[^>]*\bid="recovery-note"[^>]*>/)?.[0] ?? "";
+  assert.match(note, /role="status"/);
+  assert.doesNotMatch(note, /\bhidden\b/, "never hidden, only empty");
+  assert.doesNotMatch(scripts["app.js"], /\$\("recovery-note"\)\.hidden/);
+  const [, empty] = rules(css).find(([selector]) => selector.endsWith("#recovery-note:empty")) ?? [];
+  assert.match(empty ?? "", /position: absolute;/, "empty, it takes no room");
+  assert.doesNotMatch(empty ?? "", /display: none|visibility: hidden/, "and stays in the tree");
+  // The title has the focus from when A05 showed, as «Antes de empezar»: once the state is drawn
+  // it is focused again, so its new name is read.
+  const offer = bodyOf(scripts["app.js"], "offerRecovery");
+  const drawn = offer.indexOf("showRecoverable(answer);");
+  assert.ok(drawn !== -1 && offer.indexOf("document.activeElement === title") < drawn);
+  assert.ok(drawn < offer.indexOf("title.blur();") && offer.indexOf("title.blur();") < offer.indexOf("title.focus({ preventScroll: true });"));
+});
+
+test("the words of session-messages.js are marked with the language they are in where they are written (WCAG 3.1.2)", () => {
+  const app = scripts["app.js"];
+  // Only through write(), which marks the element; never straight into textContent.
+  assert.doesNotMatch(app, /textContent = [^;\n]*\b(?:recoveryText|recoveryMessage|endedMessage)\(/);
+  assert.match(bodyOf(app, "write"), /element\.textContent = text;\s*element\.lang = languageOf\(language\);/);
+  // The end screen's title, line and button in one language: the platform's for the session when it said one.
+  const ended = bodyOf(app, "tellEnded");
+  for (const id of ["ended-title", "ended-text", "ended-resume"]) assert.ok(ended.includes(`write($("${id}")`), id);
+  assert.match(app, /const language = answer\.language \?\? sessionRequest\(\)\?\.language;/);
+  assert.match(app, /const language = session\.language \?\? sessionRequest\(\)\?\.language;/);
+  // On the shared message line, in a span of their own that goes as soon as anything else writes the line.
+  assert.match(bodyOf(app, "showMessage"), /write\(words, text, language\);\s*message\.replaceChildren\(words\);/);
 });

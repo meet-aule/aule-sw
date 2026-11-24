@@ -74,6 +74,7 @@ class Pace:
         self._resume: asyncio.Task[None] | None = None
         self._heard_at = self._started
         self._asked_if_there = False
+        self.closed_for_time = False
         self.closed_for_inactivity = False
         self.closed_after_goodbye = False
 
@@ -89,6 +90,7 @@ class Pace:
             # It joins the conversation: the tutor knows there is little time left.
             await self._say(line, remembered=True)
         await self._sleep(max(0.0, self._max_seconds - (self._clock() - self._started)))
+        self.closed_for_time = True
         await self._say("goodbye", remembered=False)
         self._session.shutdown()
 

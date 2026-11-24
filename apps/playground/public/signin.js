@@ -57,6 +57,12 @@ const tab = () => sessionStorage;
 let emailAddress = "";
 need("email", () => Boolean(emailAddress));
 
+/** Forgets the address, and P02's field that held it: signed in it is not needed, signed out it is not to be left behind. */
+function forgetAddress() {
+  emailAddress = "";
+  $("email-address").value = "";
+}
+
 // --- C00 ¿Quién eres? and C01 ¿Ya tienes cuenta? ------------------------------
 
 $("c00-parent").addEventListener("click", () => go("c01"));
@@ -164,7 +170,7 @@ function drawGoogle(clientId) {
 /** Signed in, by any way: a family with students goes to them, a new one starts by adding one. */
 function entered(account) {
   remember(local, RETURNING, "1");
-  emailAddress = "";
+  forgetAddress();
   clearCode();
   $("email-name").value = "";
   setAccount(account);
@@ -335,6 +341,9 @@ onShow("p15", () => {
 // --- Signing out and erasing --------------------------------------------------
 
 async function signedOut(message) {
+  // Nothing typed while signed in stays in a hidden field: the address, the one to erase with.
+  forgetAddress();
+  $("erase-email").value = "";
   const account = await call("api/account").catch(() => ({ signed_in: false }));
   // Each module forgets what it drew about the family before the first question shows.
   setAccount(account);

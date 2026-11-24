@@ -11,6 +11,8 @@ export type Settings = {
   basePath: string;
   /** LiveKit URL the browser connects to. */
   livekitUrl: string;
+  /** Server-side RoomService address, taken from LIVEKIT_URL when set. */
+  livekitServiceUrl: string;
   livekitApiKey: string;
   livekitApiSecret: string;
   accessCode: string;
@@ -46,6 +48,8 @@ export function readSettings(env: Record<string, string | undefined>): Settings 
   // PLAYGROUND_LIVEKIT_URL is the earlier name of AULE_LIVEKIT_PUBLIC_URL.
   const livekitUrl =
     get("AULE_LIVEKIT_PUBLIC_URL") || get("PLAYGROUND_LIVEKIT_URL") || get("LIVEKIT_URL");
+  const livekitServiceUrl = (get("LIVEKIT_URL") || livekitUrl).replace(/^ws/, "http");
+  if (!/^https?:\/\/[^\s/]+/.test(livekitServiceUrl)) problems.push("LIVEKIT_URL must be a valid LiveKit service URL");
   if (!/^wss?:\/\/[^\s/]+/.test(livekitUrl)) {
     problems.push("AULE_LIVEKIT_PUBLIC_URL (or LIVEKIT_URL) must be a ws:// or wss:// URL");
   }
@@ -114,6 +118,7 @@ export function readSettings(env: Record<string, string | undefined>): Settings 
     port,
     basePath,
     livekitUrl,
+    livekitServiceUrl,
     livekitApiKey: get("LIVEKIT_API_KEY"),
     livekitApiSecret: get("LIVEKIT_API_SECRET"),
     accessCode,
