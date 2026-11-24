@@ -1,6 +1,7 @@
 """The Workers' settings, read as wrangler reads them: no line per request in
 Cloudflare's logs, and no traces. LiveKit's address carries a room token, and a
-sign-in's way back carries its code."""
+sign-in's way back carries its code. And the code each one deploys takes the
+analytics cookies out the same way."""
 
 import json
 import unittest
@@ -59,6 +60,23 @@ class EdgeLogsTests(unittest.TestCase):
                 self.assertIs(observability["logs"]["invocation_logs"], False)
                 # Off unless asked for; a span would carry the address too.
                 self.assertIsNot(observability.get("traces", {}).get("enabled"), True)
+
+
+class EdgeCookiesTests(unittest.TestCase):
+    def test_every_worker_deploys_the_same_cookie_rule_and_uses_it(self) -> None:
+        # apps/playground/test/edge.test.mjs runs both Workers through the cases;
+        # this checks that the file each wrangler config deploys has the same
+        # copy of the function, and calls it.
+        definition = "\nfunction stripAnalyticsCookies(headers) {\n"
+        functions = set()
+        for path in sorted(HERE.glob("wrangler.*.jsonc")):
+            with self.subTest(path.name):
+                source = (HERE / config(path.name)["main"]).read_text()
+                self.assertIn(definition, source)
+                start = source.index(definition)
+                functions.add(source[start : source.index("\n}\n", start)])
+                self.assertGreaterEqual(source.count("stripAnalyticsCookies("), 2)
+        self.assertEqual(len(functions), 1)
 
 
 if __name__ == "__main__":
