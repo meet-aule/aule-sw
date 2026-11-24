@@ -52,7 +52,7 @@ Everything the supervisor returns is validated and cut to size before it is used
 ## Data about a child
 
 - A child has no account. `children` holds what the tutor may know: a nickname, year of birth, grade, language, interests and a guardian's notes.
-- The profile and the plan reach the agent through the platform, with a token that works for one session. They are never put in room metadata, which every participant can read.
+- The profile and the plan reach the agent through the platform, with a token that works for one session. They are never put in room metadata, which every participant can read. The agent's token reaches it with its dispatch, which the platform makes when it opens the room; the token a person joins with is signed but readable and travels in a WebSocket's address, so it carries nothing but the room and the participant.
 - `consent_records` is append-only, enforced by the database. Each purpose (`voice`, `transcripts`, `memory`) has its own answer, the current one is the latest row, and the rows survive the erasure of the child as proof of what was agreed.
 - Without consent for `voice` no session is created. Without `memory` nothing is remembered. Without `transcripts` the turns of a session are deleted as soon as its review finishes; with it they are deleted after a fixed time of at most 24 hours.
 - Taking consent back deletes the data it covered. Erasing a child deletes sessions, turns, answers, memories and reviews with it.

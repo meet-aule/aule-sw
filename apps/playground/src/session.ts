@@ -253,7 +253,9 @@ export async function createSession(settings: Settings, language: Language): Pro
   });
   // The room is created when the person joins, already asking for the tutor.
   // "operator" tells the agent this is an adult on the team: it refuses any
-  // other session until the safety gates exist.
+  // other session until the safety gates exist. Whoever holds the token can
+  // read it, so the dispatch says only what the page chose and nothing secret.
+  // A session the platform creates has its room opened by the platform instead.
   token.roomConfig = new RoomConfiguration({
     emptyTimeout: 30,
     // Keep the room while the client reconnects, as platform-issued rooms do.

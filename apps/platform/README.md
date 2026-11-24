@@ -22,10 +22,10 @@ aule-platform version   # which build this is (also --version); needs no setting
 | `families`, `signin` | Families, guardians, children, append-only consent; sign-in by emailed code |
 | `devices` | Registration, claim codes, signed check-in and sessions, firmware |
 | `events`, `notices`, `push` | The outbox and its delivery; what families are told; pushes through Firebase Cloud Messaging |
-| `sessions` | Room tokens, the agent's API for one session, the review job |
+| `sessions` | Starting a session (its room and the token to join it), the agent's API for one session, the review job |
 | `engine` | A session run by the session engine (`engine/`): what the student said becomes the engine's inputs, what the engine answers becomes lines for the tutor and steps for the page |
 | `jobs` | The Postgres job queue and the housekeeping |
-| `llm`, `livekit`, `mail`, `auth`, `config`, `error` | Claude with a forced structured answer, room tokens, the two kinds of caller, settings, the error shape |
+| `llm`, `livekit`, `mail`, `auth`, `config`, `error` | Claude with a forced structured answer, rooms opened through LiveKit's server API and the tokens to join them, the two kinds of caller, settings, the error shape |
 
 ## API
 
@@ -74,7 +74,7 @@ Devices do not use a bearer token: they sign with the key burned into them.
 | `GET /v1/children/{id}/reviews` | Notes from past sessions |
 | `GET /v1/sessions/{id}` | Lifecycle only for the child's guardian or operator: status, fixed end reason, language, engine flag and remaining seconds; resume requires active status and current voice consent |
 | `POST /v1/sessions/{id}/end` | Owner stops a session, including after voice consent is revoked. First close wins and queues one review |
-| `POST /v1/sessions` | A session and its room token. A guardian can only start a child's session. Optional `objective`: what the family says the session is for, `{kind: homework, exam_prep, exam_review or explore, subject (one of the subjects, or other), topic (up to 200 characters), due (a date)}`; the supervisor plans for it first. Optional `engine: true` asks for the [session engine](#sessions-run-by-the-session-engine) to run the session; the response's `engine` says whether it does |
+| `POST /v1/sessions` | A session and its room token. The platform opens the room through LiveKit's server API and asks for the tutor there, so the agent's token and the family's note never reach the person: their token only lets them into the room. 503 when LiveKit does not open it. A guardian can only start a child's session. Optional `objective`: what the family says the session is for, `{kind: homework, exam_prep, exam_review or explore, subject (one of the subjects, or other), topic (up to 200 characters), due (a date)}`; the supervisor plans for it first. Optional `engine: true` asks for the [session engine](#sessions-run-by-the-session-engine) to run the session; the response's `engine` says whether it does |
 | `GET /v1/sessions/{id}/step` | Where a session the engine runs is, for the student's screen. 409 when the engine does not run the session or it has ended |
 | `POST /v1/sessions/{id}/answers` | An answer typed on that screen: `{"answer", "explanation"?}`. Returns the new step; the tutor collects what to say about it with its next report of turns |
 | `GET /v1/skills` | The skill catalog |
@@ -97,9 +97,16 @@ Devices do not use a bearer token: they sign with the key burned into them.
 ### Reconnecting to a session
 
 Rooms issued for the web and devices stay open for up to 120 seconds after the
-last non-agent participant disconnects. A client should retry with the same
-room, participant identity and still-valid token. It must not call the session
-creation endpoint on every network retry: that creates another session. A
+last non-agent participant disconnects. The platform opens a room before the
+person joins it, and the tutor waits there. A room nobody joins within 30
+seconds is closed: the session never starts, and the tutor closes it with
+`end_reason: "device_offline"`, so it counts for nothing and the family can
+start another at once. A first join later than that, with the same token,
+opens a room with no tutor in it; the client should end that session and start
+another rather than wait (the playground says the tutor could not come in, and
+its «Terminar» does that). A client should retry with
+the same room, participant identity and still-valid token. It must not call the
+session creation endpoint on every network retry: that creates another session. A
 successful rejoin while the room and tutor remain running preserves their
 state and uses the existing session's allowance. The session's normal time
 limit, consent checks and explicit end still apply.
@@ -124,7 +131,7 @@ physical microphone switch. Do not replay buffered speech after reconnecting.
 
 | Route | What it does |
 |---|---|
-| `GET /v1/agent/session` | Marks the session as running; returns the student's profile as `instructions`, with the plan when it is already written, `student_name` and `session_number` (how many sessions the student had started before this one) for written lines, and `tutor` (`name`, `persona`, `note`): how the tutor presents itself to this child. The same three travel in the dispatch metadata as `tutor_name`, `tutor_persona`, `tutor_persona_note`. In a session the engine runs it also starts the engine and returns `script`: its opening lines |
+| `GET /v1/agent/session` | Marks the session as running; returns the student's profile as `instructions`, with the plan when it is already written, `student_name` and `session_number` (how many sessions the student had started before this one) for written lines, and `tutor` (`name`, `persona`, `note`): how the tutor presents itself to this child. The same three travel in the dispatch metadata as `tutor_name`, `tutor_persona`, `tutor_persona_note`, with the agent's token as `platform_token`; the platform hands that metadata to LiveKit when it opens the room, and LiveKit gives it to the agent's job only. In a session the engine runs it also starts the engine and returns `script`: its opening lines |
 | `POST /v1/agent/session/turns` | Reports turns; returns guidance written since the last call, and `plan` (text for the tutor, or null) when the plan was finished after the tutor started. `stop` is `"warn"` after 2 turns in a row in which the student is plainly not working, `"end"` after 4: the tutor says a fixed line for each, once, and on `"end"` closes the session with `end_reason: "not_working"`. The family gets a notice when the close is asked for. `pause` is `"offer"` when a break is due: `AULE_BREAK_EVERY_MINUTES` of work have passed (default 30) or the supervisor read tiredness, no exercise is open and more than 10 minutes remain; the request's optional `breaks_taken` tells the platform a break happened, and an offer not taken in 2 minutes counts as declined. In a session the engine runs, `guidance` stays empty, `pause` stays null (the engine gives its own breaks), and `script` is present when an answer was typed on the page since the last report |
 | `POST /v1/agent/session/said` | Only in a session the engine runs: what the student said, and what the tutor does next. See [below](#sessions-run-by-the-session-engine) |
 | `POST /v1/agent/session/flags` | Reports that a safety gate stopped a turn: the gate, what it did, fixed categories |
@@ -169,7 +176,7 @@ With `AULE_EVENTS_WEBHOOK_URL` set, each event is also posted there as a CloudEv
 
 ## Settings
 
-`.env.example` at the repository root lists them. Only `DATABASE_URL` and `AULE_ADMIN_TOKEN` are required: without LiveKit keys no session can be created, without mail settings nobody can sign in and notices stay in the app, without a Firebase service account there are no pushes, without `ANTHROPIC_API_KEY` plans come from the learner model alone and there is no guidance or review, and without `AULE_EMBEDDINGS_URL` memories are recalled by date.
+`.env.example` at the repository root lists them. Only `DATABASE_URL` and `AULE_ADMIN_TOKEN` are required: without LiveKit keys no session can be created (with them `LIVEKIT_URL` is required too: rooms are opened through LiveKit's server API there, at the address the agent connects to, and never through the public one), without mail settings nobody can sign in and notices stay in the app, without a Firebase service account there are no pushes, without `ANTHROPIC_API_KEY` plans come from the learner model alone and there is no guidance or review, and without `AULE_EMBEDDINGS_URL` memories are recalled by date.
 
 The embedding model must return 1024 dimensions (`bge-m3` does). Another size needs a migration.
 

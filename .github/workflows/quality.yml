@@ -134,6 +134,9 @@ jobs:
       - name: Offsite backup health tests
         if: ${{ !cancelled() }}
         run: python3 -m unittest discover -s infra/server -p 'test_*.py' -v
+      - name: Edge Worker settings tests
+        if: ${{ !cancelled() }}
+        run: python3 -m unittest discover -s infra/edge -p 'test_*.py' -v
       - name: Hadolint
         if: ${{ !cancelled() }}
         # Debian's package versions are not pinned: an old one leaves the archive and breaks the build.

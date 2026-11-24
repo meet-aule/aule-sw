@@ -22,7 +22,7 @@ Aule's voice tutor: a [LiveKit Agents](https://github.com/livekit/agents) worker
 
 ## Who it talks to
 
-A session is for a child unless the server that created the room marked it `{"audience": "operator"}` in the dispatch metadata. The agent refuses a child's session unless both safety gates are configured. In an operator's session (an adult on the team, through the [playground](../playground/README.md)) the gates that are configured run and the others are skipped.
+A session is for a child unless the server that created the room marked it `{"audience": "operator"}` in the dispatch metadata. The platform asks for the tutor when it opens a session's room, so that metadata, with the agent's token for the platform, never reaches the person. The tutor waits in the room for the person: nothing starts and nothing is said until they are in it. If LiveKit closes the room before anyone comes (30 seconds), the tutor only tells the platform the session ended (`device_offline`), so the family can start another at once. The agent refuses a child's session unless both safety gates are configured. In an operator's session (an adult on the team, through the [playground](../playground/README.md)) the gates that are configured run and the others are skipped.
 
 The two gates:
 

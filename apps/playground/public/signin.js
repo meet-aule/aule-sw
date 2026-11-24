@@ -102,6 +102,8 @@ for (const link of document.querySelectorAll("[data-provider]")) {
 
 let googleReady = false;
 let googleFailed = false;
+// Google's script, once a sign-in screen has asked for it.
+let googleScript = null;
 
 // Google draws its own button (Figma: Botón/Google 168:991, «no restyle»):
 // only its options and its slot's width are ours, up to Google's 400 px.
@@ -125,19 +127,22 @@ function googleTrouble() {
   if (googleFailed && !getAccount().signed_in) say("No se pudo cargar el botón de Google.");
 }
 
+// A guardian on the way in (C01) will want Google's button on the next screen.
+onShow("c01", needGoogle);
+
 onShow("p01", () => {
+  needGoogle();
   renderGoogle("google-p01");
   googleTrouble();
 });
 
 onShow("p13", () => {
   $("p13-greeting").textContent = greeting(recall(local, RETURNING) === "1");
+  needGoogle();
   renderGoogle("google-p13");
   googleTrouble();
 });
 
-// Google's script is fetched while the page asks who is here; the button is
-// drawn once both are in.
 function loadGoogleScript() {
   return new Promise((loaded, failed) => {
     const script = document.createElement("script");
@@ -147,6 +152,22 @@ function loadGoogleScript() {
     script.addEventListener("error", failed);
     document.head.append(script);
   });
+}
+
+// Google's script is fetched only where a guardian signs in, once, the first
+// time one of those screens shows: a student's screens and a family already
+// signed in never load it. The button is drawn once it is in.
+function needGoogle() {
+  const account = getAccount();
+  if (googleScript || account.signed_in || !account.google_client_id) return;
+  googleScript = loadGoogleScript().then(
+    () => drawGoogle(account.google_client_id),
+    () => {
+      googleFailed = true;
+      showWays(getAccount());
+      if (["p01", "p13"].includes(current())) googleTrouble();
+    },
+  );
 }
 
 function drawGoogle(clientId) {
@@ -431,21 +452,6 @@ function start(account) {
   go(landing());
 }
 
-const googleScript = loadGoogleScript();
-// A script that fails before the account is read is dealt with below, not reported as unhandled.
-googleScript.catch(() => undefined);
 call("api/account")
-  .then((account) => {
-    start(account);
-    if (!account.google_client_id) return;
-    googleScript.then(
-      () => drawGoogle(account.google_client_id),
-      // Somebody already signed in has no use for the button, nor for its failure.
-      () => {
-        googleFailed = true;
-        showWays(getAccount());
-        if (["p01", "p13"].includes(current())) googleTrouble();
-      },
-    );
-  })
+  .then(start)
   .catch(() => start({ signed_in: false, google_client_id: null, providers: [] }));

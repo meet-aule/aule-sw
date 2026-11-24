@@ -190,6 +190,7 @@ test("the right code gets a token for one room that asks for the tutor as an ope
   assert.equal(claims.roomConfig?.emptyTimeout, 30);
   assert.equal(claims.roomConfig?.maxParticipants, 2);
 
+  // The person can read all of it: the dispatch carries what the page chose and nothing else.
   const [dispatch] = claims.roomConfig?.agents ?? [];
   assert.equal(dispatch?.agentName, "aule-tutor");
   assert.deepEqual(JSON.parse(dispatch?.metadata ?? "{}"), { audience: "operator", language: "en" });
