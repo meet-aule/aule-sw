@@ -664,13 +664,16 @@
       <section class="screen" data-screen="a04" data-surface="ink" hidden aria-labelledby="a04-title">
         <div class="ink-frame">
           <div class="ink-body">
+            <!-- The student's name over César's title, one sentence each (D33); the words of A04 and its details
+                 are first-steps.js's, in the student's language. -->
+            <p class="ink-text" id="a04-hello"></p>
             <h2 class="ink-title" id="a04-title" tabindex="-1">¿Qué hacemos hoy?</h2>
             <!-- Figma: Cuadro/Opción 190:806, Cuadrícula (Normal 190:822, Seleccionada 190:825); Íconos · Aparato 190:995 -->
             <div class="choice-grid" id="kinds"></div>
           </div>
           <div class="ink-foot">
             <button type="button" class="ink-link" id="kind-review">Revisar una evaluación que ya di</button>
-            <button type="button" class="ink-link" data-back>Volver</button>
+            <button type="button" class="ink-link" id="a04-back" data-back>Volver</button>
           </div>
         </div>
       </section>
@@ -681,28 +684,28 @@
           <div class="ink-body">
             <div class="ink-head">
               <h2 class="ink-title" id="a04-details-title" tabindex="-1"></h2>
-              <button type="button" class="ink-link" data-back>Volver</button>
+              <button type="button" class="ink-link" id="a04-details-back" data-back>Volver</button>
             </div>
-            <p class="ink-text">Si quieres, cuéntale a Aule de qué se trata.</p>
+            <p class="ink-text" id="a04-details-line">Si quieres, cuéntale a Aule de qué se trata.</p>
             <div class="ink-fields">
               <div class="ink-field">
-                <label for="subject">Asignatura</label>
+                <label for="subject" id="subject-label">Asignatura</label>
                 <select id="subject"></select>
               </div>
               <div class="ink-field" id="due-line">
-                <label for="due">¿Para cuándo es? <span class="optional">(opcional)</span></label>
+                <label for="due" id="due-label">¿Para cuándo es? <span class="optional">(opcional)</span></label>
                 <input id="due" type="date" />
               </div>
               <div class="ink-field wide">
-                <label for="topic">Tema <span class="optional">(opcional)</span></label>
+                <label for="topic" id="topic-label">Tema <span class="optional">(opcional)</span></label>
                 <input id="topic" type="text" maxlength="200" placeholder="Ej.: fracciones, triángulos" />
               </div>
             </div>
-            <p class="ink-note" id="subject-note" hidden>Por ahora Aule tiene ejercicios propios solo de Matemática. En otras asignaturas te acompaña con lo que traigas.</p>
+            <p class="ink-note" id="subject-note" hidden>Aquí Aule te ayuda con lo que traigas.</p>
           </div>
           <div class="ink-foot">
             <span></span>
-            <button type="submit" class="ink-button">Seguir</button>
+            <button type="submit" class="ink-button" id="details-next">Seguir</button>
           </div>
         </form>
       </section>
@@ -712,7 +715,8 @@
         <div class="ink-frame">
           <div class="ink-body">
             <h2 class="ink-title" id="a05-title" tabindex="-1">Antes de empezar</h2>
-            <p class="ink-text" id="a05-text">Recuerda que Aule necesita escucharte para responderte al instante. Si necesitas silenciarte, solo presiona el botón de micrófono.</p>
+            <!-- One sentence (D33), first-steps.js's a05_line in the student's language, as A05's other words are. -->
+            <p class="ink-text" id="a05-text"></p>
             <!-- Figma: web-only state of A05 (190:899), for a session a reload left open: the title asks
                  «¿Seguimos donde nos quedamos?», this line takes the place of the paragraph above, and the
                  foot offers Botón/Negro 190:834 «Seguir con la sesión» and a device link (195:513) to start
@@ -727,7 +731,8 @@
                   <span class="icon" data-icon="mic" aria-hidden="true"></span>
                 </button>
                 <div class="device-says">
-                  <p class="round-text" id="lobby-mic-text" data-on="Si el botón es de color negro, tu micrófono está encendido." data-off="Si el botón es de color blanco, tu micrófono está apagado.">Si el botón es de color negro, tu micrófono está encendido.</p>
+                  <!-- What the button is now, in first-steps.js's words (data-on, data-off: their keys). -->
+                  <p class="round-text" id="lobby-mic-text" data-on="mic_on" data-off="mic_off">Tu micrófono está encendido.</p>
                   <!-- Figma: Pendiente · Sesión del alumno 260:654 (the bar and its line), 260:716 (blocked): the
                        level of the microphone, measured in this browser and never sent or kept. -->
                   <div id="level" class="level" aria-hidden="true"><span></span></div>
@@ -741,6 +746,9 @@
                   <wobnimo-mascot id="check-face" class="check-face" character="mochi" state="idle" aria-hidden="true"></wobnimo-mascot>
                   <div class="check-words">
                     <p class="check-status" id="check-status" role="status"></p>
+                    <!-- What an adult can do about a microphone that cannot be used: under the child's line, in
+                         smaller type, and not a live region, since the line above is one (D33). -->
+                    <p class="device-note check-help" id="check-help"></p>
                     <button type="button" class="ink-link" id="mic-retry" hidden>Intentar otra vez</button>
                   </div>
                 </div>
@@ -752,7 +760,7 @@
                   <span class="icon" data-icon="videocam_off" aria-hidden="true"></span>
                 </button>
                 <div class="device-says">
-                  <p class="round-text" id="lobby-cam-text" data-on="Si el botón es de color negro, tu cámara está encendida." data-off="Si el botón es de color blanco, tu cámara está apagada.">Si el botón es de color blanco, tu cámara está apagada.</p>
+                  <p class="round-text" id="lobby-cam-text" data-on="cam_on" data-off="cam_off">Tu cámara está apagada.</p>
                   <p class="device-note" id="lobby-cam-note"></p>
                 </div>
                 <!-- What the camera sees, while it is on; off, the sentence says so. -->
@@ -787,6 +795,8 @@
         <h2 class="session-title" id="session-title" tabindex="-1">La sesión empezó.</h2>
         <p class="session-intro" id="session-intro" role="status"></p>
         <div class="session-message" data-message></div>
+        <!-- Under a camera's problem, what an adult can do: smaller, and not live, since the line above is (D33). -->
+        <p class="device-note session-help" id="session-help"></p>
         <!-- Figma: web-only state of the session: Aule did not arrive. A15's title comes back, the line above
              says so and this Botón/Compacto 191:1396 ends the attempt and goes back to A05. -->
         <button type="button" class="compact session-retry" id="retry-session" hidden>Intentar otra vez</button>
@@ -820,14 +830,6 @@
             <button type="button" class="ink-link" id="cam-cancel" hidden>Cancelar</button>
             <!-- For Aule's team only: the drawing as the device's panel would show it (D32). -->
             <button type="button" class="compact" id="device" aria-pressed="false" hidden>Modo tinta apagado</button>
-            <!-- Figma: Botón/Micrófono 193:709; A15 · Silenciado 194:509 when the microphone is off. With an open
-                 microphone only, once the tutor is ready: nothing is heard before. -->
-            <div class="mic-group" id="mic-group" hidden>
-              <button type="button" class="round-toggle round-64" id="mic" aria-pressed="true" aria-label="Micrófono" aria-describedby="mic-text">
-                <span class="icon" data-icon="mic" aria-hidden="true"></span>
-              </button>
-              <p class="round-text" id="mic-text" data-on="Tu micrófono está encendido." data-off="Tu micrófono está apagado.">Tu micrófono está encendido.</p>
-            </div>
           </div>
           <!-- The exercise in hand, with room to answer in writing. -->
           <section id="card" class="card" hidden aria-live="polite">
@@ -844,13 +846,22 @@
               </label>
               <p id="card-help" class="note" hidden></p>
               <button type="submit" class="compact" id="answer-send">Responder</button>
-              <p class="note">También puedes decirlo en voz alta, o resolverlo en tu cuaderno y mostrárselo a Aule.</p>
+              <p class="note">También puedes decirlo o mostrar tu cuaderno.</p>
             </form>
           </section>
         </div>
 
         <!-- Right: the talk. The device does not listen all the time: a turn lasts while its button is held. -->
         <div class="talking">
+          <!-- Figma: Botón/Micrófono 193:709; A15 · Silenciado 194:509 when the microphone is off. With an open
+               microphone only, once the tutor is ready: nothing is heard before. Where the talk button is with
+               held turns, so it never pushes the stage's actions off a short screen. -->
+          <div class="mic-group" id="mic-group" hidden>
+            <button type="button" class="round-toggle round-64" id="mic" aria-pressed="true" aria-label="Micrófono" aria-describedby="mic-text">
+              <span class="icon" data-icon="mic" aria-hidden="true"></span>
+            </button>
+            <p class="round-text" id="mic-text" data-on="mic_on" data-off="mic_off">Tu micrófono está encendido.</p>
+          </div>
           <!-- Figma: web-only state of the talk button: the coach line above it on a first run, and a hint
                after a tap; inside it, while it is held, a bar with the level of the microphone, measured in
                this browser. -->
@@ -859,7 +870,7 @@
           <ol id="transcript" aria-label="Conversación" aria-live="polite"></ol>
           <form id="type" class="type" autocomplete="off">
             <input id="typed" type="text" maxlength="500" aria-label="Mensaje para Aule" placeholder="O escríbele a Aule…" />
-            <button type="submit" class="compact">Enviar</button>
+            <button type="submit" class="compact" id="type-send">Enviar</button>
           </form>
         </div>
 

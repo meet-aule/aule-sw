@@ -584,7 +584,10 @@ test("when Aule does not arrive the page says so and offers to try again; a sess
   // and not on the alert line; the tile shows its short line without saying it again.
   assert.doesNotMatch(missing, /showMessage/);
   const intro = bodyOf(app, "showIntro");
-  assert.match(intro, /if \(tutorLate\) \{\s*write\(\$\("session-title"\), SESSION_TITLE, "es"\);\s*write\(\$\("session-intro"\), recoveryText\("tutor_missing"\)\);/);
+  // The title says Aule could not make it, not that the session started; the line under it
+  // says whose fault it is not, and nothing says it twice (the review of 24 Nov).
+  assert.match(intro, /if \(tutorLate\) \{\s*write\(\$\("session-title"\), recoveryText\("missing_title"\)\);\s*write\(\$\("session-intro"\), recoveryText\("tutor_missing"\)\);/);
+  assert.match(missing, /const focused = document\.activeElement === title;[\s\S]*showIntro\(\);\s*if \(focused\) \{\s*title\.blur\(\);\s*title\.focus\(\{ preventScroll: true \}\);/, "a screen reader on the title hears the new one");
   assert.ok(intro.indexOf("tutorLate") < intro.indexOf("firstSession"), "Aule not arriving comes before A16's words");
   const line = html.match(/<p[^>]*\bid="session-intro"[^>]*>/)?.[0] ?? "";
   assert.match(line, /role="status"/);
@@ -593,7 +596,7 @@ test("when Aule does not arrive the page says so and offers to try again; a sess
   const [, empty] = rules(css).find(([selector]) => selector === ".session-intro:empty") ?? [];
   assert.match(empty ?? "", /position: absolute;/);
   const tile = bodyOf(app, "setTutorState");
-  assert.match(tile, /line\.setAttribute\("aria-live", "off"\);\s*write\(line, recoveryText\("tutor_missing_short"\)\);/);
+  assert.match(tile, /line\.setAttribute\("aria-live", "off"\);\s*write\(line, ""\);/, "the sad face's line says nothing more");
   assert.match(tile, /line\.removeAttribute\("aria-live"\);/);
   // The clock shows once the tutor is in; a tutor who comes late clears the offer.
   assert.match(html, /<span id="clock" class="clock" aria-label="Tiempo que queda" hidden><\/span>/);
@@ -667,6 +670,68 @@ test("a02 hands the browser to the child: first-steps.js's words in the child's 
   assert.match(bodyOf(home, "firstRun"), /return confirmed \|\| \(plan\?\.plan === "trial" && !plan\.ends_at\);/);
   assert.match(blocks(home, 'onShow("home"')[0], /confirmed = false;/);
   assert.match(blocks(home, "onAccount((account) =>").join("\n"), /confirmed = false;[\s\S]*\$\("a02-name"\)\.textContent = "";/);
+});
+
+test("a child's screen says one short sentence an element, and what only an adult can fix has a line of its own (D33)", () => {
+  const a05 = html.slice(html.indexOf('data-screen="a05"'), html.indexOf('<section class="screen" data-screen="session"'));
+  assert.doesNotMatch(html, /Si el botón es de color/);
+  assert.match(a05, /<p class="ink-text" id="a05-text"><\/p>/, "A05's line is written from first-steps.js");
+  // The round buttons say what they are, by first-steps.js's keys.
+  for (const [id, on, off] of [
+    ["lobby-mic-text", "mic_on", "mic_off"],
+    ["lobby-cam-text", "cam_on", "cam_off"],
+    ["mic-text", "mic_on", "mic_off"],
+  ]) {
+    assert.match(html, new RegExp(`id="${id}" data-on="${on}" data-off="${off}"`), id);
+  }
+  assert.match(bodyOf(scripts["app.js"], "setRound"), /writeWords\(says, on \? says\.dataset\.on : says\.dataset\.off\);/);
+  // The adult's line sits under the child's status line, and is not a live region: the line above is.
+  const help = a05.match(/<p[^>]*\bid="check-help"[^>]*>/)?.[0] ?? "";
+  assert.match(help, /class="device-note check-help"/);
+  assert.doesNotMatch(help, /role=|aria-live/);
+  assert.ok(a05.indexOf('id="check-status"') < a05.indexOf('id="check-help"') && a05.indexOf('id="check-help"') < a05.indexOf('id="mic-retry"'));
+  assert.match(bodyOf(scripts["app.js"], "showCheck"), /writeWords\(\$\("check-help"\), micTrouble \? `\$\{micTrouble\}_help` : ""\);/);
+  // A04's title is César's question again, with the greeting over it; A04 · Detalles' note and the card's are one sentence.
+  assert.match(html, /<p class="ink-text" id="a04-hello"><\/p>\s*<h2 class="ink-title" id="a04-title" tabindex="-1">¿Qué hacemos hoy\?<\/h2>/);
+  assert.match(html, /id="subject-note" hidden>Aquí Aule te ayuda con lo que traigas\.<\/p>/);
+  assert.match(html, /<p class="note">También puedes decirlo o mostrar tu cuaderno\.<\/p>/);
+});
+
+test("A04, A04 · Detalles and A05 speak the student's language, marked on each element, as a02 does", () => {
+  const home = scripts["home.js"];
+  assert.match(home, /const chosenLanguage = \(\) => languageOf\(chosen\?\.language\);/);
+  const [a04] = blocks(home, 'onShow("a04"');
+  for (const [id, key] of [
+    ["a04-hello", '"a04_hello"'],
+    ["a04-title", '"a04_title"'],
+    ["kind-review", "REVIEW.key"],
+    ["a04-back", '"back"'],
+  ]) {
+    assert.ok(a04.includes(`writeWords($("${id}"), ${key}, language`), id);
+  }
+  assert.match(a04, /writeWords\(\$\("a04-hello"\), "a04_hello", language, \{ name: chosen\.name \}\);/);
+  assert.match(a04, /writeWords\(button\.querySelector\("\.choice-words"\), kindKey\(button\.dataset\.kind\), language\);/);
+  const [details] = blocks(home, 'onShow("a04-details"');
+  for (const id of ["a04-details-title", "a04-details-back", "a04-details-line", "subject-note", "details-next"]) {
+    assert.ok(details.includes(`writeWords($("${id}"), `), id);
+  }
+  for (const id of ["subject-label", "due-label", "topic-label"]) assert.ok(details.includes(`fieldLabel($("${id}"), `), id);
+  assert.match(details, /new Option\(words\(`subject_\$\{subject\}`, language\), subject\)/);
+  assert.match(details, /\$\("subject"\)\.lang = language;/);
+  assert.match(details, /\$\("topic"\)\.lang = language;/);
+  assert.match(bodyOf(home, "fieldLabel"), /label\.lang = language;/);
+  assert.match(bodyOf(home, "writeWords"), /element\.lang = language;/);
+  // A05: its title and line, its buttons' names and «Volver».
+  const app = scripts["app.js"];
+  assert.match(bodyOf(app, "showRecoverable"), /else writeWords\(\$\("a05-title"\), "a05_title"\);/);
+  const lobby = bodyOf(app, "openLobby");
+  for (const write of ['writeWords($("a05-text"), "a05_line");', 'nameRound($("lobby-mic"), "mic_label");', 'nameRound($("lobby-cam"), "cam_label");', 'writeWords($("lobby-back"), "back");']) {
+    assert.ok(lobby.includes(write), write);
+  }
+  assert.match(bodyOf(app, "nameRound"), /button\.setAttribute\("aria-label", words\(key, language\)\);\s*button\.lang = language;/);
+  assert.doesNotMatch(app, /A05_TITLE/);
+  // Signed out, A04's greeting, which names the child, goes.
+  assert.match(blocks(home, "onAccount((account) =>").join("\n"), /\$\("a04-hello"\)\.textContent = "";/);
 });
 
 test("each new state of the first steps names where it comes from in the Figma, or says it is web-only", () => {
@@ -764,7 +829,13 @@ test("«Mostrar mi tarea» shows what the camera sees on this device first; «Li
   assert.match(bodyOf(app, "showCoach"), /manualTurns && tutorReady && wanted\.mic && !aiming/);
   assert.match(aim, /showCoach\(\);/);
   assert.match(bodyOf(app, "stopAiming"), /showCoach\(\);/);
-  assert.match(aim, /aimTimer = setTimeout\(\(\) => stopAiming\(\), AIM_MS\);/);
+  // After the wait the line says the camera went off, for a moment.
+  assert.match(aim, /aimTimer = setTimeout\(\(\) => stopAiming\(\{ waited: true \}\), AIM_MS\);/);
+  assert.match(bodyOf(app, "stopAiming"), /writeWords\(\$\("camera-aim"\), waited \? "camera_off" : ""\);\s*if \(waited\) \{\s*aimNoteTimer = setTimeout\(\(\) => \{\s*writeWords\(\$\("camera-aim"\), ""\);\s*showCoach\(\);\s*\}, PASSING_MS\);/);
+  // The coach waits while that line says anything: on a small phone its shelf would cover it.
+  assert.match(bodyOf(app, "showCoach"), /!aiming && !\$\("camera-aim"\)\.textContent/);
+  const stopping = bodyOf(app, "stopAiming");
+  assert.ok(stopping.indexOf('waited ? "camera_off"') < stopping.indexOf("showCoach();"), "the line is written before the coach looks at it");
   assert.match(app, /const AIM_MS = 30_000;/);
   // «Listo» does nothing unless the camera is pointed, and the wait ends as it is pressed.
   const send = bodyOf(app, "showWork");
@@ -821,6 +892,50 @@ test("the line under Aule's face says whose turn it is, and follows the hold", (
   // Nothing is heard before the tutor is ready, so the open microphone's switch waits for it.
   assert.match(bodyOf(app, "showTalk"), /\$\("mic-group"\)\.hidden = manualTurns \|\| !tutorReady;/);
   assert.match(sessionHtml(), /<div class="mic-group" id="mic-group" hidden>/);
+  // It is with the talk, where the talk button is with held turns: in the row under the stage it
+  // wrapped below the first screen of a short screen (800 × 480, the review of 24 Nov).
+  const talking = sessionHtml().slice(sessionHtml().indexOf('<div class="talking">'), sessionHtml().indexOf('class="session-bar-end"'));
+  assert.ok(talking.indexOf('id="mic-group"') !== -1 && talking.indexOf('id="mic-group"') < talking.indexOf('id="talk"'));
+});
+
+test("the session's own words follow the student's language: «Terminar», the clock, the typed message, the conversation and who said what", () => {
+  const app = scripts["app.js"];
+  assert.match(bodyOf(app, "join"), /coaching = firstSession;\s*sessionWords\(\);/);
+  const said = bodyOf(app, "sessionWords");
+  assert.match(said, /writeWords\(\$\("end"\), "end_session"\);/);
+  assert.match(said, /writeWords\(\$\("type-send"\), "send"\);/);
+  for (const [id, attribute, key] of [
+    ["clock", "aria-label", "clock_label"],
+    ["typed", "aria-label", "type_label"],
+    ["typed", "placeholder", "type_placeholder"],
+    ["transcript", "aria-label", "conversation"],
+  ]) {
+    assert.ok(said.includes(`[$("${id}"), "${attribute}", "${key}"]`), `${id} ${attribute}`);
+  }
+  // Marked with the language, so a screen reader reads the conversation's lines in it (WCAG 3.1.2).
+  assert.match(said, /element\.lang = language;/);
+  assert.match(sessionHtml(), /<button type="submit" class="compact" id="type-send">Enviar<\/button>/);
+  // Who said each line, in that language; no Spanish «Tú» is written into a line.
+  assert.doesNotMatch(app, /dataset\.name = (?:mine \? )?"Tú/);
+  assert.equal((app.match(/dataset\.name = words\("you(?:_typed)?", sessionLanguage\(\)\)/g) ?? []).length, 3);
+  assert.match(app, /line\.dataset\.name = mine \? words\("you", sessionLanguage\(\)\) : "Aule";/);
+  // What went wrong with a turn or a typed message, too.
+  for (const key of ["talk_not_started", "turn_unheard", "message_failed"]) assert.ok(app.includes(`words("${key}", language)`), key);
+});
+
+test("a camera the session cannot use says so to the child, and under it, smaller and not live, what an adult can do (D33)", () => {
+  const app = scripts["app.js"];
+  const help = sessionHtml().match(/<p[^>]*\bid="session-help"[^>]*>/)?.[0] ?? "";
+  assert.match(help, /class="device-note session-help"/);
+  assert.doesNotMatch(help, /role=|aria-live/, "the message line above it is the alert");
+  assert.ok(sessionHtml().indexOf("data-message") < sessionHtml().indexOf('id="session-help"'));
+  const trouble = bodyOf(app, "cameraTrouble");
+  assert.match(trouble, /showPassingMessage\(words\(key, language\), language\);\s*writeWords\(\$\("session-help"\), `\$\{key\}_help`\);/);
+  // Both the camera's ways in say it this way, and the adult's line goes with the child's.
+  assert.equal((app.match(/cameraTrouble\(error\?\.name\)/g) ?? []).length, 2);
+  assert.doesNotMatch(app, /words\(cameraProblem\(/);
+  assert.match(bodyOf(app, "showMessage"), /writeWords\(\$\("session-help"\), ""\);/);
+  assert.match(bodyOf(app, "teardown"), /writeWords\(\$\("session-help"\), ""\);/);
 });
 
 test("Space holds to talk on the talk button and on the camera's buttons, and never presses them", async () => {

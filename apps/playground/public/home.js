@@ -6,7 +6,7 @@
 // asked with, and says whether it is the student's first run.
 
 import { $, SUBJECTS, call, clearEditor, describe, editingStudent, openEditor } from "./students.js";
-import { DATED, KINDS, OWN_SUBJECT, REVIEW, defaultSubject, kindLabel, objectiveFor, planLine } from "./steps.js";
+import { DATED, KINDS, OWN_SUBJECT, REVIEW, defaultSubject, kindKey, objectiveFor, planLine } from "./steps.js";
 import { back, current, getAccount, go, landing, need, onAccount, onShow, setAccount } from "./screens.js";
 import { languageOf, words } from "./first-steps.js";
 
@@ -254,6 +254,12 @@ function edit(student, handingOver = false) {
 }
 
 // --- A04 ¿Qué hacemos hoy? ----------------------------------------------------------------
+//
+// A04, its details and A05 speak in the student's language, as a02 does: their
+// words are first-steps.js's, and each element is marked with the language.
+
+/** The language of the chosen student's screens: theirs when the page has words in it, else Spanish. */
+const chosenLanguage = () => languageOf(chosen?.language);
 
 $("kinds").replaceChildren(
   ...KINDS.map((tile) => {
@@ -266,9 +272,10 @@ $("kinds").replaceChildren(
     icon.className = "icon";
     icon.dataset.icon = tile.icon;
     icon.setAttribute("aria-hidden", "true");
-    const words = document.createElement("span");
-    words.textContent = tile.label;
-    button.append(icon, words);
+    const label = document.createElement("span");
+    label.className = "choice-words";
+    label.textContent = words(tile.key, "es");
+    button.append(icon, label);
     button.addEventListener("click", () => choose(tile.kind));
     return button;
   }),
@@ -288,11 +295,17 @@ function choose(next) {
 $("kind-review").addEventListener("click", () => choose(REVIEW.kind));
 
 onShow("a04", () => {
-  $("a04-title").textContent = `Hola, ${chosen.name}. ¿Qué hacemos hoy?`;
-  // Coming back from its details, the chosen tile shows Seleccionada.
+  const language = chosenLanguage();
+  // The name as the parent wrote it, then César's question: one sentence each.
+  writeWords($("a04-hello"), "a04_hello", language, { name: chosen.name });
+  writeWords($("a04-title"), "a04_title", language);
   for (const button of $("kinds").children) {
+    writeWords(button.querySelector(".choice-words"), kindKey(button.dataset.kind), language);
+    // Coming back from its details, the chosen tile shows Seleccionada.
     button.setAttribute("aria-pressed", String(kind !== undefined && button.dataset.kind === kind));
   }
+  writeWords($("kind-review"), REVIEW.key, language);
+  writeWords($("a04-back"), "back", language);
 });
 
 // --- A04 · Detalles (web-only): subject, topic and, for homework and evaluations, the day --
@@ -301,14 +314,40 @@ function showSubjectNote() {
   $("subject-note").hidden = $("subject").value === OWN_SUBJECT;
 }
 
+/** A field's label on A04 · Detalles, with «(opcional)» after it for an optional one. */
+function fieldLabel(label, key, language, optional = false) {
+  const parts = [words(key, language)];
+  if (optional) {
+    const note = document.createElement("span");
+    note.className = "optional";
+    note.textContent = words("optional", language);
+    parts.push(" ", note);
+  }
+  label.replaceChildren(...parts);
+  label.lang = language;
+}
+
 onShow("a04-details", () => {
-  $("a04-details-title").textContent = kindLabel(kind);
+  const language = chosenLanguage();
+  writeWords($("a04-details-title"), kindKey(kind), language);
+  writeWords($("a04-details-back"), "back", language);
+  writeWords($("a04-details-line"), "details_line", language);
+  fieldLabel($("subject-label"), "details_subject", language);
+  fieldLabel($("due-label"), "details_due", language, true);
+  fieldLabel($("topic-label"), "details_topic", language, true);
+  $("topic").placeholder = words("details_topic_example", language);
+  $("topic").lang = language;
+  writeWords($("subject-note"), "details_note", language);
+  writeWords($("details-next"), "details_next", language);
   $("due-line").hidden = !DATED.includes(kind);
   const whose = `${chosen.id}|${kind}`;
   if (whose !== detailsOf) {
     detailsOf = whose;
     const kept = subjectsKept() ?? [];
-    $("subject").replaceChildren(...kept.map((subject) => new Option(SUBJECTS[subject], subject)), new Option("Otra", "other"));
+    $("subject").replaceChildren(
+      ...[...kept, "other"].map((subject) => new Option(words(`subject_${subject}`, language), subject)),
+    );
+    $("subject").lang = language;
     $("subject").value = defaultSubject(chosen.subjects, kept);
     $("topic").value = "";
     $("due").value = "";
@@ -337,14 +376,14 @@ onAccount((account) => {
   handoff = null;
   confirmed = false;
   detailsOf = "";
-  // a02 named the child.
+  // a02 and A04 named the child.
   $("a02-lead").textContent = "";
   $("a02-name").textContent = "";
+  $("a04-hello").textContent = "";
   $("hello").textContent = "";
   $("plan-line").textContent = "";
   $("student-list").replaceChildren();
   $("team-panel").hidden = true;
-  $("a04-title").textContent = "";
   // A04 · Detalles' subject is the child's default one; it is drawn again for the next family.
   $("subject").replaceChildren();
   $("topic").value = "";
