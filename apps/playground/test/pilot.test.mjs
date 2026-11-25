@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { bySource, byWeek, outOf, share, weekLabel, zoneLabel } from "../public/pilot.js";
+import { bySource, byWeek, childFigures, outOf, share, weekLabel, zoneLabel } from "../public/pilot.js";
 
 const line = (week, source, families, started, week1_over, repeated, week4_over, week4, paying) => ({
   week,
@@ -90,4 +90,48 @@ test("the weeks are Peru's unless the platform counts them in another zone", () 
   assert.equal(zoneLabel(0), "en hora UTC+0");
   assert.equal(zoneLabel(-180), "en hora UTC−3");
   assert.equal(zoneLabel(330), "en hora UTC+5.5");
+});
+
+test("the children back within a week read out of those whose week is over, with all of them so far beside it", () => {
+  const weekly = {
+    children: { with_a_session: 3, week1_over: 2, back_in_week1: 1, back_so_far: 1 },
+    talk: { median_child_turns_per_minute: 0.75, sessions: 2 },
+  };
+  assert.deepEqual(childFigures(weekly), [
+    ["niños que volvieron en 7 días (hasta hoy: 1 de 3)", "1 de 2 (50 %)"],
+    ["turnos del niño por minuto (mediana), en 2 sesiones", "0,8"],
+  ]);
+});
+
+test("while no child's week is over the share is a dash, and so is a median the platform could not work out", () => {
+  const early = {
+    children: { with_a_session: 5, week1_over: 0, back_in_week1: 0, back_so_far: 2 },
+    talk: { median_child_turns_per_minute: null, sessions: 0 },
+  };
+  assert.deepEqual(childFigures(early), [
+    ["niños que volvieron en 7 días (hasta hoy: 2 de 5)", "—"],
+    ["turnos del niño por minuto (mediana)", "—"],
+  ]);
+  // An answer from before these figures, or a broken one, counts as nothing.
+  for (const answer of [{}, null, undefined, { children: { week1_over: "2", back_in_week1: -1 }, talk: { median_child_turns_per_minute: "0.9" } }]) {
+    assert.deepEqual(childFigures(answer), [
+      ["niños que volvieron en 7 días (hasta hoy: 0 de 0)", "—"],
+      ["turnos del niño por minuto (mediana)", "—"],
+    ], JSON.stringify(answer));
+  }
+});
+
+test("one session is said in the singular", () => {
+  assert.deepEqual(childFigures({ talk: { median_child_turns_per_minute: 1.2, sessions: 1 } })[1], ["turnos del niño por minuto (mediana), en 1 sesión", "1,2"]);
+  assert.equal(childFigures({ talk: { median_child_turns_per_minute: 1.2, sessions: 2 } })[1][0], "turnos del niño por minuto (mediana), en 2 sesiones");
+});
+
+test("the median is written with Peru's decimal comma and one decimal", () => {
+  const median = (value) => childFigures({ talk: { median_child_turns_per_minute: value, sessions: 8 } })[1][1];
+  assert.equal(median(0.9), "0,9");
+  assert.equal(median(1), "1,0");
+  assert.equal(median(12.34), "12,3");
+  assert.equal(median(0), "0,0");
+  assert.equal(median(Number.NaN), "—");
+  assert.equal(median(-1), "—");
 });
