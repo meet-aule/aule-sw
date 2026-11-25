@@ -481,6 +481,7 @@ async fn every_route_needs_its_credentials(pool: PgPool) {
         (Method::GET, "/v1/children/00000000-0000-0000-0000-000000000000/sessions"),
         (Method::POST, "/v1/sessions"),
         (Method::GET, "/v1/agent/session"),
+        (Method::GET, "/v1/admin/families?q=ana&status=trial"),
     ] {
         let (status, body) = app.call(method.clone(), path, None, None).await;
         assert_eq!(status, StatusCode::UNAUTHORIZED, "{path}");
@@ -2507,6 +2508,181 @@ async fn free_access_allows_used_and_expired_trials_without_staff_privileges(poo
     let (status, refused) = app.call(Method::POST, "/v1/sessions", Some(&ana), Some(body)).await;
     assert_eq!(status, StatusCode::PAYMENT_REQUIRED);
     assert_eq!(refused["error"]["message"], "trial_over");
+}
+
+/// A family that signed up `days` ago, with one guardian, and the link it came by.
+async fn family_since(app: &App, name: &str, email: &str, source: Option<&str>, days: i32) -> String {
+    sqlx::query_scalar(
+        "with family as (
+           insert into families (id, name, source, created_at)
+           values (gen_random_uuid(), $1, $3, now() - make_interval(days => $4)) returning id)
+         insert into guardians (id, family_id, email, name)
+         select gen_random_uuid(), id, $2, $1 from family returning family_id::text",
+    )
+    .bind(name)
+    .bind(email)
+    .bind(source)
+    .bind(days)
+    .fetch_one(&app.state.pool)
+    .await
+    .unwrap()
+}
+
+/// The names in the team's list for `query`, newest first, and the whole answer.
+async fn listed(app: &App, token: &str, query: &str) -> (Vec<String>, Value) {
+    let (status, answer) =
+        app.call(Method::GET, &format!("/v1/admin/families{query}"), Some(token), None).await;
+    assert_eq!(status, StatusCode::OK, "{query}: {answer}");
+    let names = answer["families"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|family| family["name"].as_str().unwrap().to_string());
+    (names.collect(), answer)
+}
+
+#[sqlx::test(migrator = "aule_platform::MIGRATOR")]
+async fn the_team_searches_and_filters_families_and_pages_through_them(pool: PgPool) {
+    let app = app(pool);
+    let team = app.sign_in("team@example.org", "Equipo").await;
+    let mamani = family_since(&app, "Mamani", "ana@example.org", Some("cesar"), 5).await;
+    let rojas = family_since(&app, "Rojas", "a_b@x.org", Some("cesar"), 4).await;
+    let flores = family_since(&app, "Flores", "axb@x.org", Some("colegio-2"), 3).await;
+    family_since(&app, "Torres", "luis@example.org", None, 2).await;
+    let names = |list: &[&str]| list.iter().map(|name| name.to_string()).collect::<Vec<_>>();
+
+    // With nothing asked, the list is today's: every family, newest first, as it was.
+    let (all, answer) = listed(&app, &team, "").await;
+    assert_eq!(all, names(&["Equipo", "Torres", "Flores", "Rojas", "Mamani"]));
+    assert_eq!((answer["next"].clone(), answer["total"].clone()), (Value::Null, json!(5)));
+    assert_eq!(
+        answer["sources"],
+        json!([{ "source": "cesar", "families": 2 }, { "source": "colegio-2", "families": 1 }])
+    );
+    let mut fields = keys(&answer["families"][1]);
+    fields.sort();
+    assert_eq!(
+        fields,
+        [
+            "allowed",
+            "amount_cents",
+            "children",
+            "created_at",
+            "currency",
+            "emails",
+            "ends_at",
+            "id",
+            "last_session",
+            "left",
+            "minutes_30d",
+            "name",
+            "period",
+            "plan",
+            "price",
+            "sessions_30d",
+            "sessions_7d",
+            "sessions_per_week",
+            "source",
+            "standing",
+            "used",
+        ]
+    );
+
+    // By a guardian's address or the family's name, whatever the case; `_` and `%` mean themselves.
+    assert_eq!(listed(&app, &team, "?q=ANA@").await.0, names(&["Mamani"]));
+    assert_eq!(listed(&app, &team, "?q=a_b").await.0, names(&["Rojas"]));
+    assert_eq!(listed(&app, &team, "?q=%25").await.0, names(&[]));
+    assert_eq!(listed(&app, &team, "?q=%20flor%20").await.0, names(&["Flores"]));
+    let (found, answer) = listed(&app, &team, "?q=x.org").await;
+    assert_eq!((found, answer["total"].clone()), (names(&["Flores", "Rojas"]), json!(2)));
+    // By the link it came by, alone or with a search.
+    let (found, answer) = listed(&app, &team, "?source=cesar").await;
+    assert_eq!((found, answer["total"].clone()), (names(&["Rojas", "Mamani"]), json!(2)));
+    assert_eq!(listed(&app, &team, "?source=cesar&q=ana").await.0, names(&["Mamani"]));
+    assert_eq!(listed(&app, &team, "?source=nadie").await.1["total"], 0);
+    // An empty field is no filter, as a form sends it.
+    assert_eq!(listed(&app, &team, "?q=&source=&status=&before=&limit=").await.0.len(), 5);
+
+    // By the plan it has now: granted, over, the team's own, and the trial.
+    let grant = format!("/v1/admin/families/{rojas}/grant");
+    let (status, _) = app.call(Method::POST, &grant, Some(&team), Some(json!({ "days": 30 }))).await;
+    assert_eq!(status, StatusCode::CREATED);
+    let child = app.child_of(&flores).await;
+    app.past_session(&child, "9 days", 20).await;
+    for (status, expected) in [
+        ("trial", names(&["Torres", "Mamani"])),
+        ("granted", names(&["Rojas"])),
+        ("none", names(&["Flores"])),
+        ("team", names(&["Equipo"])),
+        ("paid", names(&[])),
+        ("free", names(&[])),
+    ] {
+        let (found, answer) = listed(&app, &team, &format!("?status={status}")).await;
+        assert_eq!(found, expected, "{status}");
+        assert_eq!(answer["total"], Value::Null, "counting by plan would take every family's");
+    }
+
+    // A page at a time: `next` goes on where the page before ended, and the last page has none.
+    let (page, answer) = listed(&app, &team, "?limit=2").await;
+    assert_eq!(page, names(&["Equipo", "Torres"]));
+    let next = answer["next"].as_str().unwrap().to_string();
+    let (page, answer) = listed(&app, &team, &format!("?limit=2&before={next}")).await;
+    assert_eq!((page, answer["total"].clone()), (names(&["Flores", "Rojas"]), json!(5)));
+    let next = answer["next"].as_str().unwrap().to_string();
+    let (page, answer) = listed(&app, &team, &format!("?limit=2&before={next}")).await;
+    assert_eq!((page, answer["next"].clone()), (names(&["Mamani"]), Value::Null));
+    let (page, answer) = listed(&app, &team, "?status=trial&limit=1").await;
+    assert_eq!(page, names(&["Torres"]));
+    let next = answer["next"].as_str().unwrap().to_string();
+    let (page, answer) = listed(&app, &team, &format!("?status=trial&limit=1&before={next}")).await;
+    assert_eq!((page, answer["next"].clone()), (names(&["Mamani"]), Value::Null));
+    // A limit is kept within 1 and 300.
+    assert_eq!(listed(&app, &team, "?limit=0").await.0, names(&["Equipo"]));
+    assert_eq!(listed(&app, &team, "?limit=5000").await.0.len(), 5);
+
+    // A search by plan looks at 300 families at most: a page with none found
+    // still says where to go on, and the next one finds the family further down.
+    sqlx::query(
+        "insert into families (id, name, created_at)
+         select gen_random_uuid(), 'Relleno ' || n, now() - interval '1 day' - make_interval(secs => n)
+         from generate_series(1, 300) n",
+    )
+    .execute(&app.state.pool)
+    .await
+    .unwrap();
+    let (page, answer) = listed(&app, &team, "?status=none").await;
+    assert_eq!(page, names(&[]));
+    let next = answer["next"].as_str().unwrap().to_string();
+    let (page, answer) = listed(&app, &team, &format!("?status=none&before={next}")).await;
+    assert_eq!((page, answer["next"].clone()), (names(&["Flores"]), Value::Null));
+    let (page, answer) = listed(&app, &team, "").await;
+    assert_eq!((page.len(), answer["total"].clone()), (300, json!(305)));
+    assert!(answer["next"].is_string());
+
+    // What is no search, no link, no plan or no cursor is refused, and only the team gets this far.
+    for query in [
+        format!("?q={}", "a".repeat(101)),
+        "?q=ana%0Aluis".to_string(),
+        "?source=Cesar".to_string(),
+        "?source=%3Cb%3E".to_string(),
+        "?status=gratis".to_string(),
+        "?before=ayer".to_string(),
+        format!("?before={}", mamani.to_uppercase()),
+        "?limit=muchas".to_string(),
+    ] {
+        let (status, refused) =
+            app.call(Method::GET, &format!("/v1/admin/families{query}"), Some(&team), None).await;
+        assert_eq!(
+            (status, refused["error"]["code"].as_str()),
+            (StatusCode::BAD_REQUEST, Some("bad_request")),
+            "{query}"
+        );
+    }
+    let luis = app.sign_in("luis@example.org", "Luis").await;
+    assert_eq!(
+        app.call(Method::GET, "/v1/admin/families?q=ana&limit=1", Some(&luis), None).await.0,
+        StatusCode::FORBIDDEN
+    );
 }
 
 #[sqlx::test(migrator = "aule_platform::MIGRATOR")]
