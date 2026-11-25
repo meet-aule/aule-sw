@@ -16,6 +16,11 @@ In a session, Aule's face is at the centre of the screen, on a stage, with one l
 
 The page's screens follow the Figma file «Login-Aule» v8, in the order César gave the flows on 24 November: the parent's on paper (whether there is an account, the ways in, the emailed code with a new family's name, the authorisation, the child's name and, if the family likes, their grade), then the child's in the device's black on white (the hand-off «¿Eres tú?», what today's session is for, the microphone before it, the session). [FIGMA.md](FIGMA.md) maps each screen, component, token and icon to the code, and says where the page differs from the file.
 
+Family screens and the guide use a subtle, static CSS paper texture (FIGMA.md
+D38), disabled for increased contrast, forced colours and printing. The PNG
+installation icons are losslessly compressed: their pixel data and transparency
+are preserved, and all four together weigh 4,274 bytes.
+
 ### A child's first steps
 
 - **The road there.** A new family writes its name with its address, and after «Autorizo» comes the child's name, with an optional grade; that screen starts the first session (P12 is folded into it), or «Empezar más tarde» goes to the home. The short interview (the grade, what the family expects, what the child likes) is offered on the home afterwards, «Cuéntale a Aule sobre {nombre}», and saved to the child's profile with the consents as they were. By email it is 9 screens from C01 to A05, with Google 7. FIGMA.md D34.
