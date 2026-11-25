@@ -54,7 +54,9 @@ uv sync --locked
 uv run ruff check . && uv run ruff format --check .
 uv run pytest
 
-# platform (needs DATABASE_URL to a PostgreSQL 17 with pgvector)
+# platform (needs DATABASE_URL to a PostgreSQL 17 with pgvector, and OpenSSL's
+# headers with pkg-config: pkg-config libssl-dev on Debian or Ubuntu,
+# brew install openssl@3 pkg-config on macOS)
 cd apps/platform
 cargo fmt --check
 cargo clippy --all-targets --locked -- -D warnings
