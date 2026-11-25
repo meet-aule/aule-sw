@@ -20,7 +20,7 @@ aule-platform version   # which build this is (also --version); needs no setting
 | `memory` | Statements about a child with pgvector embeddings; recall by meaning, or by date without an embedding model |
 | `supervisor` | The brief before a session, guidance during it, the review after it |
 | `families`, `signin` | Families, guardians, children, append-only consent; sign-in by emailed code |
-| `passkeys` | The team console's passkeys, checked with webauthn-rs: the ceremonies in progress, and a team member adding, listing and deleting their own |
+| `passkeys` | The team console's passkeys, checked with webauthn-rs: the ceremonies in progress, a team member adding, listing and deleting their own, and signing in with one |
 | `devices` | Registration, claim codes, signed check-in and sessions, firmware |
 | `events`, `notices`, `push` | The outbox and its delivery; what families are told; pushes through Firebase Cloud Messaging |
 | `sessions` | Starting a session (its room and the token to join it), the agent's API for one session, the review job |
@@ -132,9 +132,9 @@ physical microphone switch. Do not replay buffered speech after reconnecting.
 
 The operator's token, or a signed-in guardian whose address is in
 `AULE_ADMIN_EMAILS` (`auth::Staff`); a family's token gets 403. The team's
-console (`apps/admin`) signs its members in with codes of their own (the first
-two routes, which need no token). What the team reads about the families is
-what it needs to look after them: never what a child said.
+console (`apps/admin`) signs its members in with codes of their own, or with a
+passkey (the first four routes, which need no token). What the team reads about
+the families is what it needs to look after them: never what a child said.
 
 A team member's passkeys for the console take more than that
 (`auth::TeamMember`): a session the team's sign-in opened, which lasts 12 hours,
@@ -146,10 +146,21 @@ origin `AULE_ADMIN_PASSKEY_ORIGIN`, with user verification required. A
 ceremony is kept in the platform's memory for 5 minutes (the browser gets 4)
 and works once, so a restart drops the ones in progress.
 
+A passkey sign-in needs no address: the passkey says whose it is, and its owner
+must still be in this platform's `AULE_ADMIN_EMAILS`, so taking someone off the
+team needs the platform restarted, not only the console. It opens the same
+12-hour session a code does, keeps the counter and backup state the library
+read, and refuses a counter that went back. Passkeys are optional: a member
+who has one still gets codes. Making them required is the owner's decision, to
+be made in `signin::team_start` and `team_verify`; a member who lost every
+device would then need the operator to delete their rows in `team_passkeys`.
+
 | Route | What it does |
 |---|---|
 | `POST /v1/auth/team/start` | `{email}`: a six-digit code for the team's console, mailed only to an address in `AULE_ADMIN_EMAILS` that has a guardian account. Every address gets the same `204`. These codes are kept apart from a family's, so asking for one leaves nothing a family's sign-in can read or use up: they have their own five an hour |
 | `POST /v1/auth/team/verify` | `{email, code}`: `{token, expires_in_hours: 12}` for the code `team/start` mailed, a session of 12 hours instead of a family's 30 days. It never makes an account; anything else, a wrong or used code included, is the same `403`, and five wrong tries burn the code |
+| `POST /v1/auth/team/passkey/options` | What the browser needs to sign in with a passkey, `{ceremony, options: {publicKey}}`, for `PublicKeyCredential.parseRequestOptionsFromJSON`: the same for everyone, with an empty allow list (the browser's picker shows whose passkeys they are), user verification required, and no forced autofill |
+| `POST /v1/auth/team/passkey/verify` | `{ceremony, credential}`, with `credential` as the browser's `credential.toJSON()` (16 KiB at most): `{token, expires_in_hours: 12}`, the session a code opens, for the team member whose passkey signed. Anything else is the same `403`: an unknown, used or expired ceremony, a passkey nobody has, a user handle that is not its owner's, an owner no longer on the team, or one the library refuses (user verification, origin, RP id, signature, a counter that went back, a change of backup eligibility) |
 | `POST /v1/admin/passkeys/options` | What the browser needs to create a passkey for the caller, `{ceremony, options: {publicKey}}`, for `PublicKeyCredential.parseCreationOptionsFromJSON`: discoverable, with user verification, attestation `none`, and the caller's own passkeys excluded. The ceremony is bound to this session, which must have been opened in the last 15 minutes (`409` otherwise: sign in again); a session has one at a time, and a new one replaces it. The user handle is random, the same for all of a member's passkeys, never their guardian id; the name shown is their address. `400` at 10 passkeys |
 | `POST /v1/admin/passkeys` | `{ceremony, label, credential}`, with `credential` as the browser's `credential.toJSON()` (16 KiB at most): the passkey, kept once the library has checked it. `201 {id, label, created_at, last_used_at}`. `400` for a name that is not 1 to 60 characters on one line, a ceremony that is unknown, used, expired or another session's, a credential the browser says is not discoverable, one the library refuses, one already registered to anyone, or an eleventh |
 | `GET /v1/admin/passkeys` | The caller's own passkeys, newest first: `{passkeys: [{id, label, created_at, last_used_at}]}`. Never a credential id, a key, a handle, a counter or a flag |

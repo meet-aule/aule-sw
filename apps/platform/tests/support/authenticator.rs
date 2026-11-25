@@ -5,6 +5,7 @@
 
 use std::collections::BTreeMap;
 
+use aws_lc_rs::rand::SystemRandom;
 use aws_lc_rs::signature::{ECDSA_P256_SHA256_ASN1_SIGNING, EcdsaKeyPair, KeyPair};
 use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD as B64;
@@ -141,6 +142,30 @@ impl Authenticator {
                 "publicKeyAlgorithm": -7,
             },
             "clientExtensionResults": extensions,
+        })
+    }
+
+    /// `navigator.credentials.get()` with the platform's options, then
+    /// `credential.toJSON()`.
+    pub fn get(&mut self, options: &Value) -> Value {
+        self.tick();
+        let client_data = self.client_data("webauthn.get", options);
+        let data = self.data(false);
+        let mut signed = data.clone();
+        signed.extend_from_slice(&Sha256::digest(client_data.as_bytes()));
+        let signature = self.key.sign(&SystemRandom::new(), &signed).expect("a signature");
+        json!({
+            "id": self.id(),
+            "rawId": self.id(),
+            "type": "public-key",
+            "authenticatorAttachment": "platform",
+            "response": {
+                "clientDataJSON": B64.encode(client_data.as_bytes()),
+                "authenticatorData": B64.encode(&data),
+                "signature": B64.encode(signature.as_ref()),
+                "userHandle": B64.encode(&self.user_handle),
+            },
+            "clientExtensionResults": {},
         })
     }
 }

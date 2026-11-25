@@ -25,7 +25,8 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 use webauthn_rs::prelude::{
-    CredentialID, PasskeyRegistration, RegisterPublicKeyCredential, Url, WebauthnError,
+    CredentialID, DiscoverableAuthentication, DiscoverableKey, Passkey, PasskeyRegistration,
+    PublicKeyCredential, RegisterPublicKeyCredential, Url, WebauthnError,
 };
 use webauthn_rs::{Webauthn, WebauthnBuilder};
 
@@ -33,6 +34,7 @@ use crate::auth::{Input, TeamMember};
 use crate::config::AdminPasskeys;
 use crate::error::{ApiError, ApiResult};
 use crate::plans::team_member;
+use crate::signin::{TEAM_SESSION_HOURS, open_session};
 use crate::state::AppState;
 
 /// How long the browser is given for a ceremony. The library only passes it
@@ -58,6 +60,9 @@ pub const MAX_CREDENTIAL_ID_BYTES: usize = 1023;
 pub const BODY_BYTES: usize = 16 * 1024;
 
 const NOT_SET_UP: ApiError = ApiError::Unavailable("passkeys are not set up here");
+/// Every refusal of a passkey sign-in, whatever went wrong: nothing tells an
+/// unknown passkey from someone else's, a bad one or a used ceremony.
+const NOT_CONFIRMED: ApiError = ApiError::Forbidden("that passkey could not be confirmed");
 
 /// The team's console as a relying party: passkeys made for its RP id, and
 /// ceremonies accepted only from its exact origin, with no other subdomain
@@ -69,6 +74,8 @@ pub fn relying_party(settings: &AdminPasskeys) -> Result<Webauthn, WebauthnError
 
 /// A ceremony in progress.
 pub enum Ceremony {
+    /// A sign-in from the console's sign-in page: nobody is known yet.
+    SignIn(DiscoverableAuthentication),
     /// A passkey being added, by the session that asked for it.
     Register { session: String, guardian_id: Uuid, user_handle: Uuid, state: PasskeyRegistration },
 }
@@ -97,10 +104,11 @@ impl Ceremonies {
     /// session has one passkey being added at a time: a new one replaces it.
     pub fn put(&mut self, ceremony: Ceremony, now: Instant) -> String {
         self.held.retain(|_, (at, _)| now.saturating_duration_since(*at) < CEREMONY_LIFE);
-        let Ceremony::Register { session, .. } = &ceremony;
-        self.held.retain(
-            |_, (_, held)| !matches!(held, Ceremony::Register { session: other, .. } if other == session),
-        );
+        if let Ceremony::Register { session, .. } = &ceremony {
+            self.held.retain(
+                |_, (_, held)| !matches!(held, Ceremony::Register { session: other, .. } if other == session),
+            );
+        }
         while self.held.len() >= self.most {
             let Some(oldest) = self.held.iter().min_by_key(|(_, (at, _))| *at).map(|(key, _)| *key) else {
                 break;
@@ -345,6 +353,125 @@ pub async fn delete(
     Ok(StatusCode::NO_CONTENT)
 }
 
+/// What the browser is asked for to sign in. The library marks a
+/// discoverable sign-in for conditional mediation (an address field's
+/// autofill); the console has a button and no address field, so the
+/// browser's own picker is wanted, and the mark goes.
+fn request_options(options: &impl serde::Serialize) -> Option<Value> {
+    let mut options = serde_json::to_value(options).ok()?;
+    options.as_object_mut()?.remove("mediation");
+    Some(options)
+}
+
+/// `POST /v1/auth/team/passkey/options`: what the browser needs to sign in
+/// with a passkey of the console, and the ceremony's handle. The same for
+/// everyone: the list of passkeys allowed is empty, and the browser's picker
+/// shows whose they are.
+pub async fn sign_in_options(State(state): State<AppState>) -> ApiResult<Json<Value>> {
+    let rp = state.webauthn.clone().ok_or(NOT_SET_UP)?;
+    let unavailable = || ApiError::Unavailable("a passkey sign-in could not be started; try again");
+    let (options, authentication) = rp.start_discoverable_authentication().map_err(|error| {
+        tracing::warn!(%error, "a passkey sign-in could not be started");
+        unavailable()
+    })?;
+    let options = request_options(&options).ok_or_else(unavailable)?;
+    let handle =
+        state.passkey_ceremonies.lock().expect("lock").put(Ceremony::SignIn(authentication), Instant::now());
+    Ok(Json(json!({ "ceremony": handle, "options": options })))
+}
+
+#[derive(Deserialize)]
+pub struct SignInInput {
+    ceremony: String,
+    /// What the browser's `credential.toJSON()` gave, as the console passes it on.
+    credential: Value,
+}
+
+/// `POST /v1/auth/team/passkey/verify`: a session of `TEAM_SESSION_HOURS`
+/// for the team member whose passkey signed, as their code opens
+/// (`signin::team_verify`). Anything else is the same 403, and nothing is
+/// written before the library has accepted the passkey.
+pub async fn sign_in(
+    State(state): State<AppState>,
+    Input(body): Input<SignInInput>,
+) -> ApiResult<Json<Value>> {
+    let rp = state.webauthn.clone().ok_or(NOT_SET_UP)?;
+    let taken = state.passkey_ceremonies.lock().expect("lock").take(&body.ceremony, Instant::now());
+    let Some(Ceremony::SignIn(authentication)) = taken else { return Err(NOT_CONFIRMED) };
+    let credential: PublicKeyCredential =
+        serde_json::from_value(body.credential).map_err(|_| NOT_CONFIRMED)?;
+    // Who the browser says signed: nothing is proven yet, it only says which passkey to check.
+    let (user_handle, credential_id) =
+        rp.identify_discoverable_authentication(&credential).map_err(|_| NOT_CONFIRMED)?;
+    if credential_id.is_empty() || credential_id.len() > MAX_CREDENTIAL_ID_BYTES {
+        return Err(NOT_CONFIRMED);
+    }
+    let credential_id = credential_id.to_vec();
+
+    // The row stays locked until the new counter is kept, so two sign-ins
+    // with one passkey are compared one after the other.
+    let txn = state.db.begin().await?;
+    let found = txn
+        .query_one_raw(Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            "select p.id, p.guardian_id, p.user_handle, p.passkey, g.email::text as email
+             from team_passkeys p join guardians g on g.id = p.guardian_id
+             where p.credential_id = $1
+             for update of p",
+            [credential_id.into()],
+        ))
+        .await?;
+    let Some(found) = found else { return Err(NOT_CONFIRMED) };
+    // The library does not compare the user handle: a stored passkey has none.
+    if found.try_get::<Uuid>("", "user_handle")? != user_handle {
+        return Err(NOT_CONFIRMED);
+    }
+    let email: String = found.try_get("", "email")?;
+    let who = team_member(&email);
+    // The team is the platform's own list, read at start: a passkey outlives
+    // a place on it, and then opens nothing.
+    if !state.config.admin_emails.contains(&email) {
+        tracing::warn!(by = %who, "a passkey of someone no longer on the team was refused");
+        return Err(NOT_CONFIRMED);
+    }
+    let mut passkey: Passkey =
+        serde_json::from_value(found.try_get::<Value>("", "passkey")?).map_err(|_| {
+            tracing::error!(by = %who, "a stored team passkey could not be read");
+            NOT_CONFIRMED
+        })?;
+    let result = rp
+        .finish_discoverable_authentication(&credential, authentication, &[DiscoverableKey::from(&passkey)])
+        .map_err(|error| {
+            // The library's errors are fixed words.
+            tracing::info!(%error, by = %who, "a team passkey sign-in was refused");
+            NOT_CONFIRMED
+        })?;
+
+    // The counter and the backup state the library read are kept, as it
+    // advises: the next sign-in is compared with them. A synced passkey
+    // counts nothing, and the check is then skipped.
+    let id: Uuid = found.try_get("", "id")?;
+    let update = if passkey.update_credential(&result) == Some(true) {
+        let stored = serde_json::to_value(&passkey).map_err(|error| ApiError::Internal(error.to_string()))?;
+        Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            "update team_passkeys set passkey = $2, last_used_at = now() where id = $1",
+            [id.into(), stored.into()],
+        )
+    } else {
+        Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            "update team_passkeys set last_used_at = now() where id = $1",
+            [id.into()],
+        )
+    };
+    txn.execute_raw(update).await?;
+    let token = open_session(&txn, found.try_get("", "guardian_id")?, 0, TEAM_SESSION_HOURS).await?;
+    txn.commit().await?;
+    tracing::info!(by = %who, "a team member signed in with a passkey");
+    Ok(Json(json!({ "token": token, "expires_in_hours": TEAM_SESSION_HOURS })))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -465,5 +592,34 @@ mod tests {
         assert_eq!(algorithms, [&json!(-7), &json!(-257)]);
         // The browser's parseCreationOptionsFromJSON refuses a null.
         assert!(!options.to_string().contains("null"), "{options}");
+    }
+
+    #[test]
+    fn a_sign_in_asks_for_any_verified_passkey_in_the_browsers_own_picker() {
+        let (options, _) = rp().start_discoverable_authentication().unwrap();
+        let options = request_options(&options).unwrap();
+        assert_eq!(options.get("mediation"), None, "no autofill: the console has a button");
+        let public_key = &options["publicKey"];
+        assert_eq!(public_key["allowCredentials"], json!([]));
+        assert_eq!(public_key["userVerification"], "required");
+        assert_eq!(public_key["rpId"], "localhost");
+        assert_eq!(public_key["timeout"], 240_000);
+        assert!(!options.to_string().contains("null"), "{options}");
+    }
+
+    #[test]
+    fn a_sign_in_ceremony_is_no_registration() {
+        let mut ceremonies = Ceremonies::default();
+        let now = Instant::now();
+        let (_, authentication) = rp().start_discoverable_authentication().unwrap();
+        let signing = ceremonies.put(Ceremony::SignIn(authentication), now);
+        let adding = ceremonies.put(registering("session"), now);
+        assert!(matches!(ceremonies.take(&signing, now), Some(Ceremony::SignIn(_))));
+        assert!(matches!(ceremonies.take(&adding, now), Some(Ceremony::Register { .. })));
+        // A sign-in replaces no session's registration.
+        let (_, authentication) = rp().start_discoverable_authentication().unwrap();
+        let pending = ceremonies.put(registering("session"), now);
+        ceremonies.put(Ceremony::SignIn(authentication), now);
+        assert!(ceremonies.take(&pending, now).is_some());
     }
 }

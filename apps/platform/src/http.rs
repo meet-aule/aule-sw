@@ -50,6 +50,12 @@ pub fn router(state: AppState) -> Router {
         // The team's console signs Aule's team in with codes of its own
         .route("/v1/auth/team/start", post(signin::team_start))
         .route("/v1/auth/team/verify", post(signin::team_verify))
+        // ...or with a passkey, from the console's sign-in page
+        .route("/v1/auth/team/passkey/options", post(passkeys::sign_in_options))
+        .route(
+            "/v1/auth/team/passkey/verify",
+            post(passkeys::sign_in).layer(DefaultBodyLimit::max(passkeys::BODY_BYTES)),
+        )
         .route("/v1/auth/google", get(signin::google_client).post(signin::google))
         .route("/v1/auth/providers", get(signin::providers))
         .route("/v1/auth/github", post(signin::github))

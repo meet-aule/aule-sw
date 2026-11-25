@@ -277,7 +277,7 @@ async fn enter(
 
 /// A new session for a guardian, `days` and `hours` long: its token, of which
 /// only the hash is kept.
-async fn open_session(
+pub(crate) async fn open_session(
     db: &impl ConnectionTrait,
     guardian_id: Uuid,
     days: i32,
@@ -328,6 +328,9 @@ pub async fn team_start(
 ) -> ApiResult<StatusCode> {
     let email = normalized_email(&body.email)?;
     let mailer = state.mailer.as_ref().ok_or(ApiError::Unavailable("sign-in needs mail to be configured"))?;
+    // Passkeys are optional: a team member who has one still gets codes
+    // (tests/api.rs a_team_member_with_a_passkey_still_gets_codes). Making them
+    // required is the owner's decision; it is made here and in team_verify.
     if !state.config.admin_emails.contains(&email) {
         // The console's list and this one differ until both are restarted.
         tracing::warn!("a team code was asked for an address that is not on the team");
@@ -357,6 +360,8 @@ pub async fn team_verify(
     Input(body): Input<TeamVerifyInput>,
 ) -> ApiResult<Json<Value>> {
     let email = normalized_email(&body.email)?;
+    // Passkeys are optional (see team_start): a code still opens a session for
+    // a team member who has one.
     if !state.config.admin_emails.contains(&email) {
         return Err(wrong_code());
     }
