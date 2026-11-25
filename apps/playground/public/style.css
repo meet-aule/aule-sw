@@ -2197,50 +2197,34 @@ h3[tabindex="-1"]:focus {
   }
 }
 
-/* A session the engine runs: where it is, and the exercise in hand. */
+/* A session the engine runs: where it is, and the exercise in hand. The route is one line:
+   a dot for each stop done, then the stop in hand; nothing of what is still to come (D39). */
 .route {
   display: flex;
-  gap: 8px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  font: 400 16px/1.3 var(--sans);
 }
 
-.route li {
-  display: grid;
-  flex: 1 1 0;
-  gap: 2px;
-  min-width: 0;
-  padding: 8px 12px;
-  border: 2px solid var(--device-ink);
-  border-radius: var(--device-radius);
-  background: var(--device-paper);
-  color: var(--device-ink);
-  font: 400 14px/1.3 var(--sans);
+.route strong {
+  font-weight: 600;
 }
 
-.route li strong {
-  font: 600 16px/1.3 var(--sans);
+.route-done {
+  display: flex;
+  gap: 6px;
 }
 
-.route li span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.route-done:empty {
+  display: none;
 }
 
-.route li[data-state="pending"] {
-  border-style: dashed;
-}
-
-.route li[data-state="current"] {
-  border-width: 4px;
-  padding: 6px 10px;
-}
-
-.route li[data-state="done"] {
+.route-done i {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
   background: var(--device-ink);
-  color: var(--device-paper);
 }
 
 .card {
@@ -2434,9 +2418,9 @@ h3[tabindex="-1"]:focus {
     --intro-room: 72px;
   }
 
-  /* A session the engine runs: its route, over the stage. */
+  /* A session the engine runs: its route's one line, over the stage. */
   .screen[data-screen="session"]:has(#route:not([hidden])) {
-    --route-room: 49px;
+    --route-room: 29px;
   }
 
   .talking {
@@ -2458,10 +2442,6 @@ h3[tabindex="-1"]:focus {
 
   .screen[data-screen="session"]:has(.camera-aim:not(:empty)) {
     --aim-room: 16px;
-  }
-
-  .route li span {
-    display: none;
   }
 }
 
@@ -2491,10 +2471,6 @@ h3[tabindex="-1"]:focus {
   .talking #transcript {
     max-height: 50vh;
     overflow-y: auto;
-  }
-
-  .route li span {
-    display: none;
   }
 
   /* A drawing takes the stage at the screen's full width, with the band under it (D30):

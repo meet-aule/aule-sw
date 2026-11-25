@@ -539,7 +539,35 @@ function followTranscript(always = false) {
 
 // --- a session run by the engine: its stages and the exercise in hand ---------
 
-const ROUTE_STATE = { done: "Hecho", current: "Ahora", pending: "Después" };
+/**
+ * Where a session the engine runs is now (D39): the stop in hand, after a dot
+ * for each stop done. The stops still to come are not shown: a child on the
+ * first one saw every level ahead of it. Out of sight, a screen reader hears
+ * «Ahora: Refuerzo Nivel 2. Ya hiciste 2 partes.», in Spanish, as the engine's
+ * names are. With no stop in hand (before the first, after the last) it hides.
+ */
+function showRoute(route) {
+  const now = route.find((stop) => stop.state === "current");
+  $("route").hidden = !now;
+  if (!now) return $("route").replaceChildren();
+  const done = route.filter((stop) => stop.state === "done").length;
+  const unseen = (text) => {
+    const words = document.createElement("span");
+    words.className = "sr-only";
+    words.textContent = text;
+    return words;
+  };
+  const dots = document.createElement("span");
+  dots.className = "route-done";
+  dots.setAttribute("aria-hidden", "true");
+  dots.append(...Array.from({ length: done }, () => document.createElement("i")));
+  const name = document.createElement("strong");
+  name.textContent = now.name;
+  const detail = document.createElement("span");
+  detail.textContent = now.detail ?? "";
+  const tally = done ? ` Ya hiciste ${done} ${done === 1 ? "parte" : "partes"}.` : "";
+  $("route").replaceChildren(unseen("Ahora: "), dots, name, ...(now.detail ? [" ", detail] : []), unseen(`.${tally}`));
+}
 
 function stopSteps() {
   clearInterval(stepTimer);
@@ -574,21 +602,7 @@ async function showStep(id, given) {
   // Not the engine's session, or it is over: nothing more to follow.
   if (!step) return stopSteps();
 
-  $("route").replaceChildren(
-    ...(step.route ?? []).map((stop) => {
-      const line = document.createElement("li");
-      line.dataset.state = stop.state;
-      const name = document.createElement("strong");
-      name.textContent = stop.name;
-      const detail = document.createElement("span");
-      detail.textContent = stop.detail ?? "";
-      line.append(name, detail);
-      line.setAttribute("aria-label", `${stop.name}: ${ROUTE_STATE[stop.state] ?? ""}`);
-      if (stop.state === "current") line.setAttribute("aria-current", "step");
-      return line;
-    }),
-  );
-  $("route").hidden = !(step.route ?? []).length;
+  showRoute(step.route ?? []);
 
   const card = step.card;
   const shown = card ? `${card.title}|${card.statement}` : "";

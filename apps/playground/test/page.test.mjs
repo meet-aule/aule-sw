@@ -1120,7 +1120,7 @@ test("the stage gives a drawing and the camera the room they need, and the camer
   const short = block("(min-width: 560px) and (max-width: 900px) and (max-height: 639px)");
   assert.match(short, /--stage: max\(160px, calc\(100vh - 128px - var\(--intro-room, 0px\) - var\(--route-room, 0px\) - var\(--aim-room, 0px\)\)\);/);
   assert.match(short, /:has\(\.session-intro:not\(:empty\)\):has\(\.stage\[data-shows="face"\]\) \{\s*--intro-room: 72px;/);
-  assert.match(short, /:has\(#route:not\(\[hidden\]\)\) \{\s*--route-room: 49px;/);
+  assert.match(short, /:has\(#route:not\(\[hidden\]\)\) \{\s*--route-room: 29px;/);
   assert.match(short, /:has\(\.camera-aim:not\(:empty\)\) \{\s*--aim-room: 16px;/);
   // Under 901 px A16's lines step aside while a drawing or the camera shows: out of sight, not
   // out of the tree, since the first is a status.
