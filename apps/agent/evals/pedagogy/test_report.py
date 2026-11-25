@@ -1,5 +1,6 @@
 import json
 
+import calibrate
 import report
 
 JUDGED = {key: False for key in report.BAD} | {key: True for key in report.GOOD}
@@ -28,6 +29,12 @@ def row(name, turns, split="regression", arm="replay", judge=JUDGED, examples=NO
     if examples is not None:
         saved["examples"] = examples
     return saved
+
+
+def calibrated(directory, passed=True, hashes=None):
+    """A calibration of the examples judge, as calibrate.py leaves it."""
+    saved = dict(hashes=hashes or calibrate.hashes(calibrate.load()), gate=dict(passed=passed))
+    (directory / "calibration.json").write_text(json.dumps(saved))
 
 
 def write(directory, *rows):
@@ -64,6 +71,7 @@ def test_a_session_passes_only_with_every_answer_checked_once(tmp_path):
         [turn(open_before=False, kind="answer", by=("pose", "reused"), code=False, calls=(8,))],
     )
     write(tmp_path, complete, unchecked, twice, posed)
+    calibrated(tmp_path)
 
     built = report.build(tmp_path)
 
@@ -147,3 +155,24 @@ def test_a_session_saved_before_the_checks_is_not_measured_and_not_passed(tmp_pa
     assert "| 1 | not measured | not measured | 0 |" in markdown
     assert "not measured" in (tmp_path / "report.html").read_text()
     assert built["learning_gain"] == "not measured" and built["deployment"] == "none"
+
+
+def test_no_session_passes_unless_the_examples_judge_passed_its_calibration_here(tmp_path):
+    write(tmp_path, row("complete", [turn()]))
+    stale = dict(calibrate.hashes(calibrate.load()), prompt_sha256="another prompt")
+
+    for prepare, status in (
+        (lambda: None, "missing"),
+        (lambda: calibrated(tmp_path, passed=False), "failed"),
+        (lambda: calibrated(tmp_path, hashes=stale), "stale"),
+        (lambda: calibrated(tmp_path), "passed"),
+    ):
+        prepare()
+        built = report.build(tmp_path)
+        report.render(built, tmp_path)
+        assert built["examples_calibration"] == status
+        assert built["groups"]["regression/replay"]["passes"] == (status == "passed")
+        assert (
+            f"Calibration of the examples judge in this folder: **{status}**"
+            in (tmp_path / "report.md").read_text()
+        )
