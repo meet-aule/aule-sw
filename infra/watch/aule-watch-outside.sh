@@ -12,7 +12,6 @@
 # /etc/aule/aule-watch.sh on aule-prod.
 set -uo pipefail
 umask 077
-cd /
 
 KEY_FILE="$HOME/.config/aule/resend-key"
 STATE_DIR="$HOME/.local/state/aule"
@@ -23,14 +22,12 @@ RECIPIENTS='["admin@meetaule.com", "gonzalo@meetaule.com"]'
 REMIND_SECONDS=$((6 * 3600))
 mkdir -p "$STATE_DIR"
 
-up() { curl -fsS -o /dev/null --max-time 15 "$1"; }
-# A blip is not an outage: a page that fails is tried again before it counts.
-reachable() { up "$1" || { sleep 20 && up "$1"; }; }
-backup_ok() { python3 "$HOME/.local/lib/aule/offsite-health.py" check /var/tmp/aule-backup-health/latest.json; }
-
-failing=()
-check() {
-  reachable "$2" >/dev/null 2>&1 || failing+=("$1")
+# shellcheck source=infra/watch/aule-watch-common.sh
+source "$(dirname "${BASH_SOURCE[0]}")/aule-watch-common.sh" || exit 1
+cd /
+backup_ok() {
+  CHECK_DETAIL="copia o verificación externa fallida, ausente o demasiado antigua"
+  python3 "$HOME/.local/lib/aule/offsite-health.py" check /var/tmp/aule-backup-health/latest.json
 }
 
 mail() { # subject, body
@@ -46,7 +43,6 @@ mail() { # subject, body
     --data-binary "$payload"
 }
 
-now=$(date +%s)
 when=$(date -u '+%Y-%m-%d %H:%M UTC')
 
 if [ "${1:-}" = "--test" ]; then
@@ -54,37 +50,14 @@ if [ "${1:-}" = "--test" ]; then
   exit $?
 fi
 
-check "página de sesión (playground.meetaule.com)" https://playground.meetaule.com/session/healthz
-check "audio (livekit.meetaule.com)" https://livekit.meetaule.com/
-check "tienda (shop.meetaule.com)" https://shop.meetaule.com/
-backup_ok >/dev/null 2>&1 || failing+=("respaldo externo (falló o no se verificó en 26 h)")
+# Keep the outside watch's longer window for transient network failures.
+check "página de sesión (playground.meetaule.com)" http https://playground.meetaule.com/session/healthz 15 20
+check "audio (livekit.meetaule.com)" http https://livekit.meetaule.com/ 15 20
+check "tienda (shop.meetaule.com)" http https://shop.meetaule.com/ 15 20
+check "respaldo externo (falló o no se verificó en 26 h)" backup_ok
 
-current=$(printf '%s\n' "${failing[@]+"${failing[@]}"}" | sed '/^$/d' | sort)
-previous=$(cat "$STATE" 2>/dev/null || true)
-last=$(cat "$LAST_MAIL" 2>/dev/null || echo 0)
-
-subject=""
-details=$current
-if [ "$current" != "$previous" ] && [ -n "$current" ]; then
-  subject="Aule (desde fuera): no responde $(echo "$current" | paste -sd, - | sed 's/,/, /g')"
-  body="Desde el servidor de casa, $when, no responde:"
-elif [ "$current" != "$previous" ]; then
-  subject="Aule (desde fuera): responde de nuevo"
-  body="Desde el servidor de casa, $when, volvió a responder:"
-  details=$previous
-elif [ -n "$current" ] && [ $((now - last)) -ge $REMIND_SECONDS ]; then
-  subject="Aule (desde fuera): sigue sin responder $(echo "$current" | paste -sd, - | sed 's/,/, /g')"
-  body="Desde el servidor de casa, $when, sigue sin responder:"
-fi
-[ -n "$subject" ] || exit 0
-
-body="$body
-$(echo "$details" | sed 's/^/- /')
-
-Si fallan todas a la vez, lo más probable es que el servidor aule-prod (Contabo) esté caído o sin red: ssh aule-prod; si no entra, el panel de Contabo.
-Si falla una sola, mira el correo del vigía del propio servidor, que dice cuál servicio."
-# Keep the last delivered state if mail fails, so the next check retries even
-# a recovery or a changed incident within the six-hour reminder window.
-mail "$subject" "$body" || exit $?
-printf '%s\n' "$now" >"$LAST_MAIL" || exit 1
-printf '%s\n' "$current" | sed '/^$/d' >"$STATE"
+watch_notify "monitor externo" "Para contrastar desde otra conexión:
+curl -I --max-time 15 https://playground.meetaule.com/session/healthz
+curl -I --max-time 15 https://livekit.meetaule.com/
+Si fallan los tres destinos públicos, comprueba el acceso SSH al servidor y la conectividad del proveedor.
+Si solo falla el respaldo externo, revisa la última copia y su verificación."

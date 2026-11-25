@@ -13,8 +13,6 @@
 # the home server watches the public pages from outside.
 set -uo pipefail
 umask 077
-# find and friends need a working directory this user can read.
-cd /
 
 ENV=/etc/aule/aule.env
 STATE_DIR=/home/aule-admin/.local/state/aule
@@ -24,30 +22,57 @@ RECIPIENTS=(admin@meetaule.com gonzalo@meetaule.com)
 REMIND_SECONDS=$((6 * 3600))
 mkdir -p "$STATE_DIR"
 
-failing=()
-check() { # name, then the command that succeeds when all is well
-  local name=$1
-  shift
-  "$@" >/dev/null 2>&1 || failing+=("$name")
+# shellcheck source=infra/watch/aule-watch-common.sh
+source "$(dirname "${BASH_SOURCE[0]}")/aule-watch-common.sh" || exit 1
+# Resolve the helper before changing directory; relative invocations work too.
+# find and friends need a working directory this user can read.
+cd /
+
+healthy() {
+  local status
+  status=$(docker inspect -f '{{.State.Health.Status}}' "$1" 2>/dev/null)
+  case "$status" in
+    healthy) return 0 ;;
+    unhealthy|starting) CHECK_DETAIL="Docker: $status" ;;
+    *) CHECK_DETAIL="Docker: estado de salud no disponible" ;;
+  esac
+  return 1
 }
-http() { curl -fsS -o /dev/null --max-time 10 "$1"; }
-healthy() { [ "$(docker inspect -f '{{.State.Health.Status}}' "$1" 2>/dev/null)" = healthy ]; }
-running() { [ "$(docker inspect -f '{{.State.Running}}' "$1" 2>/dev/null)" = true ]; }
+running() {
+  CHECK_DETAIL="Docker: contenedor detenido o no disponible"
+  [ "$(docker inspect -f '{{.State.Running}}' "$1" 2>/dev/null)" = true ]
+}
 reports_ok() {
   local overdue
+  CHECK_DETAIL="no se pudo consultar la cola de informes"
   overdue=$(docker exec --env 'PGOPTIONS=-c statement_timeout=5000 -c default_transaction_read_only=on' \
     aule-sw-postgres-1 psql -X -qAt -v ON_ERROR_STOP=1 -U aule -d aule -c \
     "select count(*) from jobs where done_at is null
        and (attempts >= 5 or run_at < now() - interval '15 minutes')") || return 1
+  [[ "$overdue" =~ ^[0-9]+$ ]] || return 1
+  CHECK_DETAIL="$overdue trabajos atrasados o sin reintentos"
   [ "$overdue" = 0 ]
 }
-disk_ok() { [ "$(df --output=pcent / | tail -1 | tr -dc 0-9)" -lt 85 ]; }
+disk_ok() {
+  local used
+  CHECK_DETAIL="no se pudo medir el disco"
+  used=$(df --output=pcent / | tail -1 | tr -dc 0-9)
+  [[ "$used" =~ ^[0-9]{1,3}$ ]] || return 1
+  used=$((10#$used))
+  [ "$used" -le 100 ] || return 1
+  CHECK_DETAIL="$used % usado; umbral: 85 %"
+  [ "$used" -lt 85 ]
+}
 # A backup every six hours (aule-backup.sh): one younger than seven.
-backup_ok() { [ -n "$(find /var/lib/aule/backups/aule-sw -name '*.sql.gz' -mmin -420 -print -quit)" ]; }
+backup_ok() {
+  CHECK_DETAIL="no se encontró una copia .sql.gz de las últimas 7 h"
+  [ -n "$(find /var/lib/aule/backups/aule-sw -name '*.sql.gz' -mmin -420 -print -quit)" ]
+}
 restore_ok() {
   local stamp
+  CHECK_DETAIL="falta una prueba de restauración válida de los últimos 8 días"
   stamp=$(cat "$STATE_DIR/restore.ok") || return 1
-  [[ "$stamp" =~ ^[0-9]{10}$ ]] && [ "$stamp" -le "$now" ] && [ $((now - stamp)) -lt $((8 * 86400)) ]
+  [[ "$stamp" =~ ^[1-9][0-9]{9}$ ]] && [ "$stamp" -le "$now" ] && [ $((now - stamp)) -lt $((8 * 86400)) ]
 }
 
 mail() { # subject, body
@@ -62,7 +87,8 @@ mail() { # subject, body
     printf 'To: %s\r\n' "$(IFS=,; echo "${RECIPIENTS[*]}")"
     # The subject may have accents: encoded as the mail standard asks.
     printf 'Subject: =?UTF-8?B?%s?=\r\n' "$(printf '%s' "$1" | base64 -w0)"
-    printf 'Content-Type: text/plain; charset=utf-8\r\n\r\n'
+    printf 'Date: %s\r\n' "$(date -R)"
+    printf 'MIME-Version: 1.0\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n'
     printf '%s\r\n' "$2"
   } >"$msg"
   # The address may hold the mail password: it goes to curl as a config line on
@@ -93,36 +119,18 @@ check "informes (atrasados más de 15 min o sin reintentos)" reports_ok
 check "embeddings (memoria)" running aule-sw-embeddings-1
 check "página pública (playground.meetaule.com)" http https://playground.meetaule.com/session/
 check "tienda (shop.meetaule.com)" http https://shop.meetaule.com/
-check "disco (más de 85 % usado)" disk_ok
+check "disco (85 % o más usado)" disk_ok
 check "respaldo (ninguno en 7 h)" backup_ok
 check "restauración (falló o sin prueba en 8 días)" restore_ok
 
-current=$(printf '%s\n' "${failing[@]+"${failing[@]}"}" | sed '/^$/d' | sort)
-previous=$(cat "$STATE" 2>/dev/null || true)
-last=$(cat "$LAST_MAIL" 2>/dev/null || echo 0)
+help="Para comprobar los contenedores:
+ssh aule-prod
+docker ps
+Consulta los logs del contenedor afectado con: docker logs --since 15m --tail 80 <contenedor>"
+if [[ " ${failing[*]} " == *"página pública"* && " ${failing[*]} " != *"página de sesión"* ]]; then
+  help="La página local respondió. Revisa DNS, TLS y el proxy o la conectividad pública antes de reiniciar la aplicación.
+curl -I --max-time 15 https://playground.meetaule.com/session/
 
-subject=""
-details=$current
-if [ "$current" != "$previous" ] && [ -n "$current" ]; then
-  subject="Aule: falla $(echo "$current" | paste -sd, - | sed 's/,/, /g')"
-  body="En $host, $when, falla:"
-elif [ "$current" != "$previous" ]; then
-  subject="Aule: todo funciona de nuevo"
-  body="En $host, $when, volvió a funcionar lo que fallaba:"
-  details=$previous
-elif [ -n "$current" ] && [ $((now - last)) -ge $REMIND_SECONDS ]; then
-  subject="Aule: sigue fallando $(echo "$current" | paste -sd, - | sed 's/,/, /g')"
-  body="En $host, $when, sigue fallando:"
+$help"
 fi
-[ -n "$subject" ] || exit 0
-
-body="$body
-$(echo "$details" | sed 's/^/- /')
-
-Para mirar: ssh aule-prod, luego docker ps y docker logs <contenedor>.
-Desplegar de nuevo: sudo -u aule-admin /etc/aule/aule-compose.sh up -d --build <servicio>."
-# Keep the last delivered state if mail fails, so the next check retries even
-# a recovery or a changed incident within the six-hour reminder window.
-mail "$subject" "$body" || exit $?
-printf '%s\n' "$now" >"$LAST_MAIL" || exit 1
-printf '%s\n' "$current" | sed '/^$/d' >"$STATE"
+watch_notify "$host" "$help"
