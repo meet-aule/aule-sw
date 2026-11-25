@@ -233,7 +233,11 @@ async fn enter(
     let (guardian_id, family_id, new_account) = match existing {
         Some((guardian_id, family_id)) => (guardian_id, family_id, false),
         None => {
-            let name = name.map(str::trim).filter(|name| !name.is_empty() && name.chars().count() <= 120);
+            // One line: a control character could make the name read as something
+            // else where it is shown, such as a dialog of the team's console.
+            let name = name.map(str::trim).filter(|name| {
+                !name.is_empty() && name.chars().count() <= 120 && !name.chars().any(char::is_control)
+            });
             let Some(name) = name else {
                 return Err(ApiError::bad_request("name is needed to create the account"));
             };

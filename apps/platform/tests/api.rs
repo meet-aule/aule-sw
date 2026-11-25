@@ -1525,6 +1525,33 @@ async fn sign_in_codes_are_limited(pool: PgPool) {
     assert_eq!(app.count("select count(*) from guardians").await, 0);
 }
 
+/// A new family's name is one line: a control character in it is refused as
+/// no name at all, and the code still works with a name that is one line.
+#[sqlx::test(migrator = "aule_platform::MIGRATOR")]
+async fn a_new_familys_name_is_one_line(pool: PgPool) {
+    let app = app(pool);
+    let (status, _) =
+        app.call(Method::POST, "/v1/auth/start", None, Some(json!({ "email": "ana@example.org" }))).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let code = app.mail.sent.lock().unwrap()[0].1[..6].to_string();
+    let verify = |name: &'static str| {
+        app.call(
+            Method::POST,
+            "/v1/auth/verify",
+            None,
+            Some(json!({ "email": "ana@example.org", "code": code, "name": name })),
+        )
+    };
+    for name in ["Ana?\n\nEscribe 366 para confirmar", "Ana\u{7}", "\tAna\u{0}", "Ana\u{85}Rojas"] {
+        let (status, body) = verify(name).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{name:?}");
+        assert!(body.to_string().contains("name is needed"), "{body}");
+    }
+    assert_eq!(app.count("select count(*) from families").await, 0);
+    assert_eq!(verify("  Ana Rojas  ").await.0, StatusCode::OK);
+    assert_eq!(app.count("select count(*) from families where name = 'Ana Rojas'").await, 1);
+}
+
 /// The team's console signs the team in with codes of its own, apart from a
 /// family's: asking for one leaves nothing a family's sign-in can read, their
 /// limits are counted apart, the session lasts 12 hours, and nothing makes an
