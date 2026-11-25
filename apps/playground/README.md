@@ -1,8 +1,15 @@
 # Playground
 
-A web page to talk to the Aule tutor from a browser, with your microphone and your camera. It is for the people running a server: a way to hear the tutor and try changes before any device or child is involved.
+Aule's browser interface for families, students and the team. Families sign in,
+set up a student and consent, and start tutoring sessions with voice, typing,
+exercises and an optional camera. The team manages families and sessions from
+the administration panel. A separate access-code API supports operator tests.
 
-It is a small Node server with no database. It serves the page and has one endpoint, which trades the access code for a LiveKit token. The token is good for one new room and asks the [agent](../agent/README.md) to join it as an operator session.
+The Node server serves the page, handles sign-in and cookies, and calls the
+[platform](../platform/README.md) for accounts, consent, plans, session lifecycle
+and progress. It has no database of its own. Family sessions are child sessions:
+the [agent](../agent/README.md) requires both safety gates. Access-code operator
+sessions use a separate path and do not replace family authorization.
 
 When the tutor shows something (an exercise, fraction bars, a number line...), the page draws it under the video from the description it receives; `public/visuals.js` is that drawing code, a plain function from the description to SVG.
 
@@ -29,8 +36,11 @@ The words of these steps are in `public/first-steps.js`, in Spanish and English,
 | `PLAYGROUND_HOST`, `PLAYGROUND_PORT` | Default `127.0.0.1:8090` |
 | `PLAYGROUND_BASE_PATH` | Default `/playground` |
 | `PLAYGROUND_SESSION_MINUTES` | How long a token lasts. Default 20 |
+| `PLAYGROUND_DAILY_SESSIONS` | Daily cap per signed-in account. Default 3; the platform also enforces the family's plan |
+| `AULE_FREE_ACCESS` | `1` bypasses plan/trial quotas and the browser's daily cap when set on both platform and playground. Authentication, consent, safety gates and individual session deadlines remain enforced |
+| `PLAYGROUND_ENGINE` | `1` asks the platform to run supported topics through the session engine |
 | `AULE_AGENT_NAME` | The agent to ask for. Default `aule-tutor` |
-| `AULE_PLATFORM_URL`, `AULE_ADMIN_TOKEN` | Optional. With them, sessions are created by the [platform](../platform/README.md) and families sign in with Google, GitHub, Facebook or Apple |
+| `AULE_PLATFORM_URL`, `AULE_ADMIN_TOKEN` | Required for the family experience. Sessions are created by the [platform](../platform/README.md); sign-in uses emailed codes and configured Google, GitHub, Facebook or Apple providers |
 | `PLAYGROUND_CHILD_ID` | Optional, with a platform: a child profile to try the tutor with. Its guardian must have consented to `voice` |
 
 Put it behind a reverse proxy with HTTPS: browsers only give the microphone and the camera to secure pages.
@@ -68,18 +78,19 @@ issued by the playground. The page shows its reconnecting state while the SDK
 retries; a failed recovery still reports that the connection was lost. Reload
 recovery for families is described below; an ended tutor cannot be resumed.
 
-## What it does not do
+## Boundaries
 
-- It is not a way for children to use the tutor. The session it opens is marked as an operator's, which is the only kind the agent accepts while the safety gates are missing.
-- It stores nothing: no accounts, no audio, no transcripts.
-- Ten wrong codes in a minute lock the endpoint for everyone until the minute passes.
+- The platform owns accounts, consent, transcripts, retention and learning records. The browser server has no database; its cookies carry sign-in, source attribution and encrypted recovery state.
+- The page does not record audio or camera frames. Live media and typed turns still reach the tutor and its configured providers; the platform processes turns for review under its retention rules.
+- Without a platform, only access-code operator tests are available. Ten wrong access codes in a minute lock that code endpoint until the minute passes.
+- A browser device-screen simulation does not validate physical firmware, a hardware microphone switch or an IoT network connection.
 
 ## Develop
 
 Node 24 runs the TypeScript sources directly.
 
 ```bash
-pnpm install
+pnpm install --frozen-lockfile
 pnpm --filter @aule/playground typecheck
 pnpm --filter @aule/playground test
 node --env-file=../../.env src/server.ts
