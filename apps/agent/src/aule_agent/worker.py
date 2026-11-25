@@ -30,6 +30,7 @@ from ._version import __version__
 from .camera import Camera
 from .config import LANGUAGES, ConfigError, Settings, build_commit
 from .logs import keep_personal_fields_out
+from .observability import Observability
 from .pace import Pace
 from .platform import Platform, platform_session
 from .providers import build_llm, build_stt, build_tts
@@ -327,6 +328,7 @@ async def admit(
     audience: Audience,
     language: str,
     platform: Platform | None,
+    observer: Observability | None = None,
 ) -> tuple[Gates, str] | None:
     """The session's gates and what the platform says the tutor should know,
     or None when the session ends before it starts.
@@ -335,7 +337,7 @@ async def admit(
     ``safety``); without them the child is told, and the platform too. An
     operator's runs the gates that are configured.
     """
-    gates = build_gates(settings, report=platform.flag if platform else None)
+    gates = build_gates(settings, report=platform.flag if platform else None, observer=observer)
     if not gates.may_start(audience):
         logger.warning("session refused: the safety gates are not configured")
         await gates.close()
@@ -391,6 +393,9 @@ async def entrypoint(ctx: JobContext) -> None:
     # Again for a handler added since the process started.
     keep_personal_fields_out()
     settings = Settings.from_env()
+    observer = Observability.configured(settings)
+    if observer is not None:
+        ctx.add_shutdown_callback(observer.close)
     audience = audience_of(ctx.job.metadata)
     language = language_of(ctx.job.metadata, settings.language)
 
@@ -399,7 +404,7 @@ async def entrypoint(ctx: JobContext) -> None:
     linked = platform_session(ctx.job.metadata)
     platform = Platform(linked) if linked else None
 
-    admitted = await admit(ctx, settings, audience, language, platform)
+    admitted = await admit(ctx, settings, audience, language, platform, observer=observer)
     if admitted is None:
         return
     gates, context = admitted
@@ -452,6 +457,9 @@ async def entrypoint(ctx: JobContext) -> None:
     )
     model = build_llm(settings)
     model.on("metrics_collected", usage.add)
+    if observer is not None:
+        model.on("metrics_collected", observer.llm_metrics)
+        model.on("error", observer.llm_error)
     hearing = build_stt(settings, language)
     hearing.on("metrics_collected", usage.heard)
     session = AgentSession(

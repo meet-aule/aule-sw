@@ -21,6 +21,8 @@ import math
 import time
 from typing import Any
 
+from .observability import Observability
+
 logger = logging.getLogger("aule.agent.opinion")
 
 # A quicker first reading of what a child says (AULE_JEV_FIRST_READING), from the
@@ -175,7 +177,13 @@ answer CONCERN."""
 class SecondOpinion:
     """Asks a small model to settle what a score cannot."""
 
-    def __init__(self, *, client: Any = None, jev: JevReading | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        client: Any = None,
+        jev: JevReading | None = None,
+        observer: Observability | None = None,
+    ) -> None:
         if client is None:
             from anthropic import AsyncAnthropic
 
@@ -183,6 +191,7 @@ class SecondOpinion:
             client = AsyncAnthropic(timeout=TIMEOUT_SECONDS, max_retries=0)
         self._client = client
         self._jev = jev
+        self._observer = observer
 
     async def safe(self, text: str) -> bool:
         """Whether a reply of the tutor is fit for a child. True only for a
@@ -215,6 +224,8 @@ class SecondOpinion:
     ) -> bool | None:
         started = time.monotonic()
         verdict: bool | None = None
+        answer = None
+        failed = True
         try:
             async with asyncio.timeout(TIMEOUT_SECONDS):
                 answer = await self._client.messages.create(
@@ -223,6 +234,7 @@ class SecondOpinion:
                     system=question,
                     messages=[{"role": "user", "content": text}],
                 )
+            failed = False
             words = "".join(
                 block.text for block in answer.content if getattr(block, "type", "") == "text"
             )
@@ -232,6 +244,11 @@ class SecondOpinion:
             raise
         except Exception as error:  # no opinion is not a yes
             logger.warning("second opinion unavailable", extra={"error": type(error).__name__})
+        finally:
+            if self._observer is not None:
+                self._observer.review(
+                    getattr(answer, "usage", None), time.monotonic() - started, failed, MODEL
+                )
         logger.info(
             "second opinion",
             extra={

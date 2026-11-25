@@ -9,6 +9,7 @@ import os
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from urllib.parse import urlsplit
 
 # The environment variable each provider's LiveKit plugin reads its key from.
 STT_KEYS = {
@@ -78,6 +79,8 @@ class Settings:
     # Kept out of the repr so a logged Settings never shows a key.
     openai_api_key: str | None = field(default=None, repr=False)
     typesafe_api_key: str | None = field(default=None, repr=False)
+    posthog_api_key: str | None = field(default=None, repr=False)
+    posthog_host: str | None = None
 
     @property
     def gates_complete(self) -> bool:
@@ -135,6 +138,32 @@ class Settings:
         voice_ahead = get("AULE_VOICE_AHEAD").lower() in ("1", "true", "yes", "on")
         jev_first_reading = get("AULE_JEV_FIRST_READING").lower() in ("1", "true", "yes", "on")
 
+        posthog_key, posthog_host = get("POSTHOG_API_KEY"), get("POSTHOG_HOST")
+        if bool(posthog_key) != bool(posthog_host):
+            problems.append("POSTHOG_API_KEY and POSTHOG_HOST must be set together")
+        if posthog_host:
+            try:
+                url = urlsplit(posthog_host)
+                valid = (
+                    url.scheme == "https"
+                    and bool(url.hostname)
+                    and not url.username
+                    and not url.password
+                    and not url.query
+                    and not url.fragment
+                    and url.path in ("", "/")
+                )
+            except ValueError:
+                valid = False
+            if not valid:
+                problems.append("POSTHOG_HOST must be an HTTPS origin without credentials")
+        if posthog_key and (
+            len(posthog_key) > 200
+            or not posthog_key.isascii()
+            or any(c.isspace() or not c.isprintable() for c in posthog_key)
+        ):
+            problems.append("POSTHOG_API_KEY must be a project token without whitespace")
+
         if problems:
             raise ConfigError("; ".join(problems))
 
@@ -154,4 +183,6 @@ class Settings:
             jev_first_reading=jev_first_reading,
             openai_api_key=get(MODERATION_KEY) or None,
             typesafe_api_key=get(PHYSICAL_SAFETY_KEY) or None,
+            posthog_api_key=posthog_key or None,
+            posthog_host=posthog_host.rstrip("/") or None,
         )

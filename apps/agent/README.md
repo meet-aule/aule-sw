@@ -101,6 +101,46 @@ Speech-to-text loses the tune of what was said, so `prosody.measure` takes it fr
 
 ## Settings
 
+### AI observability
+
+Set `POSTHOG_API_KEY` (the project token) and `POSTHOG_HOST` (the project's HTTPS
+ingestion origin) together to enable PostHog. Both are optional; neither has a
+default destination. The Compose services already receive the shared environment
+file. No token is bundled into the image or the browser.
+
+The PostHog Python SDK captures `$ai_generation` events from LiveKit's tutor
+metrics and from the Anthropic safety second reader. Events include the model,
+token counts, cache reads/writes, latency, first-token timing when available,
+and a generic error marker. LiveKit's inclusive prompt counts are converted to
+Anthropic's exclusive cache convention so PostHog can estimate model costs.
+Requests without reported usage omit token counts on error; they are not zero-cost
+measurements. Costs are provider/model estimates, not a complete session invoice.
+
+An allowlist runs after SDK enrichment, in addition to privacy mode. No prompts,
+replies, tool arguments, images, exception messages, names, ages, account IDs,
+room IDs or platform session IDs are exported. A fresh random session ID groups
+each job's events; every generation has its own trace ID. Person profiles,
+GeoIP, exception autocapture and feature-flag polling are disabled. Analytics
+delivery is bounded and best effort; it cannot change safety decisions or block
+the voice event loop. Shutdown attempts to drain queued events off that loop.
+
+This integration covers the Python tutor and second reader only. The Rust
+supervisor, embeddings, moderation, TypeSafe and speech services are not included.
+There are no tool spans or cross-service traces. No content-based PostHog
+evaluation is possible from these metadata-only events.
+
+After configuring a project and deploying, make a synthetic operator request
+and check for `aule_component=tutor` in PostHog AI Observability. A moderation
+second reading produces `aule_component=safety_review`. Verify model, cache
+counts and latency, and confirm that input/output content is absent. Local tests
+intercept SDK delivery; they do not establish receipt by a live PostHog project.
+
+References: [manual capture](https://posthog.com/docs/ai-observability/installation/manual-capture),
+[privacy mode](https://posthog.com/docs/ai-observability/privacy-mode),
+and the [Python SDK](https://posthog.com/docs/libraries/python).
+
+### Environment
+
 Environment variables; `.env.example` at the repository root lists them all.
 
 | Variable | Meaning |
@@ -112,6 +152,7 @@ Environment variables; `.env.example` at the repository root lists them all.
 | `ASSEMBLYAI_API_KEY`, `DEEPGRAM_API_KEY`, `CARTESIA_API_KEY`, `ELEVEN_API_KEY`, `INWORLD_API_KEY`, `OPENAI_API_KEY` | Only for the providers chosen above |
 | `OPENAI_API_KEY` | Also turns on the content-moderation gate, whichever speech providers are chosen |
 | `TYPESAFE_API_KEY` | Turns on the physical-safety gate |
+| `POSTHOG_API_KEY`, `POSTHOG_HOST` | Optional project token and HTTPS ingestion origin for AI usage metadata; set both together |
 | `AULE_TTS_VOICE` | Optional voice id |
 | `AULE_LLM_MODEL` | Default `claude-sonnet-5-5` |
 | `AULE_LANGUAGE` | `es` (default) or `en`; a session can ask for the other |

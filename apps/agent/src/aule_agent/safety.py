@@ -32,6 +32,7 @@ from .moderation import (
     classify_heard,
     classify_spoken,
 )
+from .observability import Observability
 from .opinion import JevReading, SecondOpinion
 from .physical_safety import PhysicalSafetyGuard, Verdict, combine_input_decisions
 
@@ -349,7 +350,11 @@ class Gates:
 
 
 def build_gates(
-    settings: Settings, report: Report | None = None, *, second_opinion: bool = True
+    settings: Settings,
+    report: Report | None = None,
+    *,
+    second_opinion: bool = True,
+    observer: Observability | None = None,
 ) -> Gates:
     """The gates this worker is configured for. A gate with a key always runs.
 
@@ -366,17 +371,19 @@ def build_gates(
         # Only what the tutor is about to say gets a second reader, and only
         # where there is a moderation gate to be unsure.
         second_opinion=(
-            _second_opinion(settings) if second_opinion and settings.openai_api_key else None
+            _second_opinion(settings, observer)
+            if second_opinion and settings.openai_api_key
+            else None
         ),
     )
 
 
-def _second_opinion(settings: Settings) -> SecondOpinion:
+def _second_opinion(settings: Settings, observer: Observability | None) -> SecondOpinion:
     """The second reader, with Jev's first reading of a child's words when it
     is turned on (AULE_JEV_FIRST_READING) and its key is there."""
     if settings.jev_first_reading and settings.typesafe_api_key:
-        return SecondOpinion(jev=JevReading(settings.typesafe_api_key))
-    return SecondOpinion()
+        return SecondOpinion(jev=JevReading(settings.typesafe_api_key), observer=observer)
+    return SecondOpinion(observer=observer)
 
 
 # Why a gate does not answer, in words for whoever reads the log.

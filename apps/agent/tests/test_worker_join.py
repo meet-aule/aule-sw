@@ -171,9 +171,13 @@ def happened(monkeypatch: pytest.MonkeyPatch) -> list[Any]:
         break_minutes=30,
         early_reply=False,
         voice_ahead=False,
+        posthog_api_key=None,
+        posthog_host=None,
     )
     monkeypatch.setattr(worker, "Settings", SimpleNamespace(from_env=lambda: settings))
-    monkeypatch.setattr(worker, "build_gates", lambda settings, report=None: Gates(happened))
+    monkeypatch.setattr(
+        worker, "build_gates", lambda settings, report=None, observer=None: Gates(happened)
+    )
     monkeypatch.setattr(worker, "Platform", lambda linked: Platform(linked, send=platform))
     monkeypatch.setattr(worker, "AgentSession", lambda **options: Session(happened))
     for build in ("build_llm", "build_stt", "build_tts"):
@@ -239,3 +243,28 @@ async def test_a_room_closed_before_anyone_came_ends_the_job_and_frees_the_famil
         "shutdown: nobody joined the room",
     ]
     assert ctx.cleanups == []
+
+
+async def test_observability_is_connected_to_model_metrics_and_job_shutdown(
+    happened: list[Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from unittest.mock import AsyncMock, Mock
+
+    observer = Mock()
+    observer.close = AsyncMock()
+    callbacks: dict[str, Any] = {}
+    model = SimpleNamespace(
+        on=lambda event, callback: callbacks.setdefault(event, []).append(callback)
+    )
+    monkeypatch.setattr(worker.Observability, "configured", lambda settings: observer)
+    monkeypatch.setattr(worker, "build_llm", lambda settings: model)
+    ctx = Job(happened)
+    entrypoint = asyncio.create_task(worker.entrypoint(ctx))
+    await waiting_for_someone(ctx)
+    ctx.room.emit("participant_active", PERSON)
+    await entrypoint
+    assert observer.llm_metrics in callbacks["metrics_collected"]
+    assert observer.llm_error in callbacks["error"]
+    for cleanup in ctx.cleanups:
+        await cleanup()
+    observer.close.assert_awaited_once()

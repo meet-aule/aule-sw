@@ -266,7 +266,7 @@ async def test_the_start_up_check_builds_the_two_gates_and_no_second_reader(monk
     readers = []
 
     class Reader:
-        def __init__(self):
+        def __init__(self, observer=None):
             readers.append(self)
 
         async def close(self):

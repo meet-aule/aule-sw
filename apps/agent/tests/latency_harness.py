@@ -184,14 +184,14 @@ class OfflineSession(AgentSession):
         return await super().start(agent, record=False)
 
 
-def gates_for(world: World, report: Any = None) -> Gates:
+def gates_for(world: World, report: Any = None, observer: Any = None) -> Gates:
     gates = Gates(
         moderation=Moderator("sk-synthetic", client=world.moderation_client),
         physical_safety=PhysicalSafetyGuard(
             "ts-synthetic", send=world.typesafe.send, list_models=world.typesafe.list_models
         ),
         report=report,
-        second_opinion=SecondOpinion(client=world.reader_client),
+        second_opinion=SecondOpinion(client=world.reader_client, observer=observer),
     )
     spy(world, gates)
     return gates
@@ -233,7 +233,9 @@ def offline(extra_env: dict[str, str] | None = None, mode: str = "push-to-talk")
         (
             worker,
             "build_gates",
-            lambda settings, report=None: gates_for(CURRENT_WORLD.get(), report),
+            lambda settings, report=None, observer=None: gates_for(
+                CURRENT_WORLD.get(), report, observer
+            ),
         ),
         (
             worker,
