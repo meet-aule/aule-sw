@@ -35,14 +35,67 @@
         </div>
       </section>
 
+      <!-- The pilot's four numbers per week of sign-up and per link (admin.js, pilot.js). -->
+      <section id="pilot" hidden aria-labelledby="pilot-title">
+        <h2 id="pilot-title">Piloto: las cuatro cifras</h2>
+        <p class="lead">
+          Las familias por semana de registro y por el enlace con el que llegaron (<code>?src=</code>). Las semanas
+          van de lunes a domingo, <span id="pilot-zone">en hora de Perú</span>. No cuentan las familias del equipo.
+        </p>
+        <p class="message" id="pilot-message" hidden></p>
+        <div class="scroll">
+          <table class="pilot">
+            <thead>
+              <tr>
+                <th>Semana</th><th>Enlace</th><th>Familias</th><th>Empezaron</th><th>Volvieron</th>
+                <th>Activas en la 4.ª semana</th><th>Pagan</th>
+              </tr>
+            </thead>
+            <tbody id="weeks"></tbody>
+          </table>
+        </div>
+        <h3>Por enlace</h3>
+        <div class="scroll">
+          <table class="pilot">
+            <thead>
+              <tr>
+                <th>Enlace</th><th>Familias</th><th>Empezaron</th><th>Volvieron</th>
+                <th>Activas en la 4.ª semana</th><th>Pagan</th>
+              </tr>
+            </thead>
+            <tbody id="sources"></tbody>
+          </table>
+        </div>
+        <ul class="notes">
+          <li><b>Empezaron:</b> tuvieron una sesión de 10 minutos o más, de todas las familias de la fila.</li>
+          <li>
+            <b>Volvieron:</b> 3 sesiones o más en los 7 días desde su primera sesión, de las familias que ya terminaron
+            esos 7 días (y con ellos su prueba).
+          </li>
+          <li>
+            <b>Activas en la 4.ª semana:</b> con una sesión entre los días 21 y 27 desde su primera sesión, de las
+            familias que ya terminaron esa semana.
+          </li>
+          <li>
+            <b>Pagan:</b> de las familias que ya terminaron su prueba. Todavía no se puede pagar en la app: por ahora
+            cuenta las familias a las que el equipo les activó el plan («Regalar plan») después de terminar su prueba,
+            también si fue un regalo. Un plan activado durante la prueba, o quitado antes de un día, no cuenta.
+          </li>
+          <li>
+            Una sesión cuenta como para el plan: cuando el tutor la empieza, salvo que termine antes de dos minutos.
+            «—»: ninguna familia de la fila ha llegado tan lejos todavía.
+          </li>
+        </ul>
+      </section>
+
       <section id="families-section" hidden aria-labelledby="families-title">
         <h2 id="families-title">Familias</h2>
-        <input id="filter" type="search" placeholder="Buscar por nombre o correo" aria-label="Buscar familias" />
+        <input id="filter" type="search" placeholder="Buscar por nombre, correo o enlace" aria-label="Buscar familias" />
         <div class="scroll">
           <table>
             <thead>
               <tr>
-                <th>Familia</th><th>Correos</th><th>Alumnos</th><th>Plan</th><th>7 días</th><th>30 días</th>
+                <th>Familia</th><th>Enlace</th><th>Correos</th><th>Alumnos</th><th>Plan</th><th>7 días</th><th>30 días</th>
                 <th>Minutos (30 días)</th><th>Última sesión</th><th></th>
               </tr>
             </thead>

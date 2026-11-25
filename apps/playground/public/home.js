@@ -1,12 +1,14 @@
 // A signed-in family: its students (the home, built from v8's Fila/Alumno
-// 161:2110 and Acción/Pequeña 161:2104), a student's settings, and what a
-// session is for, asked the way the device asks it (A04 ¿Qué hacemos hoy?
-// · Aparato 190:891). The session itself is app.js's; this builds the request
-// it is asked with.
+// 161:2110 and Acción/Pequeña 161:2104), a student's settings, the hand-off
+// to a child just made (a02, from A02 ¿Eres tú? 410:629), and what a session
+// is for, asked the way the device asks it (A04 ¿Qué hacemos hoy? · Aparato
+// 190:891). The session itself is app.js's; this builds the request it is
+// asked with, and says whether it is the student's first run.
 
 import { $, SUBJECTS, call, clearEditor, describe, editingStudent, openEditor } from "./students.js";
 import { DATED, KINDS, OWN_SUBJECT, REVIEW, defaultSubject, kindLabel, objectiveFor, planLine } from "./steps.js";
-import { back, getAccount, go, need, onAccount, onShow, setAccount } from "./screens.js";
+import { back, current, getAccount, go, landing, need, onAccount, onShow, setAccount } from "./screens.js";
+import { languageOf, words } from "./first-steps.js";
 
 // The student a session is for, and what for: undefined until a tile is
 // chosen, "" when it is left to Aule, else the kind.
@@ -21,10 +23,20 @@ let detailsOf = "";
 // asking again what a session that already has its purpose is for. Starting
 // another from there has no purpose yet, so A04 asks it then (purposeAsked).
 let resumable = null;
+// The student P12 hands the browser over to (a02), by id; null otherwise.
+let handoff = null;
+// Whether a child said «Sí, soy yo» on a02 in this visit. Page memory only.
+let confirmed = false;
 
 need("student", () => chosen !== null);
 need("objective", () => chosen !== null && Boolean(kind));
 need("editing", () => editingStudent() !== null);
+need("handoff", () => handoffStudent() !== undefined);
+
+/** The student being handed over to, as the account has them now. */
+function handoffStudent() {
+  return handoff === null ? undefined : (getAccount().students ?? []).find((one) => one.id === handoff);
+}
 
 /** The body of the request for a session: the chosen student's, and what for. */
 export function sessionRequest() {
@@ -45,6 +57,17 @@ function subjectsKept() {
  */
 export function purposeAsked() {
   return kind !== undefined || subjectsKept() === null;
+}
+
+/**
+ * Whether the session about to start is a first run, when A16's words and the
+ * coach of the talk button show: the child said «Sí, soy yo» on a02 in this
+ * visit, or the family's trial has not started (no session has counted yet).
+ * Held in this page's memory only; the home and signing out forget it.
+ */
+export function firstRun() {
+  const plan = getAccount().plan;
+  return confirmed || (plan?.plan === "trial" && !plan.ends_at);
 }
 
 const asked = (objective) => ({
@@ -104,9 +127,39 @@ onShow("home", () => {
   chosen = null;
   kind = undefined;
   request = null;
+  handoff = null;
+  confirmed = false;
   drawHome();
   findResumable();
+  readAgain();
 });
+
+/**
+ * Reads the family's account again each time the home shows: a session that
+ * just ended may have used the day or started the trial. It is drawn while
+ * the page still shows the home, signed in; a sign-in that expired meanwhile
+ * goes back to signing in. A failed read keeps what is drawn.
+ */
+async function readAgain() {
+  let latest;
+  try {
+    latest = await call("api/account");
+  } catch {
+    return;
+  }
+  if (current() !== "home" || getAccount().signed_in !== true) return;
+  if (latest.signed_in !== true) {
+    // Each module forgets what it drew about the family before signing in shows.
+    setAccount(latest);
+    const land = landing();
+    return go(land === "c01" ? "p13" : land, { replace: true, fresh: true, flow: "back", message: "Tu sesión se cerró. Vuelve a entrar." });
+  }
+  const drawn = (account) => JSON.stringify([account.name, account.team, account.plan, account.students]);
+  const changed = drawn(latest) !== drawn(getAccount());
+  setAccount(latest);
+  // Unchanged, the rows stay as they are, and so does the focus in them.
+  if (changed) drawHome();
+}
 
 async function findResumable() {
   resumable = null;
@@ -134,18 +187,66 @@ function study(id) {
   go(subjectsKept() && id !== resumable ? "a04" : "a05");
 }
 
-// P12's «Empezar su primera sesión», for the child just made.
-$("done-start").addEventListener("click", () => study($("done-start").dataset.student));
+// --- a02 ¿Eres tú? (A02 410:629, adapted): the hand-off --------------------------------
+//
+// P12's «Empezar su primera sesión» hands the parent's browser over to the
+// child just made. On the device the child confirms the profile on A02 while
+// the parent's P11 waits; on the web both are here, so one screen does it.
+
+$("done-start").addEventListener("click", () => {
+  handoff = $("done-start").dataset.student ?? null;
+  if (handoffStudent()) go("a02");
+});
+
+/** first-steps.js's words for a student, marked with the language they are in (WCAG 3.1.2). */
+function writeWords(element, key, language, values) {
+  element.textContent = words(key, language, values);
+  element.lang = language;
+}
+
+onShow("a02", () => {
+  const student = handoffStudent();
+  if (!student) return;
+  const language = languageOf(student.language);
+  writeWords($("a02-lead"), "handoff_lead", language, { name: student.name });
+  writeWords($("a02-title"), "handoff_title", language);
+  // The name as the parent wrote it, after Configurar too.
+  $("a02-name").textContent = student.name;
+  writeWords($("a02-yes"), "handoff_yes", language);
+  writeWords($("a02-no"), "handoff_no", language);
+  writeWords($("a02-back"), "back", language);
+});
+
+// «Sí, soy yo»: a first run, on as a row of the home goes.
+$("a02-yes").addEventListener("click", () => {
+  const student = handoffStudent();
+  if (!student) return;
+  confirmed = true;
+  study(student.id);
+});
+
+// «No soy yo»: in the place of A03 «Avísale a tu papá o mamá», since the parent
+// is right there. Configurar opens for the name; saving comes back here.
+$("a02-no").addEventListener("click", () => {
+  const student = handoffStudent();
+  if (student) edit(student, true);
+});
 
 // --- A student's settings ---------------------------------------------------------------
 
-function edit(student) {
-  openEditor(student, subjectsKept(), async () => {
-    // Saved or removed: the family's students are read again, then the home.
+/** Opens Configurar for a student; from a02 (`handingOver`), saving goes back to it. */
+function edit(student, handingOver = false) {
+  openEditor(student, subjectsKept(), async (saved) => {
+    // Saved or removed: the family's students are read again, then the screen before.
     try {
       setAccount(await call("api/account"));
     } catch {
       return go("home", { message: "No se pudo leer tu cuenta. Carga la página otra vez." });
+    }
+    // Removed from the hand-off: there is nobody to hand over to.
+    if (handingOver && saved === null) {
+      handoff = null;
+      return go("home", { replace: true, fresh: true });
     }
     back();
   });
@@ -233,7 +334,12 @@ onAccount((account) => {
   kind = undefined;
   request = null;
   resumable = null;
+  handoff = null;
+  confirmed = false;
   detailsOf = "";
+  // a02 named the child.
+  $("a02-lead").textContent = "";
+  $("a02-name").textContent = "";
   $("hello").textContent = "";
   $("plan-line").textContent = "";
   $("student-list").replaceChildren();

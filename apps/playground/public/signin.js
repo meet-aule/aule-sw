@@ -1,9 +1,9 @@
-// The screens before an account (Figma «Login-Aule» v8, page 160:1345): who
-// is here (C00, C01), the ways in (P01, and P13 for a family coming back), the
-// emailed code (P02, P03, and a name the first time), and the help when it
-// does not arrive (P14, P15). Also the first look at who is signed in, where
-// the page starts, signing out and erasing the account. The page never holds
-// the session itself: the server keeps it in a cookie it alone reads.
+// The screens before an account (Figma «Login-Aule» v8, page 160:1345): whether
+// there is an account already (C01), the ways in (P01, and P13 for a family
+// coming back), the emailed code (P02, P03, and a name the first time), and the
+// help when it does not arrive (P14, P15). Also the first look at who is signed
+// in, where the page starts, signing out and erasing the account. The page
+// never holds the session itself: the server keeps it in a cookie it alone reads.
 
 import { $, call, say } from "./students.js";
 import { codeDigits, greeting, maskEmail } from "./steps.js";
@@ -63,10 +63,10 @@ function forgetAddress() {
   $("email-address").value = "";
 }
 
-// --- C00 ¿Quién eres? and C01 ¿Ya tienes cuenta? ------------------------------
+// --- C01 ¿Ya tienes cuenta? ---------------------------------------------------
+// The first question of a signed-out visit. C00 «¿Quién eres?» was retired on
+// 24 Nov: the student no longer comes in by the web, only after the parent.
 
-$("c00-parent").addEventListener("click", () => go("c01"));
-$("c00-child").addEventListener("click", () => go("c00-student"));
 $("c01-new").addEventListener("click", () => go("p01", { flow: "new" }));
 $("c01-back").addEventListener("click", () => go("p13", { flow: "back" }));
 
@@ -102,6 +102,8 @@ for (const link of document.querySelectorAll("[data-provider]")) {
 
 let googleReady = false;
 let googleFailed = false;
+// Google's script, once a sign-in screen has asked for it.
+let googleScript = null;
 
 // Google draws its own button (Figma: Botón/Google 168:991, «no restyle»):
 // only its options and its slot's width are ours, up to Google's 400 px.
@@ -126,18 +128,18 @@ function googleTrouble() {
 }
 
 onShow("p01", () => {
+  needGoogle();
   renderGoogle("google-p01");
   googleTrouble();
 });
 
 onShow("p13", () => {
   $("p13-greeting").textContent = greeting(recall(local, RETURNING) === "1");
+  needGoogle();
   renderGoogle("google-p13");
   googleTrouble();
 });
 
-// Google's script is fetched while the page asks who is here; the button is
-// drawn once both are in.
 function loadGoogleScript() {
   return new Promise((loaded, failed) => {
     const script = document.createElement("script");
@@ -147,6 +149,24 @@ function loadGoogleScript() {
     script.addEventListener("error", failed);
     document.head.append(script);
   });
+}
+
+// Google's script is fetched only where a guardian signs in (P01 and P13),
+// once, the first time one of those screens shows: the landing (C01), a
+// student's screens and a family already signed in never load it, so a visit
+// that only looks at the first question asks Google for nothing. The button is
+// drawn once it is in.
+function needGoogle() {
+  const account = getAccount();
+  if (googleScript || account.signed_in || !account.google_client_id) return;
+  googleScript = loadGoogleScript().then(
+    () => drawGoogle(account.google_client_id),
+    () => {
+      googleFailed = true;
+      showWays(getAccount());
+      if (["p01", "p13"].includes(current())) googleTrouble();
+    },
+  );
 }
 
 function drawGoogle(clientId) {
@@ -165,6 +185,16 @@ function drawGoogle(clientId) {
   googleReady = true;
   if (current() === "p01") renderGoogle("google-p01");
   if (current() === "p13") renderGoogle("google-p13");
+}
+
+/**
+ * Where a signed-out visit starts: P13 «¡Qué bueno que estés de vuelta!» for
+ * a browser that signed in before (Nota · P13 · Saludo), else C01. P13's
+ * «← Atrás» still reaches C01.
+ */
+function firstScreen() {
+  const land = landing();
+  return land === "c01" && recall(local, RETURNING) === "1" ? "p13" : land;
 }
 
 /** Signed in, by any way: a family with students goes to them, a new one starts by adding one. */
@@ -348,7 +378,8 @@ async function signedOut(message) {
   // Each module forgets what it drew about the family before the first question shows.
   setAccount(account);
   showWays(account);
-  go(landing(), { replace: true, fresh: true, message, tone: "info" });
+  const first = firstScreen();
+  go(first, { replace: true, fresh: true, message, tone: "info", ...(first === "p13" ? { flow: "back" } : {}) });
 }
 
 $("sign-out").addEventListener("click", async () => {
@@ -428,24 +459,10 @@ function start(account) {
     const message = outcome === "failed" ? "No se pudo entrar con esa cuenta. Inténtalo otra vez o usa otra." : "";
     return go(from, { flow: from === "p01" ? "new" : "back", message });
   }
-  go(landing());
+  const first = firstScreen();
+  go(first, first === "p13" ? { flow: "back" } : {});
 }
 
-const googleScript = loadGoogleScript();
-// A script that fails before the account is read is dealt with below, not reported as unhandled.
-googleScript.catch(() => undefined);
 call("api/account")
-  .then((account) => {
-    start(account);
-    if (!account.google_client_id) return;
-    googleScript.then(
-      () => drawGoogle(account.google_client_id),
-      // Somebody already signed in has no use for the button, nor for its failure.
-      () => {
-        googleFailed = true;
-        showWays(getAccount());
-        if (["p01", "p13"].includes(current())) googleTrouble();
-      },
-    );
-  })
+  .then(start)
   .catch(() => start({ signed_in: false, google_client_id: null, providers: [] }));

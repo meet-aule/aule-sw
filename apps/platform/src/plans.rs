@@ -31,7 +31,7 @@ pub const PLAN_PER_WEEK: i64 = 3;
 pub const PRICE_CENTS: i64 = 5900;
 pub const CURRENCY: &str = "PEN";
 /// A session shorter than this does not count.
-const SHORT_MINUTES: i32 = 2;
+pub const SHORT_MINUTES: i32 = 2;
 const MAX_GRANT_DAYS: i64 = 366;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -228,8 +228,9 @@ pub async fn mine(guardian: Guardian, State(state): State<AppState>) -> ApiResul
     Ok(Json(answer))
 }
 
-/// Every family, newest first, with its plan and how much it uses Aule: what
-/// the team needs to look after the families, and nothing a child said.
+/// Every family, newest first, with its plan, the link it signed up from and
+/// how much it uses Aule: what the team needs to look after the families, and
+/// nothing a child said.
 pub async fn families(_: Staff, State(state): State<AppState>) -> ApiResult<Json<Value>> {
     let rows = state
         .db
@@ -246,7 +247,7 @@ pub async fn families(_: Staff, State(state): State<AppState>) -> ApiResult<Json
                where sessions.started_at is not null
                group by children.family_id
              )
-             select families.id, families.name, families.created_at,
+             select families.id, families.name, families.created_at, families.source,
                     (select string_agg(guardians.email, ', ' order by guardians.created_at)
                        from guardians where guardians.family_id = families.id) as emails,
                     (select count(*) from children where children.family_id = families.id) as children,
@@ -266,6 +267,7 @@ pub async fn families(_: Staff, State(state): State<AppState>) -> ApiResult<Json
             "id": id,
             "name": row.try_get::<String>("", "name")?,
             "created_at": row.try_get::<DateTime<Utc>>("", "created_at")?,
+            "source": row.try_get::<Option<String>>("", "source")?,
             "emails": row.try_get::<Option<String>>("", "emails")?,
             "children": row.try_get::<i64>("", "children")?,
             "sessions_7d": row.try_get::<i64>("", "sessions_7d")?,

@@ -3,16 +3,23 @@
 import asyncio
 import json
 
+import aiohttp
 import pytest
+from aiohttp import web
+from aiohttp.test_utils import TestServer
 from livekit.agents import llm
 
-from aule_agent.moderation import Action, Decision
+from aule_agent.moderation import Action, Decision, Probe
 from aule_agent.physical_safety import (
+    GRADE_AGES,
     MAX_BYTES,
     MAX_HISTORY_ITEMS,
     QUESTION,
+    UNKNOWN_AGE,
     PhysicalSafetyGuard,
     Verdict,
+    _StatusError,
+    age_for,
     combine_input_decisions,
     parse_response,
 )
@@ -337,3 +344,269 @@ async def test_logs_carry_the_verdict_and_never_the_text_or_the_key(guard, provi
     assert isinstance(record.duration_ms, int)
     logged = str(record.__dict__)
     assert "secret" not in logged and "synthetic-test-key" not in logged and "0.99" not in logged
+
+
+@pytest.mark.parametrize(
+    ("age", "grade", "told"),
+    [
+        (9, "P4", 9),
+        (9, None, 9),
+        (0, None, 0),
+        (17, "S5", 17),
+        (None, "P1", "6-7"),
+        (None, "P3", "8-9"),
+        (None, "S5", "16-17"),
+        # An age that is not a child's is not passed on: the grade's ages are.
+        (18, "S5", "16-17"),
+        (-1, None, UNKNOWN_AGE),
+        (True, "P3", "8-9"),
+        ("9", None, UNKNOWN_AGE),
+        (None, "p4", UNKNOWN_AGE),
+        (None, "4 primaria", UNKNOWN_AGE),
+        (None, None, UNKNOWN_AGE),
+    ],
+)
+def test_the_age_is_the_platforms_or_the_grades_and_never_a_guess(age, grade, told):
+    assert age_for(age, grade) == told
+
+
+def test_every_school_grade_has_the_ages_of_its_year():
+    assert list(GRADE_AGES) == [
+        *(f"P{year}" for year in range(1, 7)),
+        *(f"S{year}" for year in range(1, 6)),
+    ]
+    # A first grader is six or seven, and each grade is a year older than the one before.
+    assert [band.split("-") for band in GRADE_AGES.values()] == [
+        [str(age), str(age + 1)] for age in range(6, 17)
+    ]
+
+
+async def test_the_request_tells_how_old_the_student_is_and_nothing_else_about_them(provider):
+    guard = PhysicalSafetyGuard("synthetic-test-key", send=provider)
+
+    await guard.check(empty(), message())
+    guard.for_student(None, "P3")
+    await guard.check(empty(), message())
+    guard.for_student(9, "P4")
+    await guard.check(empty(), message())
+    await guard.close()
+
+    assert [sent["state"]["age"] for sent in provider.requests] == [UNKNOWN_AGE, "8-9", 9]
+    assert all(set(sent["state"]) == {"age", "history", "utterance"} for sent in provider.requests)
+
+
+def history(*lines):
+    """A conversation in which (role, text) lines were said, in that order."""
+    context = llm.ChatContext.empty()
+    for role, text in lines:
+        context.add_message(role=role, content=text)
+    return context
+
+
+async def test_the_tutors_lines_are_sent_without_the_students_name(provider):
+    guard = PhysicalSafetyGuard("synthetic-test-key", send=provider)
+    guard.for_student(9, "P4", "Liam")
+    said = history(
+        ("assistant", "¡Hola, Liam! Soy Aule, qué gusto verte. Cuéntame, ¿cómo te fue hoy?"),
+        ("user", "Bien. Mi hermano me dice Liam el cocinero."),
+        ("assistant", "¡Muy bien, Liam! ¿Qué cocinaron, LIAM?"),
+    )
+
+    await guard.check(said, message("¿Puedo prender la cocina yo solo?"))
+    await guard.close()
+
+    (sent,) = provider.requests
+    assert sent["state"]["history"] == [
+        {
+            "role": "assistant",
+            "content": "¡Hola, [student]! Soy Aule, qué gusto verte. Cuéntame, ¿cómo te fue hoy?",
+        },
+        # What the student says is judged as they said it.
+        {"role": "user", "content": "Bien. Mi hermano me dice Liam el cocinero."},
+        {"role": "assistant", "content": "¡Muy bien, [student]! ¿Qué cocinaron, [student]?"},
+    ]
+    assert sent["state"]["utterance"] == "¿Puedo prender la cocina yo solo?"
+
+
+@pytest.mark.parametrize(
+    ("name", "line", "sent"),
+    [
+        # The whole name and each of its words, and never inside another word.
+        (
+            "Ana Lucía",
+            "Muy bien, Ana Lucía. Mañana abre la ventana, Ana.",
+            "Muy bien, [student]. Mañana abre la ventana, [student].",
+        ),
+        # As the platform gave it, or with a capital first letter.
+        (
+            "ana",
+            "Muy bien, ana. Mañana, Ana, abre la ventana.",
+            "Muy bien, [student]. Mañana, [student], abre la ventana.",
+        ),
+        ("MATEO", "¡Hola, MATEO! Sigamos, Mateo.", "¡Hola, [student]! Sigamos, [student]."),
+        # A name is text, not a pattern.
+        ("J.P.", "Bien hecho, J.P. ¿Y JxPx?", "Bien hecho, [student] ¿Y JxPx?"),
+        # A name that is also a word stays a word where it is written as one.
+        ("Luz", "Apaga la luz, Luz.", "Apaga la luz, [student]."),
+        # A single letter is no name to take out of a sentence.
+        ("A. Bo", "A. Bo, la A. es tuya, Bo.", "[student], la A. es tuya, [student]."),
+        (None, "¡Hola, Liam!", "¡Hola, Liam!"),
+        ("  ", "¡Hola!", "¡Hola!"),
+    ],
+)
+async def test_the_name_is_left_out_word_by_word_and_only_where_it_is_the_name(
+    provider, name, line, sent
+):
+    guard = PhysicalSafetyGuard("synthetic-test-key", send=provider)
+    guard.for_student(None, None, name)
+
+    await guard.check(history(("assistant", line)), message())
+    await guard.close()
+
+    assert provider.requests[0]["state"]["history"][0]["content"] == sent
+
+
+async def test_the_name_is_kept_out_of_the_context_the_gate_holds_on_to(provider):
+    # A hazard keeps its context until a safe turn resolves it: what is sent
+    # again later is still without the name.
+    provider.payload = response(0.9)
+    guard = PhysicalSafetyGuard("synthetic-test-key", send=provider)
+    guard.for_student(9, None, "Liam")
+
+    first = history(("assistant", "¡Hola, Liam!"))
+    assert await guard.check(first, message("Tengo un cuchillo")) is Verdict.ADULT_HELP
+    assert await guard.check(empty(), message("¿Puedo cortar?")) is Verdict.ADULT_HELP
+    await guard.close()
+
+    assert all("Liam" not in json.dumps(sent) for sent in provider.requests)
+    assert {"role": "assistant", "content": "¡Hola, [student]!"} in (
+        provider.requests[1]["state"]["history"]
+    )
+
+
+class Models:
+    """Stands in for the provider's list of models."""
+
+    def __init__(self, answer=None, delay=0.0):
+        self.answer = answer
+        self.delay = delay
+        self.calls = 0
+
+    async def __call__(self):
+        self.calls += 1
+        await asyncio.sleep(self.delay)
+        if isinstance(self.answer, Exception):
+            raise self.answer
+        if isinstance(self.answer, bytes):
+            return self.answer
+        listed = {"name": "jev-latest", "description": "General", "release_date": "2026-09-15"}
+        return json.dumps({"models": [listed]}).encode()
+
+
+async def test_the_probe_lists_the_models_and_sends_nothing_of_the_conversation(provider):
+    models = Models()
+    guard = PhysicalSafetyGuard("synthetic-test-key", send=provider, list_models=models)
+
+    assert await guard.probe() is Probe.ANSWERS
+    assert models.calls == 1
+    assert provider.requests == []
+    await guard.close()
+
+
+@pytest.mark.parametrize(
+    ("answer", "probe"),
+    [
+        (_StatusError(401), Probe.KEY_REFUSED),
+        (_StatusError(403), Probe.KEY_REFUSED),
+        (_StatusError(429), Probe.UNEXPECTED),
+        (_StatusError(500), Probe.UNEXPECTED),
+        (aiohttp.ClientConnectionError(), Probe.UNREACHABLE),
+        (OSError("name does not resolve"), Probe.UNREACHABLE),
+        (TimeoutError(), Probe.UNREACHABLE),
+        (ValueError("response too large"), Probe.UNEXPECTED),
+        (b"not json", Probe.UNEXPECTED),
+        (b"[]", Probe.UNEXPECTED),
+        (b'{"models": []}', Probe.UNEXPECTED),
+        (b'{"models": "jev-latest"}', Probe.UNEXPECTED),
+        (b'{"models": [{"id": "jev-latest"}]}', Probe.UNEXPECTED),
+        (b"[" * 2000 + b"0" + b"]" * 2000, Probe.UNEXPECTED),
+    ],
+)
+async def test_a_probe_without_a_usable_answer_says_why(answer, probe):
+    guard = PhysicalSafetyGuard("synthetic-test-key", list_models=Models(answer))
+
+    assert await guard.probe() is probe
+    await guard.close()
+
+
+async def test_a_probe_with_no_answer_in_time_is_unreachable(monkeypatch):
+    monkeypatch.setattr("aule_agent.physical_safety.PROBE_SECONDS", 0.01)
+    guard = PhysicalSafetyGuard("synthetic-test-key", list_models=Models(delay=5))
+
+    assert await guard.probe() is Probe.UNREACHABLE
+    await guard.close()
+
+
+async def test_a_closed_guard_is_not_probed():
+    models = Models()
+    guard = PhysicalSafetyGuard("synthetic-test-key", list_models=models)
+    await guard.close()
+
+    assert await guard.probe() is Probe.UNREACHABLE
+    assert models.calls == 0
+
+
+async def test_the_probe_logs_what_happened_and_never_the_key(caplog):
+    guard = PhysicalSafetyGuard("synthetic-test-key", list_models=Models(_StatusError(401)))
+
+    with caplog.at_level("DEBUG"):
+        await guard.probe()
+
+    (record,) = caplog.records
+    assert (record.levelname, record.probe, record.status) == ("WARNING", "key_refused", 401)
+    assert isinstance(record.duration_ms, int)
+    assert "synthetic-test-key" not in str(record.__dict__)
+
+
+async def test_the_probe_and_the_turns_reach_the_provider_as_written(monkeypatch):
+    """Against a stand-in for the provider on this machine, with the real HTTP code."""
+    seen = []
+
+    async def models(request):
+        seen.append((request.method, request.path, await request.read(), request.transport))
+        if request.headers.get("Authorization") != "Bearer synthetic-test-key":
+            return web.json_response({"detail": "invalid key"}, status=401)
+        listed = {"name": "jev-latest", "description": "General", "release_date": "2026-09-15"}
+        return web.json_response({"models": [listed]})
+
+    async def systemone(request):
+        seen.append((request.method, request.path, await request.read(), request.transport))
+        return web.json_response(response(0.01))
+
+    app = web.Application()
+    app.router.add_get("/v1/models", models)
+    app.router.add_post("/v1/systemone", systemone)
+    async with TestServer(app) as server:
+        monkeypatch.setattr(
+            "aule_agent.physical_safety.MODELS_ENDPOINT", str(server.make_url("/v1/models"))
+        )
+        monkeypatch.setattr(
+            "aule_agent.physical_safety.ENDPOINT", str(server.make_url("/v1/systemone"))
+        )
+        guard = PhysicalSafetyGuard("synthetic-test-key", age=9)
+        refused = PhysicalSafetyGuard("another-key")
+        assert await guard.probe() is Probe.ANSWERS
+        assert await guard.check(empty(), message("¿Me ayudas con las fracciones?")) is (
+            Verdict.ALLOW
+        )
+        assert await refused.probe() is Probe.KEY_REFUSED
+        await guard.close()
+        await refused.close()
+
+    (probe, check, other) = seen
+    assert (probe[0], probe[1], probe[2]) == ("GET", "/v1/models", b"")
+    assert (check[0], check[1]) == ("POST", "/v1/systemone")
+    assert json.loads(check[2])["state"]["age"] == 9
+    # The turn went out on the connection the probe opened.
+    assert check[3] is probe[3]
+    assert other[3] is not probe[3]

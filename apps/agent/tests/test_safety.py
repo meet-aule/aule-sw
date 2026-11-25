@@ -9,7 +9,14 @@ from livekit.agents import llm
 
 from aule_agent.config import Settings
 from aule_agent.events import contracts_dir
-from aule_agent.moderation import _PATTERN_DEFINITIONS, THRESHOLDS, Action, Decision, Finding
+from aule_agent.moderation import (
+    _PATTERN_DEFINITIONS,
+    THRESHOLDS,
+    Action,
+    Decision,
+    Finding,
+    Probe,
+)
 from aule_agent.physical_safety import Verdict
 from aule_agent.replies import ADULT_HELP_SEQUENCE, ANSWERABLE, REPLIES
 from aule_agent.safety import (
@@ -20,17 +27,28 @@ from aule_agent.safety import (
     Gates,
     audience_of,
     build_gates,
+    check_at_start,
     moderation_categories,
 )
 
 
 class Moderation:
-    def __init__(self, finding=None, *, error=None, wait=None):
+    def __init__(self, finding=None, *, error=None, wait=None, probe=Probe.ANSWERS):
         self.finding = finding or Finding()
         self.error = error
         self.wait = wait
+        self.answer = probe
         self.seen = []
+        self.probes = 0
         self.closed = self.cancelled = False
+
+    async def probe(self):
+        self.probes += 1
+        if self.wait is not None:
+            await self.wait.wait()
+        if isinstance(self.answer, Exception):
+            raise self.answer
+        return self.answer
 
     async def check(self, text):
         self.seen.append(text)
@@ -49,12 +67,26 @@ class Moderation:
 
 
 class Physical:
-    def __init__(self, verdict=Verdict.ALLOW, *, error=None, wait=None):
+    def __init__(self, verdict=Verdict.ALLOW, *, error=None, wait=None, probe=Probe.ANSWERS):
         self.verdict = verdict
         self.error = error
         self.wait = wait
+        self.answer = probe
         self.seen = []
+        self.students = []
+        self.probes = 0
         self.closed = self.cancelled = False
+
+    async def probe(self):
+        self.probes += 1
+        if self.wait is not None:
+            await self.wait.wait()
+        if isinstance(self.answer, Exception):
+            raise self.answer
+        return self.answer
+
+    def for_student(self, age, grade, name=None):
+        self.students.append((age, grade, name))
 
     async def check(self, context, message):
         self.seen.append((context, message))
@@ -112,6 +144,146 @@ def test_a_child_session_needs_both_gates():
 
 def test_an_operator_session_may_start_without_gates():
     assert Gates().may_start("operator")
+
+
+async def test_a_child_session_needs_both_gates_to_answer():
+    assert await Gates(moderation=Moderation(), physical_safety=Physical()).ready()
+    for moderation, physical in (
+        (Moderation(probe=Probe.KEY_REFUSED), Physical()),
+        (Moderation(), Physical(probe=Probe.UNREACHABLE)),
+        (Moderation(probe=Probe.UNEXPECTED), Physical(probe=Probe.UNEXPECTED)),
+    ):
+        assert not await Gates(moderation=moderation, physical_safety=physical).ready()
+
+
+async def test_a_gate_that_is_not_configured_is_not_asked_and_the_session_does_not_start():
+    moderation, physical = Moderation(), Physical()
+
+    assert not await Gates(moderation=moderation).ready()
+    assert not await Gates(physical_safety=physical).ready()
+    assert moderation.probes == physical.probes == 0
+
+
+async def test_both_gates_are_asked_at_the_same_time():
+    release = asyncio.Event()
+    moderation, physical = Moderation(wait=release), Physical(wait=release)
+    both = Gates(moderation=moderation, physical_safety=physical)
+
+    task = asyncio.create_task(both.ready())
+    while not (moderation.probes and physical.probes):
+        await asyncio.sleep(0)
+    assert not task.done()
+
+    release.set()
+    assert await task
+
+
+async def test_a_probe_that_breaks_is_a_gate_that_does_not_answer():
+    both = Gates(moderation=Moderation(probe=RuntimeError("bug")), physical_safety=Physical())
+
+    assert await both.probe() == {"moderation": Probe.UNEXPECTED, "physical_safety": Probe.ANSWERS}
+    assert not await both.ready()
+
+
+async def test_gates_that_do_not_answer_are_logged_by_name_only(caplog):
+    both = Gates(moderation=Moderation(), physical_safety=Physical(probe=Probe.KEY_REFUSED))
+
+    with caplog.at_level("DEBUG"):
+        assert not await both.ready()
+
+    (record,) = caplog.records
+    assert record.gates == ["physical_safety"]
+
+
+def test_only_the_physical_safety_gate_hears_how_old_the_student_is():
+    moderation, physical = Moderation(), Physical()
+
+    Gates(moderation=moderation, physical_safety=physical).for_student(9, "P4", "Liam")
+    Gates(moderation=moderation).for_student(9, "P4", "Liam")
+
+    # The name goes with the age only to be left out of what the gate sends.
+    assert physical.students == [(9, "P4", "Liam")]
+    assert not hasattr(moderation, "students")
+
+
+SETTINGS = Settings(
+    agent_name="a",
+    stt="deepgram",
+    tts="cartesia",
+    tts_voice=None,
+    llm_model="m",
+    language="es",
+    session_max_minutes=15,
+    push_to_talk=False,
+    openai_api_key="sk-synthetic-secret",
+    typesafe_api_key="ts-synthetic-secret",
+)
+
+
+@pytest.mark.parametrize(
+    ("moderation", "physical", "ready"),
+    [
+        (Probe.ANSWERS, Probe.ANSWERS, True),
+        (Probe.KEY_REFUSED, Probe.ANSWERS, False),
+        (Probe.ANSWERS, Probe.UNREACHABLE, False),
+        (Probe.ANSWERS, Probe.UNEXPECTED, False),
+    ],
+)
+async def test_the_start_up_check_says_which_gate_does_not_answer_and_never_a_key(
+    monkeypatch, caplog, moderation, physical, ready
+):
+    gates = Gates(moderation=Moderation(probe=moderation), physical_safety=Physical(probe=physical))
+    monkeypatch.setattr("aule_agent.safety.build_gates", lambda settings, **_: gates)
+
+    with caplog.at_level("INFO", logger="aule.agent.safety"):
+        assert await check_at_start(SETTINGS) is ready
+
+    said = {record.gate: record for record in caplog.records}
+    assert set(said) == {"moderation", "physical_safety"}
+    for gate, probe in (("moderation", moderation), ("physical_safety", physical)):
+        record = said[gate]
+        assert record.levelname == ("INFO" if probe is Probe.ANSWERS else "ERROR")
+        assert gate in record.getMessage()
+    if moderation is Probe.KEY_REFUSED:
+        assert "OPENAI_API_KEY" in said["moderation"].getMessage()
+    if physical is Probe.UNREACHABLE:
+        assert "did not answer in time" in said["physical_safety"].getMessage()
+    assert "secret" not in " ".join(str(record.__dict__) for record in caplog.records)
+    assert gates._moderation.closed and gates._physical_safety.closed
+
+
+async def test_the_start_up_check_of_a_worker_with_one_gate_is_not_ready(monkeypatch, caplog):
+    gates = Gates(moderation=Moderation())
+    monkeypatch.setattr("aule_agent.safety.build_gates", lambda settings, **_: gates)
+
+    with caplog.at_level("INFO", logger="aule.agent.safety"):
+        assert not await check_at_start(SETTINGS)
+
+    assert [record.gate for record in caplog.records] == ["moderation"]
+
+
+async def test_the_start_up_check_builds_the_two_gates_and_no_second_reader(monkeypatch):
+    readers = []
+
+    class Reader:
+        def __init__(self):
+            readers.append(self)
+
+        async def close(self):
+            pass
+
+    async def answers(self):
+        return {"moderation": Probe.ANSWERS, "physical_safety": Probe.ANSWERS}
+
+    monkeypatch.setattr("aule_agent.safety.SecondOpinion", Reader)
+    monkeypatch.setattr(Gates, "probe", answers)
+
+    assert await check_at_start(SETTINGS)
+    assert readers == []
+    # A session's gates still have their second reader.
+    session = build_gates(SETTINGS)
+    await session.close()
+    assert len(readers) == 1
 
 
 @pytest.mark.parametrize(

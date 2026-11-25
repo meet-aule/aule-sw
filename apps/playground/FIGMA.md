@@ -7,15 +7,17 @@ The page follows the Figma file **«Login-Aule»** (key `yOAIYJNl5nZ7NgWtESN0Fo`
 | | |
 |---|---|
 | File | «Login-Aule», `yOAIYJNl5nZ7NgWtESN0Fo`, read-only from the code's side |
-| Pages followed | `160:1345` «Vigente · Login padre · v8» (the parent's screens, Móvil 390×844 and Escritorio 1280×800) and `190:717` «Vigente · Login alumno · v8» (the student's screens, «· Aparato» 800×480) |
-| Not followed | The Pendiente pages (Cuenta del padre, Aparato del alumno, Login alumno Mosaico) and the Archivo pages |
-| Read | 23 November 2026 |
+| Pages followed | `160:1345` «Login padre · v8» (the parent's screens, Móvil 390×844 and Escritorio 1280×800) and `190:717` «Login alumno · v8» (the student's screens, «· Aparato» 800×480), Vigente until 24 November and the source of the page's look, which it keeps on the owner's word. They are now «Archivo · Login padre · v8 · vaciada el 24 nov», whose frames moved with their ids to the v1 pages, and «Archivo · Login alumno · v8» |
+| Reorganised | On 24 November César moved the flows to «Léeme · Flujos» (`440:771`) and three pages, «Vigente · Setup · v1», «Vigente · Login · v1» and «Vigente · Onboarding · v1» (`440:772`–`440:774`). Their order is the page's: Setup (C01 to P12, with C00 retired), then the child's first steps. The page builds from them what needs neither the device nor a new platform feature: A02 as `a02`, A16's words, and A05's bar from «Pendiente · Sesión del alumno · v1» (D24–D29) |
+| Not followed | The rest of the Pendiente pages (Cuenta del padre, Aparato del alumno, Login alumno Mosaico; of «Sesión del alumno», A05's bar and its blocked state, 260:654 and 260:716, are followed), the Archivo pages, and the 24 November look (white, blue and Inter only; §8) |
+| Read | 23 November 2026; the v1 pages and the pages' names, 24 November 2026 |
 
 Code Connect is not available on the team's Pro plan, so this file is the map between the Figma and the code, and three conventions in the code point back to the file (§2).
 
 ## 2. How the code cites the Figma
 
-- **HTML.** Every screen of `public/index.html` is one `<section class="screen" data-screen="…" data-surface="paper|ink">`, and the comment right before it names its frame and node ids, for example `<!-- Figma: P02 Tu correo · Móvil 160:1624 / Escritorio 160:1755 -->`. A screen the Figma does not draw says `web-only` and names the components it is built from. A state inside a screen has its comment at the element that changes (`P04 · Marcada` at the box, `P13 · De vuelta` at the greeting, `A05 · Silenciado` and `A15 · Silenciado` at the microphone); a state the Figma does not draw says `web-only state of …` there (A05's, for a session a reload left open).
+- **HTML.** Every screen of `public/index.html` is one `<section class="screen" data-screen="…" data-surface="paper|ink">`, and the comment right before it names its frame and node ids, for example `<!-- Figma: P02 Tu correo · Móvil 160:1624 / Escritorio 160:1755 -->`. A screen the Figma does not draw says `web-only` and names the components it is built from. A state inside a screen has its comment at the element that changes (`P04 · Marcada` at the box, `P13 · De vuelta` at the greeting, `A05 · Silenciado` and `A15 · Silenciado` at the microphone, `A16 Hola, soy Aule 477:190, first run` at the session's title, `Pendiente · Sesión del alumno 260:654` at A05's bar); a state the Figma does not draw says `web-only state of …` there (A05's, for a session a reload left open and for the check; the talk button's coach and bar; the session's, when Aule does not arrive).
+- **Words.** The child's first steps (`a02`, A05's check, A16's words, the coach) take their words from `public/first-steps.js`, in the student's language, Spanish and English; the words of a session's ending and of Aule not arriving are `public/session-messages.js`'s.
 - **CSS.** `public/style.css` names each Figma variable next to its token and each component (with its variants' ids) above its rules, for example `/* Figma: Opción/Grande 160:1374 (Normal 160:1375, Seleccionada 160:1379, Foco 160:1384, Error 160:1388) */`.
 - **JS.** `public/steps.js` holds the table of screens (`SCREENS`): each one's Figma code, name, node ids, surface, progress step and way back. The router (`public/screens.js`) draws the progress header from it.
 - **Tests.** `test/figma.test.mjs` checks that every section has its comment, that the sections and `SCREENS` are the same set with the same node ids and surfaces, that this file names every Vigente screen, component, token and icon, and that the stylesheet names each component and variable.
@@ -24,13 +26,12 @@ Code Connect is not available on the team's Pro plan, so this file is the map be
 
 Surface: **paper** is the parent's look (page 160:1345), **ink** the device's pure black on white (page 190:717). Status: **build** (as the Figma draws it), **adapt** (built, with a difference in §7), **restyle** (a screen the page already had, in the new look), **web-only** (not in the Figma, built from its components), **out** (not built, §8).
 
-### 3.1 The parent (page 160:1345)
+### 3.1 The parent (page 160:1345; since 24 Nov on «Vigente · Setup · v1» and «Vigente · Login · v1»)
 
 | Figma | Móvil / Escritorio | `data-screen` | Surface | Status | Logic in |
 |---|---|---|---|---|---|
-| C00 ¿Quién eres? | 160:1649 / 160:1727 | `c00` | paper | build | `signin.js` |
-| — (mirrors the device's C00 · Padre 190:1035) | — | `c00-student` | ink | web-only | `signin.js` |
-| C01 ¿Ya tienes cuenta? | 160:1661 / 160:1741 | `c01` | paper | build | `signin.js` |
+| C00 ¿Quién eres? | 160:1649 / 160:1727 | — | — | out (retired 24 Nov, D24) | — |
+| C01 ¿Ya tienes cuenta? | 160:1661 / 160:1741 | `c01` | paper | build (the first screen, Atrás=No) | `signin.js` |
 | P01 ¿Cómo quieres entrar? | 160:1636 / 160:1455 | `p01` | paper | build | `signin.js` |
 | P02 Tu correo | 160:1624 / 160:1755 | `p02` | paper | build | `signin.js` |
 | P03 Código | 160:1604 / 160:1768 | `p03` | paper | build | `signin.js` |
@@ -45,36 +46,40 @@ Surface: **paper** is the parent's look (page 160:1345), **ink** the device's pu
 | P10 Nombre de usuario | 160:1493 / 160:1877 | `p10-name` takes its place | paper | web-only | `onboarding.js` |
 | P11 Confírmalo en Aule (+ · No es su nombre) | 160:1479 / 160:1894; 160:1973 / 160:1982 | — | — | out | — |
 | P12 Listo | 160:1469 / 160:1909 | `p12` | paper | adapt | `onboarding.js`, `home.js` |
-| P13 Entra a tu cuenta (+ · De vuelta) | 160:1674 / 160:1920; 160:1711 / 160:1934 | `p13` | paper | build | `signin.js` |
+| P13 Entra a tu cuenta (+ · De vuelta, where a browser that signed in before starts) | 160:1674 / 160:1920; 160:1711 / 160:1934 | `p13` | paper | build | `signin.js` |
 | P14 Revisa tu correo | 160:1688 / 160:1948 | `p14` | paper | adapt | `signin.js` |
 | P15 Escríbenos | 160:1701 / 160:1962 | `p15` | paper | adapt | `signin.js` |
 | — (the family's students; Pendiente · Cuenta del padre is not Vigente) | — | `home` | paper | restyle | `home.js`, `signin.js` (signing out, erasing) |
 | — (a student's settings; no Figma screen) | — | `editor` | paper | restyle | `students.js`, `home.js` |
 
-### 3.2 The student (page 190:717)
+### 3.2 The student (page 190:717; A02 on «Vigente · Setup · v1», A16 on «Vigente · Onboarding · v1»)
 
 | Figma | Aparato | `data-screen` | Surface | Status | Logic in |
 |---|---|---|---|---|---|
+| A02 ¿Eres tú? (Vigente · Setup · v1; v8's was 190:884) | 410:629 | `a02` | ink | adapt (D25) | `home.js`, `first-steps.js` |
 | A04 ¿Qué hacemos hoy? | 190:891 | `a04` | ink | build | `home.js` |
 | — (after A04: subject, topic, day) | — | `a04-details` | ink | web-only | `home.js` |
-| A05 Antes de empezar (+ · Silenciado; + a web-only state, «¿Seguimos donde nos quedamos?», D22) | 190:899; 190:1005 | `a05` | ink | restyle | `app.js`, `session-messages.js` |
-| A15 La sesión empieza (+ · Silenciado) | 190:1069; 194:509 | `session` | ink | adapt | `app.js` |
+| A05 Antes de empezar (+ · Silenciado; + a web-only state, «¿Seguimos donde nos quedamos?», D22; + the check, a web-only state with the bar of Pendiente 260:654 and 260:716, D26) | 190:899; 190:1005 | `a05` | ink | restyle | `app.js`, `first-steps.js`, `session-messages.js` |
+| A15 La sesión empieza (+ · Silenciado; + the talk button's coach and bar, D27; + a web-only state when Aule does not arrive, D29) | 190:1069; 194:509 | `session` | ink | adapt | `app.js` |
+| A16 Hola, soy Aule (Vigente · Onboarding · v1) | 477:190 | `session`, on a first run | ink | adapt (D28) | `app.js`, `home.js` |
 | — (after A15: how the session ended, or that its connection was cut, D23) | — | `session-end` | ink | web-only | `app.js`, `session-messages.js` |
 | C00 ¿Quién eres? · Aparato, C00 · Padre, C01 · Aparato | 190:906, 190:1035, 190:912 | — | — | out | — |
-| A01 Enlazar, A02 ¿Eres tú?, A03 No soy yo | 190:869, 190:884, 190:984 | — | — | out | — |
+| A01 Enlazar, A03 No soy yo (`a02` takes its place on the web, D25) | 190:869, 190:984 | — | — | out | — |
 | A06 Correo de tu papá o mamá; A07 Reglas (+ Primera marcada, Segunda marcada, Ambas marcadas, Términos, Reglas de Aule); A08 Ya casi; A09 Elige tu nombre de usuario; A10 Crea tu contraseña; A11 Entra con tu usuario; A12 No encontramos ese usuario; A13 Le avisamos; A14 Te ayudamos | 190:918; 190:924, 190:1055, 190:1061, 190:1029, 195:493, 195:503; 190:930; 190:938; 190:946; 190:952; 190:961; 190:990; 190:966 | — | — | out | — |
 
 ### 3.3 The flows
 
 ```
-c00 ─Soy padre de familia→ c01 ─No, es mi primera vez→ p01 ─Con mi correo→ p02 → p03 ─(a new address)→ p03-name
+(signed out) c01 ─No, es mi primera vez→ p01 ─Con mi correo→ p02 → p03 ─(a new address)→ p03-name
+(signed out, a browser that signed in before) p13 ─← Atrás→ c01
 p01 ─Continuar con Google | Otras formas de entrar (GitHub, Facebook, Apple)→ signed in
 signed in → p04 (no students) or home
 p04 ─Autorizo→ p05 ─Empezar entrevista→ p06 → p06-grade → p07 → p10-name ─Guardar→ p12
 p05 ─En otro momento→ p10-name
+p12 ─Empezar su primera sesión→ a02 ─Sí, soy yo→ a04 (a first run) → a04-details → a05 → session (A16's words, the coach)
+a02 ─No soy yo→ editor ─Guardar→ a02 (the new name)        a02 ─Volver→ p12        p12 ─Terminar→ home
 c01 ─Sí, ya tengo cuenta→ p13 → (the same ways) → home
 p03 ─No me llega el correo→ p14 ─¿Sigue sin llegar? Escríbenos→ p15 (mailto:admin@meetaule.com)
-c00 ─Soy alumno→ c00-student ─Volver→ c00
 home ─a student→ a04 ─a tile→ a04-details ─Seguir→ a05 ─Empezar la sesión→ session ─Terminar→ session-end ─Volver→ home
 a04 ─No lo sé→ a05 (no objective)        home ─Configurar→ editor
 session ─time over | the platform closed it | connection cut→ session-end
@@ -82,6 +87,8 @@ home ─the student whose session a reload left open→ a05 «¿Seguimos donde n
 a05 «¿Seguimos…?» ─Empezar otra sesión→ (the open one is closed) a04
 a05 reached past a04, its session closed since ─Empezar la sesión→ a04
 session-end «Se cortó la conexión.» ─Seguir con la sesión→ a05 «¿Seguimos…?»
+session (no tutor after 15 s) ─Intentar otra vez→ (the attempt is closed) a05, the same purpose
+session (no tutor yet) ─Terminar→ session-end «Aule no llegó a esta sesión, así que no cuenta…»
 ```
 
 Each step forward is an entry in the browser's history: Back and «← Atrás» go to the step before. Signed in, the steps before signing in are not stepped back into; during a session Back does nothing, and after it the end screen takes the session's place, so Back does not step into the session or its lobby.
@@ -90,11 +97,11 @@ Each step forward is an entry in the browser's history: Back and «← Atrás» 
 
 | Figma component (id; variants) | Class / element | States in code | Used on |
 |---|---|---|---|
-| Encabezado/Base 160:1348 (Atrás=Sí 160:1349, Atrás=No 160:1352) | `.screen-head` > `.head-row` with `.wordmark` and `button.link.back[data-back]` | no `.back` for Atrás=No | every paper screen |
+| Encabezado/Base 160:1348 (Atrás=Sí 160:1349, Atrás=No 160:1352) | `.screen-head` > `.head-row` with `.wordmark` and `button.link.back[data-back]` | no `.back` for Atrás=No (c01, p12, home) | every paper screen |
 | Barra de progreso/Base 160:1415 (Sin avance 160:1416; 1–12 de 12 160:1417…160:1439) | `ol.progress` with three `li.segment` (track, fill, name); `ol.progress.plain` | drawn by `screens.js` from `steps.js` | every paper screen |
 | Pregunta/Base 161:2101 | `.question` > `.question-step`, `h2.question-title[tabindex=-1]`, `.question-help` | step and help optional | every paper screen |
 | Campo/Línea 160:1355 (Vacío 160:1356, Lleno 160:1362, Error 160:1368) | `.field` > `label`, `input`/`textarea`/`select`, `.field-error` | `aria-invalid="true"` draws the error | p02, p03-name, p06, p07, p10-name, editor, erase |
-| Opción/Grande 160:1374 (Normal 160:1375, Seleccionada 160:1379, Foco 160:1384, Error 160:1388) | one choice: `button.option`; several: `label.pick` > checkbox + `span.option`; the editor's `label.chip` and `label.tone` | `aria-pressed`/`:checked` → `--picked` fill and «✓»; `:focus-visible` → Foco | c00, c01, p01, p13, p06-grade, p07, editor |
+| Opción/Grande 160:1374 (Normal 160:1375, Seleccionada 160:1379, Foco 160:1384, Error 160:1388) | one choice: `button.option`; several: `label.pick` > checkbox + `span.option`; the editor's `label.chip` and `label.tone` | `aria-pressed`/`:checked` → `--picked` fill and «✓»; `:focus-visible` → Foco | c01, p01, p13, p06-grade, p07, editor |
 | Botón/Principal 160:1392 (Normal 160:1393, Deshabilitado 160:1395) | `.primary` (a `button`, or the `a` of p15) | `:disabled` → `--line` fill, `--muted` label | the foot of the paper screens |
 | Casilla/Base 160:1397 (Sin marcar 160:1398, Marcada 160:1401) | `label.check` > the real checkbox, out of sight over the whole row, + `.box`; `.check.boxed` with its frame | `:checked` → ink box with «✓»; P04's box starts unticked, and so do both choices in its panel, «Recordar…» and «Guardar por escrito…» (D5) | p04 and its panel, editor |
 | Dígito/Base 160:1405 (Vacío 160:1406, Foco 160:1408, Lleno 160:1410) | `.digits`: one real `input#email-code` over six `aria-hidden` boxes | the next box has `.focus` (2.5 px copper) | p03 |
@@ -105,12 +112,12 @@ Each step forward is an entry in the browser's history: Back and «← Atrás» 
 | (web addition) Botón/Principal in the error colour | `.primary.danger` | — | «Borrar mi cuenta» |
 | (web addition) Enlace/Base in the error colour | `.link.danger` | — | «Quitar a este alumno» |
 | Vista previa/Base 161:2113 | not used: the camera's preview is on an ink screen (`.preview`) | | |
-| Cuadro/Opción 190:806 (Cuadrícula Normal 190:822, Seleccionada 190:825; Grande 190:807 / 190:809) | `button.choice` > `.icon` + label | `aria-pressed="true"` → black, 4 px border, white icon and words, a check at the right | a04 |
-| Botón/Negro 190:834 (Normal 190:835, Deshabilitado 190:838) | `.ink-button` | `:disabled` → white, dashed black border (§7, D14) | c00-student, a04-details, a05 (and its web-only state's «Seguir con la sesión»), session-end |
-| Botón/Micrófono 193:709 (Encendido 193:705, Apagado 193:708) | `button.round-toggle` (112 px; `.round-88`, `.round-64`) | `aria-pressed` swaps the fill and the icon; `aria-describedby` points at the sentence | a05 microphone and camera, the session's microphone |
-| Botón/Compacto 191:1396 | `.compact` | a toggle off (`aria-pressed="false"`) keeps its solid border, as Botón/Micrófono · Apagado: its label says «apagada»/«apagado» and the camera's Ícono/videocam turns into videocam_off; `:disabled` → dashed border (D14) | the session's camera, «Modo tinta», «Terminar», «Enviar», «Responder» |
+| Cuadro/Opción 190:806 (Cuadrícula Normal 190:822, Seleccionada 190:825; Grande 190:807 / 190:809) | `button.choice` > `.icon` + label; `button.choice.handoff`, A02's tile: no icon, the label centred | `aria-pressed="true"` → black, 4 px border, white icon and words, a check at the right | a04; a02's «Sí, soy yo» and «No soy yo» |
+| Botón/Negro 190:834 (Normal 190:835, Deshabilitado 190:838) | `.ink-button` | `:disabled` → white, dashed black border (§7, D14) | a04-details, a05 (and its web-only state's «Seguir con la sesión»), session-end |
+| Botón/Micrófono 193:709 (Encendido 193:705, Apagado 193:708) | `button.round-toggle` (112 px; `.round-88`, `.round-64`) | `aria-pressed` swaps the fill and the icon; `aria-describedby` points at the sentence; `:disabled` → white, dashed black border, the icon crossed, for a microphone the browser will not give (D14, D26) | a05 microphone and camera, the session's microphone |
+| Botón/Compacto 191:1396 | `.compact` | a toggle off (`aria-pressed="false"`) keeps its solid border, as Botón/Micrófono · Apagado: its label says «apagada»/«apagado» and the camera's Ícono/videocam turns into videocam_off; `:disabled` → dashed border (D14) | the session's camera, «Modo tinta», «Terminar», «Enviar», «Responder», «Intentar otra vez» when Aule does not arrive (D29) |
 | Campo/Línea · Aparato 191:1333 | `.ink-field` | the example in italic | a04-details |
-| «Enlace · …» pattern (195:513, 190:959) | `.ink-link`: underlined, 60 px tall; several together in `.ink-links` | `:disabled` → a dashed underline | «Volver», «Revisar una evaluación que ya di», «Empezar otra sesión» |
+| «Enlace · …» pattern (195:513, 190:959) | `.ink-link`: underlined, 60 px tall; several together in `.ink-links` | `:disabled` → a dashed underline | «Volver», «Revisar una evaluación que ya di», «Empezar otra sesión»; A05's «Probar el sonido» and «Intentar otra vez» |
 | Íconos · Aparato 190:995 | `.icon[data-icon="…"]`: a CSS mask of the icon's path, in `currentColor` | follows the control's colour | a04, a05, the session |
 
 Focus: on paper, every control's `:focus-visible` is Opción/Grande · Foco's ring, 3 px of `#9a5b2e` drawn solid (D19) as an outline 2 px out, so forced colours keep it; a hidden checkbox draws it on its face (`.box`, `.option`, the chip's `span`), and a line field keeps its rule with a 3 px copper line under it. On ink, a 3 px black outline 3 px out. Each screen change moves the focus to its title.
@@ -149,6 +156,9 @@ Focus: on paper, every control's `:focus-visible` is Opción/Grande · Foco's ri
 | Digit | Inter 600 24 | — |
 | Progress part | Inter 500 12 | — |
 | Error | Inter 400 14, `#8f1d14` | Inter 600 22, black |
+| The name on a02 (A02's) | — | Inter 700 56 |
+| A05's status line; the line under A16's title | — | Inter 600 22/30; Inter 400 22/30 |
+| A line under a device control (A05's bar, the camera's note, the sound test) | — | Inter 400 18 |
 
 Layout: on a phone (under 768 px) a paper screen is the viewport's height with 24 px of padding, the header, a body that grows and the foot at the bottom edge; from 768 px it is a 560 px column centred both ways, the foot after the content. Ink screens are white; from 800×480 the content sits in an 800 px area with 40 px at the sides and 32 above and below, the primary button bottom right and the links bottom left; under 800 px they are one column with the button full width.
 
@@ -187,11 +197,11 @@ Each is what the code does today; the owner can change any of them.
 | D9 | P12 says «Listo. Aule ya conoce a {nombre}», offers «Empezar su primera sesión» and «Terminar», and «Pronto también podrás enlazar aquí el aparato Aule.» With no session left in the plan, only «Terminar» shows, and the plan's line (the home's) takes the place of «Ya puede empezar su primera sesión…». | On the web the next thing is a session in this browser. |
 | D10 | P14 speaks of a code (not a link), without «Crear mi cuenta»; its small link is «¿Sigue sin llegar? Escríbenos». P15 writes to admin@meetaule.com with the address already in the message, instead of WhatsApp. | The platform sends codes and never says when a cap is hit; WhatsApp needs a number, a legal note and a cap that can be shown. |
 | D11 | A04 has the Figma's four tiles; «No lo sé» sends no objective; a link «Revisar una evaluación que ya di» keeps the fifth kind; a web-only details step asks subject, topic and (for homework and evaluations) the day. | The platform has five kinds, and subject, topic and day are working features. |
-| D12 | A05 is César's design plus a camera row in the same pattern (88 px, videocam icons, its sentence, a preview), the level bar and «Volver». | The web needs the camera; the device's A05 leaves it for later. |
+| D12 | A05 is César's design plus a camera row in the same pattern (88 px, videocam icons, its sentence, a preview), the level bar and «Volver». The camera starts off, with César's «Si el botón es de color blanco, tu cámara está apagada.» and «La cámara se enciende solo cuando muestras tu tarea.»: A05 asks the browser for the microphone alone, and for the camera only when it is turned on. A session never turns the camera on by itself, as it joins or as the tutor comes in or says how it works: it goes on for «Mostrar mi tarea» and, with a tutor that takes no pictures, with the session's «Cámara», which cannot be pressed until the tutor is in. Turning it on in A05 shows what it sees there, and lets the browser ask for it before the session. A camera the browser will not give for «Mostrar mi tarea» is named (blocked, missing or busy), in the student's language. | The web needs the camera; the device's A05 leaves it for later. Asked for together, a browser that refuses the camera can refuse the microphone with it; and a camera turned on at the join reached the room before the tutor did, and for the whole session if it never came. The tutor says it takes pictures (`aule.show_work`) only at the end of its start-up, so turning the camera on as a tutor that takes none arrives sent it for the start-up of every tutor (the review of 24 Nov). P04 speaks only of «las imágenes de su cuaderno». |
 | D13 | The session starts in A15's state: «La sesión empezó.» and the round microphone with «Tu micrófono está encendido / apagado.»; the rest of the session keeps its layout, in black on white, and Aule's face stays. | A15 is where the Figma hands over to the session. |
 | D14 | A disabled device button (Botón/Negro, and Botón/Compacto in the session) is white with a dashed black border, not the Figma's grey `#aaaaaa` border. A toggle that is off is not disabled and keeps its solid border. | «Pure black and white» on the device. |
 | D15 | The Andean layer (wall, motifs, parchment, frames, hammered metal, dancing cuyes) is gone; the favicon and touch icons stay. | The owner's instruction for these flows. |
-| D16 | The tabs «Crear cuenta / Iniciar sesión», the trial line and the list of benefits leave the sign-in; C00 and C01 replace the tabs. | None of it is in the Figma. |
+| D16 | The tabs «Crear cuenta / Iniciar sesión», the trial line and the list of benefits leave the sign-in; C01 replaces the tabs (with C00 until 24 Nov, D24). | None of it is in the Figma. |
 | D17 | The editor («Configurar») is for existing students only; a new student is always made through P04 → name → P12. | One way to make a child, the one the Figma draws. |
 | D18 | The home (not in the Vigente pages) is built from Pregunta/Base, Fila/Alumno, Acción/Pequeña and Enlace/Base. | v8's components wait for it. |
 | D19 | The focus ring is `#9a5b2e` at full strength, drawn as an outline, not the Figma's drop shadow at 40 %. | At 40 % it is 1.73:1 on the paper; a focus indicator needs 3:1 (4.80:1 solid). Forced colours drop shadows but keep outlines. |
@@ -199,11 +209,17 @@ Each is what the code does today; the owner can change any of them.
 | D21 | Every paper control is at least 44 px tall: links have 13 px above and below their line («← Atrás» keeps the header's 25 px row), and Acción/Pequeña, the chips and GitHub, Facebook and Apple are 44 px (the Figma's 40); the line fields are 44 px with their rule. | A target a finger can hit; the look stays the same. |
 | D22 | A05 has a web-only state for a session a reload left open (the BFF's recovery, PR #187): the title asks «¿Seguimos donde nos quedamos?», a line says the session is still open and that carrying on keeps the time that was left, Botón/Negro «Seguir con la sesión» takes the place of «Empezar la sesión», and a device link «Empezar otra sesión» sits by «Volver». A student whose session is still open goes from the home straight to A05, past A04. A new session started there («Empezar otra sesión», which closes the open one first, or «Empezar la sesión» once that session has closed in the meantime) is asked on A04 what it is for before it starts, unless this page has already asked. The words follow the session's language (`session-messages.js`), and each element they are written into is marked with it (`lang`). The line is a status that is never hidden, only empty, and when the state replaces «Antes de empezar» the title takes the focus again. | The Figma has no reload. A session already has its purpose, so carrying it on does not ask A04 again; a new session has none yet, and no session starts without being asked (unless the platform keeps no subjects). Carrying on needs the devices A05 checks. A screen reader hears the state's own title and line. |
 | D23 | After a session, a web-only ink screen `session-end` says how it ended, in A15's look: «La sesión terminó.» and a line for each reason the platform keeps (`child_ended`, `parent_ended`, `budget_reached`, `idle`, `device_offline`, `not_working`, `provider_error`, `error`, or none), with Botón/Negro «Volver» to the home; «Un momento…» while the page asks why; «Se cortó la conexión.» when the session can still go on, with «Seguir con la sesión» (to A05's web-only state) and «Volver» as the link. The lines are in Aule's voice, as the tutor's own fixed lines (`apps/agent` `replies.py`) are, in the session's language (marked with `lang`), and never carry a provider's error. | The Figma hands over at A15 and draws no ending. The student is the one in front of the screen when a session ends, so the ending speaks to them, on their screen, before the family's. |
-| — | C00 starts with no option chosen (the frame shows the first one chosen: a prototype state). Google's button stops at its 400 px on desktop. | — |
+| D24 | C00 «¿Quién eres?» and the web-only `c00-student` are gone. A signed-out visit starts at C01, which has no «← Atrás» (Encabezado/Base · Atrás=No), or, in a browser that signed in before (`aule.returning`, which only erasing the account forgets), at P13 · De vuelta «¡Qué bueno que estés de vuelta!»; P13's «← Atrás» still reaches C01. | César retired C00 on 24 Nov (Setup's cover 443:520: «el alumno ya no entra por la web»). A family coming back is greeted as one. |
+| D25 | `a02` adapts A02 ¿Eres tú? (410:629). It is reached only from P12's «Empezar su primera sesión», never from the home. Top to bottom: a line for the parent («Ahora le toca a {nombre}.»), A02's title «¿Eres tú?», the name in Inter 700 at A02's size, and A02's two tiles «Sí, soy yo» and «No soy yo» (Cuadro/Opción with no icon), side by side from 800 px and stacked below that, A02's 200 px tall where the screen has room and 152 px on the device's 800 × 480, where at 200 px «Volver» would fall below the screen under the added line; «Volver» bottom left. «Sí, soy yo» makes the session a first run (D28) and goes on as a row of the home does. «No soy yo» opens Configurar for that student, and saving comes back to `a02` with the new name, in the place of A03 «Avísale a tu papá o mamá». «Volver» and Back return to P12; P12's «Terminar» skips the hand-off. The words are in the student's language, marked with `lang`. | On the device the child confirms the profile on A02 while the parent's P11 waits. On the web the parent's browser is the child's screen, so the two become one screen, and the parent is right there to fix the name. |
+| D26 | A05's check. The bar is 24 px tall across the sentence column, with César's line under it (Pendiente 260:654). A status line beside Aule's face (the session's mascot, 72 px, `aria-hidden`) starts as «Di «Hola, Aule» y mira la barra.» and says «Te escucho.», once per showing, when the level has been at a quarter of the bar or more for 400 ms in all within 1.5 s; the face listens while a voice comes in and speaks for 1.2 s then. With no voice, «¿No se mueve? Acércate un poco y habla como siempre.» after 8 s, and «Si otra app está usando el micrófono, ciérrala y toca «Intentar otra vez».» with that link after 16 s; one line at a time, and any voice starts the count again. «Probar el sonido» plays the chime Aule joins with and says so; the check does not count it, nor 300 ms after it. A microphone the browser will not give is named in the status line (blocked, missing or busy, from the browser's error) in the place of the old desktop-only sentence (Pendiente 260:716); its round button cannot be pressed (dashed, D14) and its sentence says «Tu micrófono no está disponible.»; A05 asks again on «Intentar otra vez», when the tab comes back into view, and when the browser says the microphone is allowed. The check never holds back «Empezar la sesión». | Nothing of the child's voice leaves the device before the session: an AnalyserNode that goes nowhere reads the level, and only numbers are kept, while A05 shows. The walk of 24 Nov found no retry on A05, and a blocked microphone's button that turned black and said «encendido» when pressed. |
+| D27 | With held turns (`aule.turns=manual`), a 4 px white bar inside the held talk button follows the microphone's level, measured in the browser, in every session. On a first run (D28) a line right above the button (above the fixed button on a phone held upright, 640 px tall or more) says «Mantén apretado mientras hablas. Suelta cuando termines.» until a hold of 600 ms or more with voice, then «Eso es.» for 2 s, and goes. On a shorter screen with the fixed button (a phone on its side, the device's 800 × 480) the line stays in the page under Aule's tile, and the camera's tile is lower (28 % of the screen's height), so «Terminar», «Mostrar mi tarea» and «Modo tinta» clear the fixed button where the session opens. The talk button's own words follow the student's language, like the coach's. In every session a press under 400 ms with no voice (the space bar's too) says «Déjalo apretado mientras hablas.» for 4 s, three times at most. What the button sends does not change. | Holding is taught where it is used, as Wispr Flow does. The page learns how turns work only when the tutor joins, and César's device keeps an open microphone (A17), so a rehearsal before the session could teach the wrong way. |
+| D28 | On a first run the session's title is A16's «Hola, soy Aule», with «Soy tu tutor. Soy una inteligencia artificial.» under it, in place of A15's «La sesión empezó.». A first run is a child who said «Sí, soy yo» on `a02` in this visit, or a family whose trial has not started (`plan: trial` with no `ends_at`); it is held in the page's memory only, and the home and signing out forget it. A session carried on after a reload is never one. A16's second line, «Tu papá o mamá recibe un resumen de lo que hacemos.», is left out. | The tutor's greeting then says the child's name in Aule's own voice; the page synthesises no voice, since a browser's voices can send the name to an outside service. Parents do not receive a summary yet (P17). |
+| D29 | The session's clock shows only once the tutor is in. After 15 s without it, the tutor's tile says «Aule no pudo llegar.», the title is A15's again (A16's words, on a first run, wait for Aule), and the line under it says «Aule no pudo llegar esta vez. No es tu culpa. Puedes intentarlo otra vez.» with Botón/Compacto «Intentar otra vez»: it closes the attempt with the platform, without the goodbye chime, and goes back to A05 with the same purpose; a new session waits for that close, and A05 says «Un momento…» if it takes a moment. A tutor who arrives later clears both and brings A16's words back. «Terminar» before any tutor came ends with «Aule no llegó a esta sesión, así que no cuenta. Cuando quieras, intentamos otra vez.». The line is a polite status, said once (the tile's line is not said again); the words are `session-messages.js`'s, in the session's language. | The only sign was in the tile, below the fold on a phone, while the clock ran and «Terminar» said «¡Chau! Gracias por la sesión de hoy.». A session whose tutor never came has no start, so the plan does not count it (`plans.rs`), and the page's own daily cap gives it back (`src/server.ts`, at most as many a day as the cap), so «no cuenta» holds for both. |
+| — | Google's button stops at its 400 px on desktop. | — |
 
 ## 8. Not built, and what would need the platform
 
-Not built: every device-only screen (A01–A03, A06–A14 with A07's states, the device's C00, C00 · Padre and C01, and P08–P11 with «P11 · No es su nombre»; two «Pronto» lines on `p12` and `c00-student` mark where they will go); the child's username and password and the parent's «Accesos»; WhatsApp help on P15; the Pendiente pages; the tutor's drawings and «Modo tinta»'s greys; replacing Aule's face; the landing page and the shop.
+Not built: every device-only screen (A01, A03, A06–A14 with A07's states, the device's C00, C00 · Padre and C01, E00 and W01–W03, and P08–P11 with «P11 · No es su nombre»; a «Pronto» line on `p12` marks where they will go); A17 Te escucho and A18 Terminamos por hoy, the device's session, which César calls «otro diseño»; P16 Días y hora, P17 Resumen por WhatsApp and P18 Todo listo (Vigente · Onboarding · v1), which need a schedule on the platform, WhatsApp templates Meta has approved and a legal note; the child's username and password and the parent's «Accesos»; WhatsApp help on P15; the rest of the Pendiente pages; the 24 November look (white, blue `#0075de` and Inter only), an open question; the tutor's drawings and «Modo tinta»'s greys; replacing Aule's face; the landing page and the shop.
 
 | Platform need | Why | Size |
 |---|---|---|
@@ -212,6 +228,8 @@ Not built: every device-only screen (A01–A03, A06–A14 with A07's states, the
 | A cap of 3 recovery emails a day by address and IP, with its own error | Lets P15 say «Llegaste al límite de hoy»; WhatsApp also needs a number and a legal note | medium |
 | A field for «¿Qué esperas de Aule en el día a día?» | Today it goes into the note for the tutor | medium |
 | The device side for P08–P11 and A01–A04 (claim codes with spaces or hyphens, the QR address, the child's username and the device's confirmation, the objective in `/ota/session`) | The device-only screens | large |
+| Whether a student has had a session | A first run (D28) on any device and any day, not only in the visit that made the child or before the family's trial starts | small |
+| A schedule of days and hours, and a summary for the parents after each session | P16–P18, and A16's second line | large, with WhatsApp templates and a legal note |
 
 ## 9. Comparing with the Figma
 

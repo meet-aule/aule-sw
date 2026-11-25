@@ -5,5 +5,8 @@
   "main": "src/playground.js",
   "compatibility_date": "2025-11-01",
   "routes": [{ "pattern": "playground.meetaule.com", "custom_domain": true }],
-  "observability": { "enabled": true }
+  // No line per request in Cloudflare's logs: a sign-in's way back from
+  // GitHub or Facebook carries its code in the address, and every line would
+  // say who opened which page. Errors and uncaught exceptions are still logged.
+  "observability": { "enabled": true, "logs": { "invocation_logs": false } }
 }

@@ -8,6 +8,7 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use aule_platform::config::{Config, EventsWebhook, LiveKit};
 use aule_platform::google::{Identity, IdentityError, IdentityProvider};
+use aule_platform::livekit::{NewRoom, RoomError, Rooms};
 use aule_platform::llm::{Llm, LlmError, Request as LlmRequest};
 use aule_platform::mail::{MailError, Mailer};
 use aule_platform::memory::{DIMENSIONS, Embedder, MemoryError, NewMemory};
@@ -19,6 +20,7 @@ use axum::Router;
 use axum::body::Body;
 use axum::http::{Method, Request, StatusCode};
 use base64::Engine;
+use chrono::Datelike;
 use serde_json::{Value, json};
 use sqlx::PgPool;
 use tower::ServiceExt;
@@ -131,6 +133,29 @@ impl Pusher for Phones {
     }
 }
 
+/// Stands in for LiveKit's server API: keeps each room it is asked to open
+/// with the dispatch the agent's job would get, and can play an outage.
+#[derive(Default)]
+struct PretendLiveKit {
+    opened: Mutex<Vec<(String, String, Value)>>,
+    down: std::sync::atomic::AtomicBool,
+}
+
+#[async_trait]
+impl Rooms for PretendLiveKit {
+    async fn open(&self, room: &NewRoom<'_>) -> Result<(), RoomError> {
+        if self.down.load(std::sync::atomic::Ordering::SeqCst) {
+            return Err(RoomError("pretend outage".into()));
+        }
+        self.opened.lock().unwrap().push((
+            room.name.to_string(),
+            room.agent_name.to_string(),
+            room.dispatch_metadata.clone(),
+        ));
+        Ok(())
+    }
+}
+
 const GOOGLE_CLIENT: &str = "1234-test.apps.googleusercontent.com";
 
 /// Stands in for GitHub: a code is `ok:<email>:<name>`, `down` plays an outage,
@@ -172,6 +197,7 @@ impl IdentityProvider for PretendGoogle {
 
 struct App {
     phones: Arc<Phones>,
+    rooms: Arc<PretendLiveKit>,
     router: Router,
     state: AppState,
     llm: Arc<ScriptedLlm>,
@@ -189,6 +215,7 @@ fn app_with(pool: PgPool, events_webhook: Option<EventsWebhook>) -> App {
         admin_token: ADMIN.to_string(),
         livekit: Some(LiveKit {
             public_url: "wss://live.example.org".into(),
+            service_url: "http://127.0.0.1:7880".into(),
             api_key: "key".into(),
             api_secret: "secret".into(),
         }),
@@ -213,10 +240,12 @@ fn app_with(pool: PgPool, events_webhook: Option<EventsWebhook>) -> App {
     let mail = Arc::new(Outbox::default());
     let phones = Arc::new(Phones::default());
     let llm = Arc::new(ScriptedLlm { asked: Mutex::new(Vec::new()) });
+    let rooms = Arc::new(PretendLiveKit::default());
     let state = AppState {
         db: sea_orm::SqlxPostgresConnector::from_sqlx_postgres_pool(pool.clone()),
         pool,
         config: Arc::new(config),
+        rooms: Some(rooms.clone()),
         llm: Some(llm.clone()),
         embedder: Some(Arc::new(WordEmbedder)),
         mailer: Some(mail.clone()),
@@ -229,7 +258,7 @@ fn app_with(pool: PgPool, events_webhook: Option<EventsWebhook>) -> App {
         claim_attempts: Arc::new(Mutex::new(HashMap::new())),
         engines: Default::default(),
     };
-    App { phones, router: http::router(state.clone()), state, llm, mail }
+    App { phones, rooms, router: http::router(state.clone()), state, llm, mail }
 }
 
 impl App {
@@ -282,6 +311,36 @@ impl App {
         child["id"].as_str().unwrap().to_string()
     }
 
+    /// A child in a family that already exists; returns the child's id.
+    async fn child_of(&self, family: &str) -> String {
+        let (status, child) = self
+            .admin(
+                Method::POST,
+                &format!("/v1/families/{family}/children"),
+                Some(json!({ "nickname": "Mateo", "grade": "P4" })),
+            )
+            .await;
+        assert_eq!(status, StatusCode::CREATED, "{child}");
+        child["id"].as_str().unwrap().to_string()
+    }
+
+    /// A child's session that started `ago` (`'29 days'`) and lasted `minutes`.
+    async fn past_session(&self, child: &str, ago: &str, minutes: i32) {
+        sqlx::query(
+            "insert into sessions (id, child_id, audience, room, language, status, agent_token_hash,
+                                   created_at, started_at, ended_at)
+             values (gen_random_uuid(), $1::uuid, 'child', gen_random_uuid()::text, 'es', 'ended',
+                     gen_random_uuid()::text, now() - $2::interval, now() - $2::interval,
+                     now() - $2::interval + make_interval(mins => $3))",
+        )
+        .bind(child)
+        .bind(ago)
+        .bind(minutes)
+        .execute(&self.state.pool)
+        .await
+        .unwrap();
+    }
+
     async fn consent(&self, child: &str, purpose: &str, granted: bool) {
         let (status, body) = self
             .admin(
@@ -294,24 +353,30 @@ impl App {
     }
 
     /// Starts a session and returns its id and the agent's token, read from
-    /// the dispatch metadata inside the room token like the agent does.
+    /// the dispatch its room was opened with, as the agent's job gets it.
     async fn session(&self, child: &str) -> (String, String) {
         let (status, session) = self
             .admin(Method::POST, "/v1/sessions", Some(json!({ "child_id": child, "audience": "operator" })))
             .await;
         assert_eq!(status, StatusCode::CREATED, "{session}");
-        let claims = session["token"].as_str().unwrap().split('.').nth(1).unwrap().to_string();
-        let claims: Value =
-            serde_json::from_slice(&base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(claims).unwrap())
-                .unwrap();
-        let dispatch: Value =
-            serde_json::from_str(claims["roomConfig"]["agents"][0]["metadata"].as_str().unwrap()).unwrap();
+        assert_eq!(claims(&session)["video"]["room"], session["room"]);
+        let dispatch = self.dispatched(&session);
         assert_eq!(dispatch["audience"], "operator");
-        assert_eq!(claims["video"]["room"], session["room"]);
         (
             session["session_id"].as_str().unwrap().to_string(),
             dispatch["platform_token"].as_str().unwrap().to_string(),
         )
+    }
+
+    /// What the agent's job is given for this session: the dispatch its room
+    /// was opened with, which the person's token never carries.
+    fn dispatched(&self, session: &Value) -> Value {
+        let opened = self.rooms.opened.lock().unwrap();
+        let rooms: Vec<&(String, String, Value)> =
+            opened.iter().filter(|(room, ..)| session["room"] == room.as_str()).collect();
+        assert_eq!(rooms.len(), 1, "each session opens its own room once");
+        assert_eq!(rooms[0].1, "aule-tutor");
+        rooms[0].2.clone()
     }
 
     /// Signs a guardian in with the code from their email; returns their token.
@@ -355,6 +420,13 @@ impl App {
     async fn count(&self, sql: &'static str) -> i64 {
         sqlx::query_scalar(sql).fetch_one(&self.state.pool).await.unwrap()
     }
+}
+
+/// The claims of a room token as anyone holding it can read them: a JWT is
+/// signed, not encrypted.
+fn claims(session: &Value) -> Value {
+    let claims = session["token"].as_str().unwrap().split('.').nth(1).unwrap().to_string();
+    serde_json::from_slice(&base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(claims).unwrap()).unwrap()
 }
 
 /// Waits for something a background task writes.
@@ -530,6 +602,9 @@ async fn a_session_is_planned_watched_and_reviewed(pool: PgPool) {
     assert!(instructions.contains("The student's name is Mateo."), "{instructions}");
     assert!(instructions.contains("Review adding fractions with football examples."), "{instructions}");
     assert_eq!(app.count("select count(*) from sessions where status = 'active'").await, 1);
+    // The physical-safety gate judges for the child's age: the agent is told it, and the grade.
+    assert_eq!(start["student_age"], chrono::Utc::now().year() - 2016);
+    assert_eq!(start["student_grade"], "P4");
 
     // During: reporting a turn returns at once; the guidance comes with a later call.
     let turns = json!({ "turns": [
@@ -1340,17 +1415,15 @@ async fn a_device_is_linked_by_its_code_and_its_key_and_then_starts_sessions(poo
     assert_eq!(session(now - 3600, signed(now - 3600)).await.0, StatusCode::FORBIDDEN, "too old");
     let (status, started) = session(now + 2, signed(now + 2)).await;
     assert_eq!(status, StatusCode::CREATED, "{started}");
-    let claims = started["token"].as_str().unwrap().split('.').nth(1).unwrap().to_string();
-    let claims: Value =
-        serde_json::from_slice(&base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(claims).unwrap())
-            .unwrap();
     // Rejoining after a brief Wi-Fi loss reuses this room and token, without
-    // calling /ota/session again and creating another tutoring session.
-    assert_eq!(claims["roomConfig"]["departureTimeout"], 120);
-    assert_eq!(claims["video"]["room"], started["room"]);
-    let dispatch: Value =
-        serde_json::from_str(claims["roomConfig"]["agents"][0]["metadata"].as_str().unwrap()).unwrap();
+    // calling /ota/session again and creating another tutoring session: the
+    // room waits for it (see livekit.rs), and the token is only its key.
+    let readable = claims(&started);
+    assert_eq!(readable["video"]["room"], started["room"]);
+    assert!(readable.get("roomConfig").is_none());
+    let dispatch = app.dispatched(&started);
     assert_eq!(dispatch["audience"], "child");
+    assert!(!readable.to_string().contains(dispatch["platform_token"].as_str().unwrap()));
 
     // The session's end is an event, and so was the claim.
     let agent = dispatch["platform_token"].as_str().unwrap();
@@ -1717,6 +1790,232 @@ async fn a_guardian_signs_in_with_github_into_the_family_of_that_address(pool: P
 }
 
 #[sqlx::test(migrator = "aule_platform::MIGRATOR")]
+async fn a_new_family_keeps_the_short_code_of_the_link_it_signed_up_from(pool: PgPool) {
+    let app = app(pool);
+    let source = |email: &'static str| {
+        sqlx::query_scalar::<_, Option<String>>(
+            "select families.source from families join guardians on guardians.family_id = families.id
+             where guardians.email = $1",
+        )
+        .bind(email)
+        .fetch_one(&app.state.pool)
+    };
+    let google = |credential: &str, link: Value| {
+        let body = json!({ "credential": credential, "source": link });
+        app.call(Method::POST, "/v1/auth/google", None, Some(body))
+    };
+
+    // By an emailed code, by Google and by GitHub, a new family keeps the link's code.
+    app.call(Method::POST, "/v1/auth/start", None, Some(json!({ "email": "ana@example.org" }))).await;
+    let code = app.mail.sent.lock().unwrap().last().unwrap().1[..6].to_string();
+    let body = json!({ "email": "ana@example.org", "code": code, "name": "Ana", "source": "cesar" });
+    let (status, account) = app.call(Method::POST, "/v1/auth/verify", None, Some(body)).await;
+    assert_eq!(status, StatusCode::OK, "{account}");
+    assert_eq!(source("ana@example.org").await.unwrap().as_deref(), Some("cesar"));
+    let (status, _) = google("ok:beto@example.org:Beto", json!("colegio-2")).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(source("beto@example.org").await.unwrap().as_deref(), Some("colegio-2"));
+    let body = json!({
+        "code": "ok:caro@example.org:Caro",
+        "redirect_uri": "https://page.example.org/api/signin/github/callback",
+        "source": "pucp"
+    });
+    assert_eq!(app.call(Method::POST, "/v1/auth/github", None, Some(body)).await.0, StatusCode::OK);
+    assert_eq!(source("caro@example.org").await.unwrap().as_deref(), Some("pucp"));
+
+    // Anything but a short lower-case code is dropped, and the sign-in still works.
+    for (credential, email, odd) in [
+        ("ok:dani@example.org:Dani", "dani@example.org", json!("Cesar")),
+        ("ok:eli@example.org:Eli", "eli@example.org", json!("x".repeat(25))),
+        ("ok:fer@example.org:Fer", "fer@example.org", json!("<b>cesar</b>")),
+        ("ok:gabi@example.org:Gabi", "gabi@example.org", Value::Null),
+    ] {
+        let (status, account) = google(credential, odd).await;
+        assert_eq!((status, account["new_account"].as_bool()), (StatusCode::OK, Some(true)), "{account}");
+        assert_eq!(source(email).await.unwrap(), None, "{email}");
+    }
+
+    // A family that exists keeps the link it first came from.
+    let (_, again) = google("ok:ana@example.org:Ana", json!("pucp")).await;
+    assert_eq!(again["new_account"], false);
+    assert_eq!(source("ana@example.org").await.unwrap().as_deref(), Some("cesar"));
+
+    // The team sees it with each family; the database keeps the same rule.
+    let team = app.sign_in("team@example.org", "Team").await;
+    let (_, families) = app.call(Method::GET, "/v1/admin/families", Some(&team), None).await;
+    let by_email = |email: &str| {
+        families["families"].as_array().unwrap().iter().find(|family| family["emails"] == email).unwrap()["source"]
+            .clone()
+    };
+    assert_eq!((by_email("ana@example.org"), by_email("dani@example.org")), (json!("cesar"), Value::Null));
+    let refused =
+        sqlx::query("update families set source = 'No es un código'").execute(&app.state.pool).await;
+    assert!(refused.is_err(), "the check refuses what the platform would never write");
+}
+
+#[sqlx::test(migrator = "aule_platform::MIGRATOR")]
+async fn the_team_reads_the_pilots_four_numbers_by_week_of_sign_up_and_link(pool: PgPool) {
+    let app = app(pool);
+    let signed_up = &app;
+    let google = |credential: &'static str, link: Value| {
+        let body = json!({ "credential": credential, "source": link });
+        async move {
+            let (status, account) = signed_up.call(Method::POST, "/v1/auth/google", None, Some(body)).await;
+            assert_eq!(status, StatusCode::OK, "{account}");
+            account["family_id"].as_str().unwrap().to_string()
+        }
+    };
+    let set =
+        |sql: &'static str, family: &str| sqlx::query(sql).bind(family.to_string()).execute(&app.state.pool);
+
+    // Ana and Beto came from César's link a month ago.
+    let ana = google("ok:ana@example.org:Ana", json!("cesar")).await;
+    let beto = google("ok:beto@example.org:Beto", json!("cesar")).await;
+    for family in [&ana, &beto] {
+        set("update families set created_at = now() - interval '30 days' where id = $1::uuid", family)
+            .await
+            .unwrap();
+    }
+    // Ana started with twelve minutes, came back twice that week, was there in her
+    // fourth week and wrote in for the plan once her trial was over.
+    let child = app.child_of(&ana).await;
+    app.past_session(&child, "29 days", 12).await;
+    app.past_session(&child, "28 days", 5).await;
+    app.past_session(&child, "27 days", 20).await;
+    app.past_session(&child, "5 days", 15).await;
+    set(
+        "insert into subscriptions (id, family_id, plan, starts_at, ends_at, granted_by)
+         values (gen_random_uuid(), $1::uuid, 'granted', now() - interval '20 days', now() + interval '10 days', 'team')",
+        &ana,
+    )
+    .await
+    .unwrap();
+    // Beto had five minutes and a slip of one, and a plan given during his trial is no payment.
+    let child = app.child_of(&beto).await;
+    app.past_session(&child, "29 days", 5).await;
+    app.past_session(&child, "28 days", 1).await;
+    set(
+        "insert into subscriptions (id, family_id, plan, starts_at, ends_at, granted_by)
+         values (gen_random_uuid(), $1::uuid, 'granted', now() - interval '25 days', now() + interval '5 days', 'team')",
+        &beto,
+    )
+    .await
+    .unwrap();
+    // Dani came from a school three weeks ago and is on day 22 from her first session:
+    // her fourth week is not over, so she is not counted in it yet.
+    let dani = google("ok:dani@example.org:Dani", json!("colegio")).await;
+    set("update families set created_at = now() - interval '23 days' where id = $1::uuid", &dani)
+        .await
+        .unwrap();
+    app.past_session(&app.child_of(&dani).await, "22 days", 12).await;
+    // This week: Caro, with no link, whose only session was left open and closed by
+    // the housekeeping hours later; and from another link Eli, with no session yet,
+    // and Gabi, with three in her first hours, whose first week is not over.
+    let caro = google("ok:caro@example.org:Caro", Value::Null).await;
+    let child = app.child_of(&caro).await;
+    sqlx::query(
+        "insert into sessions (id, child_id, audience, room, language, status, agent_token_hash, created_at, started_at)
+         values (gen_random_uuid(), $1::uuid, 'child', 'left-open', 'es', 'active', 'left-open',
+                 now() - interval '5 hours', now() - interval '5 hours')",
+    )
+    .bind(&child)
+    .execute(&app.state.pool)
+    .await
+    .unwrap();
+    jobs::housekeeping(&app.state).await.unwrap();
+    assert_eq!(app.count("select count(*) from sessions where status <> 'ended'").await, 0);
+    google("ok:eli@example.org:Eli", json!("pucp")).await;
+    let child = app.child_of(&google("ok:gabi@example.org:Gabi", json!("pucp")).await).await;
+    for ago in ["3 hours", "2 hours", "1 hour"] {
+        app.past_session(&child, ago, 15).await;
+    }
+    // Two families that signed up either side of midnight from Sunday to Monday in
+    // Lima (05:00 in UTC), a week or two ago: each in its own week.
+    let lima_today = (chrono::Utc::now() - chrono::Duration::hours(5)).date_naive();
+    let monday = lima_today
+        - chrono::Duration::days(chrono::Datelike::weekday(&lima_today).num_days_from_monday().into())
+        - chrono::Duration::days(7);
+    let midnight = monday.and_hms_opt(5, 0, 0).unwrap().and_utc();
+    for (credential, link, at) in [
+        ("ok:hugo@example.org:Hugo", "domingo", midnight - chrono::Duration::minutes(30)),
+        ("ok:ines@example.org:Ines", "lunes", midnight + chrono::Duration::minutes(30)),
+    ] {
+        let family = google(credential, json!(link)).await;
+        sqlx::query("update families set created_at = $2 where id = $1::uuid")
+            .bind(family)
+            .bind(at)
+            .execute(&app.state.pool)
+            .await
+            .unwrap();
+    }
+    // The team's own family, with a long session, is not counted.
+    let team = app.sign_in("team@example.org", "Team").await;
+    let (_, me) = app.call(Method::GET, "/v1/me", Some(&team), None).await;
+    let child = app.child_of(me["family_id"].as_str().unwrap()).await;
+    app.past_session(&child, "1 hour", 45).await;
+
+    let (status, _) = app.call(Method::GET, "/v1/metrics/weekly", None, None).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    let (_, guardian) = app
+        .call(Method::POST, "/v1/auth/google", None, Some(json!({ "credential": "ok:ana@example.org" })))
+        .await;
+    let (status, _) = app.call(Method::GET, "/v1/metrics/weekly", guardian["token"].as_str(), None).await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "the numbers are for the team");
+
+    let token = team.as_str();
+    let weekly = || async move {
+        let (status, weekly) = signed_up.call(Method::GET, "/v1/metrics/weekly", Some(token), None).await;
+        assert_eq!(status, StatusCode::OK, "{weekly}");
+        weekly
+    };
+    let numbers = |weekly: &Value, link: Value| {
+        let cohorts = weekly["cohorts"].as_array().unwrap();
+        let cohort =
+            cohorts.iter().find(|cohort| cohort["source"] == link).unwrap_or_else(|| panic!("{weekly}"));
+        ["families", "started", "week1_over", "repeated", "week4_over", "week4", "paying"]
+            .map(|name| cohort[name].as_i64().unwrap())
+    };
+
+    // A plan granted to Dani after her trial counts as paid; ended right after, it was undone.
+    let grant = format!("/v1/admin/families/{dani}/grant");
+    let (status, _) =
+        app.call(Method::POST, &grant, Some(&team), Some(json!({ "days": 30, "note": "piloto" }))).await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(numbers(&weekly().await, json!("colegio"))[6], 1);
+    assert_eq!(app.call(Method::DELETE, &grant, Some(&team), None).await.0, StatusCode::OK);
+
+    let weekly = weekly().await;
+    assert_eq!(
+        (weekly["weeks"].as_i64(), weekly["timezone_offset_minutes"].as_i64()),
+        (Some(12), Some(-300))
+    );
+    // Families, started, week 1 over, came back, week 4 over, active in it, paying.
+    assert_eq!(numbers(&weekly, json!("cesar")), [2, 1, 2, 1, 2, 1, 1]);
+    assert_eq!(numbers(&weekly, json!("colegio")), [1, 1, 1, 0, 0, 0, 0]);
+    assert_eq!(numbers(&weekly, json!("pucp")), [2, 1, 0, 0, 0, 0, 0]);
+    assert_eq!(numbers(&weekly, Value::Null), [1, 0, 0, 0, 0, 0, 0]);
+    // Newest week first; in a week, the links by name and the families with none last.
+    let cohorts = weekly["cohorts"].as_array().unwrap();
+    let week = |cohort: &Value| cohort["week"].as_str().unwrap().parse::<chrono::NaiveDate>().unwrap();
+    assert_eq!(
+        cohorts.iter().map(|cohort| cohort["source"].clone()).collect::<Vec<_>>(),
+        [json!("pucp"), Value::Null, json!("lunes"), json!("domingo"), json!("colegio"), json!("cesar")],
+        "{weekly}"
+    );
+    assert_eq!(cohorts[0]["week"], cohorts[1]["week"]);
+    assert_eq!((week(&cohorts[2]), week(&cohorts[3])), (monday, monday - chrono::Duration::days(7)));
+    for cohort in cohorts {
+        assert_eq!(chrono::Datelike::weekday(&week(cohort)), chrono::Weekday::Mon, "a week starts on Monday");
+    }
+
+    // Fewer weeks leave the older ones out; and only numbers and the links' codes go out.
+    let (_, recent) = app.call(Method::GET, "/v1/metrics/weekly?weeks=1", Some(&team), None).await;
+    assert_eq!(recent["cohorts"].as_array().unwrap().len(), 2, "{recent}");
+    let text = weekly.to_string();
+    assert!(!text.contains("example.org") && !text.contains("Ana") && !text.contains("Mateo"));
+}
+
+#[sqlx::test(migrator = "aule_platform::MIGRATOR")]
 async fn a_family_s_sessions_are_what_its_plan_allows_and_the_team_can_grant_one(pool: PgPool) {
     let app = app(pool);
     let child = app.child().await;
@@ -1895,13 +2194,6 @@ async fn a_family_names_its_tutor_and_the_agent_is_told(pool: PgPool) {
         body.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
         body
     };
-    let dispatch_of = |session: &Value| -> Value {
-        let claims = session["token"].as_str().unwrap().split('.').nth(1).unwrap().to_string();
-        let claims: Value =
-            serde_json::from_slice(&base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(claims).unwrap())
-                .unwrap();
-        serde_json::from_str(claims["roomConfig"]["agents"][0]["metadata"].as_str().unwrap()).unwrap()
-    };
 
     // A child starts with the tutor as it comes.
     let (_, fresh) = app.admin(Method::GET, &path, None).await;
@@ -1944,11 +2236,13 @@ async fn a_family_names_its_tutor_and_the_agent_is_told(pool: PgPool) {
         .admin(Method::POST, "/v1/sessions", Some(json!({ "child_id": child, "audience": "operator" })))
         .await;
     assert_eq!(status, StatusCode::CREATED, "{session}");
-    let dispatch = dispatch_of(&session);
+    let dispatch = app.dispatched(&session);
     assert_eq!(
         (&dispatch["tutor_name"], &dispatch["tutor_persona"], &dispatch["tutor_persona_note"]),
         (&json!("Ñawi-Luz"), &json!("aventurero"), &json!("Le gusta que le hablen de dinosaurios"))
     );
+    // The child's profile is never in the room's metadata, which every participant can read.
+    assert_eq!((&dispatch["student_age"], &dispatch["student_grade"]), (&Value::Null, &Value::Null));
     let (status, start) =
         app.call(Method::GET, "/v1/agent/session", dispatch["platform_token"].as_str(), None).await;
     assert_eq!(status, StatusCode::OK, "{start}");
@@ -1969,7 +2263,7 @@ async fn a_family_names_its_tutor_and_the_agent_is_told(pool: PgPool) {
     // A session with no child gets the tutor as it comes.
     let (_, anonymous) =
         app.admin(Method::POST, "/v1/sessions", Some(json!({ "audience": "operator" }))).await;
-    let dispatch = dispatch_of(&anonymous);
+    let dispatch = app.dispatched(&anonymous);
     assert_eq!(
         (&dispatch["tutor_name"], &dispatch["tutor_persona"], &dispatch["tutor_persona_note"]),
         (&json!("Aule"), &json!("calido"), &Value::Null)
@@ -1977,6 +2271,94 @@ async fn a_family_names_its_tutor_and_the_agent_is_told(pool: PgPool) {
     let (_, start) =
         app.call(Method::GET, "/v1/agent/session", dispatch["platform_token"].as_str(), None).await;
     assert_eq!(start["tutor"], json!({ "name": "Aule", "persona": "calido", "note": null }));
+    // With no child there is no age to tell.
+    assert_eq!((&start["student_age"], &start["student_grade"]), (&Value::Null, &Value::Null));
+}
+
+#[sqlx::test(migrator = "aule_platform::MIGRATOR")]
+async fn the_token_a_family_s_browser_holds_opens_the_room_and_says_nothing_else(pool: PgPool) {
+    let app = app(pool);
+    let child = app.child().await;
+    app.consent(&child, "voice", true).await;
+    let note = "Le gusta que le hablen de dinosaurios";
+    let profile = json!({ "nickname": "Mateo", "birth_year": 2016, "grade": "P4", "tutor_name": "Ñawi-Luz",
+                          "tutor_persona_note": note });
+    assert_eq!(
+        app.admin(Method::PUT, &format!("/v1/children/{child}"), Some(profile)).await.0,
+        StatusCode::OK
+    );
+    let ana = app.sign_in("ana@example.org", "Ana").await;
+
+    let (status, session) = app
+        .call(
+            Method::POST,
+            "/v1/sessions",
+            Some(&ana),
+            Some(json!({ "child_id": child, "audience": "child" })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{session}");
+
+    // The agent's job gets its token and the family's note with the room.
+    let dispatch = app.dispatched(&session);
+    let agent = dispatch["platform_token"].as_str().unwrap().to_string();
+    assert_eq!(
+        (dispatch["audience"].as_str(), dispatch["tutor_persona_note"].as_str()),
+        (Some("child"), Some(note))
+    );
+    let (status, start) = app.call(Method::GET, "/v1/agent/session", Some(&agent), None).await;
+    assert_eq!(status, StatusCode::OK, "{start}");
+    assert_eq!(start["tutor"]["note"], note);
+
+    // The browser can read all of its token, and the token travels in the
+    // address of a WebSocket that proxies log. It names the room and a
+    // participant, and carries neither the agent's token nor anything of the
+    // family's: no note, no tutor's name, no child's name.
+    let readable = claims(&session);
+    let mut fields: Vec<&str> = readable.as_object().unwrap().keys().map(String::as_str).collect();
+    fields.sort_unstable();
+    assert_eq!(fields, ["exp", "iss", "name", "nbf", "sub", "video"], "{readable}");
+    assert_eq!(readable["name"], "Student");
+    assert_eq!(readable["video"]["room"], session["room"]);
+    for kept in [agent.as_str(), note, "dinosaurios", "Ñawi-Luz", "Mateo"] {
+        assert!(!readable.to_string().contains(kept), "{kept} is in the token: {readable}");
+        assert!(!session.to_string().contains(kept), "{kept} is in the answer: {session}");
+    }
+}
+
+#[sqlx::test(migrator = "aule_platform::MIGRATOR")]
+async fn a_room_livekit_cannot_open_is_no_session(pool: PgPool) {
+    let app = app(pool);
+    let child = app.child().await;
+    app.consent(&child, "voice", true).await;
+    let start = || {
+        let body = json!({ "child_id": child, "audience": "operator" });
+        app.admin(Method::POST, "/v1/sessions", Some(body))
+    };
+
+    app.rooms.down.store(true, std::sync::atomic::Ordering::SeqCst);
+    let (status, refused) = start().await;
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE, "{refused}");
+    assert!(refused.get("token").is_none());
+    // Closed at once and never started, so a family's plan does not count it.
+    assert_eq!(
+        app.count("select count(*) from sessions where status = 'ended' and end_reason = 'error' and started_at is null")
+            .await,
+        1
+    );
+
+    app.rooms.down.store(false, std::sync::atomic::Ordering::SeqCst);
+    let (status, session) = start().await;
+    assert_eq!(status, StatusCode::CREATED, "{session}");
+    // Only the session that has a room is planned: the supervisor is not paid
+    // for one nobody can join.
+    eventually("the plan of the session that opened", || async {
+        app.count("select count(*) from session_briefs").await == 1
+    })
+    .await;
+    let planned: uuid::Uuid =
+        sqlx::query_scalar("select session_id from session_briefs").fetch_one(&app.state.pool).await.unwrap();
+    assert_eq!(planned.to_string(), session["session_id"].as_str().unwrap());
 }
 
 #[sqlx::test(migrator = "aule_platform::MIGRATOR")]
@@ -2155,15 +2537,9 @@ async fn the_platform_checks_the_tutors_exercises_and_says_what_to_do_next(pool:
 
 // ------------------------------------------------ the session engine
 
-/// The agent's token of a session, from the dispatch metadata in its room token.
-fn agent_token(session: &Value) -> String {
-    let claims = session["token"].as_str().unwrap().split('.').nth(1).unwrap().to_string();
-    let claims: Value =
-        serde_json::from_slice(&base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(claims).unwrap())
-            .unwrap();
-    let dispatch: Value =
-        serde_json::from_str(claims["roomConfig"]["agents"][0]["metadata"].as_str().unwrap()).unwrap();
-    dispatch["platform_token"].as_str().unwrap().to_string()
+/// The agent's token of a session, from the dispatch its room was opened with.
+fn agent_token(app: &App, session: &Value) -> String {
+    app.dispatched(session)["platform_token"].as_str().unwrap().to_string()
 }
 
 fn fractions(kind: &str) -> Value {
@@ -2175,7 +2551,7 @@ async fn engine_session(app: &App, child: &str, objective: Value) -> (Value, Str
     let body = json!({ "child_id": child, "audience": "child", "objective": objective, "engine": true });
     let (status, session) = app.admin(Method::POST, "/v1/sessions", Some(body)).await;
     assert_eq!(status, StatusCode::CREATED, "{session}");
-    let token = agent_token(&session);
+    let token = agent_token(app, &session);
     (session, token)
 }
 
@@ -2336,7 +2712,7 @@ async fn the_session_engine_runs_a_session_from_the_greeting_to_the_family_repor
         let (status, session) = app.admin(Method::POST, "/v1/sessions", Some(body)).await;
         assert_eq!(status, StatusCode::CREATED, "{why}: {session}");
         assert_eq!(session["engine"], false, "{why}");
-        let token = agent_token(&session);
+        let token = agent_token(&app, &session);
         let (status, start) = app.call(Method::GET, "/v1/agent/session", Some(&token), None).await;
         assert_eq!(status, StatusCode::OK);
         assert!(start.get("script").is_none(), "{why}: {start}");

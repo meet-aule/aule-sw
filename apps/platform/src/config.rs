@@ -76,6 +76,9 @@ pub struct EventsWebhook {
 pub struct LiveKit {
     /// URL the person's browser or device connects to.
     pub public_url: String,
+    /// Where the platform calls LiveKit's server API to open a session's
+    /// room: the agent's `LIVEKIT_URL`, as http:// or https://.
+    pub service_url: String,
     pub api_key: String,
     pub api_secret: String,
 }
@@ -170,8 +173,24 @@ impl Config {
                         "AULE_LIVEKIT_PUBLIC_URL (or LIVEKIT_URL) must be a ws:// or wss:// URL".into(),
                     );
                 }
+                // The same server, at the address the agent uses: ws:// is http:// to its API.
+                // The platform hands LiveKit the agent's token there, so there is no falling
+                // back to the public address, which may go through a proxy.
+                let service_url = get("LIVEKIT_URL").unwrap_or_default().trim_end_matches('/');
+                let service_url = match service_url.strip_prefix("ws") {
+                    Some(rest) => format!("http{rest}"),
+                    None => service_url.to_string(),
+                };
+                if !service_url.starts_with("http://") && !service_url.starts_with("https://") {
+                    problems.push(
+                        "LIVEKIT_URL, the address the agent connects to, must be set with the LiveKit keys, \
+                         as a ws://, wss://, http:// or https:// URL"
+                            .into(),
+                    );
+                }
                 Some(LiveKit {
                     public_url: public_url.to_string(),
+                    service_url,
                     api_key: api_key.to_string(),
                     api_secret: api_secret.to_string(),
                 })
@@ -469,12 +488,41 @@ mod tests {
 
         let config = Config::from_map(&env).unwrap();
 
-        assert_eq!(config.livekit.unwrap().public_url, "wss://live.example.org");
+        let livekit = config.livekit.unwrap();
+        assert_eq!(livekit.public_url, "wss://live.example.org");
+        // Rooms are opened where the agent connects, not through the public address.
+        assert_eq!(livekit.service_url, "http://127.0.0.1:7880");
         assert_eq!(config.supervisor.unwrap().live_model, "claude-haiku-5-5");
         let embeddings = config.embeddings.unwrap();
         assert_eq!(
             (embeddings.url.as_str(), embeddings.model.as_str()),
             ("http://127.0.0.1:11434/v1", "bge-m3")
         );
+    }
+
+    #[test]
+    fn livekit_s_server_api_is_where_the_agent_connects() {
+        let mut env = complete();
+        env.insert("LIVEKIT_API_KEY".into(), "key".into());
+        env.insert("LIVEKIT_API_SECRET".into(), "secret".into());
+        let service_url =
+            |env: &HashMap<String, String>| Config::from_map(env).unwrap().livekit.unwrap().service_url;
+
+        // With one address for everyone, the API is that address.
+        env.insert("LIVEKIT_URL".into(), "wss://live.example.org/".into());
+        assert_eq!(service_url(&env), "https://live.example.org");
+        env.insert("AULE_LIVEKIT_PUBLIC_URL".into(), "wss://live.example.org".into());
+        env.insert("LIVEKIT_URL".into(), "http://127.0.0.1:7880".into());
+        assert_eq!(service_url(&env), "http://127.0.0.1:7880");
+
+        // The public address is never used instead: the agent's token is sent there.
+        let refused = |env: &HashMap<String, String>| Config::from_map(env).unwrap_err().to_string();
+        let expected = "LIVEKIT_URL, the address the agent connects to, must be set with the LiveKit keys";
+        env.remove("LIVEKIT_URL");
+        let message = refused(&env);
+        assert!(message.contains(expected), "{message}");
+        env.insert("LIVEKIT_URL".into(), "livekit:7880".into());
+        let message = refused(&env);
+        assert!(message.contains(expected), "{message}");
     }
 }

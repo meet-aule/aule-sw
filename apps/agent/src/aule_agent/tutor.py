@@ -322,6 +322,10 @@ SHOWN_WORK = {"es": "Mira mi trabajo.", "en": "Look at my work."}
 # end well before the page stops waiting for the answer: of the time a caller
 # allows, the transport keeps seven seconds for itself.
 FRESH_FRAME_SECONDS = 2.0
+# How long the button then waits for a line that cannot be cut before it
+# answers anyway, with the answer said after that line. With the camera's wait,
+# it still ends before the page stops waiting.
+UNCUT_WAIT_SECONDS = 4.0
 
 
 def shows_something(chat_ctx: llm.ChatContext) -> bool:
@@ -765,7 +769,7 @@ class Tutor(Agent):
             return
         self._meanwhile_due = True
         self._drew = False
-        await self.session.interrupt()
+        await self._interrupt()
         message = llm.ChatMessage(role="user", content=[text])
         if not await self._may_answer(self.chat_ctx.copy(), message):
             return
@@ -796,9 +800,33 @@ class Tutor(Agent):
         self._shown = frame
         self._meanwhile_due = True
         self._drew = False
-        await self.session.interrupt()
+        # The page is waiting for this answer: a long line that cannot be cut is
+        # not waited for to its end, and the reply is said after it instead.
+        await self._interrupt(wait=UNCUT_WAIT_SECONDS)
         self.session.generate_reply(user_input=SHOWN_WORK[self._language])
         return True
+
+    async def _interrupt(self, wait: float | None = None) -> None:
+        """Stops what the tutor is saying, once it may be stopped.
+
+        A line said with ``allow_interruptions=False`` (a gate's reply,
+        "unavailable", pace's lines) cannot be cut: interrupting it raises, and
+        the message typed or the work shown that asked for it would be lost,
+        though the page already shows it as sent. Such a line is heard to its
+        end first, and so is the next if it is another. After ``wait`` seconds
+        of such lines nothing is cut: what comes next is queued behind them.
+        """
+        try:
+            async with asyncio.timeout(wait):
+                while (
+                    (speech := self.session.current_speech) is not None
+                    and not speech.done()
+                    and not speech.allow_interruptions
+                ):
+                    await speech.wait_for_playout()
+        except TimeoutError:
+            return
+        await self.session.interrupt()
 
     def _frame_for(self, chat_ctx: llm.ChatContext) -> rtc.VideoFrame | None:
         """The image that goes with this turn, if any: what the student just

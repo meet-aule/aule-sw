@@ -3,8 +3,9 @@
 ARCHITECTURE.md, "Safety and privacy requirements": every turn passes content
 moderation (``moderation``) and a physical-safety check (``physical_safety``),
 both fail closed, and a child's session does not start unless both are
-configured. In an operator's session (an adult on the team, marked as such by
-the server that issued the room token) a gate that is not configured is skipped.
+configured and answer. In an operator's session (an adult on the team, marked
+as such by the server that issued the room token) a gate that is not
+configured is skipped.
 
 When a gate stops a turn the person hears a fixed reply (``replies``) and the
 platform is told which gate, what it did and the categories involved, in the
@@ -21,14 +22,25 @@ from typing import Literal
 
 from livekit.agents import llm
 
-from .config import Settings
-from .moderation import Action, Decision, Finding, Moderator, classify_heard, classify_spoken
+from .config import MODERATION_KEY, PHYSICAL_SAFETY_KEY, Settings
+from .moderation import (
+    Action,
+    Decision,
+    Finding,
+    Moderator,
+    Probe,
+    classify_heard,
+    classify_spoken,
+)
 from .opinion import SecondOpinion
 from .physical_safety import PhysicalSafetyGuard, Verdict, combine_input_decisions
 
 logger = logging.getLogger("aule.agent.safety")
 
 Audience = Literal["operator", "child"]
+
+# The setting that turns each gate on, named when the gate does not answer.
+GATE_KEYS = {"moderation": MODERATION_KEY, "physical_safety": PHYSICAL_SAFETY_KEY}
 
 # The vocabulary of a flag. Gates and actions are those of
 # contracts/events/safety.flagged.v1.schema.json that this agent produces; the
@@ -130,6 +142,47 @@ class Gates:
 
     def may_start(self, audience: Audience) -> bool:
         return audience == "operator" or self.complete
+
+    async def probe(self) -> dict[str, Probe]:
+        """Whether the provider of each configured gate answers now, by gate.
+
+        Both are asked at the same time, in the way the turns will ask them
+        and with the clients the turns use: moderation reads one word, on its
+        free endpoint, and the physical-safety gate lists the models its key
+        may use. No model reads anything, and nothing of the student is sent.
+        """
+        gates: dict[str, Moderator | PhysicalSafetyGuard] = {}
+        if self._moderation is not None:
+            gates["moderation"] = self._moderation
+        if self._physical_safety is not None:
+            gates["physical_safety"] = self._physical_safety
+        found = await asyncio.gather(
+            *(gate.probe() for gate in gates.values()), return_exceptions=True
+        )
+        # A probe that breaks in a way it did not foresee is a gate that does not answer.
+        return {
+            name: probe if isinstance(probe, Probe) else Probe.UNEXPECTED
+            for name, probe in zip(gates, found, strict=True)
+        }
+
+    async def ready(self) -> bool:
+        """Whether a child's session may start now: both gates are configured
+        and their providers answer (ARCHITECTURE.md)."""
+        if not self.complete:
+            return False
+        probes = await self.probe()
+        missing = [gate for gate, probe in probes.items() if probe is not Probe.ANSWERS]
+        if missing:
+            logger.warning("safety gates do not answer", extra={"gates": missing})
+        return not missing
+
+    def for_student(self, age: object, grade: object, name: object = None) -> None:
+        """Tells the physical-safety gate how old the student is, as the
+        platform says it: their age, or their school grade when the age is not
+        known. The name is given to it only to be left out of the tutor's
+        lines it sends. Nothing else about the student reaches a gate."""
+        if self._physical_safety is not None:
+            self._physical_safety.for_student(age, grade, name)
 
     @property
     def checks_spoken(self) -> bool:
@@ -275,8 +328,15 @@ class Gates:
             await self._second_opinion.close()
 
 
-def build_gates(settings: Settings, report: Report | None = None) -> Gates:
-    """The gates this worker is configured for. A gate with a key always runs."""
+def build_gates(
+    settings: Settings, report: Report | None = None, *, second_opinion: bool = True
+) -> Gates:
+    """The gates this worker is configured for. A gate with a key always runs.
+
+    Without ``second_opinion`` the gates have no second reader, for a check
+    that only asks their providers whether they answer: the reader's client
+    is then not loaded at all.
+    """
     return Gates(
         moderation=Moderator(settings.openai_api_key) if settings.openai_api_key else None,
         physical_safety=(
@@ -285,5 +345,37 @@ def build_gates(settings: Settings, report: Report | None = None) -> Gates:
         report=report,
         # Only what the tutor is about to say gets a second reader, and only
         # where there is a moderation gate to be unsure.
-        second_opinion=SecondOpinion() if settings.openai_api_key else None,
+        second_opinion=SecondOpinion() if second_opinion and settings.openai_api_key else None,
     )
+
+
+# Why a gate does not answer, in words for whoever reads the log.
+_NOT_ANSWERING = {
+    Probe.KEY_REFUSED: "the provider refused its key; check {key}",
+    Probe.UNREACHABLE: "the provider did not answer in time",
+    Probe.UNEXPECTED: "the provider answered something the gate does not take",
+}
+
+
+async def check_at_start(settings: Settings) -> bool:
+    """Asks the provider of each configured gate once and says in the log
+    which gate does not answer and why, naming the setting to look at and
+    never its value. True when both gates are configured and answer, as a
+    child's session needs. It runs in the worker's main process, which keeps
+    what it loads: the second reader's client is left out."""
+    gates = build_gates(settings, second_opinion=False)
+    try:
+        probes = await gates.probe()
+    finally:
+        await gates.close()
+    for gate, probe in probes.items():
+        if probe is Probe.ANSWERS:
+            logger.info("the %s gate answers", gate, extra={"gate": gate})
+        else:
+            logger.error(
+                "the %s gate does not answer: %s. No child's session starts until it does",
+                gate,
+                _NOT_ANSWERING[probe].format(key=GATE_KEYS[gate]),
+                extra={"gate": gate, "probe": probe.value},
+            )
+    return gates.complete and all(probe is Probe.ANSWERS for probe in probes.values())

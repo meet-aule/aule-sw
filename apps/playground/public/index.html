@@ -16,70 +16,31 @@
     <link rel="stylesheet" href="style.css" />
     <link rel="preload" as="font" type="font/woff2" href="fonts/sans.woff2" crossorigin />
     <link rel="preload" as="font" type="font/woff2" href="fonts/serif.woff2" crossorigin />
-    <!-- Signing in comes first: its scripts and Google's are fetched at once. -->
+    <!-- Signing in comes first: its scripts are fetched at once. Google's is
+         not: signin.js fetches it only on the screens where a guardian signs in
+         (P01 and P13), never on the landing (C01) or a student's screens. -->
     <link rel="modulepreload" href="students.js" />
     <link rel="modulepreload" href="steps.js" />
     <link rel="modulepreload" href="screens.js" />
     <link rel="modulepreload" href="signin.js" />
-    <link rel="preload" as="script" href="https://accounts.google.com/gsi/client" />
   </head>
   <body>
     <!--
       Each screen is a frame of the Figma «Login-Aule» v8 (file yOAIYJNl5nZ7NgWtESN0Fo):
-      the parent's on page 160:1345 «Vigente · Login padre · v8», on paper; the
-      student's on page 190:717 «Vigente · Login alumno · v8», in the device's ink.
-      The comment before each section names its frame; steps.js holds the same
-      table and FIGMA.md maps screens, components and tokens to the code.
+      the parent's from page 160:1345 «Login padre · v8», on paper; the student's
+      from page 190:717 «Login alumno · v8», in the device's ink. Since 24 Nov both
+      are archive pages and the flows are on the Vigente v1 pages (Setup, Login,
+      Onboarding), where the parent's frames moved with their ids and A02 and A16
+      are new. The comment before each section names its frame; steps.js holds
+      the same table and FIGMA.md maps screens, components and tokens to the code.
     -->
     <main>
-      <!-- Figma: C00 ¿Quién eres? · Móvil 160:1649 / Escritorio 160:1727 -->
-      <section class="screen" data-screen="c00" data-surface="paper" hidden aria-labelledby="c00-title">
-        <div class="frame">
-          <header class="screen-head">
-            <div class="head-row"><p class="wordmark">Aule</p></div>
-            <ol class="progress plain" aria-hidden="true"></ol>
-          </header>
-          <div class="screen-body">
-            <div class="question">
-              <p class="question-step">Empezar</p>
-              <h2 class="question-title" id="c00-title" tabindex="-1">¿Quién eres?</h2>
-              <p class="question-help">Elige cómo vas a usar Aule en este dispositivo.</p>
-            </div>
-            <div class="controls">
-              <div class="options">
-                <button type="button" class="option" id="c00-parent">Soy padre de familia</button>
-                <button type="button" class="option" id="c00-child">Soy alumno</button>
-              </div>
-            </div>
-          </div>
-          <div class="screen-foot"></div>
-        </div>
-      </section>
-
-      <!-- Figma: web-only, mirrors the device's «C00 ¿Quién eres? · Aparato · Padre» 190:1035; built from Botón/Negro 190:834 -->
-      <section class="screen" data-screen="c00-student" data-surface="ink" hidden aria-labelledby="c00-student-title">
-        <div class="ink-frame">
-          <div class="ink-body">
-            <h2 class="ink-title" id="c00-student-title" tabindex="-1">Soy alumno</h2>
-            <p class="ink-text">Pídele a tu papá o mamá que entre primero con su cuenta en este navegador. Luego eliges qué hacemos hoy.</p>
-            <!-- Where A06–A14 (the child's own account on the device) would go. -->
-            <p class="ink-text">Pronto también podrás empezar desde el aparato Aule.</p>
-          </div>
-          <div class="ink-foot">
-            <span></span>
-            <button type="button" class="ink-button" data-back>Volver</button>
-          </div>
-        </div>
-      </section>
-
       <!-- Figma: C01 ¿Ya tienes cuenta? · Móvil 160:1661 / Escritorio 160:1741 -->
       <section class="screen" data-screen="c01" data-surface="paper" hidden aria-labelledby="c01-title">
         <div class="frame">
           <header class="screen-head">
-            <div class="head-row">
-              <p class="wordmark">Aule</p>
-              <button type="button" class="link back" data-back><span aria-hidden="true">←</span> Atrás</button>
-            </div>
+            <!-- Encabezado/Base · Atrás=No 160:1352: a signed-out visit starts here, since C00 was retired (24 Nov). -->
+            <div class="head-row"><p class="wordmark">Aule</p></div>
             <ol class="progress plain" aria-hidden="true"></ol>
           </header>
           <div class="screen-body">
@@ -673,6 +634,29 @@
         </form>
       </section>
 
+      <!-- Figma: A02 ¿Eres tú? · Aparato 410:629 (Vigente · Setup · v1), adapted: on the device the child
+           confirms the profile while the parent's P11 waits; on the web the parent's browser is the child's
+           screen, so a line for the parent comes first. Reached only from P12's «Empezar su primera sesión».
+           Built from A02's title and name, Cuadro/Opción 190:806 as its two tiles (no icon) and the device
+           link 195:513. The words are first-steps.js's, in the student's language. -->
+      <section class="screen" data-screen="a02" data-surface="ink" hidden aria-labelledby="a02-title a02-name">
+        <div class="ink-frame">
+          <div class="ink-body">
+            <p class="ink-text" id="a02-lead"></p>
+            <h2 class="ink-title" id="a02-title" tabindex="-1">¿Eres tú?</h2>
+            <p class="handoff-name" id="a02-name"></p>
+            <div class="handoff-tiles">
+              <button type="button" class="choice handoff" id="a02-yes">Sí, soy yo</button>
+              <!-- In the place of A03 «Avísale a tu papá o mamá»: the parent is right there, and fixes the name in Configurar. -->
+              <button type="button" class="choice handoff" id="a02-no">No soy yo</button>
+            </div>
+          </div>
+          <div class="ink-foot">
+            <button type="button" class="ink-link" id="a02-back" data-back>Volver</button>
+          </div>
+        </div>
+      </section>
+
       <!-- Figma: A04 ¿Qué hacemos hoy? · Aparato 190:891 -->
       <section class="screen" data-screen="a04" data-surface="ink" hidden aria-labelledby="a04-title">
         <div class="ink-frame">
@@ -733,35 +717,56 @@
                  never hidden, only empty, so a screen reader reads its words as they arrive. -->
             <p class="ink-text" id="recovery-note" role="status"></p>
             <div class="device-rows">
-              <!-- Figma: Botón/Micrófono 193:709 (Encendido 193:705, Apagado 193:708); A05 · Silenciado 190:1005 when it is off -->
+              <!-- Figma: Botón/Micrófono 193:709 (Encendido 193:705, Apagado 193:708); A05 · Silenciado 190:1005 when it is off;
+                   disabled, with a dashed border (D14), while the microphone cannot be used -->
               <div class="device-row">
                 <button type="button" class="round-toggle" id="lobby-mic" aria-pressed="true" aria-label="Micrófono" aria-describedby="lobby-mic-text">
                   <span class="icon" data-icon="mic" aria-hidden="true"></span>
                 </button>
                 <div class="device-says">
                   <p class="round-text" id="lobby-mic-text" data-on="Si el botón es de color negro, tu micrófono está encendido." data-off="Si el botón es de color blanco, tu micrófono está apagado.">Si el botón es de color negro, tu micrófono está encendido.</p>
-                  <div id="level" class="level" role="img" aria-label="Nivel del micrófono"><span></span></div>
+                  <!-- Figma: Pendiente · Sesión del alumno 260:654 (the bar and its line), 260:716 (blocked): the
+                       level of the microphone, measured in this browser and never sent or kept. -->
+                  <div id="level" class="level" aria-hidden="true"><span></span></div>
+                  <p class="level-line" id="level-line"></p>
+                </div>
+                <!-- Figma: web-only state of A05 (190:899): the check. A status line, with Aule's face (the
+                     session's wobnimo-mascot) beside it, says «Te escucho.» once a voice is heard, a hint at a
+                     time when none is, or why the microphone cannot be used; then «Intentar otra vez» (the
+                     device link 195:513). The words are first-steps.js's, in the student's language. -->
+                <div class="mic-check" id="mic-check">
+                  <wobnimo-mascot id="check-face" class="check-face" character="mochi" state="idle" aria-hidden="true"></wobnimo-mascot>
+                  <div class="check-words">
+                    <p class="check-status" id="check-status" role="status"></p>
+                    <button type="button" class="ink-link" id="mic-retry" hidden>Intentar otra vez</button>
+                  </div>
                 </div>
               </div>
-              <!-- The web's camera, in César's pattern: Ícono/videocam 191:1407 and videocam_off 191:1410. -->
+              <!-- The web's camera, in César's pattern: Ícono/videocam 191:1407 and videocam_off 191:1410. It
+                   starts off, and the browser is asked for it only when it is turned on (D12). -->
               <div class="device-row camera-row">
-                <button type="button" class="round-toggle round-88" id="lobby-cam" aria-pressed="true" aria-label="Cámara" aria-describedby="lobby-cam-text">
-                  <span class="icon" data-icon="videocam" aria-hidden="true"></span>
+                <button type="button" class="round-toggle round-88" id="lobby-cam" aria-pressed="false" aria-label="Cámara" aria-describedby="lobby-cam-text">
+                  <span class="icon" data-icon="videocam_off" aria-hidden="true"></span>
                 </button>
                 <div class="device-says">
-                  <p class="round-text" id="lobby-cam-text" data-on="Si el botón es de color negro, tu cámara está encendida." data-off="Si el botón es de color blanco, tu cámara está apagada.">Si el botón es de color negro, tu cámara está encendida.</p>
+                  <p class="round-text" id="lobby-cam-text" data-on="Si el botón es de color negro, tu cámara está encendida." data-off="Si el botón es de color blanco, tu cámara está apagada.">Si el botón es de color blanco, tu cámara está apagada.</p>
+                  <p class="device-note" id="lobby-cam-note"></p>
                 </div>
-                <div class="preview">
+                <!-- What the camera sees, while it is on; off, the sentence says so. -->
+                <div class="preview" id="preview-frame" hidden>
                   <video id="preview" autoplay muted playsinline></video>
-                  <p id="preview-off" class="preview-off" hidden>Cámara apagada</p>
                 </div>
               </div>
             </div>
+            <!-- Figma: web-only state of A05: the sound test, a device link (195:513) by «Volver» that plays
+                 the chime Aule joins with; this line says so once it has. -->
+            <p class="device-note sound-line" id="sound-line" role="status"></p>
             <p id="lobby-note" class="ink-note" role="status"></p>
           </div>
           <div class="ink-foot">
             <div class="ink-links">
               <button type="button" class="ink-link" id="lobby-back" data-back>Volver</button>
+              <button type="button" class="ink-link" id="sound-test">Probar el sonido</button>
               <!-- The web-only state's second way: the open session is closed first, then a new one starts. -->
               <button type="button" class="ink-link" id="restart" hidden>Empezar otra sesión</button>
             </div>
@@ -773,8 +778,15 @@
 
       <!-- Figma: A15 La sesión empieza · Aparato 190:1069 / · Silenciado 194:509 -->
       <section class="screen" data-screen="session" data-surface="ink" id="stage" hidden aria-labelledby="session-title">
+        <!-- Figma: A16 Hola, soy Aule 477:190 (Vigente · Onboarding · v1), first run: the title and the line under it
+             while Aule arrives, in the student's language; A16's second line waits for a summary the parents receive.
+             The line is a status, never hidden, only empty: it is also where Aule not arriving is said, once. -->
         <h2 class="session-title" id="session-title" tabindex="-1">La sesión empezó.</h2>
+        <p class="session-intro" id="session-intro" role="status"></p>
         <div class="session-message" data-message></div>
+        <!-- Figma: web-only state of the session: Aule did not arrive. A15's title comes back, the line above
+             says so and this Botón/Compacto 191:1396 ends the attempt and goes back to A05. -->
+        <button type="button" class="compact session-retry" id="retry-session" hidden>Intentar otra vez</button>
         <!-- A session the engine runs says where it is: done, now, to come. -->
         <ol id="route" class="route" hidden aria-label="Etapas de la sesión"></ol>
         <!-- Left: what the student works on. The camera on their notebook and the board. -->
@@ -816,7 +828,8 @@
             <!-- Figma: Botón/Compacto 191:1396; off, the camera's icon is crossed (Ícono/videocam 191:1407, videocam_off 191:1410) -->
             <button type="button" class="compact" id="cam" aria-pressed="true"><span class="icon" data-icon="videocam" aria-hidden="true"></span>Cámara</button>
             <button type="button" class="compact" id="device" aria-pressed="true">Modo tinta</button>
-            <span id="clock" class="clock" aria-label="Tiempo que queda"></span>
+            <!-- Shown once the tutor is in. -->
+            <span id="clock" class="clock" aria-label="Tiempo que queda" hidden></span>
             <button type="button" class="compact" id="end">Terminar</button>
           </div>
         </div>
@@ -830,8 +843,12 @@
             <span class="tile-label">Aule</span>
             <p id="tutor-state" class="tile-state" role="status">Esperando a Aule…</p>
           </div>
-          <!-- The device does not listen all the time: a turn lasts while its button is held. -->
-          <button type="button" id="talk" class="talk" hidden aria-pressed="false">Mantén apretado para hablar</button>
+          <!-- The device does not listen all the time: a turn lasts while its button is held.
+               Figma: web-only state of the talk button: the coach line above it on a first run, and a hint
+               after a tap; inside it, while it is held, a bar with the level of the microphone, measured in
+               this browser. -->
+          <p id="talk-coach" class="talk-coach" role="status"></p>
+          <button type="button" id="talk" class="talk" hidden aria-pressed="false"><span id="talk-label">Mantén apretado para hablar</span><span class="talk-level" aria-hidden="true"><span id="talk-bar"></span></span></button>
           <ol id="transcript" aria-label="Conversación" aria-live="polite"></ol>
           <form id="type" class="type" autocomplete="off">
             <input id="typed" type="text" maxlength="500" aria-label="Mensaje para Aule" placeholder="O escríbele a Aule…" />
@@ -878,8 +895,9 @@
     <!-- What the page keeps in the browser, said once; out of the way on a student's screen. -->
     <div id="cookies" class="cookie-notice" role="region" aria-label="Aviso de cookies" hidden>
       <p>
-        Usamos solo las cookies necesarias para que entres a tu cuenta y funcione la sesión; nada de
-        publicidad. Si entras con Google, GitHub, Facebook o Apple, ellos usan las suyas.
+        Usamos solo cookies propias: las necesarias para que entres a tu cuenta y funcione la sesión y, si
+        llegaste por un enlace de invitación, una que lo recuerda hasta que entres; nada de publicidad. Si entras
+        con Google, GitHub, Facebook o Apple, ellos usan las suyas.
         <a href="https://meetaule.com/legal/privacy#cookies">Política de cookies</a>
       </p>
       <!-- Figma: Acción/Pequeña 161:2104 -->
