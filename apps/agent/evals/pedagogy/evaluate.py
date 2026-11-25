@@ -15,6 +15,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import httpx2 as httpx
+import meaning
 from anthropic import AsyncAnthropic
 from budget import Budget, MeteredTransport
 from cases import REPLAY, cases, digest, regressions
@@ -70,6 +71,7 @@ def source_hash():
         HERE / "evaluate.py",
         HERE / "budget.py",
         HERE / "cases.py",
+        HERE / "meaning.py",
         HERE / "checker/src/main.rs",
     ]
     hasher = hashlib.sha256()
@@ -238,6 +240,25 @@ async def judge(budget, label, case, turns):
     return result
 
 
+async def examples(budget, label, case, turns):
+    """The examples judge's verdict on one session (see ``meaning``). A call
+    that fails is a judge failure, which the session cannot pass with."""
+    try:
+        async with client(budget, label + ":examples") as api:
+            return await meaning.judge(
+                api, case["expression"], case["answer"], meaning.visible(turns)
+            )
+    except Exception as error:
+        return dict(
+            model=meaning.MODEL,
+            status="error",
+            error=type(error).__name__,
+            examples=[],
+            changed=None,
+            unclear=0,
+        )
+
+
 async def play(tutor, checker, utterance):
     """One turn, typed: through the real input gates, the check made in code
     after them and the model, as Tutor.typed takes a child's typed message.
@@ -360,6 +381,7 @@ async def run_case(budget, case, arm, extra, repetition, output, max_tool_steps=
                 if turn["error"]:
                     row["errors"].append(f"turn_{index + 1}:{turn['error']}")
             row["judge"] = await judge(budget, label, case, row["turns"])
+            row["examples"] = await examples(budget, label, case, row["turns"])
     except Exception as error:
         row["errors"].append(type(error).__name__)
     finally:
@@ -369,7 +391,13 @@ async def run_case(budget, case, arm, extra, repetition, output, max_tool_steps=
     path.write_text(json.dumps(row, ensure_ascii=False, indent=2) + "\n")
     print(
         json.dumps(
-            dict(done=label, errors=row["errors"], judge=row.get("judge"), budget=budget.summary()),
+            dict(
+                done=label,
+                errors=row["errors"],
+                judge=row.get("judge"),
+                examples=(row.get("examples") or {}).get("status"),
+                budget=budget.summary(),
+            ),
             ensure_ascii=False,
         ),
         flush=True,
@@ -409,6 +437,9 @@ async def main(args):
         arm=arm,
         max_tool_steps=steps,
         rubric_sha256=digest(JUDGE),
+        examples_model=meaning.MODEL,
+        examples_prompt_sha256=digest(meaning.PROMPT),
+        examples_schema_sha256=digest(meaning.SCHEMA),
         source_sha256=source_hash(),
         source_commit=subprocess.check_output(
             ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True
