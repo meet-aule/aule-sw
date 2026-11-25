@@ -518,7 +518,9 @@
               <p class="question-help" id="plan-line" hidden></p>
             </div>
             <div class="controls">
-              <!-- Figma: Fila/Alumno 161:2110, one per student -->
+              <!-- Figma: Fila/Alumno 161:2110, one per student. Under each, web-only and built from it, ul.student-sessions:
+                   the student's latest sessions as facts (summaries.js), and the link «Ver resúmenes» (Enlace/Base) to the
+                   review's summaries in Configurar (D35). -->
               <ul class="student-list" id="student-list" aria-label="Tus alumnos"></ul>
               <p class="question-help" id="no-students" hidden>Todavía no hay alumnos en tu cuenta. Agrega al primero para empezar.</p>
               <button type="button" class="link" id="add-student">+ Agregar un alumno</button>
@@ -621,10 +623,11 @@
 
               <!-- What is kept about a student who already has sessions, to read and to prune. -->
               <section id="known" class="known" hidden>
-                <h3 id="known-title"></h3>
+                <!-- The home's «Ver resúmenes» opens the editor here (D35): these titles take the focus. -->
+                <h3 id="known-title" tabindex="-1"></h3>
                 <p id="progress-known" class="small-help"></p>
                 <ul id="memories" aria-label="Lo que Aule recuerda"></ul>
-                <h3 id="past-title" hidden>Últimas sesiones</h3>
+                <h3 id="past-title" tabindex="-1" hidden>Últimas sesiones</h3>
                 <ul id="past" aria-label="Últimas sesiones"></ul>
               </section>
 
@@ -790,10 +793,12 @@
       <!-- Figma: A15 La sesión empieza · Aparato 190:1069 / · Silenciado 194:509 -->
       <section class="screen" data-screen="session" data-surface="ink" hidden aria-labelledby="session-title">
         <!-- Figma: A16 Hola, soy Aule 477:190 (Vigente · Onboarding · v1), first run: the title and the line under it
-             while Aule arrives, in the student's language; A16's second line waits for a summary the parents receive.
-             The line is a status, never hidden, only empty: it is also where Aule not arriving is said, once. -->
+             while Aule arrives, in the student's language. The line is a status, never hidden, only empty: it is also
+             where Aule not arriving is said, once. A16's second line follows it, not live: the family sees a summary of
+             every session on its home (D35). -->
         <h2 class="session-title" id="session-title" tabindex="-1">La sesión empezó.</h2>
         <p class="session-intro" id="session-intro" role="status"></p>
+        <p class="session-intro" id="session-parent"></p>
         <div class="session-message" data-message></div>
         <!-- Under a camera's problem, what an adult can do: smaller, and not live, since the line above is (D33). -->
         <p class="device-note session-help" id="session-help"></p>

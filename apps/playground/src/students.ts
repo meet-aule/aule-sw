@@ -321,6 +321,25 @@ const MAX_MEMORIES = 20;
 const MAX_SESSIONS = 5;
 const MAX_NEXT = 3;
 
+type Reviews = { reviews?: { created_at?: unknown; summary?: unknown; next_step?: unknown }[] };
+
+/** The review's summaries Configurar shows for a student (`known`), newest first: what the home counts too. */
+function summariesOf(reviews: Reviews): Known["sessions"] {
+  return (reviews.reviews ?? [])
+    .flatMap((review) =>
+      typeof review.summary === "string" && typeof review.created_at === "string"
+        ? [
+            {
+              day: review.created_at.slice(0, 10),
+              summary: review.summary,
+              next: typeof review.next_step === "string" ? review.next_step : "",
+            },
+          ]
+        : [],
+    )
+    .slice(0, MAX_SESSIONS);
+}
+
 /** What is kept about a student, for the family to read and to prune. */
 export async function known(settings: Settings, token: string, id: string): Promise<Known> {
   const [skills, memories, reviews] = (await Promise.all([
@@ -330,7 +349,7 @@ export async function known(settings: Settings, token: string, id: string): Prom
   ])) as [
     { skills?: { mastered?: unknown; attempts?: unknown }[]; next?: { name?: unknown }[] },
     { memories?: { id?: unknown; content?: unknown }[] },
-    { reviews?: { created_at?: unknown; summary?: unknown; next_step?: unknown }[] },
+    Reviews,
   ];
   const worked = (skills.skills ?? []).filter((skill) => typeof skill.attempts === "number" && skill.attempts > 0);
   const mastered = worked.filter((skill) => skill.mastered === true).length;
@@ -347,25 +366,109 @@ export async function known(settings: Settings, token: string, id: string): Prom
           : [],
       )
       .slice(0, MAX_MEMORIES),
-    sessions: (reviews.reviews ?? [])
-      .flatMap((review) =>
-        typeof review.summary === "string" && typeof review.created_at === "string"
-          ? [
-              {
-                day: review.created_at.slice(0, 10),
-                summary: review.summary,
-                next: typeof review.next_step === "string" ? review.next_step : "",
-              },
-            ]
-          : [],
-      )
-      .slice(0, MAX_SESSIONS),
+    sessions: summariesOf(reviews),
   };
 }
 
 /** Forgets one thing remembered about a student. */
 export function forget(settings: Settings, token: string, id: string, memoryId: string): Promise<unknown> {
   return platform(settings, `${pathOf(id)}/memories/${encodeURIComponent(memoryId)}`, undefined, token, "DELETE");
+}
+
+/** The ways a session ends that the home can say something about (the platform's end_reason). */
+export const END_REASONS = [
+  "child_ended",
+  "parent_ended",
+  "budget_reached",
+  "idle",
+  "device_offline",
+  "not_working",
+  "provider_error",
+  "error",
+] as const;
+export type EndReason = (typeof END_REASONS)[number];
+
+/**
+ * One of a student's latest sessions, as the family's home says it: facts only.
+ * Never what was said or typed, the topic written on A04 · Detalles, nor the
+ * review's words, which the platform does not send here either.
+ */
+export type SessionFacts = {
+  /** When it started, as the platform's ISO date and time. */
+  day: string;
+  /** How long it lasted, in whole minutes and at least one; null when it is not known. */
+  minutes: number | null;
+  /** What it was for, when the family said it. */
+  kind: ObjectiveKind | null;
+  subject: Subject | "other" | null;
+  /** The catalogue's names of the skills it practised, two at most. */
+  skills: string[];
+  /** The exercises checked in it. How many were right is not the home's to say: a child lands there. */
+  tried: number;
+  breaks: number;
+  /** How it ended; null for an ending the platform did not say or the page does not know. */
+  ending: EndReason | null;
+};
+
+const LATEST_SESSIONS = 3;
+const MAX_SKILLS_SHOWN = 2;
+const MAX_SKILL_CHARS = 80;
+const MAX_EXERCISES = 50;
+const MAX_BREAKS = 20;
+
+const whole = (value: unknown, most: number): number | null =>
+  typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= most ? value : null;
+
+function factsOf(session: Record<string, unknown>): SessionFacts | null {
+  const day = typeof session.started_at === "string" && !Number.isNaN(Date.parse(session.started_at)) ? session.started_at : null;
+  if (day === null) return null;
+  const seconds = session.seconds;
+  const objective = typeof session.objective === "object" && session.objective !== null ? (session.objective as Record<string, unknown>) : {};
+  const exercises = typeof session.exercises === "object" && session.exercises !== null ? (session.exercises as Record<string, unknown>) : {};
+  const tried = whole(exercises.tried, MAX_EXERCISES);
+  const right = whole(exercises.right, MAX_EXERCISES);
+  const counted = tried !== null && right !== null && right <= tried;
+  const skills = Array.isArray(session.skills) ? session.skills : [];
+  return {
+    day,
+    minutes: typeof seconds === "number" && Number.isFinite(seconds) && seconds >= 0 ? Math.max(1, Math.round(seconds / 60)) : null,
+    kind: oneOf(OBJECTIVE_KINDS, objective.kind),
+    subject: objective.subject === "other" ? "other" : oneOf(SUBJECTS, objective.subject),
+    skills: skills
+      .filter((skill): skill is string => typeof skill === "string" && skill.trim().length > 0 && skill.length <= MAX_SKILL_CHARS)
+      .slice(0, MAX_SKILLS_SHOWN),
+    tried: counted ? tried : 0,
+    breaks: whole(session.breaks, MAX_BREAKS) ?? 0,
+    ending: oneOf(END_REASONS, session.end_reason),
+  };
+}
+
+/**
+ * A student's latest sessions as facts the home can show (FIGMA.md D35), from
+ * the platform's guardian-scoped GET /v1/children/{id}/sessions: when, how
+ * long, what for, which skills, the exercises and the breaks, and how it
+ * ended. Anything else in the answer is left behind, and a session whose
+ * start is not a date is not shown. With them, how many of the review's
+ * summaries Configurar has (`summaries`, a count and never their words), so
+ * the home links them only once there are some; a review that cannot be read
+ * counts none and takes nothing from the lines.
+ */
+export async function latestSessions(
+  settings: Settings,
+  token: string,
+  id: string,
+): Promise<{ sessions: SessionFacts[]; summaries: number }> {
+  const [answer, reviews] = (await Promise.all([
+    platform(settings, `${pathOf(id)}/sessions?limit=${LATEST_SESSIONS}`, undefined, token),
+    platform(settings, `${pathOf(id)}/reviews`, undefined, token).catch(() => ({})),
+  ])) as [{ sessions?: unknown }, Reviews];
+  const sessions = Array.isArray(answer.sessions) ? answer.sessions : [];
+  return {
+    sessions: sessions
+      .flatMap((session) => (typeof session === "object" && session !== null ? (factsOf(session as Record<string, unknown>) ?? []) : []))
+      .slice(0, LATEST_SESSIONS),
+    summaries: summariesOf(reviews).length,
+  };
 }
 
 /**

@@ -34,6 +34,7 @@ import {
   createStudent,
   forget,
   known,
+  latestSessions,
   objectiveFrom,
   profileFrom,
   readStudent,
@@ -97,6 +98,8 @@ const STATIC: Record<string, { file: string | URL; type: string }> = {
   "/session-messages.js": { file: new URL("session-messages.js", publicDir), type: "text/javascript; charset=utf-8" },
   // A child's first steps: the hand-off, the microphone check on the device and the coached first turn.
   "/first-steps.js": { file: new URL("first-steps.js", publicDir), type: "text/javascript; charset=utf-8" },
+  // The lines the family's home says about each student's latest sessions.
+  "/summaries.js": { file: new URL("summaries.js", publicDir), type: "text/javascript; charset=utf-8" },
   "/visuals.js": { file: new URL("visuals.js", publicDir), type: "text/javascript; charset=utf-8" },
   "/style.css": { file: new URL("style.css", publicDir), type: "text/css; charset=utf-8" },
   "/icon.svg": { file: new URL("icon.svg", publicDir), type: "image/svg+xml" },
@@ -222,6 +225,7 @@ const OWN_SCRIPTS = new Set([
   "/home.js",
   "/session-messages.js",
   "/first-steps.js",
+  "/summaries.js",
   "/visuals.js",
   "/admin.js",
   "/pilot.js",
@@ -505,6 +509,8 @@ export function createPlayground(
       return json(response, 200, await saveStudent(settings, token, id, profile));
     }
     if (path === "/api/student/known") return json(response, 200, await known(settings, token, id));
+    // The student's latest sessions as facts, for the home (never what was said).
+    if (path === "/api/student/sessions") return json(response, 200, await latestSessions(settings, token, id));
     if (path === "/api/student/forget") {
       if (typeof body.memory_id !== "string" || !ID.test(body.memory_id)) {
         return json(response, 400, { error: "bad_request" });
@@ -774,6 +780,7 @@ export function createPlayground(
         path === "/api/student/read" ||
         path === "/api/student/save" ||
         path === "/api/student/known" ||
+        path === "/api/student/sessions" ||
         path === "/api/student/forget" ||
         path === "/api/student/remove" ||
         path === "/api/account/erase"
