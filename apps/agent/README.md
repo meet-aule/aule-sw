@@ -61,9 +61,10 @@ page's `end_turn` arrives: the commit, the last final transcript (below zero whe
 came before the release), the input gates, the model's first chunk and first
 sentence, the output gate, the voice's first audio and the tutor's first audio
 (`first_audio_ms`), each at p50 and p90. A release whose commit took no words is no
-turn and is not timed, and neither is a wait longer than 30 seconds. Each model call
-is also logged with its token counts and how many were read from or written to the
-prompt cache.
+turn and is not timed, and neither is a wait longer than 30 seconds. A final
+transcript that comes after its turn was committed, too late for that turn, is
+counted (`stt_finals_after_commit`). Each model call is also logged with its token
+counts and how many were read from or written to the prompt cache.
 
 ## Mathematical hints and complete replies
 

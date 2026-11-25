@@ -713,3 +713,54 @@ async def test_a_tap_that_commits_no_words_times_nothing_said_after_it():
     timing.agent_state("speaking")
 
     assert timing.turn == 0 and "turns_staged" not in timing.summary()
+
+
+class Heard:
+    """Stands in for what the tutor heard of the turn being held."""
+
+    def __init__(self, in_flight):
+        self.words_in_flight = in_flight
+        self.holds = 0
+
+    def hold_started(self):
+        self.holds += 1
+
+
+@pytest.mark.parametrize(
+    ("user_state", "in_flight", "waits"),
+    [
+        # The voice detector heard the end of speech and the hearing finalized
+        # every word: nothing can come, nothing is waited for.
+        ("listening", False, 0.0),
+        # Still speaking, or words heard after the last final: a final may come.
+        ("speaking", False, worker.COMMIT_TRANSCRIPT_TIMEOUT_SECONDS),
+        ("listening", True, worker.COMMIT_TRANSCRIPT_TIMEOUT_SECONDS),
+        ("speaking", True, worker.COMMIT_TRANSCRIPT_TIMEOUT_SECONDS),
+    ],
+)
+async def test_a_released_button_waits_for_a_final_only_when_one_may_still_come(
+    user_state, in_flight, waits
+):
+    waited = []
+
+    class Session:
+        def __init__(self):
+            self.user_state = user_state
+
+        def interrupt(self):
+            pass
+
+        def clear_user_turn(self):
+            pass
+
+        async def commit_user_turn(self, *, transcript_timeout):
+            waited.append(transcript_timeout)
+            return ""
+
+    room, heard = Room(), Heard(in_flight)
+    await worker.enable_push_to_talk(SimpleNamespace(room=room), Session(), None, heard)
+    await room.local_participant.rpcs["start_turn"](None)
+    await room.local_participant.rpcs["end_turn"](None)
+
+    assert waited == [waits]
+    assert heard.holds == 1

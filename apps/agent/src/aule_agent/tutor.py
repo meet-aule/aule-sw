@@ -459,6 +459,8 @@ class Tutor(Agent):
         # Told how sure the speech recognition was of each final transcript,
         # and how long each stage of a push-to-talk turn took.
         self._timing = timing
+        # Whether the hearing heard speech after its last final transcript.
+        self._words_in_flight = False
         self._engine = engine
         # Which answer of the engine is being said. Lines of an older one stop
         # as soon as a newer answer arrives.
@@ -742,14 +744,32 @@ class Tutor(Agent):
             self._hazards_in_a_row = hazards + 1 if hazards + 1 < len(ADULT_HELP_SEQUENCE) else 1
         return False
 
+    @property
+    def words_in_flight(self) -> bool:
+        """Whether the hearing heard the student start or go on speaking after
+        its last final transcript, so that a final may still be on its way.
+        Flags only: the words are not kept."""
+        return self._words_in_flight
+
+    def hold_started(self) -> None:
+        """The talk button went down: what was heard before is not this turn's."""
+        self._words_in_flight = False
+
     async def stt_node(
         self, audio: AsyncIterable[rtc.AudioFrame], model_settings: ModelSettings
     ) -> AsyncIterable[stt.SpeechEvent]:
         async for event in Agent.default.stt_node(self, self._listened(audio), model_settings):
+            words = bool(event.alternatives and event.alternatives[0].text)
+            if event.type == stt.SpeechEventType.START_OF_SPEECH or (
+                event.type == stt.SpeechEventType.INTERIM_TRANSCRIPT and words
+            ):
+                self._words_in_flight = True
             final = event.type == stt.SpeechEventType.FINAL_TRANSCRIPT
+            if final and words:
+                self._words_in_flight = False
             if final and event.alternatives and self._timing is not None:
                 self._timing.heard(event.alternatives[0].confidence)
-                if event.alternatives[0].text:
+                if words:
                     self._timing.final_heard()
             yield event
 

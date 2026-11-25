@@ -10,7 +10,7 @@ import logging
 import os
 import sys
 from dataclasses import replace
-from typing import Any
+from typing import Any, Protocol
 
 from livekit import rtc
 from livekit.agents import (
@@ -88,17 +88,31 @@ async def someone_joined(ctx: JobContext) -> bool:
     return True
 
 
-# How long a released talk button waits for the last final transcript.
+# How long a released talk button waits for the last final transcript, when
+# one may still be on its way.
 COMMIT_TRANSCRIPT_TIMEOUT_SECONDS = 0.8
 
 
+class Hearing(Protocol):
+    """What the tutor heard of the turn being held: the Tutor."""
+
+    @property
+    def words_in_flight(self) -> bool: ...
+
+    def hold_started(self) -> None: ...
+
+
 async def enable_push_to_talk(
-    ctx: JobContext, session: AgentSession, timing: Timing | None = None
+    ctx: JobContext,
+    session: AgentSession,
+    timing: Timing | None = None,
+    hearing: Hearing | None = None,
 ) -> None:
     """Hand turn-taking to the client's talk button. The attribute tells the page
     to show the hold-to-talk control; the RPCs it sends drive each turn: start on
     press, commit on release, cancel on abandon. ``timing`` times each turn
-    from the moment end_turn arrives.
+    from the moment end_turn arrives; ``hearing`` says whether a final
+    transcript may still come.
     """
     await ctx.room.local_participant.set_attributes({"aule.turns": "manual"})
 
@@ -107,15 +121,26 @@ async def enable_push_to_talk(
             timing.pressed()
         session.interrupt()
         session.clear_user_turn()
+        if hearing is not None:
+            hearing.hold_started()
         return "ok"
 
     async def end_turn(_: rtc.RpcInvocationData) -> str:
         if timing is not None:
             timing.released()
-        # The microphone stays attached, so there is no flush to wait for: a
-        # short wait lets a final transcript in flight land, and whatever is
-        # still interim is committed as it stands.
-        heard = await session.commit_user_turn(transcript_timeout=COMMIT_TRANSCRIPT_TIMEOUT_SECONDS)
+        # The microphone stays attached, so there is no flush to wait for. A
+        # final transcript may still be on its way while the voice detector
+        # hears the child speaking, or when the hearing heard more after its
+        # last final: then a short wait lets it land, and whatever is still
+        # interim is committed as it stands. Otherwise the child stopped
+        # before letting go and every word is in: LiveKit would wait the whole
+        # time for a final that cannot come.
+        settled = (
+            hearing is not None and session.user_state != "speaking" and not hearing.words_in_flight
+        )
+        heard = await session.commit_user_turn(
+            transcript_timeout=0.0 if settled else COMMIT_TRANSCRIPT_TIMEOUT_SECONDS
+        )
         if timing is not None:
             # A commit with no words is no turn: nothing answers it.
             if heard.strip():
@@ -156,6 +181,15 @@ TURNS: dict[str, Any] = {
         "min_duration": 0.8,
         "min_words": 1,
     },
+}
+# With the talk button the button ends the turn. The pause TURNS waits for, a
+# child going on after thinking, cannot happen once the button is up, and
+# LiveKit takes the turn's words as they are at the commit: any wait after it
+# only delays the reply.
+PUSH_TO_TALK_TURNS: dict[str, Any] = {
+    **TURNS,
+    "turn_detection": "manual",
+    "endpointing": {"min_delay": 0.0, "max_delay": TURNS["endpointing"]["max_delay"]},
 }
 
 
@@ -402,7 +436,7 @@ async def entrypoint(ctx: JobContext) -> None:
         vad=ctx.proc.userdata["vad"],
         # Push-to-talk: the talk button commits each turn (see ``push_to_talk``
         # below), so the VAD must not end a turn on its own.
-        turn_handling={**TURNS, "turn_detection": "manual"} if settings.push_to_talk else TURNS,
+        turn_handling=PUSH_TO_TALK_TURNS if settings.push_to_talk else TURNS,
     )
     session.on(
         "user_state_changed", lambda event: timing.user_state(event.old_state, event.new_state)
@@ -576,7 +610,7 @@ async def entrypoint(ctx: JobContext) -> None:
     # Tells the page that the button has somebody to answer it.
     await ctx.room.local_participant.set_attributes({"aule.show_work": "rpc"})
     if settings.push_to_talk:
-        await enable_push_to_talk(ctx, session, timing)
+        await enable_push_to_talk(ctx, session, timing, tutor)
     logger.info("session started", extra={"audience": audience, "language": language})
 
 

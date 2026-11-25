@@ -6,7 +6,7 @@ from unittest.mock import PropertyMock, patch
 
 import pytest
 from livekit import rtc
-from livekit.agents import Agent, StopResponse, llm
+from livekit.agents import Agent, StopResponse, llm, stt
 
 from aule_agent.greetings import GREETINGS, greeting
 from aule_agent.moderation import Action, Decision
@@ -1117,3 +1117,73 @@ async def test_each_stage_of_a_turn_is_timed_for_the_turn_it_belongs_to():
     summary = timing.summary()
     stages = ("gates_in", "llm_ttft", "first_sentence", "gate_out", "tts_ttfb", "first_audio")
     assert all(f"{stage}_ms_p50" in summary for stage in stages)
+
+
+def speech(kind, text=""):
+    alternatives = [stt.SpeechData(language="es", text=text)] if text else []
+    return stt.SpeechEvent(type=kind, alternatives=alternatives)
+
+
+async def heard_through(tutor, *events):
+    async def hearing(*_):
+        for event in events:
+            yield event
+
+    async def silence():
+        return
+        yield
+
+    with patch.object(Agent.default, "stt_node", side_effect=hearing):
+        return [event async for event in tutor.stt_node(silence(), None)]
+
+
+@pytest.mark.parametrize(
+    ("events", "in_flight"),
+    [
+        ([], False),
+        ([speech(stt.SpeechEventType.START_OF_SPEECH)], True),
+        ([speech(stt.SpeechEventType.INTERIM_TRANSCRIPT, "doce")], True),
+        ([speech(stt.SpeechEventType.INTERIM_TRANSCRIPT)], False),
+        (
+            [
+                speech(stt.SpeechEventType.START_OF_SPEECH),
+                speech(stt.SpeechEventType.INTERIM_TRANSCRIPT, "doce"),
+                speech(stt.SpeechEventType.FINAL_TRANSCRIPT, "doce"),
+                speech(stt.SpeechEventType.END_OF_SPEECH),
+            ],
+            False,
+        ),
+        # An empty final settles nothing: LiveKit keeps the interim.
+        (
+            [
+                speech(stt.SpeechEventType.INTERIM_TRANSCRIPT, "doce"),
+                speech(stt.SpeechEventType.FINAL_TRANSCRIPT),
+            ],
+            True,
+        ),
+        # The student went on after the final.
+        (
+            [
+                speech(stt.SpeechEventType.FINAL_TRANSCRIPT, "doce"),
+                speech(stt.SpeechEventType.START_OF_SPEECH),
+            ],
+            True,
+        ),
+    ],
+)
+async def test_the_tutor_knows_whether_a_final_transcript_may_still_come(events, in_flight):
+    tutor = Tutor(language="es", gates=ScriptedGates())
+
+    passed = await heard_through(tutor, *events)
+
+    assert passed == events
+    assert tutor.words_in_flight is in_flight
+
+
+async def test_a_new_press_forgets_what_was_heard_before():
+    tutor = Tutor(language="es", gates=ScriptedGates())
+    await heard_through(tutor, speech(stt.SpeechEventType.INTERIM_TRANSCRIPT, "doce"))
+
+    tutor.hold_started()
+
+    assert tutor.words_in_flight is False

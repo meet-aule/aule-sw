@@ -11,7 +11,8 @@ the page says the button went up (its end_turn request arrives, the page's
 tail and the trip after the release) to the tutor's first audio. A stage that
 reports after that first audio, or for an older turn, is not counted, and
 neither is a turn whose commit took no words or that waited longer than a
-reply can.
+reply can. A final transcript that comes after its turn was committed, before
+the next press, is counted: it came too late for that turn.
 """
 
 import statistics
@@ -68,6 +69,10 @@ class Timing:
         self._current: dict[str, float] = {}
         self._stages: dict[str, list[float]] = {stage: [] for stage in STAGES}
         self._staged = 0
+        # Final transcripts with words that came after their turn was
+        # committed, before the next press: too late for their turn.
+        self._committed = False
+        self._finals_after_commit = 0
 
     def user_state(self, old: str, new: str) -> None:
         """The student started or stopped speaking."""
@@ -111,10 +116,13 @@ class Timing:
     def pressed(self) -> None:
         """The talk button went down: what is heard from now on is a new turn's."""
         self._last_final = None
+        self._committed = False
 
     def final_heard(self) -> None:
         """A final transcript with words in it arrived."""
         self._last_final = self._clock()
+        if self._committed:
+            self._finals_after_commit += 1
 
     def released(self) -> None:
         """The page's end_turn arrived: a staged turn opens. One still open,
@@ -126,6 +134,7 @@ class Timing:
 
     def committed(self) -> None:
         """The turn is committed: what was heard of it is all it will have."""
+        self._committed = True
         if not self._open:
             return
         self._current["commit"] = self._clock() - self._released_at
@@ -135,6 +144,7 @@ class Timing:
     def nothing_heard(self) -> None:
         """The commit took no words: LiveKit makes no turn of it and the tutor
         does not answer, so the staged turn closes untimed."""
+        self._committed = True
         self._open = False
 
     def took(self, stage: str, seconds: float, turn: int) -> None:
@@ -157,6 +167,8 @@ class Timing:
             out["stt_low_confidence_share"] = round(
                 sum(c < LOW_CONFIDENCE for c in heard) / len(heard), 3
             )
+        if self._turn:
+            out["stt_finals_after_commit"] = self._finals_after_commit
         if self._staged:
             out["turns_staged"] = self._staged
             for stage, values in self._stages.items():

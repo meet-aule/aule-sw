@@ -185,3 +185,20 @@ def test_a_staged_turn_answered_later_than_a_reply_can_be_is_not_timed():
     summary = timing.summary()
     assert timing.turn == 0 and summary["turns_staged"] == 1
     assert summary["first_audio_ms_p90"] == 1100 and "gates_in_ms_p50" not in summary
+
+
+def test_a_final_that_comes_after_its_turn_was_committed_is_counted():
+    clock = Clock()
+    timing = Timing(clock)
+    staged_turn(timing, clock)
+    assert timing.summary()["stt_finals_after_commit"] == 0
+
+    # A word said as the button went up, finalized only once the turn was committed.
+    timing.final_heard()
+    timing.pressed()
+    timing.final_heard()
+    timing.released()
+    timing.nothing_heard()
+    timing.final_heard()
+
+    assert timing.summary()["stt_finals_after_commit"] == 2

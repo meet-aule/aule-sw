@@ -41,6 +41,11 @@ class Spec:
     hold: float = 0.1
     speech: float = 0.4
     final: bool = True
+    # A word said right after the release, while the page's tail keeps the
+    # microphone on, and whether the voice detector hears it (a soft one only
+    # the hearing hears).
+    tail: str | None = None
+    tail_vad: bool = True
 
 
 def violence(text: str = "") -> str:
@@ -76,6 +81,13 @@ SESSIONS: dict[str, list[Spec]] = {
     # The hearing never finalizes the last words: the commit times out with
     # an interim pending, and LiveKit warns with it in a field of the record.
     "interim_only": [ORDINARY, Spec(final=False)],
+    # The child holds the button well after speaking, every time.
+    "held": [Spec(hold=1.0), Spec(hold=1.2), Spec(hold=0.9)],
+    # A word said as the button goes up, after a pause the voice detector
+    # took for the end of speech.
+    "tail_word": [ORDINARY, Spec(hold=0.8, tail="y medio")],
+    # The same word, too soft for the voice detector: only the hearing hears it.
+    "tail_word_stt_only": [ORDINARY, Spec(hold=0.8, tail="y medio", tail_vad=False)],
     "meanwhile": [
         ORDINARY,
         Spec(tools=("check_answer", "pose_exercise"), reply="Muy bien, ahora prueba otra."),
@@ -128,7 +140,19 @@ def scripted(world: World, specs: list[Spec]) -> list[harness.Turn]:
         kind = "tool" if spec.tools else "reply"
         turns.append(
             harness.Turn(
-                number, kind, words, spec.speech, spec.hold, *spec.tools[:1], final=spec.final
+                number,
+                kind,
+                words,
+                spec.speech,
+                spec.hold,
+                *spec.tools[:1],
+                tail_word=spec.tail,
+                tail_after=0.02,
+                tail_seconds=0.15,
+                tail_vad=spec.tail_vad,
+                # Finalized only after end_turn came: the commit has to wait for it.
+                tail_final=0.3,
+                final=spec.final,
             )
         )
     return turns
@@ -262,6 +286,42 @@ def test_one_line_while_the_tools_work_per_turn_however_many_tools(sessions):
     first, second = (REPLIES[key]["es"] for key in MEANWHILE[:2])
     assert heard(two_tools.played) == spoken(f"{first} {SESSIONS['meanwhile'][1].reply}")
     assert heard(one_tool.played) == spoken(f"{second} {SESSIONS['meanwhile'][2].reply}")
+
+
+def test_a_button_held_after_speaking_commits_at_once_with_every_word(sessions):
+    runs, _ = sessions
+    run = runs["held"]
+    assert [heard(result.played) for result in run.results] == [
+        spoken(spec.reply) for spec in SESSIONS["held"]
+    ]
+    assert run.world.typesafe_asked == [
+        words_of(number) for number in range(1, len(SESSIONS["held"]) + 1)
+    ]
+    # Nothing was left to hear: the commit did not wait for a final.
+    assert run.world.metrics["commit_ms_p90"] < 300
+
+
+@pytest.mark.parametrize("name", ["tail_word", "tail_word_stt_only"])
+def test_a_word_said_as_the_button_goes_up_is_waited_for(sessions, name):
+    runs, _ = sessions
+    run = runs[name]
+    *_, heard_last = run.world.typesafe_asked
+    assert heard_last == f"{words_of(2)} y medio"
+    # No word came after its turn was committed.
+    assert run.world.metrics["stt_finals_after_commit"] == 0
+
+
+def test_words_still_interim_at_the_release_are_waited_for_then_committed_as_they_stand(
+    sessions,
+):
+    runs, _ = sessions
+    run = runs["interim_only"]
+    late = run.results[-1]
+    # The hearing's last interim held three of the five words.
+    assert run.world.typesafe_asked[-1] == " ".join(words_of(2).split()[:3])
+    assert late.allowed and late.played
+    # The commit waited for a final that never came.
+    assert run.world.metrics["commit_ms_p90"] >= 800
 
 
 def test_no_log_line_carries_the_childs_words(sessions):
