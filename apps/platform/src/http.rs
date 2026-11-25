@@ -1,6 +1,6 @@
 //! The HTTP API: routes, and the handlers small enough to live next to them.
 
-use axum::extract::{Path, Query, State};
+use axum::extract::{DefaultBodyLimit, Path, Query, State};
 use axum::http::StatusCode;
 use axum::routing::{delete, get, post, put};
 use axum::{Json, Router};
@@ -14,7 +14,7 @@ use crate::error::{ApiError, ApiResult};
 use crate::families::{self, child_for};
 use crate::learning::{self, NewAttempt, Skill, is_slug};
 use crate::state::AppState;
-use crate::{devices, engine, memory, notices, practice, push, sessions, signin};
+use crate::{devices, engine, memory, notices, passkeys, practice, push, sessions, signin};
 
 pub fn router(state: AppState) -> Router {
     Router::new()
@@ -68,6 +68,14 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/admin/families/{family_id}/sessions", get(crate::team::family_sessions))
         .route("/v1/admin/families/{family_id}/notices", get(crate::team::family_notices))
         .route("/v1/admin/sessions/open", get(crate::team::open_sessions))
+        // A team member's own passkeys for the console, from a session the
+        // team's sign-in opened (auth::TeamMember)
+        .route(
+            "/v1/admin/passkeys",
+            get(passkeys::list).post(passkeys::register).layer(DefaultBodyLimit::max(passkeys::BODY_BYTES)),
+        )
+        .route("/v1/admin/passkeys/options", post(passkeys::register_options))
+        .route("/v1/admin/passkeys/{passkey_id}", delete(passkeys::delete))
         .route("/v1/notices", get(notices::list))
         .route("/v1/notices/{notice_id}/read", post(notices::mark_read))
         .route("/v1/push/tokens", put(push::register).delete(push::unregister))

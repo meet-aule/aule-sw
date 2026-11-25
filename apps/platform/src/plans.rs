@@ -466,10 +466,12 @@ pub async fn grant(
 /// own few addresses, or "operator". The log never holds an address; a grant
 /// also keeps who made it in `granted_by`.
 fn who(staff: &Staff) -> String {
-    match &staff.email {
-        Some(email) => hex::encode(&Sha256::digest(email.as_bytes())[..6]),
-        None => "operator".into(),
-    }
+    staff.email.as_deref().map_or_else(|| "operator".into(), team_member)
+}
+
+/// A team member as the log names them (`who`).
+pub(crate) fn team_member(email: &str) -> String {
+    hex::encode(&Sha256::digest(email.as_bytes())[..6])
 }
 
 /// Ends what the team granted a family, from now. A paid plan is not touched.
