@@ -127,7 +127,14 @@ async def enable_push_to_talk(
             task = asyncio.create_task(gates.warm())
             warming.add(task)
             task.add_done_callback(warming.discard)
-        session.interrupt()
+        try:
+            session.interrupt()
+        except RuntimeError:
+            # A line that may not be cut (a gate's reply, the line said when
+            # the tutor is unavailable) is said to its end. The hold still
+            # starts: the child's words are heard and answered after it, where
+            # an error here made the page drop the whole turn.
+            pass
         session.clear_user_turn()
         if hearing is not None:
             hearing.hold_started()
