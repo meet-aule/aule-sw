@@ -417,7 +417,10 @@ Migration 0022 adds `team_passkeys`, the passkeys the team signs in to its
 console with: for each one, the team member's guardian account (it is erased
 with it), the credential id, the public key with its counter and flags as
 webauthn-rs keeps them, the member's name for it, and when it was made and last
-used. Nothing in it is secret. No row exists until a team member adds one.
+used. Nothing in it is secret. No row exists until a team member adds one. It
+also adds nullable `guardian_sessions.passkey_id`, the passkey that signed a
+session in, so that deleting a passkey ends the sessions it opened; every
+session from before keeps null.
 
 Migration 0021 adds nullable `families.source`, the link a family signed up
 from, with a check on its form; families from before keep null.
@@ -430,8 +433,9 @@ All three only add to the schema, and still an image from before one of them
 does not start on a database that has run it: every command migrates first,
 and sqlx refuses a database with a migration the image does not know
 (`VersionMissing`). To roll the image back past one, undo it and delete its row
-from `_sqlx_migrations` first, newest first. For 0022, `drop table
-team_passkeys` (the team's passkeys are lost: each member should also delete
-theirs from their devices) and `delete from _sqlx_migrations where version =
-22`; for 0021, `alter table families drop column source` (the links families
-came from are lost) and `delete from _sqlx_migrations where version = 21`.
+from `_sqlx_migrations` first, newest first. For 0022, `alter table
+guardian_sessions drop column passkey_id`, `drop table team_passkeys` (the
+team's passkeys are lost: each member should also delete theirs from their
+devices) and `delete from _sqlx_migrations where version = 22`; for 0021,
+`alter table families drop column source` (the links families came from are
+lost) and `delete from _sqlx_migrations where version = 21`.
