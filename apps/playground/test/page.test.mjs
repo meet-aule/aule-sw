@@ -11,7 +11,7 @@ const read = (name) => readFile(new URL(name, pub), "utf8");
 const html = await read("index.html");
 const css = await read("style.css");
 const guides = { es: await read("guia.html"), en: await read("guide.html") };
-const ownScripts = ["app.js", "students.js", "signin.js", "steps.js", "screens.js", "onboarding.js", "home.js", "session-messages.js", "first-steps.js", "summaries.js", "visuals.js"];
+const ownScripts = ["app.js", "students.js", "signin.js", "steps.js", "screens.js", "onboarding.js", "home.js", "session-messages.js", "first-steps.js", "summaries.js", "visuals.js", "cuy.js", "pixels.js"];
 const scripts = Object.fromEntries(await Promise.all(ownScripts.map(async (name) => [name, await read(name)])));
 
 /** The body of every block that starts with `opening`, braces and all. */
@@ -36,9 +36,12 @@ test("the Andean layer is gone, and the favicon and touch icons stay", () => {
     assert.ok(!files.includes(gone), `${gone} is deleted`);
     assert.ok(!html.includes(gone) && !css.includes(gone), `${gone} is named nowhere`);
   }
-  for (const trace of ["border-image", "--iron", "--parchment", ".dancers", "@keyframes jig", "pixelated", "signin-mascot"]) {
+  for (const trace of ["border-image", "--iron", "--parchment", ".dancers", "@keyframes jig", "signin-mascot"]) {
     assert.ok(!css.includes(trace), trace);
   }
+  // Pixels are back in one place only: Aule's face (face.test.mjs).
+  assert.equal(css.split("pixelated").length - 1, 1);
+  assert.match(css, /\.face-box\.pixels > wobnimo-mascot \{[^}]*image-rendering: pixelated;/);
   assert.ok(!/class="dancers"|signin-tabs|signin-mascot/.test(html));
   assert.match(html, /<link rel="icon" href="icon\.svg"/);
   assert.match(html, /<link rel="apple-touch-icon" href="apple-touch-icon\.png"/);
@@ -108,7 +111,10 @@ test("the page's own modules import each other without a cycle, as the plan draw
   // The name screen hands the browser to the child as the home does (home.js handOff).
   assert.deepEqual([...graph["onboarding.js"]].sort(), ["home.js", "screens.js", "steps.js", "students.js"]);
   assert.deepEqual([...graph["home.js"]].sort(), ["first-steps.js", "screens.js", "steps.js", "students.js", "summaries.js"]);
-  assert.deepEqual([...graph["app.js"]].sort(), ["first-steps.js", "home.js", "screens.js", "session-messages.js", "visuals.js"]);
+  // Aule's face, the cuy and its pixels, is data and arithmetic: the session's page is all that takes them.
+  assert.deepEqual(graph["cuy.js"], []);
+  assert.deepEqual(graph["pixels.js"], []);
+  assert.deepEqual([...graph["app.js"]].sort(), ["cuy.js", "first-steps.js", "home.js", "pixels.js", "screens.js", "session-messages.js", "visuals.js"]);
   // And none, followed through, comes back to itself.
   const visiting = new Set();
   const done = new Set();

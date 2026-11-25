@@ -1652,7 +1652,7 @@ h3[tabindex="-1"]:focus {
 }
 
 .mic-check.has-mascot .check-face {
-  display: block;
+  display: grid;
 }
 
 .check-status {
@@ -1886,7 +1886,33 @@ h3[tabindex="-1"]:focus {
 }
 
 .tutor.has-mascot .mascot {
-  display: block;
+  display: grid;
+}
+
+/* Aule's face is a wobnimo mascot in a box. pixels.js shows it in pixel art: drawn small, enlarged a
+   whole number of times, its shading brought down to a few tones by the page's #flat filter, and
+   outlined one of its pixels wide. Where the box is too small for that, the mascot fills it as it is. */
+.face-box {
+  place-items: center;
+}
+
+.face-box > wobnimo-mascot {
+  width: 100%;
+  height: 100%;
+}
+
+.face-box.pixels > wobnimo-mascot {
+  width: var(--side);
+  height: var(--side);
+  transform: scale(var(--times));
+  image-rendering: pixelated;
+  filter: url(#flat) drop-shadow(var(--line) 0 0 var(--device-ink)) drop-shadow(calc(-1 * var(--line)) 0 0 var(--device-ink))
+    drop-shadow(0 var(--line) 0 var(--device-ink)) drop-shadow(0 calc(-1 * var(--line)) 0 var(--device-ink));
+}
+
+/* The filter itself takes no room on the page. */
+.filters {
+  position: absolute;
 }
 
 .tutor.has-mascot .orb {

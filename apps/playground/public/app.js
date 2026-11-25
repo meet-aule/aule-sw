@@ -9,6 +9,8 @@ import { back, current, getAccount, go, need, onAccount, onHide, onShow } from "
 import { TOPIC as VISUAL_TOPIC, renderVisual } from "./visuals.js";
 import { endedMessage, languageOf, recoveryMessage } from "./session-messages.js";
 import { COACH_HOLD_MS, HINTS_MS, VOICE, WINDOW_MS, cameraProblem, heard, isTap, levelOf, micProblem, words } from "./first-steps.js";
+import { cuy } from "./cuy.js";
+import { pixelate } from "./pixels.js";
 
 const { Room, RoomEvent, Track, ParticipantKind, DisconnectReason, createLocalVideoTrack } = LivekitClient;
 
@@ -319,6 +321,41 @@ function hideKeepingFocus(button, title) {
   button.hidden = true;
 }
 
+// --- Aule's mouth moves while Aule's voice sounds ------------------------------
+//
+// The tutor says it is speaking for the whole of an answer, its pauses too. A
+// meter on the voice that is being played tells when it really sounds, so the
+// face talks then and rests in between. Like A05's meter it reads a level, in
+// this browser only: nothing it hears is kept or sent. Until the meter has
+// heard the voice once, the face talks for the whole of «speaking», as it does
+// in a browser where the voice cannot be measured.
+
+// The level a voice has, and how long the mouth keeps going after it: the gap
+// in a word is not a pause.
+const AULE_VOICE = 0.05;
+const AULE_PAUSE_MS = 220;
+let voiceMeter = null;
+let voiceAt = -Infinity;
+let voiceSounds = false;
+
+function followVoice(track) {
+  forgetVoice();
+  voiceMeter = startMeter(new MediaStream([track.mediaStreamTrack]), null, (level, now) => {
+    if (level >= AULE_VOICE) voiceAt = now;
+    const sounds = now - voiceAt < AULE_PAUSE_MS;
+    if (sounds === voiceSounds) return;
+    voiceSounds = sounds;
+    setTutorState();
+  });
+}
+
+function forgetVoice() {
+  stopMeter(voiceMeter);
+  voiceMeter = null;
+  voiceAt = -Infinity;
+  voiceSounds = false;
+}
+
 // What Aule's face does in each state of the session.
 const MASCOT_STATE = {
   waiting: "sleeping",
@@ -333,7 +370,12 @@ const MASCOT_STATE = {
 
 // The face takes the dot's place once its script has loaded; in a browser
 // that cannot run it, the dot stays, and A05's check does without a face.
+// Aule is a cuy (cuy.js), shown in pixel art (pixels.js).
 customElements.whenDefined("wobnimo-mascot").then(() => {
+  for (const face of [$("mascot"), $("check-face")]) {
+    face.spec = cuy;
+    pixelate(face);
+  }
   $("tutor").classList.add("has-mascot");
   $("mic-check").classList.add("has-mascot");
 });
@@ -361,7 +403,9 @@ function setTutorState(state = $("tutor").dataset.state) {
     const text = words(`state_${key}`, language);
     if (line.textContent !== text || line.lang !== language) write(line, text, language);
   }
-  const face = MASCOT_STATE[state] ?? "idle";
+  // The tutor is speaking for a whole answer; the mouth moves while its voice sounds.
+  const pause = state === "speaking" && Number.isFinite(voiceAt) && !voiceSounds;
+  const face = pause ? "idle" : (MASCOT_STATE[state] ?? "idle");
   if ($("mascot").getAttribute("state") !== face) $("mascot").setAttribute("state", face);
 }
 
@@ -1190,10 +1234,15 @@ async function join(session, { resumed = false } = {}) {
     .on(RoomEvent.ParticipantDisconnected, (participant) => {
       if (participant.kind === ParticipantKind.AGENT) setTutorState("left");
     })
-    .on(RoomEvent.TrackSubscribed, (track) => {
-      if (track.kind === Track.Kind.Audio) $("audio").append(track.attach());
+    .on(RoomEvent.TrackSubscribed, (track, _publication, participant) => {
+      if (track.kind !== Track.Kind.Audio) return;
+      $("audio").append(track.attach());
+      if (participant?.kind === ParticipantKind.AGENT) followVoice(track);
     })
-    .on(RoomEvent.TrackUnsubscribed, (track) => track.detach().forEach((el) => el.remove()))
+    .on(RoomEvent.TrackUnsubscribed, (track, _publication, participant) => {
+      track.detach().forEach((el) => el.remove());
+      if (track.kind === Track.Kind.Audio && participant?.kind === ParticipantKind.AGENT) forgetVoice();
+    })
     .on(RoomEvent.LocalTrackPublished, showCamera)
     .on(RoomEvent.TrackMuted, showCamera)
     .on(RoomEvent.TrackUnmuted, showCamera)
@@ -1346,9 +1395,10 @@ function showPreview() {
 }
 
 /**
- * Moves `bar` with the loudness of a microphone's stream and tells `onLevel`
- * each frame's level, 0 to 1. The analyser is not connected to the speakers,
- * and nothing it hears is kept or sent. Null where the browser cannot measure.
+ * Moves `bar`, where there is one, with the loudness of a stream and tells
+ * `onLevel` each frame's level, 0 to 1. The analyser is not connected to the
+ * speakers, and nothing it hears is kept or sent. Null where the browser
+ * cannot measure.
  */
 function startMeter(stream, bar, onLevel) {
   let context = null;
@@ -1363,7 +1413,7 @@ function startMeter(stream, bar, onLevel) {
       if (running.stopped) return;
       analyser.getByteTimeDomainData(samples);
       const level = levelOf(samples);
-      bar.style.width = `${Math.round(level * 100)}%`;
+      if (bar) bar.style.width = `${Math.round(level * 100)}%`;
       onLevel(level, performance.now());
       running.frame = requestAnimationFrame(draw);
     };
@@ -1655,6 +1705,7 @@ function teardown({ quiet = false } = {}) {
   showTalk();
   $("retry-session").hidden = true;
   leaving.disconnect();
+  forgetVoice();
   $("audio").replaceChildren();
   $("board").replaceChildren();
   $("board").hidden = true;

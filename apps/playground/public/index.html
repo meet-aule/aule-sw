@@ -737,11 +737,13 @@
                   <p class="level-line" id="level-line"></p>
                 </div>
                 <!-- Figma: web-only state of A05 (190:899): the check. A status line, with Aule's face (the
-                     session's wobnimo-mascot) beside it, says «Te escucho.» once a voice is heard, a hint at a
+                     session's cuy) beside it, says «Te escucho.» once a voice is heard, a hint at a
                      time when none is, or why the microphone cannot be used; then «Intentar otra vez» (the
                      device link 195:513). The words are first-steps.js's, in the student's language. -->
                 <div class="mic-check" id="mic-check">
-                  <wobnimo-mascot id="check-face" class="check-face" character="mochi" state="idle" aria-hidden="true"></wobnimo-mascot>
+                  <div class="check-face face-box">
+                    <wobnimo-mascot id="check-face" character="mochi" state="idle" floor="0" aria-hidden="true"></wobnimo-mascot>
+                  </div>
                   <div class="check-words">
                     <p class="check-status" id="check-status" role="status"></p>
                     <!-- What an adult can do about a microphone that cannot be used: under the child's line, in
@@ -808,8 +810,12 @@
                or the camera while the child shows their work (D30, D31). -->
           <div class="stage" id="stage" data-shows="face">
             <div class="tutor" id="tutor" data-state="waiting">
-              <!-- Aule's face, drawn in this browser. The dot stays where it cannot be drawn. -->
-              <wobnimo-mascot id="mascot" class="mascot" character="mochi" state="sleeping" aria-hidden="true"></wobnimo-mascot>
+              <!-- Aule's face, drawn in this browser: a cuy with glasses (cuy.js) on the wobnimo mascot, shown in
+                   pixel art (pixels.js). The jelly is what shows if the cuy cannot load, and the dot where no
+                   face can be drawn. -->
+              <div class="mascot face-box">
+                <wobnimo-mascot id="mascot" character="mochi" state="sleeping" floor="0" aria-hidden="true"></wobnimo-mascot>
+              </div>
               <div class="orb" aria-hidden="true"></div>
               <p id="tutor-state" class="tile-state" role="status">Esperando a Aule…</p>
             </div>
@@ -939,6 +945,18 @@
       <a href="https://meetaule.com/libro-de-reclamaciones">Libro de Reclamaciones</a>
       <a href="mailto:admin@meetaule.com">admin@meetaule.com</a>
     </footer>
+
+    <!-- Brings the shading of Aule's face down to a few tones, and its edge to on or off (style.css .face-box). -->
+    <svg class="filters" width="0" height="0" aria-hidden="true" focusable="false">
+      <filter id="flat" color-interpolation-filters="sRGB">
+        <feComponentTransfer>
+          <feFuncR type="discrete" tableValues="0 0.2 0.4 0.6 0.8 1" />
+          <feFuncG type="discrete" tableValues="0 0.2 0.4 0.6 0.8 1" />
+          <feFuncB type="discrete" tableValues="0 0.2 0.4 0.6 0.8 1" />
+          <feFuncA type="discrete" tableValues="0 1" />
+        </feComponentTransfer>
+      </filter>
+    </svg>
 
     <!-- In this order: signing in runs before the call library has arrived. -->
     <script type="module" src="signin.js"></script>
