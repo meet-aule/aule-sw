@@ -502,6 +502,35 @@ async def test_a_checking_call_without_its_text_is_not_sent_to_the_platform():
     assert checker.calls == []
 
 
+async def test_an_answer_checked_in_the_step_that_poses_its_exercise_reaches_the_checker_after():
+    posed = asyncio.Event()
+    sent = []
+
+    class SlowPlatform(ScriptedChecker):
+        async def pose(self, expression, skill_id, form):
+            sent.append("pose")
+            await posed.wait()
+            sent.append("posed")
+            return "Ask it and wait."
+
+        async def answer(self, said):
+            sent.append("answer")
+            return "Correct."
+
+    tutor = Tutor(language="es", gates=ScriptedGates(), checker=SlowPlatform())
+
+    # As LiveKit runs the calls of one step: each in its own task, in the order written.
+    posing = asyncio.create_task(tool(tutor, "pose_exercise")({"expression": "3/4 + 1/8"}))
+    checking = asyncio.create_task(tool(tutor, "check_answer")({"said": "7/8"}))
+    for _ in range(5):
+        await asyncio.sleep(0)
+    assert sent == ["pose"]
+
+    posed.set()
+    assert await asyncio.gather(posing, checking) == ["Ask it and wait.", "Correct."]
+    assert sent == ["pose", "posed", "answer"]
+
+
 async def test_an_accepted_turn_without_a_reply_is_reported(caplog):
     tutor = Tutor(language="es", gates=ScriptedGates(ALLOW))
     session = Session()

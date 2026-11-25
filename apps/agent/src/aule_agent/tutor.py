@@ -884,6 +884,11 @@ class Tutor(Agent):
         # family note; the default leaves the prompt exactly as written.
         persona = persona or Persona()
         instructions = INSTRUCTIONS
+        # The checker hears one thing at a time. LiveKit runs the calls of one
+        # step side by side, so without it an answer checked in the same step
+        # as its exercise is posed could reach the platform first, and be
+        # judged against the exercise before, or against none.
+        self._checking = asyncio.Lock()
 
         @function_tool(raw_schema=comparison.SCHEMA)
         async def compare_numbers(raw_arguments: dict[str, object]) -> str:
@@ -912,21 +917,23 @@ class Tutor(Agent):
                 )
                 if not isinstance(expression, str) or not expression.strip():
                     return UNCHECKED
-                return (
-                    await checker.pose(
-                        expression,
-                        skill_id if isinstance(skill_id, str) else None,
-                        form if isinstance(form, str) else None,
+                async with self._checking:
+                    return (
+                        await checker.pose(
+                            expression,
+                            skill_id if isinstance(skill_id, str) else None,
+                            form if isinstance(form, str) else None,
+                        )
+                        or UNCHECKED
                     )
-                    or UNCHECKED
-                )
 
             @function_tool(raw_schema=CHECK_ANSWER)
             async def check_answer(raw_arguments: dict[str, object]) -> str:
                 said = raw_arguments.get("said")
                 if not isinstance(said, str) or not said.strip():
                     return UNCHECKED
-                return await checker.answer(said) or UNCHECKED
+                async with self._checking:
+                    return await checker.answer(said) or UNCHECKED
 
             tools += [pose_exercise, check_answer]
 
