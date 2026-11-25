@@ -22,6 +22,7 @@ pub mod memory;
 pub mod metrics;
 pub mod notices;
 pub mod oauth;
+pub mod passkeys;
 pub mod plans;
 pub mod practice;
 pub mod push;
