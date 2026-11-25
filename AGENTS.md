@@ -41,9 +41,10 @@ Pull request rules are in [CONTRIBUTING.md](CONTRIBUTING.md).
 Run the ones for the app you touched. CI runs all of them on every pull request.
 
 ```bash
-# contracts, curriculum, playground
+# contracts, curriculum, playground, console
 pnpm install --frozen-lockfile
 pnpm --filter @aule/playground typecheck
+pnpm --filter @aule/admin typecheck
 pnpm test
 
 # agent

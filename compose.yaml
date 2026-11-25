@@ -1,6 +1,7 @@
 # Aule's server, next to a LiveKit server you already run: the platform
-# and its worker, their database, a local embedding model, the voice tutor and
-# the playground. Settings come from one env file (see .env.example):
+# and its worker, their database, a local embedding model, the voice tutor,
+# the playground and the team's console. Settings come from one env file (see
+# .env.example):
 #
 #   AULE_ENV_FILE=/etc/aule/aule.env docker compose up -d --build
 #   docker compose exec embeddings ollama pull bge-m3      # once
@@ -13,10 +14,14 @@
 #   AULE_UID, AULE_GID                   who the platform runs as, to read that key
 #   AULE_COMMIT                          the commit the images are built from, which they
 #                                        report (RELEASING.md); "unknown" if left out
+#   AULE_ADMIN_HOST                      where the team's console listens: loopback when
+#                                        left out; the server sets 0.0.0.0 for its Worker
+#   AULE_ADMIN_ENV_FILE                  the console's own env file, which no other service
+#                                        reads: its Worker's secret (ADMIN_EDGE_SECRET)
 #
 # The services of this repository use the host network (Linux) and listen on
-# loopback only: put your reverse proxy in front of the playground. The
-# database and the embedding model are published on loopback ports.
+# loopback only: put your reverse proxy in front of the playground and the
+# console. The database and the embedding model are published on loopback ports.
 x-service: &service
   env_file:
     - ${AULE_ENV_FILE:-.env}
@@ -129,6 +134,31 @@ services:
       test:
         - CMD-SHELL
         - wget -qO /dev/null "http://127.0.0.1:$${PLAYGROUND_PORT:-8090}$${PLAYGROUND_BASE_PATH-/playground}/healthz"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # The team's console (apps/admin), at admin.meetaule.com through its Worker. It keeps no tutoring
+  # state, so it can be rebuilt at any time on its own; a restart signs the team out.
+  admin:
+    <<: *service
+    build:
+      context: .
+      dockerfile: apps/admin/Dockerfile
+      args:
+        AULE_COMMIT: ${AULE_COMMIT:-unknown}
+    env_file:
+      - ${AULE_ENV_FILE:-.env}
+      # Only the console reads it: the secret its Worker adds. Empty when left out.
+      - ${AULE_ADMIN_ENV_FILE:-/dev/null}
+    environment:
+      # Loopback unless the server's wrapper says otherwise (infra/server/aule-compose.sh).
+      ADMIN_HOST: ${AULE_ADMIN_HOST:-127.0.0.1}
+    mem_limit: 128m
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - wget -qO /dev/null "http://127.0.0.1:$${ADMIN_PORT:-8092}/healthz"
       interval: 30s
       timeout: 5s
       retries: 3

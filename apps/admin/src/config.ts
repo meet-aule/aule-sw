@@ -1,10 +1,11 @@
 // Settings for the team's console, read from the environment once at start.
 // Every problem is reported together, and the console does not start with one.
-// It reads its own settings only: never the operator's token.
+// The image starts the process with these names and nothing else (Dockerfile),
+// so the operator's token and the database's password never reach it.
 
 import { normalizedEmail } from "./team.ts";
 
-/** Every name the console reads besides AULE_COMMIT, which comes from the image. */
+/** Every name the console reads besides AULE_COMMIT, which comes from the image; the Dockerfile's allowlist repeats them. */
 export const SETTINGS = ["ADMIN_HOST", "ADMIN_PORT", "ADMIN_PUBLIC_URL", "ADMIN_EDGE_SECRET", "AULE_PLATFORM_URL", "AULE_ADMIN_EMAILS"] as const;
 
 export type Settings = {

@@ -46,9 +46,13 @@ address to go back to is ever taken from a request.
 
 ## Settings
 
+The image starts Node with these names and nothing else (`env -i` in the
+Dockerfile), so the operator's token, the database's password and the other
+secrets of the shared env file never reach the process.
+
 | Variable | Default | |
 |---|---|---|
-| `ADMIN_HOST` | `127.0.0.1` | Where it listens |
+| `ADMIN_HOST` | `127.0.0.1` | Where it listens. With `compose.yaml` it comes from the shell's `AULE_ADMIN_HOST`; the server's wrapper sets `0.0.0.0` for the Worker |
 | `ADMIN_PORT` | `8092` | |
 | `ADMIN_PUBLIC_URL` | `https://admin.meetaule.com` | The console's origin: the one `Origin` a write may carry. `http://localhost:<port>` or `http://127.0.0.1:<port>` to work locally |
 | `ADMIN_EDGE_SECRET` | none | What the console's Worker adds to every request (`X-Edge-Secret`, its own secret `EDGE_SECRET`): at least 32 characters, such as `openssl rand -hex 32`. Set, every request without it gets the same 404, except `/healthz` from this machine, and the client address the Worker passes on (`X-Client-IP`) counts for the sign-in's limits. Required when `ADMIN_HOST` is not loopback. With `compose.yaml` it comes from the console's own env file (`infra/server/README.md`) |
@@ -56,7 +60,8 @@ address to go back to is ever taken from a request.
 | `AULE_ADMIN_EMAILS` | required | The team's addresses, read as the platform reads them. A change needs a restart of both |
 | `AULE_COMMIT` | `unknown` | The commit the image is built from |
 
-It never reads `AULE_ADMIN_TOKEN` (`test/config.test.ts` checks it).
+It never reads `AULE_ADMIN_TOKEN` (`test/config.test.ts` checks it), and the
+image never hands it one (`test/image.test.ts`).
 
 ## Sign-in
 
@@ -167,6 +172,8 @@ AULE_PLATFORM_URL=http://127.0.0.1:8091 AULE_ADMIN_EMAILS=you@example.org \
 ```sh
 pnpm --filter @aule/admin typecheck
 cd apps/admin && npm test
+# The image, from the repository root (CI builds it too):
+docker build -f apps/admin/Dockerfile --build-arg AULE_COMMIT=$(git rev-parse HEAD) -t aule-admin:local .
 ```
 
 `test/fake-platform.ts` stands in for the platform; the clock, the code check's
