@@ -11,7 +11,7 @@ const read = (name) => readFile(new URL(name, pub), "utf8");
 const html = await read("index.html");
 const css = await read("style.css");
 const guides = { es: await read("guia.html"), en: await read("guide.html") };
-const ownScripts = ["app.js", "students.js", "signin.js", "steps.js", "screens.js", "onboarding.js", "home.js", "session-messages.js", "first-steps.js", "visuals.js", "admin.js", "pilot.js"];
+const ownScripts = ["app.js", "students.js", "signin.js", "steps.js", "screens.js", "onboarding.js", "home.js", "session-messages.js", "first-steps.js", "summaries.js", "visuals.js", "admin.js", "pilot.js"];
 const scripts = Object.fromEntries(await Promise.all(ownScripts.map(async (name) => [name, await read(name)])));
 
 /** The body of every block that starts with `opening`, braces and all. */
@@ -102,10 +102,12 @@ test("the page's own modules import each other without a cycle, as the plan draw
   assert.deepEqual(graph["session-messages.js"], []);
   // The first steps' words lean on the session's languages, and nothing else.
   assert.deepEqual(graph["first-steps.js"], ["session-messages.js"]);
+  // The home's lines about a student's sessions are pure words and arithmetic.
+  assert.deepEqual(graph["summaries.js"], []);
   for (const name of ["signin.js", "onboarding.js"]) {
     assert.deepEqual([...graph[name]].sort(), ["screens.js", "steps.js", "students.js"], name);
   }
-  assert.deepEqual([...graph["home.js"]].sort(), ["first-steps.js", "screens.js", "steps.js", "students.js"]);
+  assert.deepEqual([...graph["home.js"]].sort(), ["first-steps.js", "screens.js", "steps.js", "students.js", "summaries.js"]);
   assert.deepEqual([...graph["app.js"]].sort(), ["first-steps.js", "home.js", "screens.js", "session-messages.js", "visuals.js"]);
   // And none, followed through, comes back to itself.
   const visiting = new Set();
@@ -624,13 +626,13 @@ test("when Aule does not arrive the page says so and offers to try again; a sess
 
 test("the home reads the family's account again each time it shows", () => {
   const home = scripts["home.js"];
-  assert.match(blocks(home, 'onShow("home"')[0], /\breadAgain\(\);/);
+  assert.match(blocks(home, 'onShow("home"')[0], /\breadAgain\(\)\.then\(/);
   const again = bodyOf(home, "readAgain");
   assert.match(again, /await call\("api\/account"\)/);
-  assert.match(again, /if \(current\(\) !== "home" \|\| getAccount\(\)\.signed_in !== true\) return;/);
+  assert.match(again, /if \(current\(\) !== "home" \|\| getAccount\(\)\.signed_in !== true\) return false;/);
   assert.match(again, /"Tu sesión se cerró\. Vuelve a entrar\."/);
   // A failed read keeps what is drawn.
-  assert.match(again, /catch \{\s*return;\s*\}/);
+  assert.match(again, /catch \{\s*return current\(\) === "home" && getAccount\(\)\.signed_in === true;\s*\}/);
 });
 
 test("a signed-out visit starts on C01, or on P13 for a browser that signed in before; C00 is gone", () => {
@@ -732,6 +734,52 @@ test("A04, A04 · Detalles and A05 speak the student's language, marked on each 
   assert.doesNotMatch(app, /A05_TITLE/);
   // Signed out, A04's greeting, which names the child, goes.
   assert.match(blocks(home, "onAccount((account) =>").join("\n"), /\$\("a04-hello"\)\.textContent = "";/);
+});
+
+test("the home says what each child did in their latest sessions, facts only, and links the summaries in Configurar (D35)", () => {
+  const home = scripts["home.js"];
+  // Asked for each student together, once the account is read again and the rows drawn for it (a
+  // session just changed it, so the rows are drawn twice), and drawn only while that row still shows.
+  assert.doesNotMatch(bodyOf(home, "drawHome"), /drawSessions/);
+  assert.match(blocks(home, 'onShow("home"')[0], /readAgain\(\)\.then\(\(home\) => \{\s*if \(home\) drawSessions\(\);\s*\}\);/);
+  assert.equal((home.match(/\bdrawSessions\(\)/g) ?? []).length, 2, "its definition and that one call");
+  const draw = bodyOf(home, "drawSessions");
+  assert.match(draw, /call\("api\/student\/sessions", \{ student_id: item\.dataset\.student \}\)/);
+  assert.match(draw, /if \(current\(\) !== "home" \|\| !item\.isConnected\) return;/);
+  assert.match(draw, /sessionLine\(facts, \{ language \}\)/);
+  // A failed read leaves the row as it is.
+  assert.match(draw, /\(\) => undefined,\s*\);/);
+  // Text only: nothing the platform sent becomes markup.
+  assert.doesNotMatch(draw, /innerHTML/);
+  // The list and the link are the row's own, hidden until there is a session to show.
+  const row = bodyOf(home, "row");
+  assert.match(row, /sessions\.className = "student-sessions";/);
+  assert.match(row, /sessions\.setAttribute\("aria-label", homeWords\("list", language, \{ name: student\.name \}\)\);/);
+  assert.match(row, /summaries\.className = "link student-summaries";/);
+  assert.match(row, /summaries\.addEventListener\("click", \(\) => edit\(student, false, "past"\)\);/);
+  // «Ver resúmenes» shows once the review has a summary to open on, not with the first line: right
+  // after a session it has none, and the editor would open on another section (the review of 24 Nov).
+  assert.match(draw, /item\.querySelector\("\.student-summaries"\)\.hidden = !\(answer\.summaries > 0\);/);
+  // Its name starts with its visible words (WCAG 2.5.3), and it is a whole 44 px target.
+  assert.match(row, /summaries\.setAttribute\("aria-label", homeWords\("see_summaries_of", language, \{ name: student\.name \}\)\);/);
+  assert.match(rules(css).find(([selector]) => selector.replace(/\/\*[\s\S]*?\*\//g, "").trim() === ".student-summaries")?.[1] ?? "", /min-height: 44px;/);
+  // «Ver resúmenes» opens Configurar at «Últimas sesiones», where the review's words already were.
+  assert.match(bodyOf(home, "edit"), /\}, \{ at \}\);/);
+  const known = bodyOf(scripts["students.js"], "showKnown");
+  assert.match(known, /if \(at === "past"\) \{\s*const heading = known\.sessions\.length \? \$\("past-title"\) : \$\("known-title"\);/);
+  assert.match(html, /<h3 id="past-title" tabindex="-1" hidden>Últimas sesiones<\/h3>/);
+  // The home itself never shows a review's words, a topic or what was said.
+  for (const text of [home, scripts["summaries.js"]]) assert.doesNotMatch(text, /guardian_summary|next_step|\.summary\b|\.topic\b|transcript/);
+  assert.match(html, /web-only and built from it, ul\.student-sessions/);
+});
+
+test("A16's second line shows on a first run, now that the home says what each session was", () => {
+  const intro = bodyOf(scripts["app.js"], "showIntro");
+  assert.match(intro, /writeWords\(\$\("session-parent"\), firstSession && !tutorLate \? "intro_parent" : ""\);/);
+  const line = html.match(/<p[^>]*\bid="session-parent"[^>]*>/)?.[0] ?? "";
+  assert.match(line, /class="session-intro"/);
+  assert.doesNotMatch(line, /role=|aria-live/, "not live: the line above is");
+  assert.ok(html.indexOf('id="session-intro"') < html.indexOf('id="session-parent"'));
 });
 
 test("each new state of the first steps names where it comes from in the Figma, or says it is web-only", () => {

@@ -81,6 +81,8 @@ const SPEC_KEYS = [
   "camera_none",
   "intro_title",
   "intro_line",
+  // A16's second line, held back until the home showed a summary of each session (D35).
+  "intro_parent",
   // Not the spec's: the talk button the coach speaks of, and «Mostrar mi tarea», in both languages.
   "talk_hold",
   "talk_hold_key",
@@ -163,6 +165,7 @@ test("the words are César's where he wrote them, and say «apretado» as the li
   assert.equal(words("check_line", "es"), "Si la barra se mueve cuando hablas, Aule te escucha.");
   assert.equal(words("intro_title", "es"), "Hola, soy Aule");
   assert.equal(words("intro_line", "es"), "Soy tu tutor. Soy una inteligencia artificial.");
+  assert.equal(words("intro_parent", "es"), "Tu papá o mamá recibe un resumen de lo que hacemos.");
   assert.match(words("coach", "es"), /apretado/);
   assert.match(words("coach_tap", "es"), /apretado/);
   // The line under Aule's face: whose turn it is, in the words the live session used.

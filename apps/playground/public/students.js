@@ -132,8 +132,9 @@ function day(text) {
     : date.toLocaleDateString("es", { day: "numeric", month: "long" });
 }
 
-// What is kept about a student who already has sessions.
-async function showKnown(student) {
+// What is kept about a student who already has sessions. `at`: "past" when the
+// home's «Ver resúmenes» opened the editor, which then shows the summaries.
+async function showKnown(student, at) {
   const section = $("known");
   section.hidden = true;
   $("memories").replaceChildren();
@@ -191,6 +192,12 @@ async function showKnown(student) {
   }
   $("past-title").hidden = known.sessions.length === 0;
   section.hidden = false;
+  // From the home: the summaries, or what is kept while the review has written none yet.
+  if (at === "past") {
+    const heading = known.sessions.length ? $("past-title") : $("known-title");
+    heading.scrollIntoView({ block: "start" });
+    heading.focus({ preventScroll: true });
+  }
 }
 
 function fill(student, subjects) {
@@ -244,13 +251,14 @@ function fill(student, subjects) {
  * Fills the editor for one of the family's students. `subjects` are the ones
  * that can be kept for a student, null when none can. `finished` is told the
  * id of the student that was saved, or null when the student was removed;
- * going back (the screen's «← Atrás») changes nothing and tells nobody.
+ * going back (the screen's «← Atrás») changes nothing and tells nobody. `at`:
+ * "past" to open it at the summaries of the latest sessions.
  */
-export function openEditor(student, subjects, finished) {
+export function openEditor(student, subjects, finished, { at = null } = {}) {
   editing = student;
   done = finished;
   fill(student, subjects);
-  showKnown(student);
+  showKnown(student, at);
 }
 
 /** Forgets the student being edited and empties the editor, as on signing out. */

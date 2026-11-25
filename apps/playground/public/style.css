@@ -160,8 +160,10 @@ html[data-surface="ink"] :focus-visible {
   outline-offset: 3px;
 }
 
-/* A screen's title takes the focus when the screen shows; it is not a control. */
-h2[tabindex="-1"]:focus {
+/* A screen's title takes the focus when the screen shows, and the editor's
+   summaries when the home opens it there; neither is a control. */
+h2[tabindex="-1"]:focus,
+h3[tabindex="-1"]:focus {
   outline: none;
 }
 
@@ -852,6 +854,7 @@ h2[tabindex="-1"]:focus {
 
 .student-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
@@ -896,6 +899,33 @@ h2[tabindex="-1"]:focus {
 
 .student-go[aria-disabled="true"] b::after {
   content: "";
+}
+
+/* Web-only, built from Fila/Alumno 161:2110: the student's latest sessions under the
+   row, a line each, as the editor's #past list reads (D35); then Enlace/Base 161:2096
+   «Ver resúmenes», small, to the review's summaries in Configurar. */
+.student-sessions {
+  display: grid;
+  flex: 1 1 100%;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--muted);
+  font: 400 14px/1.35 var(--sans);
+}
+
+.student-sessions b {
+  color: var(--ink);
+  font-weight: 500;
+}
+
+/* Small type, a whole target: 44 px tall (D21). */
+.student-summaries {
+  min-height: 44px;
+  margin-top: -8px;
+  padding-block: 12px;
+  font-size: 14px;
 }
 
 .account-links {
@@ -2378,6 +2408,17 @@ h2[tabindex="-1"]:focus {
 
   .screen[data-screen="session"]:has(.session-intro:not(:empty)) .stage {
     --stage: clamp(200px, calc(42vh - 64px), 400px);
+  }
+
+  /* Both of A16's lines (D35): the stage takes what they, the bar, «Mostrar mi tarea» and the
+     coach's shelf leave, so «Mostrar mi tarea» clears the shelf on a small phone too (375 × 548,
+     a small iPhone with Safari's bars). A drawing or the camera may take more (above). */
+  .screen[data-screen="session"]:has(#session-parent:not(:empty)) {
+    --face: clamp(80px, calc(100vh - 463px), 170px);
+  }
+
+  .screen[data-screen="session"]:has(#session-parent:not(:empty)) .stage {
+    --stage: clamp(140px, calc(100vh - 404px), 380px);
   }
 
   .talking #transcript {
