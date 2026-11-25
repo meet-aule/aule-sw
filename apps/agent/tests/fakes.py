@@ -168,6 +168,9 @@ class ModelCall:
     closed: bool = False
     output_text: str = ""
     tool_calls: list[str] = field(default_factory=list)
+    # When the first tool call began, and the type of every event sent.
+    tool_started_at: float | None = None
+    events: list[str] = field(default_factory=list)
     # Whether the response began with a thinking block.
     thought: bool = False
     cache_read: int = 0
@@ -986,7 +989,9 @@ class _Stream:
         return self
 
     async def __anext__(self) -> Any:
-        return await self._events.__anext__()
+        event = await self._events.__anext__()
+        self.call.events.append(event.type)
+        return event
 
     async def close(self) -> None:
         self.call.closed = True
@@ -1187,6 +1192,7 @@ class FakeAnthropic:
                         )
                 else:
                     call.tool_calls.append(value)
+                    call.tool_started_at = call.tool_started_at or time.time()
                     yield wire.RawContentBlockStartEvent(
                         type="content_block_start",
                         index=index,

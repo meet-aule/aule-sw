@@ -33,7 +33,7 @@ from fakes import (
 )
 from test_metrics import fits_the_platform
 
-from aule_agent import moderation, opinion, physical_safety, replies, safety
+from aule_agent import moderation, opinion, physical_safety, replies, safety, visuals
 from aule_agent.prompts import response_language
 from aule_agent.replies import ADULT_HELP_SEQUENCE, MEANWHILE, REPLIES
 from aule_agent.timing import STAGES
@@ -66,8 +66,10 @@ class Spec:
     # the hearing hears).
     tail: str | None = None
     tail_vad: bool = True
-    # What the model writes in a step with a tool before it calls the tool.
+    # What the model writes in a step with a tool before it calls the tool,
+    # and how long the call's arguments are.
     preamble: str = ""
+    tool_tokens: int = 12
 
 
 def violence(text: str = "") -> str:
@@ -119,6 +121,18 @@ SESSIONS: dict[str, list[Spec]] = {
             tools=("show",),
             reply="Mira la pantalla y dime qué ves.",
             preamble="Primero lo registro y luego te lo muestro. Así lo ves mejor.",
+            # A drawing: its arguments take a while to write.
+            tool_tokens=400,
+        ),
+    ],
+    # A turn the gates stop, for which the model, asked early, begins a drawing.
+    "redirect_tool": [
+        ORDINARY,
+        Spec(
+            extra=TRIGGERS["violence"],
+            tools=("show",),
+            preamble="Primero lo muestro en la pantalla. Así lo ves.",
+            tool_tokens=400,
         ),
     ],
     # A reply of two paragraphs, judged and heard whole.
@@ -170,7 +184,7 @@ def scripted(world: World, specs: list[Spec]) -> list[harness.Turn]:
             reply="" if spec.tools else spec.reply,
             tool=spec.tools[0] if spec.tools else None,
             more_tools=spec.tools[1:],
-            tool_tokens=12,
+            tool_tokens=spec.tool_tokens,
             reply_after_tool=spec.reply,
             preamble=spec.preamble,
         )
@@ -468,6 +482,44 @@ def test_what_is_shown_is_what_is_heard(sessions):
     for name, run in runs.items():
         for result in run.results:
             assert letters("".join(result.shown)) == letters(result.heard()), (name, result.number)
+
+
+def test_nothing_of_an_answered_turn_is_heard_before_its_input_gates_decided(sessions):
+    runs, _ = sessions
+    for name, run in runs.items():
+        for result in run.results:
+            if result.allowed:
+                assert all(s.started_at >= result.decided_at for s in result.played), name
+
+
+def test_a_tool_steps_line_is_heard_while_the_call_is_written_and_the_tool_runs_after(modes):
+    for mode, (runs, _) in modes.items():
+        run = runs["meanwhile"]
+        drawing = run.results[2]
+        (call,) = [call for call in drawing.calls if call.tool_calls == ["show"]]
+        line = drawing.played[0]
+        sent = [at for at, what in run.world.events if what == f"sent {visuals.TOPIC}"]
+
+        assert line.texts == [REPLIES[MEANWHILE[1]]["es"]], mode
+        assert line.started_at >= drawing.decided_at, mode
+        # The drawing goes up once the model has written all of it, as before.
+        assert sent and min(sent) >= call.finished_at, mode
+        if mode == "early_off":
+            # The line plays while the drawing's arguments are still being written.
+            assert call.tool_started_at < line.started_at < call.finished_at
+
+
+def test_a_call_begun_early_for_a_turn_the_gates_stop_says_nothing_of_it(modes):
+    for mode, (runs, _) in modes.items():
+        run = runs["redirect_tool"]
+        stopped = run.results[-1]
+        assert heard(stopped.played) == spoken(REPLIES["redirect"]["es"]), mode
+        assert tuple(run.world.flags[-1]) == ("moderation_input", "redirect", ["violence"])
+        assert not [at for at, what in run.world.events if what == f"sent {visuals.TOPIC}"]
+        if mode == "early_on":
+            (call,) = stopped.calls
+            # The model began the drawing before the gates said no.
+            assert call.tool_started_at < stopped.decided_at and call.closed
 
 
 def test_a_clear_yes_from_the_second_reader_lets_a_reply_through(sessions):

@@ -7,7 +7,14 @@ import json
 import logging
 import re
 import time
-from collections.abc import AsyncIterable, AsyncIterator, Awaitable, Callable, Coroutine
+from collections.abc import (
+    AsyncGenerator,
+    AsyncIterable,
+    AsyncIterator,
+    Awaitable,
+    Callable,
+    Coroutine,
+)
 from dataclasses import dataclass
 from typing import Any, Protocol
 
@@ -16,6 +23,7 @@ from livekit import rtc
 from livekit.agents import (
     Agent,
     APIConnectOptions,
+    FlushSentinel,
     ModelSettings,
     StopResponse,
     function_tool,
@@ -34,7 +42,7 @@ from livekit.agents.voice.generation import (
 from . import comparison, drill, farewell, visuals
 from .greetings import greeting as written_greeting
 from .prompts import CHECKING, INSTRUCTIONS, PACED, SCREEN, response_language
-from .providers import EARLY, REQUEST, WARMING, Early, Prompt
+from .providers import EARLY, REQUEST, TOOL_STARTED, WARMING, Early, Prompt
 from .replies import ADULT_HELP_SEQUENCE, ANSWERABLE, MEANWHILE, reply
 from .safety import Gates
 from .script import Engine, Line, Reply
@@ -347,6 +355,63 @@ def voiced_first(text: str, *, whole: bool) -> tuple[str, bool] | None:
     return text[:end], False
 
 
+class ToolStart:
+    """Whether the model has begun a tool call in one request. The model's
+    client tells it (``providers.TOOL_STARTED``) before the call's arguments
+    are written, which for a drawing takes seconds; the plugin hands the
+    call over only once they are."""
+
+    def __init__(self, took: Took) -> None:
+        self.began = asyncio.Event()
+        self._asked_at = time.monotonic()
+        self._took = took
+
+    def __call__(self) -> None:
+        if not self.began.is_set():
+            # The step is known to be a tool's (see ``timing.STAGES``).
+            self._took("first_sentence", time.monotonic() - self._asked_at)
+            self.began.set()
+
+
+# What ``_with_tool_start`` yields once the model begins a tool call.
+TOOL_CALL_BEGAN = object()
+
+
+async def _with_tool_start(stream: AsyncIterable[Any], began: asyncio.Event) -> AsyncGenerator[Any]:
+    """The chunks of a step as they come, and ``TOOL_CALL_BEGAN`` as soon as
+    ``began`` is set: while the model writes a tool call's arguments no chunk
+    comes, so the step is not otherwise known to be a tool's until it ends."""
+    arrived: asyncio.Queue[tuple[str, Any]] = asyncio.Queue()
+
+    async def read() -> None:
+        try:
+            async for chunk in stream:
+                arrived.put_nowait(("chunk", chunk))
+        except BaseException as error:
+            # Raised where the step is read, as it would have been.
+            arrived.put_nowait(("failed", error))
+            if not isinstance(error, Exception):
+                raise
+        else:
+            arrived.put_nowait(("end", None))
+
+    async def watch() -> None:
+        await began.wait()
+        arrived.put_nowait(("began", None))
+
+    tasks = [asyncio.create_task(read()), asyncio.create_task(watch())]
+    try:
+        while True:
+            kind, value = await arrived.get()
+            if kind == "end":
+                return
+            if kind == "failed":
+                raise value
+            yield TOOL_CALL_BEGAN if kind == "began" else value
+    finally:
+        await utils.aio.cancel_and_wait(*tasks)
+
+
 @dataclass(frozen=True)
 class VoiceAhead:
     """How ``checked`` has the voice make a reply's first sentence while the
@@ -445,6 +510,7 @@ async def checked(
     *,
     took: Took | None = None,
     ahead: VoiceAhead | None = None,
+    tool_began: asyncio.Event | None = None,
 ) -> AsyncIterable[Any]:
     """What reaches the voice from one step of the model.
 
@@ -454,12 +520,15 @@ async def checked(
     "there is an exercise open, so I check what they said") or words said too
     soon. None of it is spoken. What ``meanwhile`` gives is said in its place:
     one short fixed line, so the student is not left in silence while the tool
-    works, or nothing when the turn already had its line.
+    works, or nothing when the turn already had its line. It is said as soon
+    as ``tool_began`` says the model has begun the call, without waiting for
+    the call's arguments, and on its own, so the voice says it at once.
 
-    Any other step is the reply. Nothing of it reaches the voice before the
-    gate on what is spoken has approved all of it: a safe beginning says
-    nothing about how a sentence ends. A reply that does not pass is replaced
-    by a fixed one.
+    Any other step is the reply, also one whose call began but never came,
+    when its request was tried again and answered in words. Nothing of it
+    reaches the voice before the gate on what is spoken has approved all of
+    it: a safe beginning says nothing about how a sentence ends. A reply that
+    does not pass is replaced by a fixed one.
 
     So that the reply is not then kept waiting for the voice, its first
     sentence may be given to the voice (``ahead``, AULE_VOICE_AHEAD) once the
@@ -468,10 +537,25 @@ async def checked(
     approved the whole reply, and is dropped when the gate says no.
     """
     chunks: list[Any] = []
+    line_said = False
     # The voice, once given the reply's beginning, until it may say it.
     held: VoiceAhead | None = None
+    watched = (
+        _with_tool_start(stream, tool_began)
+        if tool_began is not None and meanwhile is not None
+        else None
+    )
     try:
-        async for chunk in stream:
+        async for chunk in watched if watched is not None else stream:
+            if chunk is TOOL_CALL_BEGAN:
+                # The model began a call: the step's line goes now, before the
+                # call's arguments are written.
+                if not line_said and meanwhile is not None:
+                    line_said = True
+                    if line := meanwhile():
+                        yield line
+                        yield FlushSentinel()
+                continue
             chunks.append(chunk)
         if any(_calls_of(chunk) for chunk in chunks):
             left_out = sum(len(_text_of(chunk)) for chunk in chunks)
@@ -480,9 +564,10 @@ async def checked(
                 logger.info(
                     "nothing of the model's said in a step with a tool", extra={"chars": left_out}
                 )
-            line = meanwhile() if meanwhile is not None else ""
-            if line:
-                yield line
+            if not line_said:
+                line = meanwhile() if meanwhile is not None else ""
+                if line:
+                    yield line
             for chunk in chunks:
                 if not _text_of(chunk):
                     yield chunk
@@ -516,6 +601,8 @@ async def checked(
         for chunk in chunks:
             yield chunk
     finally:
+        if watched is not None:
+            await watched.aclose()
         if held is not None:
             held.drop()
 
@@ -564,12 +651,14 @@ class EarlyReply:
         tool_ids: list[str],
         tool_choice: Any,
         prompt: Prompt,
+        tool_start: ToolStart,
         times: HeldTimes,
     ) -> None:
         self.chat_ctx = chat_ctx
         self.tool_ids = tool_ids
         self.tool_choice = tool_choice
         self.prompt = prompt
+        self.tool_start = tool_start
         self.times = times
         # The request, and whether the tutor took its reply (``usage``).
         self.request = Early()
@@ -581,9 +670,10 @@ class EarlyReply:
         self._task = asyncio.create_task(self._read(stream))
 
     async def _read(self, stream: Callable[[], AsyncIterable[Any]]) -> None:
-        # Read by the model's client as the request is laid out, and by
-        # ``usage`` when its call is counted (``providers``).
+        # Read by the model's client as the request is laid out and its
+        # events come in, and by ``usage`` when its call is counted (``providers``).
         REQUEST.set(self.prompt)
+        TOOL_STARTED.set(self.tool_start)
         EARLY.set(self.request)
         try:
             async with contextlib.aclosing(stream()) as chunks:  # type: ignore[type-var]
@@ -1193,6 +1283,7 @@ class Tutor(Agent):
             tool_ids=[tool.id for tool in tools],
             tool_choice=settings.tool_choice,
             prompt=prompt,
+            tool_start=ToolStart(times),
             times=times,
         )
 
@@ -1404,26 +1495,36 @@ class Tutor(Agent):
             early.times.tell(took)
             self.early_replies["used"] += 1
             stream = early.chunks()
+            tool_start = early.tool_start
         else:
             if early is not None:
                 early.drop()
                 self.early_replies["dropped"] += 1
                 early = None
             frame = self._frame_for(chat_ctx)
+            # Read by the model's client as the model's events come in.
+            tool_start = ToolStart(took)
+            TOOL_STARTED.set(tool_start)
             stream = timed(
                 Agent.default.llm_node(self, with_frame(chat_ctx, frame), tools, model_settings),
                 took,
             )
+        said = self._said(stream, tools, took, tool_start.began)
         try:
-            async for chunk in self._said(stream, tools, took):
-                yield chunk
+            async with contextlib.aclosing(said):  # type: ignore[type-var]
+                async for chunk in said:
+                    yield chunk
         finally:
             if early is not None:
                 # Interrupted while it still ran: the request stops.
                 early.drop()
 
     async def _said(
-        self, stream: AsyncIterable[Any], tools: list[llm.Tool], took: Took
+        self,
+        stream: AsyncIterable[Any],
+        tools: list[llm.Tool],
+        took: Took,
+        tool_began: asyncio.Event | None = None,
     ) -> AsyncIterable[llm.ChatChunk | str]:
         """What reaches the voice from one step of the model: through the
         output gate, with a word for a drawing that had none."""
@@ -1438,14 +1539,16 @@ class Tutor(Agent):
                 self._meanwhile if tools else None,
                 took=took,
                 ahead=self._ahead,
+                tool_began=tool_began,
             )
         started = time.monotonic()
         chars, called = 0, []
-        async for chunk in stream:
-            chars += len(_text_of(chunk))
-            delta = getattr(chunk, "delta", None)
-            called += [call.name for call in (delta.tool_calls if delta else None) or []]
-            yield chunk
+        async with contextlib.aclosing(stream):  # type: ignore[type-var]
+            async for chunk in stream:
+                chars += len(_text_of(chunk))
+                delta = getattr(chunk, "delta", None)
+                called += [call.name for call in (delta.tool_calls if delta else None) or []]
+                yield chunk
         if not chars and not called and self._drew:
             # The model put its words in the steps that drew, which are not
             # said, and had nothing left for the last one: the student would

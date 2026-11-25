@@ -8,14 +8,14 @@ import numpy as np
 import pytest
 from fakes import Delays, World
 from livekit import rtc
-from livekit.agents import Agent, ModelSettings, StopResponse, llm, stt, tokenize
+from livekit.agents import Agent, FlushSentinel, ModelSettings, StopResponse, llm, stt, tokenize
 from livekit.agents.types import DEFAULT_API_CONNECT_OPTIONS
 from livekit.agents.voice.generation import mark_instructions_cache_boundary, update_instructions
 
 from aule_agent.greetings import GREETINGS, greeting
 from aule_agent.moderation import Action, Decision
 from aule_agent.prompts import RESPONSE_LANGUAGES, response_language
-from aule_agent.providers import REQUEST, layout
+from aule_agent.providers import REQUEST, TOOL_STARTED, layout
 from aule_agent.replies import ADULT_HELP_SEQUENCE, MEANWHILE, REPLIES, reply
 from aule_agent.script import Line, Reply
 from aule_agent.timing import Timing
@@ -2004,3 +2004,177 @@ async def test_a_line_that_may_repeat_the_student_reaches_the_voice_only_once_it
         assert judged == (line,)
     else:
         assert judged[0].say == REPLIES["redirect"]["es"]
+
+
+# --- A tool step's line, said as the call begins -------------------------------
+
+
+async def test_a_tool_steps_line_is_said_as_soon_as_the_model_begins_the_call():
+    began, written = asyncio.Event(), asyncio.Event()
+    call = a_call("show")
+
+    async def model():
+        yield "Primero lo registro."
+        # The client tells the call began; its arguments take a while, with no chunk.
+        began.set()
+        await written.wait()
+        yield call
+
+    released = []
+    async for chunk in checked(model(), ScriptedGates(), "es", lambda: "A ver.", tool_began=began):
+        released.append(chunk)
+        if chunk == "A ver.":
+            # Said while the call is still being written.
+            assert not written.is_set()
+            written.set()
+
+    # The line on its own, so the voice says it now; the call, whole, at the end.
+    assert released[0] == "A ver." and isinstance(released[1], FlushSentinel)
+    assert released[2:] == [call]
+
+
+async def test_the_second_tool_of_a_turn_still_works_in_silence():
+    began = asyncio.Event()
+    began.set()
+    call = a_call("pose_exercise")
+
+    released = [
+        chunk
+        async for chunk in checked(
+            stream("pienso", call), ScriptedGates(), "es", lambda: "", tool_began=began
+        )
+    ]
+
+    assert released == [call]
+
+
+async def test_a_step_without_a_call_is_the_reply_as_before_when_nothing_began():
+    gates = ScriptedGates(ALLOW)
+
+    released = [
+        chunk
+        async for chunk in checked(
+            stream("Muy bien, ", "sigamos."), gates, "es", lambda: "x", tool_began=asyncio.Event()
+        )
+    ]
+
+    assert released == ["Muy bien, ", "sigamos."] and gates.spoken_texts == ["Muy bien, sigamos."]
+
+
+async def test_a_step_that_fails_after_its_call_began_raises_as_before():
+    began = asyncio.Event()
+
+    async def model():
+        began.set()
+        await asyncio.sleep(0.01)
+        raise RuntimeError("the model went away")
+        yield
+
+    released = []
+    with pytest.raises(RuntimeError):
+        async for chunk in checked(
+            model(), ScriptedGates(), "es", lambda: "A ver.", tool_began=began
+        ):
+            released.append(chunk)
+
+    assert released[0] == "A ver."
+
+
+@pytest.mark.parametrize("allowed", [True, False])
+async def test_a_step_whose_call_began_but_never_came_is_the_reply_and_is_judged(allowed):
+    # The request failed while the call's arguments were written, before
+    # anything was handed over, and was asked again: this time the model
+    # answered in words (LiveKit retries such a request).
+    began = asyncio.Event()
+    gates = ScriptedGates(ALLOW if allowed else Decision(Action.REDIRECT, "redirect"))
+
+    async def model():
+        began.set()
+        await asyncio.sleep(0.01)
+        yield "Muy bien, "
+        yield "sigamos."
+
+    released = [
+        chunk async for chunk in checked(model(), gates, "es", lambda: "A ver.", tool_began=began)
+    ]
+
+    assert released[0] == "A ver." and isinstance(released[1], FlushSentinel)
+    assert gates.spoken_texts == ["Muy bien, sigamos."]
+    if allowed:
+        assert released[2:] == ["Muy bien, ", "sigamos."]
+    else:
+        assert released[2:] == [REPLIES["redirect"]["es"]]
+
+
+class Drawing:
+    """Stands in for the model drawing: its client tells that the call began
+    (``TOOL_STARTED``), then the call's arguments take a while."""
+
+    def __init__(self, seconds=0.05):
+        self.seconds, self.began_at, self.finished = seconds, [], []
+
+    def __call__(self, agent, chat_ctx, tools, settings):
+        return self._step(TOOL_STARTED.get())
+
+    async def _step(self, began):
+        await asyncio.sleep(0)
+        self.began_at.append(time.monotonic())
+        began()
+        await asyncio.sleep(self.seconds)
+        self.finished.append(time.monotonic())
+        yield a_call("show")
+
+
+class TimedGates(ScriptedGates):
+    """Gates that take a moment, and say when they decided."""
+
+    def __init__(self, *decisions):
+        super().__init__(*decisions)
+        self.decided_at = []
+
+    async def heard(self, context, message):
+        await asyncio.sleep(0.02)
+        self.decided_at.append(time.monotonic())
+        return await super().heard(context, message)
+
+
+async def test_a_call_begun_by_a_reply_asked_early_gets_its_line_only_after_the_gates():
+    model, session, timing = Drawing(), Session(), Timing()
+    timing.released()
+    gates = TimedGates(ALLOW)
+    tutor = Tutor(language="es", gates=gates, early_reply=True, timing=timing)
+    turn_ctx, message, reply_ctx = the_turn()
+    released = []
+    with (
+        patch.object(Tutor, "session", new_callable=PropertyMock, return_value=session),
+        patch.object(Agent.default, "llm_node", side_effect=model),
+    ):
+        await tutor.on_user_turn_completed(turn_ctx, message)
+        tools = llm.ToolContext(tutor.tools).flatten()
+        async for chunk in tutor.llm_node(reply_ctx, tools, ModelSettings()):
+            released.append((time.monotonic(), chunk))
+    timing.agent_state("speaking")
+
+    (began_at,), (decided_at,) = model.began_at, gates.decided_at
+    (line_at, line), (_, flush), (call_at, call) = released
+    # The call began while the gates judged the turn; its line came after them,
+    # and before the call's arguments were all written.
+    assert began_at < decided_at < line_at < call_at
+    assert line == REPLIES[MEANWHILE[0]]["es"] and isinstance(flush, FlushSentinel)
+    assert call.delta.tool_calls[0].name == "show" and session.said == []
+    # The step was known to be a tool's when the call began.
+    assert timing.summary()["first_sentence_ms_p50"] < 50
+
+
+async def test_a_call_begun_by_a_reply_asked_early_for_a_stopped_turn_says_nothing_of_it():
+    model, session = Drawing(), Session()
+    gates = TimedGates(HAZARD)
+    tutor = Tutor(language="es", gates=gates, early_reply=True)
+
+    said = await answer(tutor, session, model, *the_turn())
+
+    (began_at,), (decided_at,) = model.began_at, gates.decided_at
+    assert began_at < decided_at
+    assert said is None and model.finished == []
+    assert [text for text, _, _ in session.said] == [REPLIES["adult_help"]["es"]]
+    assert tutor.early_replies == {"used": 0, "dropped": 1}

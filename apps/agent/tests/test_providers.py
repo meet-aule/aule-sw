@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 import anthropic
 import pytest
-from fakes import CURRENT_WORLD, THOUGHT, Delays, World
+from fakes import CURRENT_WORLD, THOUGHT, Delays, TurnPlan, World
 from livekit.agents import Agent, llm
 from livekit.agents.utils import is_given
 
@@ -19,6 +19,7 @@ from aule_agent.prompts import response_language
 from aule_agent.providers import (
     EARLY,
     REQUEST,
+    TOOL_STARTED,
     WARMING,
     Early,
     Prompt,
@@ -513,3 +514,61 @@ async def test_a_warm_up_that_fails_is_nothing_and_a_cancelled_one_stops(world, 
         task.cancel()
         with pytest.raises(asyncio.CancelledError):
             await task
+
+
+async def written(model, words, told=None):
+    """What the plugin hands over for one request, and what the client was told."""
+    chat = llm.ChatContext()
+    chat.add_message(role="system", content=RULES)
+    chat.add_message(role="user", content=words)
+    token = TOOL_STARTED.set(told)
+    try:
+        return await ask(model, chat, Prompt(RULES), tools())
+    finally:
+        TOOL_STARTED.reset(token)
+
+
+def kept(chunks):
+    """What the plugin handed over: the text and the calls, in order."""
+    return [
+        (chunk.delta.content, [(c.name, c.arguments) for c in chunk.delta.tool_calls or []])
+        for chunk in chunks
+        if chunk.delta is not None
+    ]
+
+
+async def test_the_client_tells_that_a_tool_call_began_before_its_arguments_are_written(world):
+    world.plans["muéstrame"] = TurnPlan(
+        reply="", tool="show", tool_tokens=200, preamble="Te lo dibujo."
+    )
+    model = build_llm(Settings.from_env(ENV))
+    told = []
+
+    chunks = await written(
+        model, "muéstrame las barras", lambda: told.append(len(world.model_calls[-1].events))
+    )
+
+    call = world.model_calls[-1]
+    # Told once, on the event that begins the call: every one of its
+    # arguments' events came after.
+    (at,) = told
+    assert call.events[at - 1] == "content_block_start" and call.tool_calls == ["show"]
+    assert call.events[at:].count("content_block_delta") >= 60
+    # The plugin hands the call over only once it is all written.
+    assert [c.delta.tool_calls[0].name for c in chunks if c.delta and c.delta.tool_calls] == [
+        "show"
+    ]
+
+
+async def test_a_reply_without_a_tool_tells_nothing_and_nothing_else_changes(world):
+    world.plans["muéstrame"] = TurnPlan(reply="", tool="show", tool_tokens=40)
+    model = build_llm(Settings.from_env(ENV))
+    told = []
+
+    reply = await written(model, "hola, ¿qué tal?", lambda: told.append("began"))
+    tapped = await written(model, "muéstrame las barras", lambda: told.append("began"))
+    plain = await written(model, "muéstrame las barras")
+
+    assert reply and told == ["began"]
+    # The events reach the plugin unchanged: it hands over the same chunks.
+    assert kept(tapped) == kept(plain) and kept(tapped)[-1][1][0][0] == "show"

@@ -6,6 +6,7 @@ it is configured for. Each plugin reads its own key from the environment;
 """
 
 import contextvars
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -70,6 +71,12 @@ REQUEST: contextvars.ContextVar[Prompt | None] = contextvars.ContextVar(
 )
 # Set while the tutor warms the prompt cache (``PromptLayout``).
 WARMING: contextvars.ContextVar[bool] = contextvars.ContextVar("aule_warming", default=False)
+# Told, for the request being made, as soon as the model begins a tool call,
+# before it writes the call's arguments. The plugin only hands the call over
+# once they are all written. Set like ``REQUEST``.
+TOOL_STARTED: contextvars.ContextVar[Callable[[], None] | None] = contextvars.ContextVar(
+    "aule_tool_started", default=None
+)
 
 
 @dataclass
@@ -208,7 +215,9 @@ class PromptLayout:
         )
         if not early:
             self._previous = kept
-        return await self._client.messages.create(**sent)
+        stream = await self._client.messages.create(**sent)
+        tool_started = TOOL_STARTED.get()
+        return stream if tool_started is None else _ToolStartTap(stream, tool_started)
 
     async def _warm(self, request: dict[str, Any]) -> Any:
         """Writes the cache up to the system blocks, and nothing else: the
@@ -228,6 +237,35 @@ class PromptLayout:
         sent["stream"] = False
         sent["max_tokens"] = 0
         return _Prefilled(await self._client.messages.create(**sent))
+
+
+class _ToolStartTap:
+    """The model's stream of events as the plugin reads it, telling
+    ``tool_started`` as soon as a tool call begins. Every event passes
+    through unchanged and in order."""
+
+    def __init__(self, stream: Any, tool_started: Callable[[], None]) -> None:
+        self._stream = stream
+        self._tool_started = tool_started
+
+    async def __aenter__(self) -> "_ToolStartTap":
+        await self._stream.__aenter__()
+        return self
+
+    async def __aexit__(self, *exc: Any) -> None:
+        await self._stream.__aexit__(*exc)
+
+    def __aiter__(self) -> "_ToolStartTap":
+        return self
+
+    async def __anext__(self) -> Any:
+        event = await self._stream.__anext__()
+        if event.type == "content_block_start" and event.content_block.type == "tool_use":
+            self._tool_started()
+        return event
+
+    async def close(self) -> None:
+        await self._stream.close()
 
 
 class _Prefilled:
