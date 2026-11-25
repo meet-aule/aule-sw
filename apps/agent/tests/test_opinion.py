@@ -91,3 +91,18 @@ async def test_a_reader_that_is_late_or_down_settles_nothing(monkeypatch):
 
     assert await SecondOpinion(client=FakeClient("ORDINARY", delay=1)).ordinary("", "x") is None
     assert await SecondOpinion(client=FakeClient(RuntimeError("down"))).ordinary("", "x") is None
+
+
+async def test_a_warm_up_lists_models_and_asks_no_model_anything():
+    listed = []
+
+    async def models(**options):
+        listed.append(options)
+        raise RuntimeError("down")
+
+    client = FakeClient()
+    client.models = SimpleNamespace(list=models)
+
+    await SecondOpinion(client=client).warm()
+
+    assert listed == [{"limit": 1}] and client.calls == []

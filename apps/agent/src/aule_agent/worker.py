@@ -10,7 +10,7 @@ import logging
 import os
 import sys
 from dataclasses import replace
-from typing import Any
+from typing import Any, Protocol
 
 from livekit import rtc
 from livekit.agents import (
@@ -29,6 +29,7 @@ from . import visuals
 from ._version import __version__
 from .camera import Camera
 from .config import LANGUAGES, ConfigError, Settings, build_commit
+from .logs import keep_personal_fields_out
 from .pace import Pace
 from .platform import Platform, platform_session
 from .providers import build_llm, build_stt, build_tts
@@ -87,27 +88,73 @@ async def someone_joined(ctx: JobContext) -> bool:
     return True
 
 
-# How long a released talk button waits for the last final transcript.
+# How long a released talk button waits for the last final transcript, when
+# one may still be on its way.
 COMMIT_TRANSCRIPT_TIMEOUT_SECONDS = 0.8
 
 
-async def enable_push_to_talk(ctx: JobContext, session: AgentSession) -> None:
+class Hearing(Protocol):
+    """What the tutor heard of the turn being held: the Tutor."""
+
+    @property
+    def words_in_flight(self) -> bool: ...
+
+    def hold_started(self) -> None: ...
+
+
+async def enable_push_to_talk(
+    ctx: JobContext,
+    session: AgentSession,
+    timing: Timing | None = None,
+    hearing: Hearing | None = None,
+    gates: Gates | None = None,
+) -> None:
     """Hand turn-taking to the client's talk button. The attribute tells the page
     to show the hold-to-talk control; the RPCs it sends drive each turn: start on
-    press, commit on release, cancel on abandon.
+    press, commit on release, cancel on abandon. ``timing`` times each turn
+    from the moment end_turn arrives; ``hearing`` says whether a final
+    transcript may still come; ``gates`` get their connections ready while the
+    child speaks.
     """
     await ctx.room.local_participant.set_attributes({"aule.turns": "manual"})
+    warming: set[asyncio.Task[None]] = set()
 
     async def start_turn(_: rtc.RpcInvocationData) -> str:
+        if timing is not None:
+            timing.pressed()
+        if gates is not None:
+            # Not waited for: the press is answered at once.
+            task = asyncio.create_task(gates.warm())
+            warming.add(task)
+            task.add_done_callback(warming.discard)
         session.interrupt()
         session.clear_user_turn()
+        if hearing is not None:
+            hearing.hold_started()
         return "ok"
 
     async def end_turn(_: rtc.RpcInvocationData) -> str:
-        # The microphone stays attached, so there is no flush to wait for: a
-        # short wait lets a final transcript in flight land, and whatever is
-        # still interim is committed as it stands.
-        await session.commit_user_turn(transcript_timeout=COMMIT_TRANSCRIPT_TIMEOUT_SECONDS)
+        if timing is not None:
+            timing.released()
+        # The microphone stays attached, so there is no flush to wait for. A
+        # final transcript may still be on its way while the voice detector
+        # hears the child speaking, or when the hearing heard more after its
+        # last final: then a short wait lets it land, and whatever is still
+        # interim is committed as it stands. Otherwise the child stopped
+        # before letting go and every word is in: LiveKit would wait the whole
+        # time for a final that cannot come.
+        settled = (
+            hearing is not None and session.user_state != "speaking" and not hearing.words_in_flight
+        )
+        heard = await session.commit_user_turn(
+            transcript_timeout=0.0 if settled else COMMIT_TRANSCRIPT_TIMEOUT_SECONDS
+        )
+        if timing is not None:
+            # A commit with no words is no turn: nothing answers it.
+            if heard.strip():
+                timing.committed()
+            else:
+                timing.nothing_heard()
         return "ok"
 
     async def cancel_turn(_: rtc.RpcInvocationData) -> str:
@@ -142,10 +189,27 @@ TURNS: dict[str, Any] = {
         "min_duration": 0.8,
         "min_words": 1,
     },
+    # LiveKit's own early start: in VAD mode it runs the tutor's llm_node
+    # before on_user_turn_completed, so the gates had not judged the words
+    # the model got, and the output gate judged text that might never be
+    # said. The tutor asks early itself where it may (AULE_EARLY_REPLY).
+    "preemptive_generation": {"enabled": False},
+}
+# With the talk button the button ends the turn. The pause TURNS waits for, a
+# child going on after thinking, cannot happen once the button is up, and
+# LiveKit takes the turn's words as they are at the commit: any wait after it
+# only delays the reply.
+PUSH_TO_TALK_TURNS: dict[str, Any] = {
+    **TURNS,
+    "turn_detection": "manual",
+    "endpointing": {"min_delay": 0.0, "max_delay": TURNS["endpointing"]["max_delay"]},
 }
 
 
 def prewarm(proc: JobProcess) -> None:
+    # A job process has its logging set up by now: what a child says is kept
+    # out of it from the first record on.
+    keep_personal_fields_out()
     proc.userdata["vad"] = silero.VAD.load(
         min_speech_duration=SPEECH_MIN_SECONDS, activation_threshold=SPEECH_LIKELIHOOD
     )
@@ -172,7 +236,9 @@ _background: set[asyncio.Task[None]] = set()
 
 @server.once("worker_started")
 def announce() -> None:
-    # Once LiveKit has set up the logs, so the line is in them like any other.
+    # Once LiveKit has set up the logs, so the line is in them like any other,
+    # and so are the fields that would carry a child's words.
+    keep_personal_fields_out()
     logger.info("aule-agent %s (%s)", __version__, build_commit())
     task = asyncio.create_task(check_gates())
     _background.add(task)
@@ -315,6 +381,8 @@ async def admit(
 
 @server.rtc_session(agent_name=AGENT_NAME)
 async def entrypoint(ctx: JobContext) -> None:
+    # Again for a handler added since the process started.
+    keep_personal_fields_out()
     settings = Settings.from_env()
     audience = audience_of(ctx.job.metadata)
     language = language_of(ctx.job.metadata, settings.language)
@@ -349,6 +417,9 @@ async def entrypoint(ctx: JobContext) -> None:
 
     # How long the tutor takes to answer, and how sure the hearing is.
     timing = Timing()
+    usage = Usage()
+    voice = build_tts(settings, language)
+    voice.on("metrics_collected", usage.spoke)
     tutor = Tutor(
         language=language,
         gates=gates,
@@ -365,15 +436,17 @@ async def entrypoint(ctx: JobContext) -> None:
         # The platform offers the breaks of a session, unless the engine runs
         # it and has breaks of its own.
         breaks=bool(platform and not platform.scripted),
-        heard=timing.heard,
+        timing=timing,
+        early_reply=settings.early_reply,
+        # The session's own voice: the lines said while a tool works are voiced
+        # ahead with it, and with the setting a reply's first sentence too.
+        voice=voice,
+        voice_ahead=settings.voice_ahead,
     )
-    usage = Usage()
     model = build_llm(settings)
     model.on("metrics_collected", usage.add)
     hearing = build_stt(settings, language)
     hearing.on("metrics_collected", usage.heard)
-    voice = build_tts(settings, language)
-    voice.on("metrics_collected", usage.spoke)
     session = AgentSession(
         stt=hearing,
         llm=model,
@@ -381,7 +454,7 @@ async def entrypoint(ctx: JobContext) -> None:
         vad=ctx.proc.userdata["vad"],
         # Push-to-talk: the talk button commits each turn (see ``push_to_talk``
         # below), so the VAD must not end a turn on its own.
-        turn_handling={**TURNS, "turn_detection": "manual"} if settings.push_to_talk else TURNS,
+        turn_handling=PUSH_TO_TALK_TURNS if settings.push_to_talk else TURNS,
     )
     session.on(
         "user_state_changed", lambda event: timing.user_state(event.old_state, event.new_state)
@@ -486,6 +559,9 @@ async def entrypoint(ctx: JobContext) -> None:
         camera.stop()
         logger.info("session usage", extra=usage.summary())
         logger.info("session timing", extra=timing.summary())
+        if settings.early_reply:
+            logger.info("session early replies", extra=dict(tutor.early_replies))
+        logger.info("session voice ahead", extra=dict(tutor.voiced_ahead))
         await gates.close()
         if platform:
             if not platform.end_reason:
@@ -534,6 +610,8 @@ async def entrypoint(ctx: JobContext) -> None:
         record=False,
     )
     camera.start()
+    # While the greeting is said: the first reply then reads its prompt from the cache.
+    tasks.append(asyncio.create_task(tutor.warm_the_model()))
 
     async def show_work(_: rtc.RpcInvocationData) -> str:
         # The page's button for showing work. It answers "ok" once the tutor
@@ -555,7 +633,7 @@ async def entrypoint(ctx: JobContext) -> None:
     # Tells the page that the button has somebody to answer it.
     await ctx.room.local_participant.set_attributes({"aule.show_work": "rpc"})
     if settings.push_to_talk:
-        await enable_push_to_talk(ctx, session)
+        await enable_push_to_talk(ctx, session, timing, tutor, gates)
     logger.info("session started", extra={"audience": audience, "language": language})
 
 

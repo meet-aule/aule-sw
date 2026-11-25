@@ -18,6 +18,7 @@ from aule_agent.physical_safety import PhysicalSafetyGuard
 from aule_agent.platform import Platform, PlatformSession, Refused
 from aule_agent.replies import reply
 from aule_agent.safety import Gates
+from aule_agent.timing import Timing
 from aule_agent.tutor import Tutor
 
 SETTINGS = Settings(
@@ -639,3 +640,151 @@ def test_the_check_command_says_whether_a_childs_session_could_start(monkeypatch
         worker.main()
 
     assert exited.value.code == code
+
+
+@pytest.mark.parametrize(("transcript", "then"), [("tres cuartos", "committed"), ("  ", "untimed")])
+async def test_the_talk_button_times_each_turn_from_its_end_turn(transcript, then):
+    happened = []
+
+    class Session:
+        def interrupt(self):
+            happened.append("interrupt")
+
+        def clear_user_turn(self):
+            happened.append("clear")
+
+        async def commit_user_turn(self, *, transcript_timeout):
+            happened.append(("commit", transcript_timeout))
+            return transcript
+
+    class Timed:
+        def pressed(self):
+            happened.append("pressed")
+
+        def released(self):
+            happened.append("released")
+
+        def committed(self):
+            happened.append("committed")
+
+        def nothing_heard(self):
+            # A commit with no words is no turn: LiveKit does not answer it.
+            happened.append("untimed")
+
+    room = Room()
+    await worker.enable_push_to_talk(SimpleNamespace(room=room), Session(), Timed())
+    await room.local_participant.rpcs["start_turn"](None)
+    await room.local_participant.rpcs["end_turn"](None)
+
+    assert room.local_participant.attributes == {"aule.turns": "manual"}
+    assert happened == [
+        "pressed",
+        "interrupt",
+        "clear",
+        "released",
+        ("commit", worker.COMMIT_TRANSCRIPT_TIMEOUT_SECONDS),
+        then,
+    ]
+
+
+async def test_a_tap_that_commits_no_words_times_nothing_said_after_it():
+    clock = [0.0]
+
+    class Session:
+        user_state = "listening"
+
+        def interrupt(self):
+            pass
+
+        def clear_user_turn(self):
+            pass
+
+        async def commit_user_turn(self, *, transcript_timeout):
+            clock[0] += 0.1
+            return ""
+
+    timing = Timing(lambda: clock[0])
+    room = Room()
+    await worker.enable_push_to_talk(SimpleNamespace(room=room), Session(), timing)
+    await room.local_participant.rpcs["start_turn"](None)
+    await room.local_participant.rpcs["end_turn"](None)
+    # Three minutes later the tutor asks whether the student is still there.
+    clock[0] += 180
+    timing.agent_state("speaking")
+
+    assert timing.turn == 0 and "turns_staged" not in timing.summary()
+
+
+class Heard:
+    """Stands in for what the tutor heard of the turn being held."""
+
+    def __init__(self, in_flight):
+        self.words_in_flight = in_flight
+        self.holds = 0
+
+    def hold_started(self):
+        self.holds += 1
+
+
+@pytest.mark.parametrize(
+    ("user_state", "in_flight", "waits"),
+    [
+        # The voice detector heard the end of speech and the hearing finalized
+        # every word: nothing can come, nothing is waited for.
+        ("listening", False, 0.0),
+        # Still speaking, or words heard after the last final: a final may come.
+        ("speaking", False, worker.COMMIT_TRANSCRIPT_TIMEOUT_SECONDS),
+        ("listening", True, worker.COMMIT_TRANSCRIPT_TIMEOUT_SECONDS),
+        ("speaking", True, worker.COMMIT_TRANSCRIPT_TIMEOUT_SECONDS),
+    ],
+)
+async def test_a_released_button_waits_for_a_final_only_when_one_may_still_come(
+    user_state, in_flight, waits
+):
+    waited = []
+
+    class Session:
+        def __init__(self):
+            self.user_state = user_state
+
+        def interrupt(self):
+            pass
+
+        def clear_user_turn(self):
+            pass
+
+        async def commit_user_turn(self, *, transcript_timeout):
+            waited.append(transcript_timeout)
+            return ""
+
+    room, heard = Room(), Heard(in_flight)
+    await worker.enable_push_to_talk(SimpleNamespace(room=room), Session(), None, heard)
+    await room.local_participant.rpcs["start_turn"](None)
+    await room.local_participant.rpcs["end_turn"](None)
+
+    assert waited == [waits]
+    assert heard.holds == 1
+
+
+async def test_a_press_gets_the_gates_connections_ready_without_waiting_for_them():
+    started, release = asyncio.Event(), asyncio.Event()
+
+    class Warming:
+        async def warm(self):
+            started.set()
+            await release.wait()
+
+    class Session:
+        def interrupt(self):
+            pass
+
+        def clear_user_turn(self):
+            pass
+
+    room = Room()
+    await worker.enable_push_to_talk(SimpleNamespace(room=room), Session(), gates=Warming())
+
+    async with asyncio.timeout(1):
+        assert await room.local_participant.rpcs["start_turn"](None) == "ok"
+        await started.wait()
+    release.set()

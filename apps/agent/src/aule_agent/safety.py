@@ -18,7 +18,7 @@ import json
 import logging
 from collections.abc import Callable
 from dataclasses import replace
-from typing import Literal
+from typing import Any, Literal
 
 from livekit.agents import llm
 
@@ -164,6 +164,26 @@ class Gates:
             name: probe if isinstance(probe, Probe) else Probe.UNEXPECTED
             for name, probe in zip(gates, found, strict=True)
         }
+
+    async def warm(self) -> None:
+        """Opens each provider's connection before the turn that needs it.
+
+        A check that finds its client's connection closed (moderation keeps
+        one five seconds, the physical-safety gate fifteen) opens a new one
+        while the child waits. Pressing the talk button calls this, and the
+        child takes longer to speak than the connections take to open. Only
+        the probes' requests are sent: one word on moderation's free
+        endpoint, and lists of models. Nothing of the student is sent, no
+        verdict depends on it, and a failure is not one.
+        """
+        warming: list[Any] = []
+        if self._moderation is not None:
+            warming.append(self._moderation.warm())
+        if self._physical_safety is not None:
+            warming.append(self._physical_safety.warm())
+        if self._second_opinion is not None:
+            warming.append(self._second_opinion.warm())
+        await asyncio.gather(*warming, return_exceptions=True)
 
     async def ready(self) -> bool:
         """Whether a child's session may start now: both gates are configured

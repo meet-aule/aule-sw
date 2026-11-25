@@ -89,6 +89,23 @@ def test_push_to_talk_is_off_unless_turned_on():
     assert Settings.from_env({**COMPLETE, "AULE_PUSH_TO_TALK": "no"}).push_to_talk is False
 
 
+def test_the_notes_stay_in_the_system_prompt_unless_moved_after_the_history():
+    assert Settings.from_env(COMPLETE).notes_after_history is False
+    assert Settings.from_env({**COMPLETE, "AULE_NOTES_AFTER_HISTORY": "1"}).notes_after_history
+
+
+def test_no_reply_is_asked_before_the_gates_decide_unless_turned_on():
+    assert Settings.from_env(COMPLETE).early_reply is False
+    assert Settings.from_env({**COMPLETE, "AULE_EARLY_REPLY": "1"}).early_reply is True
+    assert Settings.from_env({**COMPLETE, "AULE_EARLY_REPLY": "off"}).early_reply is False
+
+
+def test_no_reply_goes_to_the_voice_before_the_output_gate_passed_it_unless_turned_on():
+    assert Settings.from_env(COMPLETE).voice_ahead is False
+    assert Settings.from_env({**COMPLETE, "AULE_VOICE_AHEAD": "1"}).voice_ahead is True
+    assert Settings.from_env({**COMPLETE, "AULE_VOICE_AHEAD": "no"}).voice_ahead is False
+
+
 def test_the_moderation_key_is_also_the_speech_key_when_openai_speaks():
     settings = Settings.from_env({**COMPLETE, "AULE_TTS": "openai", "OPENAI_API_KEY": "sk"})
 

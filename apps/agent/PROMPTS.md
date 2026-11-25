@@ -48,6 +48,15 @@ not model instructions and remain localized. Tone preferences do not gain
 authority from their position; the policy explicitly keeps them subordinate.
 Quoting data helps distinguish it, but is not a guarantee against prompt injection.
 
+For the prompt cache, the model's client sends the composition in three parts
+(`providers.layout`; see the [agent README](README.md)): blocks 1–2 and blocks 3–4
+as two marked system blocks, the same byte for byte on every turn and tool step
+(3–4 change once, with a late plan), then blocks 5–7, which change between turns,
+unmarked: at the end of the system prompt, or with `AULE_NOTES_AFTER_HISTORY` as a
+system message after the conversation. Nothing follows them, so the language rule
+stays the last instruction. The tutor holds the whole composition as its
+instructions, updated on every change, and asks each reply with it as it is then.
+
 ## Validation
 
 [test_prompt_delivery.py](tests/test_prompt_delivery.py) runs the real AgentSession,
@@ -56,6 +65,10 @@ Sixteen language/screen/checker/break combinations each make five requests:
 initial, guidance, late plan, replaced guidance plus engine restrictions, and
 cleared engine restrictions. It checks the complete outgoing system text, final
 language block, optional tools and preservation/removal of the right rules.
+[test_prompt_prefix.py](tests/test_prompt_prefix.py) repeats those sessions with the
+changing blocks in either place and checks that the tools, the rules and the
+student's part are sent byte for byte the same while every update arrives with the
+language rule last.
 
 The existing 4,000-character limit still covers the complete static tutor policy;
 profile, plan, persona, guidance, engine rules and conversation are additional
