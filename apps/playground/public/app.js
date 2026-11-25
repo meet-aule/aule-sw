@@ -98,6 +98,10 @@ let showing = false;
 let tutorReady = false;
 let manualTurns = false;
 let talking = false;
+let connectionLost = false;
+let turnGeneration = 0;
+let talkStarted = Promise.resolve(false);
+let closingTurn = false;
 // Whether the tutor has come into this session at all; until it has, the clock
 // does not show and the session's «Cámara» cannot be pressed.
 let tutorCame = false;
@@ -635,8 +639,29 @@ function watchTutor(participant) {
 
 // While the connection is down the tutor neither hears nor is heard, and the
 // last state it reported would be shown as if it were still true.
-function showConnection(lost) {
-  if (lost) return setTutorState("reconnecting");
+async function showConnection(lost) {
+  const connectedRoom = room;
+  if (lost) {
+    connectionLost = true;
+    turnGeneration += 1;
+    // Mute locally before any RPC: a signalling outage need not stop media.
+    room?.localParticipant.setMicrophoneEnabled(false).catch(() => undefined);
+    stopTalking("cancel_turn");
+    showTalk();
+    return setTutorState("reconnecting");
+  }
+  const generation = turnGeneration;
+  if (connectionLost) {
+    await talkStarted;
+    if (room !== connectedRoom || generation !== turnGeneration) return;
+    // A short signalling interruption may not trigger the agent's departure
+    // handler. Clear its partial turn before another press can begin.
+    if (manualTurns && tutorIdentity) await turn("cancel_turn").catch(() => undefined);
+    if (room !== connectedRoom || generation !== turnGeneration) return;
+    connectionLost = false;
+  }
+  showTalk();
+  syncMicrophone();
   const tutor = [...(room?.remoteParticipants.values() ?? [])].find(
     (participant) => participant.kind === ParticipantKind.AGENT,
   );
@@ -647,7 +672,7 @@ function showConnection(lost) {
 // Open only when the tutor is there and turns end by themselves; with a talk
 // button the microphone is closed between turns.
 function syncMicrophone() {
-  return room?.localParticipant.setMicrophoneEnabled(wanted.mic && tutorReady && !manualTurns);
+  return room?.localParticipant.setMicrophoneEnabled(!connectionLost && wanted.mic && tutorReady && !manualTurns);
 }
 
 // A phone has no space bar to mention.
@@ -660,7 +685,7 @@ function showTalk() {
   $("mic-group").hidden = manualTurns;
   // On a phone the button then stays at the bottom of the screen (style.css).
   document.querySelector("main").classList.toggle("push-to-talk", manualTurns);
-  $("talk").disabled = !wanted.mic;
+  $("talk").disabled = !wanted.mic || !tutorReady || connectionLost || closingTurn;
   $("talk").setAttribute("aria-pressed", String(talking));
   // The label has a span of its own: the level bar sits next to it, in the
   // button. In the student's language, like the coach above it.
@@ -754,38 +779,65 @@ function turn(method) {
 }
 
 async function startTalking() {
-  if (!room || !manualTurns || talking || !wanted.mic || !tutorIdentity) return;
+  if (!room || !manualTurns || talking || !wanted.mic || !tutorReady || !tutorIdentity || connectionLost || closingTurn) return;
+  const speaking = room;
+  const generation = ++turnGeneration;
   talking = true;
   heldAt = performance.now();
   talkVoice = null;
   heldLines = [];
   showTalk();
-  try {
-    await room.localParticipant.setMicrophoneEnabled(true);
-    if (talking) startTalkMeter();
-    await turn("start_turn");
-  } catch {
-    await stopTalking("cancel_turn");
-    showMessage("No se pudo avisar a Aule que estás hablando. Inténtalo otra vez.");
-  }
+  talkStarted = (async () => {
+    try {
+      await speaking.localParticipant.setMicrophoneEnabled(true);
+      if (room !== speaking || generation !== turnGeneration || !talking || connectionLost) {
+        await speaking.localParticipant.setMicrophoneEnabled(false);
+        return false;
+      }
+      await turn("start_turn");
+      if (generation === turnGeneration && talking) startTalkMeter();
+      return room === speaking && generation === turnGeneration && !connectionLost;
+    } catch {
+      await speaking.localParticipant.setMicrophoneEnabled(false).catch(() => undefined);
+      if (room !== speaking || generation !== turnGeneration) return false;
+      turnGeneration += 1;
+      talking = false;
+      stopTalkMeter();
+      showTalk();
+      if (!connectionLost) {
+        showMessage("No se pudo avisar a Aule que estás hablando. Inténtalo otra vez.");
+      }
+      return false;
+    }
+  })();
+  await talkStarted;
 }
 
 async function stopTalking(method = "end_turn") {
   if (!talking) return;
   talking = false;
+  closingTurn = true;
+  const generation = turnGeneration;
   // Let go: the coach looks at the hold as it was, before the tail.
   if (method === "end_turn") coachAfter(performance.now() - heldAt, talkVoice);
   stopTalkMeter();
   showTalk();
   const speaking = room;
-  if (method === "end_turn") await new Promise((done) => setTimeout(done, TALK_TAIL_MS));
-  if (!speaking || speaking !== room) return;
+  if (method !== "end_turn") speaking?.localParticipant.setMicrophoneEnabled(false).catch(() => undefined);
   try {
+    if (!await talkStarted) return;
+    if (method === "end_turn") await new Promise((done) => setTimeout(done, TALK_TAIL_MS));
+    if (!speaking || speaking !== room || generation !== turnGeneration || connectionLost) return;
     await turn(method);
   } catch {
-    if (method === "end_turn") showMessage("Aule no lo escuchó. Mantén apretado el botón y dilo otra vez.");
+    if (method === "end_turn" && !connectionLost && room === speaking) showMessage("Aule no lo escuchó. Mantén apretado el botón y dilo otra vez.");
+  } finally {
+    await speaking?.localParticipant.setMicrophoneEnabled(false).catch(() => undefined);
+    if (room === speaking) {
+      closingTurn = false;
+      showTalk();
+    }
   }
-  if (!talking) await speaking.localParticipant.setMicrophoneEnabled(false);
 }
 
 function showCamera() {
@@ -1364,6 +1416,9 @@ function teardown({ quiet = false } = {}) {
   if (!room) return false;
   const leaving = room;
   room = null;
+  turnGeneration += 1;
+  connectionLost = false;
+  closingTurn = false;
   if (!quiet) play(goodbye);
   clearInterval(clock);
   clearTimeout(tutorTimer);
