@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
 import { cuy } from "../public/cuy.js";
-import { SPRITE, pixelsFor } from "../public/pixels.js";
+import { SPRITE, drawWhole, pixelsFor } from "../public/pixels.js";
 
 const pub = new URL("../public/", import.meta.url);
 const read = (name) => readFile(new URL(name, pub), "utf8");
@@ -61,6 +61,30 @@ test("a face is drawn at about SPRITE pixels and enlarged a whole number of time
   assert.equal(pixelsFor(52, 1), null);
   // A box that is not showing has no size.
   assert.equal(pixelsFor(0, 2), null);
+});
+
+test("in pixels a face is drawn whole, however slowly the frames come", () => {
+  // The engine's mascot, as far as its clock sees it: it is told how much of itself to draw.
+  const drawn = [];
+  const mascot = {
+    name: "cuy",
+    tick(dt, time, quality) {
+      drawn.push([this.name, dt, time, quality]);
+    },
+  };
+  let pixels = true;
+  drawWhole(mascot, () => pixels);
+  // At thirty frames a second the engine asks for 55 % of the pixels: a face in pixels keeps them all.
+  mascot.tick(1 / 30, 2, 0.55);
+  // Too small for pixels, it is the engine's to draw as it sees fit.
+  pixels = false;
+  mascot.tick(1 / 30, 3, 0.55);
+  assert.deepEqual(drawn, [
+    ["cuy", 1 / 30, 2, 1],
+    ["cuy", 1 / 30, 3, 0.55],
+  ]);
+  // The page gives a face its character before its pixels, so the mascot that is kept whole is the cuy's.
+  assert.match(app, /face\.spec = cuy;\s*pixelate\(face\);/);
 });
 
 test("the check, session and farewell faces share the cuy and its pixel rendering", () => {
