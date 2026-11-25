@@ -1,6 +1,7 @@
 // Which build answers, said where whoever looks can find it and nowhere else:
 // the health probe, two meta tags, the last line of the family's account, the
-// team's panel, the start-up line and every request to the platform.
+// start-up line and every request to the platform. The team's console says its
+// own (apps/admin).
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { readFile } from "node:fs/promises";
@@ -16,11 +17,9 @@ import { COMPLETE } from "./fixtures.ts";
 
 const COMMIT = "0123456789ab";
 const FAMILY_TOKEN = "ef".repeat(32);
-const TEAM_TOKEN = "fe".repeat(32);
 
-// Stands in for the platform: a family, a team member, and its own health probe.
+// Stands in for the platform: a family.
 const heard: { path: string; headers: IncomingHttpHeaders }[] = [];
-let platformHealth: { status: number; body: unknown } = { status: 200, body: { ok: true, version: "0.0.7", commit: "fedcba987654" } };
 const platform = createServer((request, response) => {
   const path = request.url ?? "";
   heard.push({ path, headers: request.headers });
@@ -28,12 +27,10 @@ const platform = createServer((request, response) => {
     response.writeHead(status, { "Content-Type": "application/json" });
     response.end(JSON.stringify(value));
   };
-  if (path === "/healthz") return answer(platformHealth.status, platformHealth.body);
   if (path === "/v1/auth/providers") return answer(200, { google: "client-1", github: null, meta: null, apple: null });
-  const team = request.headers.authorization === `Bearer ${TEAM_TOKEN}`;
-  if (!team && request.headers.authorization !== `Bearer ${FAMILY_TOKEN}`) return answer(401, { error: { message: "who?" } });
+  if (request.headers.authorization !== `Bearer ${FAMILY_TOKEN}`) return answer(401, { error: { message: "who?" } });
   if (path === "/v1/me") return answer(200, { guardian: { name: "Ana" }, family_id: "f-1", children: [] });
-  if (path === "/v1/me/plan") return answer(200, { plan: "trial", team });
+  if (path === "/v1/me/plan") return answer(200, { plan: "trial", team: false });
   answer(404, { error: { message: "no such path" } });
 });
 
@@ -84,17 +81,15 @@ test("the health probe says which build answers, and is still never kept", async
   assert.deepEqual(await (await fetch(`${plainBase}/healthz`)).json(), { ok: true, version: VERSION, commit: "unknown" });
 });
 
-test("both pages carry the build in two meta tags, and nothing is left unstamped", async () => {
+test("the page carries the build in two meta tags, and nothing is left unstamped", async () => {
   for (const [origin, commit] of [
     [base, COMMIT],
     [plainBase, "unknown"],
   ]) {
-    for (const path of ["/", "/admin"]) {
-      const page = await (await fetch(`${origin}${path}`)).text();
-      assert.ok(page.includes(`<meta name="aule-version" content="${VERSION}" />`), path);
-      assert.ok(page.includes(`<meta name="aule-commit" content="${commit}" />`), path);
-      assert.doesNotMatch(page, /\{\{[^}]*\}\}/, path);
-    }
+    const page = await (await fetch(`${origin}/`)).text();
+    assert.ok(page.includes(`<meta name="aule-version" content="${VERSION}" />`));
+    assert.ok(page.includes(`<meta name="aule-commit" content="${commit}" />`));
+    assert.doesNotMatch(page, /\{\{[^}]*\}\}/);
   }
 });
 
@@ -119,7 +114,7 @@ test("only pages are stamped: the scripts and the stylesheet keep their fingerpr
   const without = versions(await (await fetch(`${plainBase}/`)).text());
   assert.ok(withCommit.some((entry) => entry.startsWith("style.css=")) && withCommit.some((entry) => entry.startsWith("app.js=")));
   assert.deepEqual(withCommit, without);
-  for (const name of ["app.js", "style.css", "admin.js"]) {
+  for (const name of ["app.js", "style.css", "home.js"]) {
     const file = await (await fetch(`${base}/${name}`)).text();
     assert.ok(!file.includes(COMMIT) && !file.includes(`Aule ${VERSION}`), `${name} is never stamped`);
   }
@@ -135,36 +130,6 @@ test("every request to the platform says which build of the playground makes it"
   for (const { path, headers } of heard) {
     assert.equal(headers["user-agent"], `aule-playground/${VERSION} (+${COMMIT.slice(0, 7)})`, path);
   }
-});
-
-test("the team's panel is told the page's build and the platform's, and nobody else is", async () => {
-  assert.equal((await fetch(`${base}/api/admin/build`)).status, 401);
-  const family = await fetch(`${base}/api/admin/build`, { headers: as(FAMILY_TOKEN) });
-  assert.deepEqual([family.status, await family.json()], [403, { error: "not_team" }]);
-  assert.equal((await fetch(`${plainBase}/api/admin/build`, { headers: as(TEAM_TOKEN) })).status, 404, "no platform, no panel");
-
-  const team = await fetch(`${base}/api/admin/build`, { headers: as(TEAM_TOKEN) });
-  assert.equal(team.headers.get("cache-control"), "no-store");
-  assert.deepEqual(await team.json(), {
-    playground: { version: VERSION, commit: COMMIT },
-    platform: { version: "0.0.7", commit: "fedcba987654" },
-  });
-
-  // A platform whose probe fails, or an older one that does not say, leaves its part empty.
-  for (const health of [{ status: 503, body: { error: { message: "database" } } }, { status: 200, body: { ok: true } }]) {
-    platformHealth = health;
-    const answer = await (await fetch(`${base}/api/admin/build`, { headers: as(TEAM_TOKEN) })).json();
-    assert.deepEqual(answer.platform, { version: null, commit: null }, JSON.stringify(health));
-  }
-  platformHealth = { status: 200, body: { ok: true, version: "0.0.7", commit: "fedcba987654" } };
-
-  const panel = await readFile(new URL("../public/admin.js", import.meta.url), "utf8");
-  assert.match(panel, /get\("api\/admin\/build"\)\.then\(showBuild, \(\) => \{\}\)/, "the panel works without the line");
-  assert.match(panel, /\$\("build"\)\.textContent = /, "and writes it as text");
-  // Asked for only once the team's data has loaded, so nobody else's page is refused it.
-  const load = panel.slice(panel.indexOf("async function load()"));
-  assert.ok(load.indexOf('get("api/admin/build")') > load.indexOf("showOverview(metrics);"), "after the panel's data");
-  assert.ok(load.indexOf('get("api/admin/build")') > load.indexOf("return;"), "and never after a refusal");
 });
 
 test("the server's first line names its build", async () => {

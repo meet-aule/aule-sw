@@ -81,18 +81,6 @@ export async function signInProviders(settings: Settings): Promise<Providers> {
   }
 }
 
-/** Which build the platform runs, from its health probe; nulls where it does not say. */
-export async function platformBuild(settings: Settings): Promise<{ version: string | null; commit: string | null }> {
-  let answer: Record<string, unknown> = {};
-  try {
-    answer = (await platform(settings, "/healthz")) as Record<string, unknown>;
-  } catch (error) {
-    if (!(error instanceof PlatformError)) throw error;
-  }
-  const text = (value: unknown) => (typeof value === "string" && value ? value : null);
-  return { version: text(answer.version), commit: text(answer.commit) };
-}
-
 /** The family's plan and what is left of it, and whether the person is on Aule's team. */
 export type Plan = { standing: Record<string, unknown> | null; team: boolean };
 

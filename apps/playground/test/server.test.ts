@@ -84,7 +84,7 @@ test("serves the page and its scripts with a strict policy", async () => {
   await font.arrayBuffer();
 });
 
-test("the family guide is served in Spanish and in English as a page, and the panel's arithmetic as a script", async () => {
+test("the family guide is served in Spanish and in English as a page", async () => {
   for (const [path, words] of [
     ["/guia", /Guía para familias/],
     ["/guide", /A guide for families/],
@@ -100,12 +100,6 @@ test("the family guide is served in Spanish and in English as a page, and the pa
     assert.match(page, /href="style\.css\?v=[0-9a-f]{12}"/);
     assert.doesNotMatch(page, /\{\{(version|commit)\}\}/);
   }
-  const script = await fetch(`${base}/pilot.js`);
-  assert.equal(script.status, 200);
-  assert.equal(script.headers.get("content-type"), "text/javascript; charset=utf-8");
-  await script.arrayBuffer();
-  const panel = await (await fetch(`${base}/admin`)).text();
-  assert.match(panel, /<script type="module" src="admin\.js\?v=[0-9a-f]{12}"><\/script>/);
 });
 
 test("the pictures of the old Andean page are gone, and the icons stay", async () => {
@@ -142,23 +136,32 @@ test("an odd address is answered, and the server stays up", async () => {
   assert.equal((await fetch(`${base}/healthz`)).status, 200);
 });
 
-test("panel aliases keep the query and reach the panel without a trailing slash", async () => {
+test("the old panel's addresses send the team to admin.meetaule.com, and its API and scripts are gone", async () => {
   const origin = new URL(base).origin;
-  for (const path of ["/admin", "/admin/", "/playground/admin/"]) {
+  for (const path of ["/admin", "/admin/", "/playground/admin", "/playground/admin/"]) {
     for (const method of ["GET", "HEAD"]) {
-      const response = await fetch(`${origin}${path}?view=usage`, { method, redirect: "manual" });
-      assert.equal(response.status, 308, `${method} ${path}`);
-      assert.equal(response.headers.get("location"), "/playground/admin?view=usage");
-      assert.equal(response.headers.get("cache-control"), "no-store");
-      const panel = await fetch(new URL(response.headers.get("location")!, origin), { method });
-      assert.equal(panel.status, 200);
-      const body = await panel.text();
-      if (method === "HEAD") assert.equal(body, "");
-      else assert.match(body, /Panel del equipo/);
+      for (const query of ["", "?view=usage", "?next=https://evil.example/"]) {
+        const response = await fetch(`${origin}${path}${query}`, { method, redirect: "manual" });
+        assert.equal(response.status, 302, `${method} ${path}${query}`);
+        // A fixed address: nothing of the request goes with it.
+        assert.equal(response.headers.get("location"), "https://admin.meetaule.com/", `${method} ${path}${query}`);
+        assert.equal(response.headers.get("cache-control"), "no-store");
+        assert.equal(await response.text(), "");
+      }
     }
   }
-  const api = await fetch(`${base}/api/admin/families`);
-  assert.equal(api.status, 404, "without a platform the admin API remains unavailable");
+  for (const path of ["/api/admin/families", "/api/admin/build", "/api/admin/metrics", "/api/admin/weekly"]) {
+    const response = await fetch(`${base}${path}`, { headers: { Accept: "text/html" }, redirect: "manual" });
+    assert.equal(response.status, 404, path);
+    assert.equal(response.headers.get("location"), null, path);
+    await response.arrayBuffer();
+  }
+  for (const path of ["/api/admin/grant", "/api/admin/ungrant"]) {
+    assert.equal((await fetch(`${base}${path}`, { method: "POST", body: "{}" })).status, 404, path);
+  }
+  for (const name of ["admin.js", "pilot.js", "admin.html"]) {
+    assert.equal((await fetch(`${base}/${name}`)).status, 404, name);
+  }
   const bare = await fetch(`${base}?signin=cancelled`, { redirect: "manual" });
   assert.equal(bare.headers.get("location"), "/playground/?signin=cancelled");
 });
@@ -375,9 +378,11 @@ test("served at the root, the page and its health probe still answer", async () 
     // probe itself, not the page.
     assert.equal((await (await fetch(`${origin}//healthz`)).json()).ok, true);
     assert.equal(await raw(root, "//"), 200);
-    const panel = await fetch(`${origin}/admin/`, { redirect: "manual" });
-    assert.equal(panel.headers.get("location"), "/admin");
-    assert.equal((await fetch(`${origin}/admin`)).status, 200);
+    for (const path of ["/admin", "/admin/"]) {
+      const panel = await fetch(`${origin}${path}?view=usage`, { redirect: "manual" });
+      assert.equal(panel.status, 302, path);
+      assert.equal(panel.headers.get("location"), "https://admin.meetaule.com/", path);
+    }
     const guide = await fetch(`${origin}/guia/?src=cesar`, { redirect: "manual" });
     assert.equal(guide.headers.get("location"), "/guia?src=cesar");
     assert.equal((await fetch(`${origin}/guia`)).status, 200);

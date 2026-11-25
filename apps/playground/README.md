@@ -1,9 +1,10 @@
 # Playground
 
-Aule's browser interface for families, students and the team. Families sign in,
-set up a student and consent, and start tutoring sessions with voice, typing,
-exercises and an optional camera. The team manages families and sessions from
-the administration panel. A separate access-code API supports operator tests.
+Aule's browser interface for families and students. Families sign in, set up a
+student and consent, and start tutoring sessions with voice, typing, exercises
+and an optional camera. The team works from its own console at
+https://admin.meetaule.com ([apps/admin](../admin/README.md)), and the home
+shows the team a link to it. A separate access-code API supports operator tests.
 
 The Node server serves the page, handles sign-in and cookies, and calls the
 [platform](../platform/README.md) for accounts, consent, plans, session lifecycle
@@ -54,15 +55,10 @@ The paper screens say once which cookies the page uses: only its own and only th
 
 Put it behind a reverse proxy with HTTPS: browsers only give the microphone and the camera to secure pages.
 
-The team's panel is at `<base path>/admin`. `/admin`, `/admin/` and a trailing
-slash on the panel redirect to that address; its data still requires a team
-sign-in. Besides the daily numbers and the families, with the link each came
-from, it shows the pilot's four numbers per week of sign-up and per link, from
-the platform's `GET /v1/metrics/weekly`, and two figures about the children of
-those weeks: how many came back within seven days of their first session (of
-those whose seven days are over, with all of them so far beside it), and the
-median of a child's turns per minute in a session; `public/pilot.js` adds them
-up and says them. An
+The team's panel moved to its own console, https://admin.meetaule.com. Its old
+addresses, `<base path>/admin` and `/admin`, with or without a trailing slash,
+answer a 302 to exactly that address, and pass nothing of the request on; the
+old `api/admin/*` routes, `admin.js` and `pilot.js` are gone (404). An
 unknown page opened by a browser returns to the start page. Unknown API routes,
 files and write requests keep their error responses. These redirects are not
 cached and do not accept a destination from the request.
@@ -79,8 +75,8 @@ keeps the query: the bare host's (the Worker in `infra/edge`), the base path's
 and the guide's.
 
 The guide for families is `<base path>/guia`, and in English `<base path>/guide`:
-two static pages in the paper look, with no script. Like the panel, they are
-also reached with a trailing slash or without the base path. They say how to
+two static pages in the paper look, with no script. They are also reached
+with a trailing slash or without the base path. They say how to
 sign in, the trial, what a session is like, the plan and how to continue after
 the trial in the landing's words, and privacy in two sentences; change both
 together.
