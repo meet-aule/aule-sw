@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <!-- The build this page comes from, written in by the server (src/build.ts). -->
+    <meta name="aule-version" content="{{version}}" />
+    <meta name="aule-commit" content="{{commit}}" />
+    <title>Aule · Panel del equipo · Passkeys</title>
+    <link rel="icon" href="icon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <main class="admin">
+      <header>
+        <h1>Panel del equipo</h1>
+        <nav class="nav" aria-label="Consola del equipo">
+          <a href="/">Resumen</a>
+          <a href="/live">En vivo</a>
+          <a href="/families">Familias</a>
+          <a href="/passkeys" aria-current="page">Passkeys</a>
+          <button type="button" class="link" id="signout">Salir</button>
+        </nav>
+      </header>
+
+      <p id="message" class="message" role="alert" hidden></p>
+
+      <section aria-labelledby="passkeys-title">
+        <h2 id="passkeys-title">Tus passkeys</h2>
+        <p class="lead">
+          Con una passkey entras al panel sin código, con la huella, la cara o el PIN de tu dispositivo. El código por
+          correo sigue funcionando.
+        </p>
+        <p id="unsupported" class="message" hidden>Este navegador no puede crear passkeys.</p>
+        <!-- A name first, then the browser's own dialog makes the passkey (passkeys.js). -->
+        <form id="create-form" class="filters" novalidate>
+          <label for="label">Nombre</label>
+          <input id="label" name="label" type="text" maxlength="60" placeholder="Por ejemplo: MacBook de Ana" autocomplete="off" />
+          <button type="submit" id="create">Crear passkey</button>
+        </form>
+        <p id="done" class="message" data-tone="info" role="status" hidden></p>
+        <p id="full" class="lead" hidden>Tienes 10 passkeys, el máximo. Borra una para crear otra.</p>
+        <div class="scroll">
+          <table class="facts">
+            <thead>
+              <tr><th>Nombre</th><th>Creada</th><th>Último uso</th><th></th></tr>
+            </thead>
+            <tbody id="passkeys"></tbody>
+          </table>
+        </div>
+        <p id="none" class="lead" hidden>Todavía no tienes passkeys.</p>
+      </section>
+    </main>
+    <script type="module" src="passkeys.js"></script>
+  </body>
+</html>

@@ -4,7 +4,23 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 
-import { FAMILY, FakePlatform, OPEN_SESSIONS, signIn, startConsole, write } from "./fake-platform.ts";
+import {
+  CEREMONY,
+  CEREMONY_COOKIE,
+  CLEARED_CEREMONY,
+  CREATED,
+  CREATED_SENT,
+  CREATE_OPTIONS,
+  FAMILY,
+  FakePlatform,
+  OPEN_SESSIONS,
+  PASSKEY,
+  PASSKEY_ID,
+  logged,
+  signIn,
+  startConsole,
+  write,
+} from "./fake-platform.ts";
 
 const platform = await new FakePlatform().listen();
 let base = "";
@@ -221,4 +237,137 @@ test("every data route needs a session, and a write the console's own Origin", a
     assert.deepEqual(await answer(await write(base, path, { days: 30 }, { cookie, site: "cross-site" })), [403, { error: "wrong_origin" }], path);
     assert.deepEqual(await answer(await write(base, path, { days: 30 }, { cookie, type: "text/plain" })), [415, { error: "unsupported_media_type" }], path);
   }
+});
+
+// «Passkeys»: the member's own, each route one platform call with their token.
+const withCeremony = () => `${cookie}; __Host-aule_admin_passkey=${CEREMONY}`;
+
+test("the member's passkeys are the platform's list, asked with their own token", async () => {
+  platform.passkeys = [PASSKEY];
+  try {
+    const from = platform.heard.length;
+    assert.deepEqual(await answer(await get("/api/passkeys?mine=0")), [200, { passkeys: [PASSKEY] }]);
+    assert.deepEqual(heardSince(from), [["GET", "/v1/admin/passkeys", `Bearer ${token}`, null]]);
+  } finally {
+    platform.passkeys = [];
+  }
+});
+
+test("a passkey's options put the ceremony in its own cookie, and give the page the options alone", async () => {
+  const from = platform.heard.length;
+  const response = await post("/api/passkeys/options", { ceremony: "f".repeat(64), extra: 1 });
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { publicKey: CREATE_OPTIONS });
+  assert.deepEqual(response.headers.getSetCookie(), [CEREMONY_COOKIE]);
+  assert.deepEqual(heardSince(from), [["POST", "/v1/admin/passkeys/options", `Bearer ${token}`, null]]);
+});
+
+test("a sign-in too old to add a passkey is told as sign_in_again, and the session stays", async () => {
+  platform.staleSignIn = true;
+  try {
+    assert.deepEqual(await answer(await post("/api/passkeys/options", {})), [409, { error: "sign_in_again" }]);
+  } finally {
+    platform.staleSignIn = false;
+  }
+  assert.equal((await get("/api/passkeys")).status, 200, "still signed in");
+  // An answer of another shape is a failure: the page gets nothing the console did not check.
+  for (const body of [
+    { ceremony: "x", options: { publicKey: CREATE_OPTIONS } },
+    { ceremony: CEREMONY.toUpperCase(), options: { publicKey: CREATE_OPTIONS } },
+    { ceremony: CEREMONY, options: { publicKey: "x" } },
+    { ceremony: CEREMONY },
+    {},
+  ]) {
+    platform.once("POST /v1/admin/passkeys/options", { status: 200, body });
+    const response = await post("/api/passkeys/options", {});
+    assert.deepEqual(await answer(response), [502, { error: "platform" }], JSON.stringify(body));
+    assert.deepEqual(response.headers.getSetCookie(), []);
+  }
+});
+
+test("a passkey is made with the ceremony from its cookie and a name, its credential built again", async () => {
+  const from = platform.heard.length;
+  const body = { label: "  MacBook de Ana ", credential: CREATED, ceremony: "f".repeat(64), extra: 1 };
+  const response = await write(base, "/api/passkeys/create", body, { cookie: withCeremony() });
+  assert.deepEqual(await answer(response), [201, { ...PASSKEY, label: "MacBook de Ana" }]);
+  assert.deepEqual(response.headers.getSetCookie(), [CLEARED_CEREMONY]);
+  // The ceremony is the cookie's, never the body's; the credential has the fields the platform reads.
+  assert.deepEqual(heardSince(from), [
+    ["POST", "/v1/admin/passkeys", `Bearer ${token}`, { ceremony: CEREMONY, label: "MacBook de Ana", credential: CREATED_SENT }],
+  ]);
+  // A browser that says nothing of credProps or transports is passed on as it says it.
+  const quiet = { ...CREATED, response: { ...CREATED.response, transports: undefined }, clientExtensionResults: {} };
+  const said = platform.heard.length;
+  assert.equal((await write(base, "/api/passkeys/create", { label: "Mac", credential: quiet }, { cookie: withCeremony() })).status, 201);
+  const sent = (platform.heard[said]?.body as { credential: Record<string, unknown> }).credential;
+  assert.deepEqual(sent.clientExtensionResults, {});
+  assert.deepEqual(Object.keys(sent.response as object), ["clientDataJSON", "attestationObject"]);
+});
+
+test("a passkey without its ceremony, a name or a credential the console can read never reaches the platform", async () => {
+  const none = platform.heard.length;
+  const response = (extra: Record<string, unknown>) => ({ ...CREATED.response, ...extra });
+  for (const [what, body, cookies] of [
+    ["no ceremony", { label: "Mac", credential: CREATED }, cookie],
+    ["a ceremony of another shape", { label: "Mac", credential: CREATED }, `${cookie}; __Host-aule_admin_passkey=${CEREMONY.toUpperCase()}`],
+    ["the ceremony in the body only", { label: "Mac", credential: CREATED, ceremony: CEREMONY }, cookie],
+    ["no name", { label: "   ", credential: CREATED }, withCeremony()],
+    ["a name too long", { label: "ñ".repeat(61), credential: CREATED }, withCeremony()],
+    ["a name of two lines", { label: "Mac\nBook", credential: CREATED }, withCeremony()],
+    ["a name that is no text", { label: 42, credential: CREATED }, withCeremony()],
+    ["no credential", { label: "Mac" }, withCeremony()],
+    ["an id that is not its rawId", { label: "Mac", credential: { ...CREATED, rawId: "AQIDBQ" } }, withCeremony()],
+    ["another type", { label: "Mac", credential: { ...CREATED, type: "password" } }, withCeremony()],
+    ["an id too long", { label: "Mac", credential: { ...CREATED, id: "a".repeat(1_369), rawId: "a".repeat(1_369) } }, withCeremony()],
+    ["a field that is not base64url", { label: "Mac", credential: { ...CREATED, response: response({ clientDataJSON: "e30=" }) } }, withCeremony()],
+    ["no attestation", { label: "Mac", credential: { ...CREATED, response: response({ attestationObject: undefined }) } }, withCeremony()],
+    ["transports that are no list", { label: "Mac", credential: { ...CREATED, response: response({ transports: "usb" }) } }, withCeremony()],
+    ["credProps.rk that is no yes or no", { label: "Mac", credential: { ...CREATED, clientExtensionResults: { credProps: { rk: "true" } } } }, withCeremony()],
+  ] as const) {
+    const refused = await write(base, "/api/passkeys/create", body, { cookie: cookies });
+    assert.deepEqual(await answer(refused), [400, { error: "bad_request" }], what);
+    assert.deepEqual(refused.headers.getSetCookie(), [CLEARED_CEREMONY], what);
+  }
+  assert.deepEqual(heardSince(none), []);
+  // The platform's refusal is told in the console's words, and the cookie goes too.
+  platform.once("POST /v1/admin/passkeys", { status: 400, body: { error: { code: "bad_request", message: "that passkey could not be confirmed" } } });
+  const refused = await write(base, "/api/passkeys/create", { label: "Mac", credential: CREATED }, { cookie: withCeremony() });
+  assert.deepEqual(await answer(refused), [400, { error: "bad_request" }]);
+  assert.deepEqual(refused.headers.getSetCookie(), [CLEARED_CEREMONY]);
+});
+
+test("a passkey is deleted by its id alone, and one that is not the member's is not found", async () => {
+  const from = platform.heard.length;
+  assert.deepEqual(await answer(await post(`/api/passkeys/${PASSKEY_ID}/delete`, { id: FAMILY })), [200, {}]);
+  assert.deepEqual(heardSince(from), [["DELETE", `/v1/admin/passkeys/${PASSKEY_ID}`, `Bearer ${token}`, null]]);
+  assert.deepEqual(await answer(await post(`/api/passkeys/${FAMILY}/delete`, {})), [404, { error: "not_found" }]);
+  const none = platform.heard.length;
+  for (const id of ["x", PASSKEY_ID.toUpperCase(), `${PASSKEY_ID}0`, "a%2Fb", "options", "create"]) {
+    assert.deepEqual(await answer(await post(`/api/passkeys/${id}/delete`, {})), [400, { error: "bad_request" }], id);
+  }
+  assert.deepEqual(heardSince(none), []);
+});
+
+test("the passkey routes need a session and the write rules, and someone off the team is signed out", async () => {
+  for (const path of ["/api/passkeys/options", "/api/passkeys/create", `/api/passkeys/${PASSKEY_ID}/delete`]) {
+    assert.deepEqual(await answer(await write(base, path, {})), [401, { error: "signed_out" }], path);
+    assert.deepEqual(await answer(await write(base, path, {}, { cookie, origin: null })), [403, { error: "wrong_origin" }], path);
+    assert.deepEqual(await answer(await write(base, path, {}, { cookie, site: "cross-site" })), [403, { error: "wrong_origin" }], path);
+    assert.deepEqual(await answer(await write(base, path, {}, { cookie, type: "text/plain" })), [415, { error: "unsupported_media_type" }], path);
+  }
+  assert.deepEqual(await answer(await fetch(`${base}/api/passkeys`)), [401, { error: "signed_out" }]);
+  // Taken off the team at the platform: the console's session ends, and its platform session with it.
+  const own = await signIn(base);
+  const ownToken = [...platform.tokens].at(-1)!;
+  platform.refuseStaff(ownToken);
+  assert.deepEqual(await answer(await write(base, "/api/passkeys/options", {}, { cookie: own })), [403, { error: "not_team" }]);
+  assert.deepEqual(await answer(await fetch(`${base}/api/passkeys`, { headers: { Cookie: own } })), [401, { error: "signed_out" }]);
+});
+
+test("the log says a passkey was made or deleted, and nothing of it", async () => {
+  const lines = await logged(async () => {
+    await write(base, "/api/passkeys/create", { label: "MacBook de Ana", credential: CREATED }, { cookie: withCeremony() });
+    await post(`/api/passkeys/${PASSKEY_ID}/delete`, {});
+  });
+  assert.deepEqual(lines, ["aule-admin: passkey_created", "aule-admin: passkey_deleted"]);
 });

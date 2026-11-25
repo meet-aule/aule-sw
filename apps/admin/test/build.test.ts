@@ -39,7 +39,7 @@ test("every page carries the build in two meta tags, and nothing is left unstamp
     [base, COMMIT],
     [plainBase, "unknown"],
   ]) {
-    for (const path of ["/", "/live", "/families", "/family", "/signin"]) {
+    for (const path of ["/", "/live", "/families", "/family", "/passkeys", "/signin"]) {
       const page = await (await fetch(`${origin}${path}`)).text();
       assert.ok(page.includes(`<meta name="aule-version" content="${VERSION}" />`), path);
       assert.ok(page.includes(`<meta name="aule-commit" content="${commit}" />`), path);
@@ -53,7 +53,7 @@ test("only pages are stamped: the scripts and the stylesheet keep their fingerpr
   const withCommit = versions(await (await fetch(`${base}/`)).text());
   assert.ok(withCommit.some((entry) => entry.startsWith("style.css=")) && withCommit.some((entry) => entry.startsWith("admin.js=")));
   assert.deepEqual(withCommit, versions(await (await fetch(`${plainBase}/`)).text()));
-  for (const name of ["admin.js", "common.js", "labels.js", "live.js", "families.js", "family.js", "pilot.js", "signin.js", "style.css"]) {
+  for (const name of ["admin.js", "common.js", "labels.js", "live.js", "families.js", "family.js", "passkeys.js", "pilot.js", "signin.js", "style.css"]) {
     const file = await (await fetch(`${base}/${name}`)).text();
     assert.ok(!file.includes(COMMIT), `${name} is never stamped`);
   }

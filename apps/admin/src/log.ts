@@ -10,6 +10,8 @@ const EVENTS = [
   "code_not_sent",
   "signed_in",
   "signed_out",
+  "passkey_created",
+  "passkey_deleted",
   "session_ended",
   "revoke_failed",
   "platform_error",

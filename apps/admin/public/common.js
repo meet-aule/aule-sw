@@ -35,7 +35,11 @@ export async function get(path) {
   return response.json();
 }
 
-/** A write to the API, as JSON; the browser adds the page's Origin, which the console checks. */
+/**
+ * A write to the API, as JSON; the browser adds the page's Origin, which the
+ * console checks. A failure is an error named signed_out, sign_in_again (a
+ * passkey wants a recent sign-in) or failed.
+ */
 export async function post(path, body) {
   const response = await fetch(path, {
     method: "POST",
@@ -43,6 +47,7 @@ export async function post(path, body) {
     body: JSON.stringify(body),
   });
   if (signedOut(response)) throw new Error("signed_out");
+  if (response.status === 409) throw new Error("sign_in_again");
   if (!response.ok) throw new Error("failed");
   return response.json();
 }

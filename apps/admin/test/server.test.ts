@@ -86,7 +86,20 @@ test("robots are told to stay out of everything", async () => {
 });
 
 test("an unknown path is a 404 and a known one asked the wrong way a 405, never a redirect", async () => {
-  for (const path of ["/admin", "/signin/", "/index.html", "/family.html", "/families/", "/api", "/api/admin/families", "/api/families/x/y", "/fonts/sans-italic.woff2", "/../etc/passwd"]) {
+  for (const path of [
+    "/admin",
+    "/signin/",
+    "/index.html",
+    "/family.html",
+    "/families/",
+    "/passkeys.html",
+    "/api",
+    "/api/admin/families",
+    "/api/families/x/y",
+    "/api/passkeys/x",
+    "/fonts/sans-italic.woff2",
+    "/../etc/passwd",
+  ]) {
     const response = await ask(path, { headers: { Accept: "text/html" } });
     assert.equal(response.status, 404, path);
     assert.deepEqual(await response.json(), { error: "not_found" }, path);
@@ -101,6 +114,11 @@ test("an unknown path is a 404 and a known one asked the wrong way a 405, never 
     ["GET", `/api/families/${"0".repeat(8)}-0000-0000-0000-${"0".repeat(12)}/grant`, "POST"],
     ["POST", `/api/families/${"0".repeat(8)}-0000-0000-0000-${"0".repeat(12)}/sessions`, "GET"],
     ["DELETE", "/api/sessions/open", "GET"],
+    ["POST", "/api/passkeys", "GET"],
+    ["GET", "/api/passkeys/options", "POST"],
+    ["GET", "/api/passkeys/create", "POST"],
+    ["DELETE", `/api/passkeys/${"0".repeat(8)}-0000-0000-0000-${"0".repeat(12)}/delete`, "POST"],
+    ["POST", "/passkeys", "GET, HEAD"],
     ["POST", "/families", "GET, HEAD"],
     ["POST", "/healthz", "GET, HEAD"],
   ]) {
@@ -128,6 +146,22 @@ test("a HEAD carries no body", async () => {
     const response = await ask(path, { method: "HEAD" });
     assert.equal(response.status, 200, path);
     assert.equal(await response.text(), "", path);
+  }
+});
+
+test("a passkey the browser made may take 16 KB, and every other write still 4 KB", async () => {
+  // Past the body's rules, a request with no session is a 401: the body was taken.
+  const sized = async (path: string, bytes: number) => {
+    const response = await write(base, path, { label: "Mac", credential: { id: "a".repeat(bytes) } });
+    answers.push(response);
+    await response.arrayBuffer();
+    return response.status;
+  };
+  assert.equal(await sized("/api/passkeys/create", 10_000), 401);
+  assert.equal(await sized("/api/passkeys/create", 16_384), 400);
+  for (const path of ["/api/passkeys/options", `/api/passkeys/${"0".repeat(8)}-0000-0000-0000-${"0".repeat(12)}/delete`, "/api/families/x/grant"]) {
+    assert.equal(await sized(path, 4_096), 400, path);
+    assert.equal(await sized(path, 3_000), 401, path);
   }
 });
 
