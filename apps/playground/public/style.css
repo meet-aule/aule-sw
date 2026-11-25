@@ -97,6 +97,10 @@ body {
   /* While the cookie notice shows, the end of the page can still scroll above it. */
   padding-bottom: var(--notice-room);
   background: var(--bg);
+  /* Static paper fibres in CSS, with no image or filter to load (D38). */
+  background-image:
+    repeating-linear-gradient(0deg, rgb(154 91 46 / 0.02) 0 1px, transparent 1px 4px),
+    repeating-linear-gradient(90deg, rgb(154 91 46 / 0.015) 0 1px, transparent 1px 6px);
   color: var(--ink);
   font: 400 16px/1.5 var(--sans);
   -webkit-font-smoothing: antialiased;
@@ -116,6 +120,12 @@ html[data-surface="ink"] {
 
 html[data-surface="ink"] body {
   padding-bottom: 0;
+}
+
+@media (forced-colors: active), (prefers-contrast: more), print {
+  body {
+    background-image: none;
+  }
 }
 
 button,
