@@ -25,6 +25,10 @@ The page's screens follow the Figma file «Login-Aule» v8, in the order César 
 
 The words of these steps are in `public/first-steps.js`, in Spanish and English, written in the student's language. First run is held in the page's memory only: nothing new goes into the browser's storage.
 
+### The cookie notice
+
+The paper screens say once which cookies the page uses: only its own and only the necessary ones, none for advertising: the account's and the session's and, for a family that came by an invitation, that link's until they sign in, with the policy's cookie section linked. It is a slim bar along the bottom edge of a phone or of a screen under 600 px tall, and a card from 481 px; «Entendido» is remembered in this browser (`aule.cookies`), and while it shows the paper screens end just above it, so the footer starts behind it. The sign-in providers' own cookies are said beside their buttons on P01 and P13, the only screens that reach them. FIGMA.md D36.
+
 ## Settings
 
 | Variable | Meaning |
