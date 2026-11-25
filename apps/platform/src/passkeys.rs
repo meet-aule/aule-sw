@@ -25,7 +25,8 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 use webauthn_rs::prelude::{
-    CredentialID, PasskeyRegistration, RegisterPublicKeyCredential, Url, WebauthnError,
+    CredentialID, DiscoverableAuthentication, DiscoverableKey, Passkey, PasskeyRegistration,
+    PublicKeyCredential, RegisterPublicKeyCredential, Url, WebauthnError,
 };
 use webauthn_rs::{Webauthn, WebauthnBuilder};
 
@@ -33,6 +34,7 @@ use crate::auth::{Input, TeamMember};
 use crate::config::AdminPasskeys;
 use crate::error::{ApiError, ApiResult};
 use crate::plans::team_member;
+use crate::signin::{TEAM_SESSION_HOURS, open_session};
 use crate::state::AppState;
 
 /// How long the browser is given for a ceremony. The library only passes it
@@ -65,6 +67,9 @@ const SIGN_IN_AGAIN: ApiError = ApiError::Conflict("sign in again to add a passk
 const MAIL_WAIT: Duration = Duration::from_secs(5);
 
 const NOT_SET_UP: ApiError = ApiError::Unavailable("passkeys are not set up here");
+/// Every refusal of a passkey sign-in, whatever went wrong: nothing tells an
+/// unknown passkey from someone else's, a bad one or a used ceremony.
+const NOT_CONFIRMED: ApiError = ApiError::Forbidden("that passkey could not be confirmed");
 
 /// The team's console as a relying party: passkeys made for its RP id, and
 /// ceremonies accepted only from its exact origin, with no other subdomain
@@ -76,6 +81,8 @@ pub fn relying_party(settings: &AdminPasskeys) -> Result<Webauthn, WebauthnError
 
 /// A ceremony in progress.
 pub enum Ceremony {
+    /// A sign-in from the console's sign-in page: nobody is known yet.
+    SignIn(DiscoverableAuthentication),
     /// A passkey being added, by the session that asked for it.
     Register { session: String, guardian_id: Uuid, user_handle: Uuid, state: PasskeyRegistration },
 }
@@ -104,10 +111,11 @@ impl Ceremonies {
     /// session has one passkey being added at a time: a new one replaces it.
     pub fn put(&mut self, ceremony: Ceremony, now: Instant) -> String {
         self.held.retain(|_, (at, _)| now.saturating_duration_since(*at) < CEREMONY_LIFE);
-        let Ceremony::Register { session, .. } = &ceremony;
-        self.held.retain(
-            |_, (_, held)| !matches!(held, Ceremony::Register { session: other, .. } if other == session),
-        );
+        if let Ceremony::Register { session, .. } = &ceremony {
+            self.held.retain(
+                |_, (_, held)| !matches!(held, Ceremony::Register { session: other, .. } if other == session),
+            );
+        }
         while self.held.len() >= self.most {
             let Some(oldest) = self.held.iter().min_by_key(|(_, (at, _))| *at).map(|(key, _)| *key) else {
                 break;
@@ -358,7 +366,8 @@ pub async fn list(member: TeamMember, State(state): State<AppState>) -> ApiResul
     Ok(Json(json!({ "passkeys": passkeys })))
 }
 
-/// `DELETE /v1/admin/passkeys/{id}`: one of the caller's own. Someone else's
+/// `DELETE /v1/admin/passkeys/{id}`: one of the caller's own, and with it
+/// every session it opened (`guardian_sessions.passkey_id`). Someone else's
 /// is as much not found as one that never was.
 pub async fn delete(
     member: TeamMember,
@@ -378,6 +387,185 @@ pub async fn delete(
     }
     tracing::info!(by = %team_member(&member.email), "a team passkey was removed");
     Ok(StatusCode::NO_CONTENT)
+}
+
+/// What the browser is asked for to sign in. The library marks a
+/// discoverable sign-in for conditional mediation (an address field's
+/// autofill); the console has a button and no address field, so the
+/// browser's own picker is wanted, and the mark goes.
+fn request_options(options: &impl serde::Serialize) -> Option<Value> {
+    let mut options = serde_json::to_value(options).ok()?;
+    options.as_object_mut()?.remove("mediation");
+    Some(options)
+}
+
+/// `POST /v1/auth/team/passkey/options`: what the browser needs to sign in
+/// with a passkey of the console, and the ceremony's handle. The same for
+/// everyone: the list of passkeys allowed is empty, and the browser's picker
+/// shows whose they are.
+pub async fn sign_in_options(State(state): State<AppState>) -> ApiResult<Json<Value>> {
+    let rp = state.webauthn.clone().ok_or(NOT_SET_UP)?;
+    let unavailable = || ApiError::Unavailable("a passkey sign-in could not be started; try again");
+    let (options, authentication) = rp.start_discoverable_authentication().map_err(|error| {
+        tracing::warn!(%error, "a passkey sign-in could not be started");
+        unavailable()
+    })?;
+    let options = request_options(&options).ok_or_else(unavailable)?;
+    let handle =
+        state.passkey_ceremonies.lock().expect("lock").put(Ceremony::SignIn(authentication), Instant::now());
+    Ok(Json(json!({ "ceremony": handle, "options": options })))
+}
+
+#[derive(Deserialize)]
+pub struct SignInInput {
+    ceremony: String,
+    /// What the browser's `credential.toJSON()` gave, as the console passes it on.
+    credential: Value,
+}
+
+/// `POST /v1/auth/team/passkey/verify`: a session of `TEAM_SESSION_HOURS`
+/// for the team member whose passkey signed, as their code opens
+/// (`signin::team_verify`), tied to that passkey, and the member's address, so
+/// the console can check its own team list too. Anything else is the same 403,
+/// and nothing is written before the library has accepted the passkey, but for
+/// one a copy of which is in use: that passkey is deleted.
+pub async fn sign_in(
+    State(state): State<AppState>,
+    Input(body): Input<SignInInput>,
+) -> ApiResult<Json<Value>> {
+    let rp = state.webauthn.clone().ok_or(NOT_SET_UP)?;
+    // Why, in fixed words: when a member says their passkey does not work,
+    // the log tells which way it failed, with nothing of the passkey.
+    let refused = |reason: &'static str| {
+        tracing::info!(reason, "a team passkey sign-in was refused");
+        NOT_CONFIRMED
+    };
+    let taken = state.passkey_ceremonies.lock().expect("lock").take(&body.ceremony, Instant::now());
+    let Some(Ceremony::SignIn(authentication)) = taken else {
+        return Err(refused("no sign-in ceremony has that handle: unknown, used or expired"));
+    };
+    let credential: PublicKeyCredential =
+        serde_json::from_value(body.credential).map_err(|_| refused("the credential could not be read"))?;
+    // The library checks where a ceremony ran only at registration. The
+    // console is never framed, so an answer from a frame in another site's
+    // page is none of its own.
+    if framed(credential.response.client_data_json.as_ref()) {
+        return Err(refused("the browser says it ran in a frame of another site"));
+    }
+    // Who the browser says signed: nothing is proven yet, it only says which passkey to check.
+    let (user_handle, credential_id) = rp
+        .identify_discoverable_authentication(&credential)
+        .map_err(|_| refused("the credential names no user"))?;
+    if credential_id.is_empty() || credential_id.len() > MAX_CREDENTIAL_ID_BYTES {
+        return Err(refused("the credential id is too long or empty"));
+    }
+    let credential_id = credential_id.to_vec();
+
+    // The row stays locked until the new counter is kept, so two sign-ins
+    // with one passkey are compared one after the other.
+    let txn = state.db.begin().await?;
+    let found = txn
+        .query_one_raw(Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            "select p.id, p.guardian_id, p.user_handle, p.passkey, p.label, g.email::text as email
+             from team_passkeys p join guardians g on g.id = p.guardian_id
+             where p.credential_id = $1
+             for update of p",
+            [credential_id.into()],
+        ))
+        .await?;
+    let Some(found) = found else { return Err(refused("no stored passkey has that credential id")) };
+    // The library does not compare the user handle: a stored passkey has none.
+    if found.try_get::<Uuid>("", "user_handle")? != user_handle {
+        return Err(refused("the user handle is not the passkey's owner's"));
+    }
+    let email: String = found.try_get("", "email")?;
+    let who = team_member(&email);
+    // The team is the platform's own list, read at start: a passkey outlives
+    // a place on it, and then opens nothing.
+    if !state.config.admin_emails.contains(&email) {
+        tracing::warn!(by = %who, "a passkey of someone no longer on the team was refused");
+        return Err(NOT_CONFIRMED);
+    }
+    let mut passkey: Passkey =
+        serde_json::from_value(found.try_get::<Value>("", "passkey")?).map_err(|_| {
+            tracing::error!(by = %who, "a stored team passkey could not be read");
+            NOT_CONFIRMED
+        })?;
+    let id: Uuid = found.try_get("", "id")?;
+    let result = match rp.finish_discoverable_authentication(
+        &credential,
+        authentication,
+        &[DiscoverableKey::from(&passkey)],
+    ) {
+        Ok(result) => result,
+        // A counter that did not go up, with the signature already checked:
+        // two copies of the key are in use, and which one is the device is not
+        // known. The library advises invalidating it, so it goes, and with it
+        // every session it opened; its owner signs in with a code and makes
+        // another.
+        Err(WebauthnError::CredentialPossibleCompromise) => {
+            txn.execute_raw(Statement::from_sql_and_values(
+                DbBackend::Postgres,
+                "delete from team_passkeys where id = $1",
+                [id.into()],
+            ))
+            .await?;
+            txn.commit().await?;
+            tracing::warn!(by = %who, "a team passkey whose counter went back was deleted, with the sessions it opened");
+            let label: String = found.try_get("", "label")?;
+            tell(&state, &email, copied_texts(&label), &who).await;
+            return Err(NOT_CONFIRMED);
+        }
+        Err(error) => {
+            // The library's errors are fixed words.
+            tracing::info!(%error, by = %who, "a team passkey sign-in was refused");
+            return Err(NOT_CONFIRMED);
+        }
+    };
+
+    // The counter and the backup state the library read are kept, as it
+    // advises: the next sign-in is compared with them. A synced passkey
+    // counts nothing, and the check is then skipped.
+    let update = if passkey.update_credential(&result) == Some(true) {
+        let stored = serde_json::to_value(&passkey).map_err(|error| ApiError::Internal(error.to_string()))?;
+        Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            "update team_passkeys set passkey = $2, last_used_at = now() where id = $1",
+            [id.into(), stored.into()],
+        )
+    } else {
+        Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            "update team_passkeys set last_used_at = now() where id = $1",
+            [id.into()],
+        )
+    };
+    txn.execute_raw(update).await?;
+    let token =
+        open_session(&txn, found.try_get("", "guardian_id")?, 0, TEAM_SESSION_HOURS, Some(id)).await?;
+    txn.commit().await?;
+    tracing::info!(by = %who, "a team member signed in with a passkey");
+    Ok(Json(json!({ "token": token, "expires_in_hours": TEAM_SESSION_HOURS, "email": email })))
+}
+
+/// Whether the browser says a ceremony ran in a frame of another site: its
+/// client data has `crossOrigin` true, or a `topOrigin`. Client data that is
+/// not JSON counts too; the library would refuse it anyway.
+fn framed(client_data_json: &[u8]) -> bool {
+    let Ok(client) = serde_json::from_slice::<Value>(client_data_json) else { return true };
+    client.get("crossOrigin").and_then(Value::as_bool).unwrap_or(false)
+        || client.get("topOrigin").is_some_and(|top| !top.is_null())
+}
+
+/// The mail about a passkey deleted because a copy of it was used.
+fn copied_texts(label: &str) -> (String, String) {
+    (
+        "Borramos una passkey de tu cuenta del panel de Aule".to_string(),
+        format!(
+            "Borramos la passkey «{label}» de tu cuenta del panel del equipo de Aule: su contador de usos retrocedió, una señal de que alguien la copió. Se cerraron las sesiones que abrió.\n\nEntra al panel con un código por correo y crea otra passkey. Si no la usaste tú hace poco, avisa al equipo."
+        ),
+    )
 }
 
 #[cfg(test)]
@@ -500,5 +688,54 @@ mod tests {
         assert_eq!(algorithms, [&json!(-7), &json!(-257)]);
         // The browser's parseCreationOptionsFromJSON refuses a null.
         assert!(!options.to_string().contains("null"), "{options}");
+    }
+
+    #[test]
+    fn a_sign_in_asks_for_any_verified_passkey_in_the_browsers_own_picker() {
+        let (options, _) = rp().start_discoverable_authentication().unwrap();
+        let options = request_options(&options).unwrap();
+        assert_eq!(options.get("mediation"), None, "no autofill: the console has a button");
+        let public_key = &options["publicKey"];
+        assert_eq!(public_key["allowCredentials"], json!([]));
+        assert_eq!(public_key["userVerification"], "required");
+        assert_eq!(public_key["rpId"], "localhost");
+        assert_eq!(public_key["timeout"], 240_000);
+        assert!(!options.to_string().contains("null"), "{options}");
+    }
+
+    #[test]
+    fn an_answer_from_a_frame_of_another_site_is_none_of_the_consoles() {
+        let data = |client: Value| client.to_string().into_bytes();
+        for own in [
+            json!({ "type": "webauthn.get", "origin": "https://admin.meetaule.com" }),
+            json!({ "crossOrigin": false }),
+            json!({ "crossOrigin": false, "topOrigin": null }),
+        ] {
+            assert!(!framed(&data(own.clone())), "{own}");
+        }
+        for framed_in in [
+            json!({ "crossOrigin": true }),
+            json!({ "topOrigin": "https://evil.example" }),
+            json!({ "crossOrigin": true, "topOrigin": "https://evil.example" }),
+        ] {
+            assert!(framed(&data(framed_in.clone())), "{framed_in}");
+        }
+        assert!(framed(b"not json"));
+    }
+
+    #[test]
+    fn a_sign_in_ceremony_is_no_registration() {
+        let mut ceremonies = Ceremonies::default();
+        let now = Instant::now();
+        let (_, authentication) = rp().start_discoverable_authentication().unwrap();
+        let signing = ceremonies.put(Ceremony::SignIn(authentication), now);
+        let adding = ceremonies.put(registering("session"), now);
+        assert!(matches!(ceremonies.take(&signing, now), Some(Ceremony::SignIn(_))));
+        assert!(matches!(ceremonies.take(&adding, now), Some(Ceremony::Register { .. })));
+        // A sign-in replaces no session's registration.
+        let (_, authentication) = rp().start_discoverable_authentication().unwrap();
+        let pending = ceremonies.put(registering("session"), now);
+        ceremonies.put(Ceremony::SignIn(authentication), now);
+        assert!(ceremonies.take(&pending, now).is_some());
     }
 }

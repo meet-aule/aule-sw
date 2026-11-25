@@ -20,7 +20,7 @@ aule-platform version   # which build this is (also --version); needs no setting
 | `memory` | Statements about a child with pgvector embeddings; recall by meaning, or by date without an embedding model |
 | `supervisor` | The brief before a session, guidance during it, the review after it |
 | `families`, `signin` | Families, guardians, children, append-only consent; sign-in by emailed code |
-| `passkeys` | The team console's passkeys, checked with webauthn-rs: the ceremonies in progress, and a team member adding, listing and deleting their own |
+| `passkeys` | The team console's passkeys, checked with webauthn-rs: the ceremonies in progress, a team member adding, listing and deleting their own, and signing in with one |
 | `devices` | Registration, claim codes, signed check-in and sessions, firmware |
 | `events`, `notices`, `push` | The outbox and its delivery; what families are told; pushes through Firebase Cloud Messaging |
 | `sessions` | Starting a session (its room and the token to join it), the agent's API for one session, the review job |
@@ -132,9 +132,9 @@ physical microphone switch. Do not replay buffered speech after reconnecting.
 
 The operator's token, or a signed-in guardian whose address is in
 `AULE_ADMIN_EMAILS` (`auth::Staff`); a family's token gets 403. The team's
-console (`apps/admin`) signs its members in with codes of their own (the first
-two routes, which need no token). What the team reads about the families is
-what it needs to look after them: never what a child said.
+console (`apps/admin`) signs its members in with codes of their own, or with a
+passkey (the first four routes, which need no token). What the team reads about
+the families is what it needs to look after them: never what a child said.
 
 A team member's passkeys for the console take more than that
 (`auth::TeamMember`): a session the team's sign-in opened, which lasts 12 hours,
@@ -146,14 +146,33 @@ origin `AULE_ADMIN_PASSKEY_ORIGIN`, with user verification required. A
 ceremony is kept in the platform's memory for 5 minutes (the browser gets 4)
 and works once, so a restart drops the ones in progress.
 
+A passkey sign-in needs no address: the passkey says whose it is, and its owner
+must still be in this platform's `AULE_ADMIN_EMAILS`. The answer names the
+owner's address, for the console to check against its own list too. It opens
+the same 12-hour session a code does, tied to the passkey: deleting the
+passkey ends every session it opened. It keeps the counter and backup state
+the library read. A counter that did not go up, once the signature is checked,
+means a copy of the key is in use, as the library warns: the passkey is
+deleted, with the sessions it opened, and its owner is mailed. A sign-in the
+browser says ran in a frame of another site is refused too; the library
+checks that only when a passkey is made. Every refusal is logged with its
+reason in fixed words, and nothing of the passkey.
+
+Passkeys are optional: a member who has one still gets codes. Making them
+required is the owner's decision, to be made in `signin::team_start` and
+`team_verify`; a member who lost every device would then need the operator to
+delete their rows in `team_passkeys`.
+
 | Route | What it does |
 |---|---|
 | `POST /v1/auth/team/start` | `{email}`: a six-digit code for the team's console, mailed only to an address in `AULE_ADMIN_EMAILS` that has a guardian account. Every address gets the same `204`. These codes are kept apart from a family's, so asking for one leaves nothing a family's sign-in can read or use up: they have their own five an hour |
 | `POST /v1/auth/team/verify` | `{email, code}`: `{token, expires_in_hours: 12}` for the code `team/start` mailed, a session of 12 hours instead of a family's 30 days. It never makes an account; anything else, a wrong or used code included, is the same `403`, and five wrong tries burn the code |
+| `POST /v1/auth/team/passkey/options` | What the browser needs to sign in with a passkey, `{ceremony, options: {publicKey}}`, for `PublicKeyCredential.parseRequestOptionsFromJSON`: the same for everyone, with an empty allow list (the browser's picker shows whose passkeys they are), user verification required, and no forced autofill |
+| `POST /v1/auth/team/passkey/verify` | `{ceremony, credential}`, with `credential` as the browser's `credential.toJSON()` (16 KiB at most): `{token, expires_in_hours: 12, email}`, the session a code opens, for the team member whose passkey signed, and their address for the console's own check. Anything else is the same `403`: an unknown, used or expired ceremony, a ceremony the browser says ran in a frame of another site, a passkey nobody has, a user handle that is not its owner's, an owner no longer on the team, or one the library refuses (user verification, origin, RP id, signature, a change of backup eligibility, or a counter that did not go up, which also deletes the passkey) |
 | `POST /v1/admin/passkeys/options` | What the browser needs to create a passkey for the caller, `{ceremony, options: {publicKey}}`, for `PublicKeyCredential.parseCreationOptionsFromJSON`: discoverable, with user verification, attestation `none`, and the caller's own passkeys excluded. The ceremony is bound to this session, which must have been opened in the last 15 minutes (`409` otherwise: sign in again); a session has one at a time, and a new one replaces it. The user handle is random, the same for all of a member's passkeys, never their guardian id; the name shown is their address. `400` at 10 passkeys |
 | `POST /v1/admin/passkeys` | `{ceremony, label, credential}`, with `credential` as the browser's `credential.toJSON()` (16 KiB at most): the passkey, kept once the library has checked it. `201 {id, label, created_at, last_used_at}`, and the member is mailed that a passkey of that name was added, where mail is set up. `409` when the session's sign-in is no longer from the last 15 minutes, as at the start: the ceremony outlives what was left of it. `400` for a name that is not 1 to 60 characters on one line, a ceremony that is unknown, used, expired or another session's, a credential the browser says is not discoverable, one the library refuses, one already registered to anyone, or an eleventh |
 | `GET /v1/admin/passkeys` | The caller's own passkeys, newest first: `{passkeys: [{id, label, created_at, last_used_at}]}`. Never a credential id, a key, a handle, a counter or a flag |
-| `DELETE /v1/admin/passkeys/{id}` | Deletes one of the caller's own: `204`. Someone else's is the same `404` as one that never was. A team session is enough: deleting gives nobody a way in |
+| `DELETE /v1/admin/passkeys/{id}` | Deletes one of the caller's own, and every session it opened: `204`. Someone else's is the same `404` as one that never was. A team session is enough: deleting gives nobody a way in |
 | `GET /v1/admin/families` | The families, newest first, each with its guardians' addresses, how many children, its plan now (`standing`, as `/v1/me/plan` has it), the link it came by (`source`) and how much it used Aule in the last 7 and 30 days. With nothing asked, the newest 300. `q` finds a family by its name or a guardian's address (any part, whatever the case; 100 characters at most), `source` by a link code and `status` by the plan it has now (`trial`, `paid`, `granted`, `none`, `team` or `free`); an empty one is no filter. `limit` (1 to 300) and `before`, the `next` of the page before, page through them. `total` is how many match `q` and `source`, and null with a `status`: a plan is worked out family by family, so a search by plan looks at 300 at most, and its page can come back short with a `next` that goes on from where it stopped. `sources` is every link code with its number of families, the most first (100 at most) |
 | `GET /v1/admin/families/{id}` | One family's page: its name, link and sign-up date; its guardians (name, address, language, how they get notices; 10 at most, oldest first); its children (nickname, age from the year of birth, grade, and for `voice`, `transcripts` and `memory` the current answer, `granted`, with when and how it was given: `at` and `source`, null when never answered; 20 at most); its plan now (`standing`), its `trial` (from the first session that counts, whatever the plan now), every plan it has had, paid or granted, with the note and who on the team granted it (`granted_by`, null for the operator's token; 50 at most, newest first: a grant the team ended shows the days it ran); and its `sessions`: how many `started`, the latest start, and how many are `open`. Never a child's notes, interests or tutor, the id of a guardian or a child, who recorded a consent, a card's token, or anything said in a session. 404 for a family that is not there |
 | `GET /v1/admin/families/{id}/sessions` | Its sessions, newest first, started or not: when, `seconds` (null for one that never started or that the housekeeping closed), `status`, `end_reason`, `engine`, `via` (`web` or `device`), the child's nickname and the audience. 20 to a page, or `limit` from 1 to 50; `before`, the `next` of the page before, goes on. No id, room, token, objective or anything said |
