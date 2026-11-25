@@ -921,12 +921,12 @@ EVALS = {
     "evals/pedagogy/budget.py": (
         "62b7d87916ee2e2b4744176686895b2193f6629674e9ef2520712174bfe98048"
     ),
-    "evals/pedagogy/cases.py": ("ce4d7bfc4f3fd6027eb298f6f3394996157ce5f4cc529f65d0b4264b1202a916"),
+    "evals/pedagogy/cases.py": ("5bff946b879ab883ccc7208fb8e1c6fa2422f16fd1e509d5eb020426c0a636c3"),
     "evals/pedagogy/evaluate.py": (
-        "0560ed15dfeb14411ed0bf91b3a56e031113edda65562691fcd0851805f4d1ea"
+        "c43cdfa2866028c64154aec75ba7dd88ef547ca4129fbddfd3f319a8193fb7ff"
     ),
     "evals/pedagogy/report.py": (
-        "9a4c88c3c27b82ca64b60eae543d222d34946262c8cb366e8032c163a97af366"
+        "ad825afaafd537a0d1796f01f52a2e2873a665b62f2a04402fb63b26f4ac1759"
     ),
     "evals/pedagogy/test_budget.py": (
         "f2a9c61ea8785de0f7c6849806e299d5d8b9e37c3fd6f580cadddd7e120b3904"
@@ -938,7 +938,7 @@ EVALS = {
         "9e15c50158309e5359d26f7ec7c4452e888ca7ebc6356abae61a9a564c460a3d"
     ),
     "evals/pedagogy/checker/src/main.rs": (
-        "f821e624051f1dba06f7492b465c4290ff91bb2eb471db9f3f859de93c23a619"
+        "12a4856d8d8245281c5326f3418d35b12152437131a567ab052778852abbc97c"
     ),
 }
 
