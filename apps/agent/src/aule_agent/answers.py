@@ -23,10 +23,16 @@ hint spent, or a probe failed, so a line is sent as one only when it says
 nothing else. Each limit can be lifted once the platform reads that case
 right.
 
+``names_other_numbers`` reads the tutor's side: a reply that names numbers
+other than the exercise's own, or the values of its steps, asks about another
+computation (a worked example, a simpler one, a question of its own), and the
+child's next turn answers that, not the exercise.
+
 Pure: no IO, and nothing here logs.
 """
 
 import re
+from collections.abc import Iterator
 from dataclasses import dataclass
 from fractions import Fraction
 from math import gcd
@@ -491,3 +497,188 @@ def _read_first(said: str) -> str | None:
     after = [kind for kind in kinds[last + 1 :] if kind != "marker"]
     numbers = after or [kind for kind in kinds if kind != "marker"]
     return numbers[0] if numbers else None
+
+
+# What the tutor said last -----------------------------------------------------
+
+
+def names_other_numbers(said: str, expression: str, language: str) -> bool:
+    """Whether ``said``, what the tutor said and showed since the child's
+    last turn, names a number that is neither one of ``expression``'s own
+    numbers nor the value of one of its steps. Then it asks about another
+    computation (a worked example with other numbers, a simpler one, a
+    question of its own), and the child's reply answers that: sent to the
+    checker, a number would count as a wrong try at the exercise.
+
+    Numbers in digits count, and so do numbers said in words in the
+    session's language, as the tutor says them aloud ("cuarenta y cinco",
+    "un cuarto"), a fraction by its bottom number. "Un", "una", "uno" and
+    "one" alone do not, nor "los dos" or "las dos": in a tutor's line they
+    are an article, "cada uno", "uno parecido" or "both" far more often than
+    a number."""
+    own = _own_numbers(expression)
+    plain = _plain(said)
+    for written in _NUMBER.findall(plain):
+        value = _value(written)
+        if value is None or value not in own:
+            return True
+    words = _WORD.findall(plain)
+    return any(Fraction(value) not in own for value in _said_in_words(words, language))
+
+
+def _counted(words: str, first: int, step: int = 1) -> dict[str, int]:
+    return {word: first + step * index for index, word in enumerate(words.split())}
+
+
+_WORD = re.compile(r"[^\W\d_]+")
+# Numbers said in words, in each language: the words for 0 to 9, the other
+# numbers said in one word below 30 (20 in English), the tens, the hundreds
+# (Spanish says each in one word, English says "hundred" after the number),
+# and "thousand".
+_UNITS = {
+    "es": {
+        **_counted("cero uno dos tres cuatro cinco seis siete ocho nueve", 0),
+        "un": 1,
+        "una": 1,
+    },
+    "en": _counted("zero one two three four five six seven eight nine", 0),
+}
+_TEENS = {
+    "es": {
+        **_counted(
+            "diez once doce trece catorce quince dieciseis diecisiete dieciocho diecinueve "
+            "veinte veintiuno veintidos veintitres veinticuatro veinticinco veintiseis "
+            "veintisiete veintiocho veintinueve",
+            10,
+        ),
+        "veintiun": 21,
+        "veintiuna": 21,
+    },
+    "en": _counted(
+        "ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen", 10
+    ),
+}
+_TENS = {
+    "es": _counted("treinta cuarenta cincuenta sesenta setenta ochenta noventa", 30, 10),
+    "en": _counted("twenty thirty forty fifty sixty seventy eighty ninety", 20, 10),
+}
+_HUNDREDS = {
+    "cien": 100,
+    "ciento": 100,
+    **{
+        f"{stem}{ending}": value
+        for stem, value in _counted(
+            "doscient trescient cuatrocient quinient seiscient setecient ochocient novecient",
+            200,
+            100,
+        ).items()
+        for ending in ("os", "as")
+    },
+}
+_THOUSAND = {"es": "mil", "en": "thousand"}
+# The bottom number a fraction's name says: "cuartos" 4, "a third" 3.
+_PART_WORDS = {
+    "es": {
+        **dict.fromkeys(("medio", "media", "mitad"), 2),
+        **dict.fromkeys(("tercio", "tercera"), 3),
+        **dict.fromkeys(("cuarto", "cuarta"), 4),
+        **dict.fromkeys(("quinto", "quinta"), 5),
+        **dict.fromkeys(("sexto", "sexta"), 6),
+        **dict.fromkeys(("septimo", "septima"), 7),
+        **dict.fromkeys(("octavo", "octava"), 8),
+        **dict.fromkeys(("noveno", "novena"), 9),
+        **dict.fromkeys(("decimo", "decima"), 10),
+        "centesimo": 100,
+    },
+    "en": {
+        **dict.fromkeys(("half", "halve"), 2),
+        "third": 3,
+        **dict.fromkeys(("quarter", "fourth"), 4),
+        **_counted("fifth sixth seventh eighth ninth tenth", 5),
+    },
+}
+_NOT_ALONE = {"es": frozenset({"un", "una", "uno"}), "en": frozenset({"one"})}
+_BOTH = frozenset({"los", "las"})
+
+
+def _said_in_words(words: list[str], language: str) -> Iterator[int]:
+    """The numbers said in ``words``, plain and one word each, in ``language``."""
+    at = 0
+    while at < len(words):
+        found = _number_at(words, at, language)
+        if found is None:
+            part = _part(words[at], language)
+            if part is not None:
+                yield part
+            at += 1
+            continue
+        value, used = found
+        alone = used == 1 and words[at] in _NOT_ALONE.get(language, ())
+        both = used == 1 and words[at] == "dos" and at > 0 and words[at - 1] in _BOTH
+        if not alone and not both:
+            yield value
+        at += used
+
+
+def _number_at(words: list[str], at: int, language: str) -> tuple[int, int] | None:
+    """The whole number said from ``words[at]``, and how many words it took."""
+    found = _below_a_thousand(words, at, language)
+    taken = found[1] if found is not None else 0
+    if words[at + taken : at + taken + 1] != [_THOUSAND.get(language)]:
+        return found
+    # "dos mil quinientos", "mil", "three thousand".
+    rest = _below_a_thousand(words, at + taken + 1, language)
+    value = (found[0] if found is not None else 1) * 1000 + (rest[0] if rest else 0)
+    return value, taken + 1 + (rest[1] if rest else 0)
+
+
+def _below_a_thousand(words: list[str], at: int, language: str) -> tuple[int, int] | None:
+    if at >= len(words):
+        return None
+    if language == "es" and words[at] in _HUNDREDS:
+        rest = _below_a_hundred(words, at + 1, language)
+        return _HUNDREDS[words[at]] + (rest[0] if rest else 0), 1 + (rest[1] if rest else 0)
+    found = _below_a_hundred(words, at, language)
+    taken = found[1] if found is not None else 0
+    if language != "en" or words[at + taken : at + taken + 1] != ["hundred"]:
+        return found
+    # "two hundred and five", "a hundred" (the article is no number).
+    hundreds = (found[0] if found is not None else 1) * 100
+    after = at + taken + 1
+    rest_at = after + 1 if words[after : after + 1] == ["and"] else after
+    rest = _below_a_hundred(words, rest_at, language)
+    if rest is None:
+        return hundreds, after - at
+    return hundreds + rest[0], rest_at + rest[1] - at
+
+
+def _below_a_hundred(words: list[str], at: int, language: str) -> tuple[int, int] | None:
+    if at >= len(words):
+        return None
+    word, units = words[at], _UNITS.get(language, {})
+    tens = _TENS.get(language, {})
+    if word in tens:
+        # "cuarenta y cinco"; "forty five", or "forty-five" split at its hyphen.
+        unit = at + 2 if language == "es" else at + 1
+        joined = language != "es" or words[at + 1 : at + 2] == ["y"]
+        if joined and unit < len(words) and units.get(words[unit], 0) > 0:
+            return tens[word] + units[words[unit]], unit + 1 - at
+        return tens[word], 1
+    for table in (_TEENS.get(language, {}), units):
+        if word in table:
+            return table[word], 1
+    return None
+
+
+def _part(word: str, language: str) -> int | None:
+    """The bottom number of a fraction named by ``word``: "cuartos" 4,
+    "mitades" 2, "doceavos" 12."""
+    parts = _PART_WORDS.get(language, {})
+    for singular in (word, word.removesuffix("s"), word.removesuffix("es")):
+        if singular in parts:
+            return parts[singular]
+    stem = word.removesuffix("s").removesuffix("avo")
+    if language != "es" or stem == word.removesuffix("s"):
+        return None
+    value = _TEENS["es"].get(stem) or _TEENS["es"].get(f"{stem}e")
+    return value if value is not None and value > 10 else None

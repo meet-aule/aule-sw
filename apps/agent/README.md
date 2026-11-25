@@ -145,14 +145,30 @@ checks a step itself. So is a line about something else with one number in
 digits ("tengo 10 años"), as when the model passes it itself. The fix belongs to
 the platform's reader.
 
+An answer to something else the tutor asked is no try at the exercise either,
+and the platform would count it as one. So code checks nothing while the tutor
+is off the exercise, and the model checks with its own `check_answer`, as it
+does whatever code leaves to it:
+
+- after a check whose answer has the tutor work a similar example with other
+  numbers first (the platform's worked example, after the last hint), and after
+  a pose the platform did not take (a comparison, say), while the exercise
+  stays open behind it, until that exercise is posed again;
+- in a turn after the tutor said or showed numbers other than the exercise's
+  own and the values of its steps, in digits or in words: a worked example, a
+  simpler one, a question of its own, the child's wrong answer said back. "Un",
+  "una", "uno", "one" and "los dos" are not read as numbers.
+
 The checker is called at most once per child turn and exercise: the model's own
 `check_answer` on a turn already checked gets the same answer back. A failure or
 a timeout (1.5 s) gives "Not checked: carry on by yourself." and is not retried.
-Each turn keeps its own check: a message typed while a spoken turn is checked
-loses neither. What goes to the platform is the child's own words, which it may
-record with the attempt, so it goes only after every gate let the turn through.
-The logs carry how the turn was read and how long the check took: never the
-words, nor the checker's answer.
+Each turn keeps its own check, and the tools of a reply read the turn that
+reply answers, even when a message is typed, or the button pressed, while that
+turn is checked: no check is lost, made twice or given to another turn's reply.
+What goes to the platform is the child's own words, which it may record with the
+attempt, so it goes only after every gate let the turn through. The logs carry
+how the turn was read and how long the check took: never the words, nor the
+checker's answer.
 
 The policy's one rule on analogies ([prompts.py](src/aule_agent/prompts.py))
 keeps the exercise's operations, their order and each number in its role: when

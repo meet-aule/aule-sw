@@ -5,7 +5,7 @@ help with the exercise."""
 
 import pytest
 
-from aule_agent.answers import HELP_SENT, MAX_SAID_CHARS, Reading, to_check
+from aule_agent.answers import HELP_SENT, MAX_SAID_CHARS, Reading, names_other_numbers, to_check
 
 ORDER = "25 + 3 * 2"
 FRACTIONS = "1/2 + 1/3"
@@ -313,3 +313,79 @@ def test_any_input_is_read_without_raising(words):
             reading = to_check(words, expression, language)
             assert reading.kind in ("help", "answer", "left")
             assert (reading.said is None) == (reading.kind == "left")
+
+
+# What the tutor said last: about the exercise, or about other numbers.
+
+
+@pytest.mark.parametrize(
+    ("said", "expression", "language"),
+    [
+        # A worked example with other numbers, in digits or in words, as the
+        # platform asks for after the last hint, and as the analogy rule's own.
+        ("Hagamos uno parecido: 4 + 2 × 5. ¿Cuánto es 2 × 5?", ORDER, "es"),
+        ("Hagamos uno parecido: cuatro más dos por cinco. ¿Cuánto da?", ORDER, "es"),
+        ("Uno parecido: doce más tres por cuatro. ¿Cuánto es?", "18 + 4 × 5", "es"),
+        ("Imagina 2 bolsas con 3 manzanas y 1 manzana suelta.", "20 + 3 * 2", "es"),
+        ("Let's do a similar one: four plus two times five.", ORDER, "en"),
+        # A question of its own, after a pose the platform refused.
+        ("¿Cuál es mayor, cero coma cinco o cero coma cuarenta y cinco?", "7 × 8", "es"),
+        ("Which is bigger, 0.5 or 0.45?", "7 × 8", "en"),
+        # A simpler fraction, named by its bottom number.
+        ("Probemos con un cuarto más un cuarto.", FRACTIONS, "es"),
+        ("Try a quarter plus a quarter.", FRACTIONS, "en"),
+        # Numbers said in more than one word.
+        ("Piensa en treinta y siete caramelos.", ORDER, "es"),
+        ("Ciento veinte más dos mil quinientos.", ORDER, "es"),
+        ("Two hundred and five.", ORDER, "en"),
+        # The child's own wrong answer said back: what follows may answer it.
+        ("¿Cincuenta y seis? Cuéntame cómo llegaste.", ORDER, "es"),
+        # A number the platform could not read.
+        ("Mira: 99999999999999999999.", ORDER, "es"),
+    ],
+)
+def test_a_line_that_names_other_numbers_is_about_something_else(said, expression, language):
+    assert names_other_numbers(said, expression, language)
+
+
+@pytest.mark.parametrize(
+    ("said", "expression", "language"),
+    [
+        # The exercise's own numbers, and the values of its steps.
+        ("¿Cuánto es tres por dos?", ORDER, "es"),
+        ("Veinticinco más seis: ¿cuánto da?", ORDER, "es"),
+        ("What is three times two?", ORDER, "en"),
+        ("Un medio más un tercio: piensa en sextos.", FRACTIONS, "es"),
+        ("¿Cuál es el recíproco de dos tercios?", DIVISION, "es"),
+        ("Cero coma cinco más cero coma veinticinco.", "0,5 + 0,25", "es"),
+        ("Muy bien. ¿Cuánto es tres cuartos más un octavo?", "3/4 + 1/8", "es"),
+        ("Catorce quinceavos y quince catorceavos.", COMPARED, "es"),
+        # An article, a pronoun or "both", not a number.
+        ("Hagamos uno parecido, cada uno con su paso.", ORDER, "es"),
+        ("Bien. Ahora suma los dos números, o las dos partes.", ORDER, "es"),
+        ("Which one do you do first? Once you know, tell me.", ORDER, "en"),
+        # No number at all.
+        ("¿Qué operación harías primero?", ORDER, "es"),
+        ("", ORDER, "es"),
+    ],
+)
+def test_a_line_with_only_the_exercises_numbers_is_about_it(said, expression, language):
+    assert not names_other_numbers(said, expression, language)
+
+
+def test_only_the_sessions_language_is_read_in_words():
+    # "once" is eleven in Spanish, "ten" says "have" in Spanish.
+    assert names_other_numbers("Once más.", ORDER, "es")
+    assert not names_other_numbers("Once more.", ORDER, "en")
+    assert not names_other_numbers("Ten cuidado.", ORDER, "es")
+    assert names_other_numbers("Ten more.", ORDER, "en")
+
+
+@pytest.mark.parametrize(
+    "said",
+    ["", "?!", "y y y", "mil mil", "hundred and", "treinta y", "ciento", "veinteavos", "٣١ ３１"],
+)
+def test_any_line_is_read_without_raising(said):
+    for expression in (ORDER, FRACTIONS, "", "x", "(((", "1/0 + 2"):
+        for language in ("es", "en", "fr"):
+            assert names_other_numbers(said, expression, language) in (True, False)

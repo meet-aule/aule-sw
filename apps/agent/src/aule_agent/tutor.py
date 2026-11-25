@@ -2,6 +2,7 @@
 
 import asyncio
 import contextlib
+import contextvars
 import itertools
 import json
 import logging
@@ -57,11 +58,15 @@ Show = Callable[[dict[str, Any]], Awaitable[None]]
 
 @dataclass(frozen=True)
 class OpenExercise:
-    """The exercise the checker has open: its id there, and the expression
-    as the tutor posed it."""
+    """The exercise the checker has open: its id there, the expression as
+    the tutor posed it, and whether the tutor is set to work on something
+    else first: a worked example with other numbers, which the platform asks
+    for after the last hint. What the student says meanwhile answers that,
+    until the exercise is posed again."""
 
     id: int
     expression: str
+    aside: bool = False
 
 
 class Checker(Protocol):
@@ -166,6 +171,17 @@ class _Turn:
     # Its words, once they passed every gate, when they may be checked.
     words: str = ""
     check: TurnCheck | None = None
+
+
+# The student's turn that the reply running now answers, with the tutor it
+# belongs to. Set as each turn begins (``Tutor._starts_a_turn``): LiveKit asks
+# a spoken turn's reply in the task that awaited ``on_user_turn_completed``,
+# and a typed turn's or the button's where ``generate_reply`` is called, and
+# the tasks of that reply and of its tools start from a copy of that context.
+# So a reply's tools read its own turn, however many turns begin after it.
+_ANSWERING: contextvars.ContextVar[tuple[object, _Turn] | None] = contextvars.ContextVar(
+    "aule_answering", default=None
+)
 
 
 # The fixed lines that are not part of the work: a gate's reply, the clock, a
@@ -885,6 +901,10 @@ class Tutor(Agent):
         self._checker = checker
         # The student's turn now. Before the first nothing was stopped.
         self._turn = _Turn(passed=True)
+        # The open exercise the tutor stepped off with a pose the checker did not
+        # take (not arithmetic it can check, or a call that failed): the tutor
+        # asks something else, and the exercise stays open behind it.
+        self._posed_elsewhere: int | None = None
         self._fixed_lines = frozenset(reply(key, language) for key in _NOT_THE_WORK)
 
         @function_tool(raw_schema=comparison.SCHEMA)
@@ -916,15 +936,17 @@ class Tutor(Agent):
                     return UNCHECKED
                 async with self._checking:
                     before = checker.exercise
-                    told = (
-                        await checker.pose(
-                            expression,
-                            skill_id if isinstance(skill_id, str) else None,
-                            form if isinstance(form, str) else None,
-                        )
-                        or UNCHECKED
+                    told = await checker.pose(
+                        expression,
+                        skill_id if isinstance(skill_id, str) else None,
+                        form if isinstance(form, str) else None,
                     )
-                    return await self._checked_after_a_pose(checker, before, told)
+                    # Not taken, the tutor asks something else now, and the
+                    # exercise before stays open behind it until it is posed again.
+                    self._posed_elsewhere = (
+                        before.id if told is None and before is not None else None
+                    )
+                    return await self._checked_after_a_pose(checker, before, told or UNCHECKED)
 
             @function_tool(raw_schema=CHECK_ANSWER)
             async def check_answer(raw_arguments: dict[str, object]) -> str:
@@ -1027,7 +1049,18 @@ class Tutor(Agent):
         """A new turn of the student. Nothing of the turn before is checked with
         it; whether that turn was stopped is kept with it."""
         self._turn = _Turn(after_a_stop=not self._turn.passed, passed=passed)
+        _ANSWERING.set((self, self._turn))
         return self._turn
+
+    def _turn_answered(self) -> _Turn:
+        """The student's turn that the reply running now answers: the one it
+        was asked for, though newer turns may have begun since. A reply asked
+        for no turn of this tutor's answers none: it reuses no check, and
+        checks none of the student's words."""
+        answering = _ANSWERING.get()
+        if answering is not None and answering[0] is self:
+            return answering[1]
+        return _Turn(passed=True)
 
     def _after_a_fixed_line(self) -> bool:
         """Whether the tutor's last line was a fixed one that is not part of the
@@ -1047,8 +1080,10 @@ class Tutor(Agent):
         for this turn's request. Nothing is checked when no exercise is open,
         and only what ``answers`` sends; the model checks the rest itself. A
         turn after one the gates stopped, or after a fixed line, answers that
-        line and is left to the model whole. Never raises: a check that cannot
-        be made leaves the turn as before.
+        line and is left to the model whole, and so is a turn that answers
+        something else the tutor asked while the exercise stays open
+        (``_asked_something_else``). Never raises: a check that cannot be made
+        leaves the turn as before.
         """
         turn.passed = True
         if self._checker is None:
@@ -1063,7 +1098,7 @@ class Tutor(Agent):
                     return []
                 reading = (
                     answers.Reading(None, "left", False)
-                    if answers_a_line
+                    if answers_a_line or self._asked_something_else(exercise)
                     else answers.to_check(words, exercise.expression, self._language)
                 )
                 check = TurnCheck(kind=reading.kind, exercise=exercise.id)
@@ -1097,14 +1132,48 @@ class Tutor(Agent):
             )
             return []
 
+    def _asked_something_else(self, exercise: OpenExercise) -> bool:
+        """Whether what the tutor asked last is not ``exercise``, though it
+        stays open: a worked example with other numbers comes first, as the
+        platform asked, or a pose of something else was not taken, both until
+        the exercise is posed again; or what the tutor said and showed since
+        the student's last message names numbers other than the exercise's
+        own and its steps' (``answers.names_other_numbers``). The student's
+        reply answers that, and is left to the model, whose own check still
+        works."""
+        return (
+            exercise.aside
+            or exercise.id == self._posed_elsewhere
+            or answers.names_other_numbers(
+                self._said_since_the_student(), exercise.expression, self._language
+            )
+        )
+
+    def _said_since_the_student(self) -> str:
+        """What the tutor said since the student's last message, and the text
+        of what it put on the screen meanwhile, which it does not read aloud."""
+        said: list[str] = []
+        for item in reversed(self.chat_ctx.items):
+            if item.type == "message" and item.role == "user":
+                break
+            if item.type == "message" and item.role == "assistant":
+                said.append(item.text_content or "")
+            elif item.type == "function_call" and item.name == "show":
+                with contextlib.suppress(ValueError):
+                    visual = json.loads(item.arguments)
+                    if isinstance(visual, dict):
+                        said.append(visuals.text_of(visual))
+        return " ".join(reversed(said))
+
     async def _checked_by_the_model(self, checker: Checker, said: str) -> str:
         """The model's own check_answer: one call to the checker per turn and
-        exercise. A turn already checked against the exercise open now, or
-        against the one its check closed, gets the same answer back."""
+        exercise. The turn is the one this reply answers, even when a newer
+        one has begun: already checked against the exercise open now, or
+        against the one its check closed, it gets the same answer back."""
         async with self._checking:
             exercise = checker.exercise
             open_now = exercise.id if exercise is not None else None
-            turn = self._turn
+            turn = self._turn_answered()
             done = turn.check
             if done is not None and done.told is not None and open_now in (done.exercise, None):
                 turn.check = replace(done, by=(*done.by, "reused"))
@@ -1118,13 +1187,13 @@ class Tutor(Agent):
         self, checker: Checker, before: OpenExercise | None, told: str
     ) -> str:
         """What the model reads after posing an exercise. When the student's
-        turn brought that exercise with their answer ("Estoy haciendo 25 + 3 ×
-        2. Me salió 56"), nothing was open to check it against after the
-        gates: it is checked now, against the exercise just opened. Only when
-        their words say it again as posed, or an answer to the exercise before,
-        or "tengo 10 años", would be taken for an answer to it. Called with the
-        checker's lock held."""
-        posed, turn = checker.exercise, self._turn
+        turn this reply answers brought that exercise with their answer
+        ("Estoy haciendo 25 + 3 × 2. Me salió 56"), nothing was open to check
+        it against after the gates: it is checked now, against the exercise
+        just opened. Only when their words say it again as posed, or an answer
+        to the exercise before, or "tengo 10 años", would be taken for an
+        answer to it. Called with the checker's lock held."""
+        posed, turn = checker.exercise, self._turn_answered()
         if (
             posed is None
             or (before is not None and posed.id == before.id)

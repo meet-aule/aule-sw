@@ -170,6 +170,53 @@ async def test_an_answer_that_leaves_it_open_or_fails_keeps_the_exercise(answer)
     assert platform.exercise == OpenExercise(id=7, expression="25 + 3 * 2")
 
 
+WORKED = {
+    "verdict": "incorrect",
+    "closed": False,
+    "next": "worked_example",
+    "say": "Work a similar one with other numbers, step by step. Then they retry theirs.",
+}
+
+
+async def test_an_answer_that_asks_for_a_worked_example_sets_the_exercise_aside_until_posed_again():
+    send = Recorder({"exercise": 7, "say": "Ask it."}, WORKED, Refused(400), SAME)
+    platform = Platform(SESSION, send)
+    await platform.pose("25 + 3 * 2", None, None)
+
+    assert await platform.answer("56") == WORKED["say"]
+    # Still open, while the tutor works another example first.
+    assert platform.exercise == OpenExercise(id=7, expression="25 + 3 * 2", aside=True)
+    # A pose of something else that fails changes nothing.
+    await platform.pose("¿cuál es mayor?", None, None)
+    assert platform.exercise == OpenExercise(id=7, expression="25 + 3 * 2", aside=True)
+    # Stated again, however it is written: the tutor is back on it.
+    await platform.pose("25+3×2", None, None)
+    assert platform.exercise == OpenExercise(id=7, expression="25 + 3 * 2")
+
+
+@pytest.mark.parametrize(
+    ("then", "after"),
+    [
+        # A new exercise posed: open, and the tutor on it.
+        ({"exercise": 8, "say": "Ask it and wait."}, OpenExercise(id=8, expression="1/2 + 1/3")),
+        # Closed by the answer after the worked example.
+        ({"verdict": "incorrect", "closed": True, "say": "Work it out.", "reveal": "31"}, None),
+    ],
+)
+async def test_an_exercise_set_aside_gives_way_to_a_new_one_or_closes(then, after):
+    send = Recorder({"exercise": 7, "say": "Ask it."}, WORKED, then)
+    platform = Platform(SESSION, send)
+    await platform.pose("25 + 3 * 2", None, None)
+    await platform.answer("56")
+
+    if "exercise" in then:
+        await platform.pose("1/2 + 1/3", None, None)
+    else:
+        await platform.answer("31")
+
+    assert platform.exercise == after
+
+
 @pytest.mark.parametrize("failure", [Refused(400), Refused(409), TimeoutError(), RuntimeError()])
 async def test_a_pose_that_fails_keeps_the_exercise_open_before_it(failure):
     platform = Platform(SESSION, Recorder({"exercise": 7, "say": "Ask it."}, failure, {"say": "?"}))

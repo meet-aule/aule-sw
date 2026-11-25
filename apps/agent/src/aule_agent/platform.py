@@ -15,7 +15,7 @@ import logging
 import os
 import time
 from collections.abc import Awaitable, Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 import aiohttp
@@ -159,7 +159,8 @@ class Platform:
         self.breaks_taken = 0
         # The exercise the platform has open for the tutor, as it last said: a
         # pose opens it, and an answer that closes it, or finds none open,
-        # clears it. A call that failed leaves it as it was.
+        # clears it. An answer that asks for a worked example sets it aside,
+        # until it is posed again. A call that failed leaves it as it was.
         self.exercise: OpenExercise | None = None
 
     async def _http(
@@ -283,8 +284,11 @@ class Platform:
         )
         posed = (answer or {}).get("exercise")
         if type(posed) is int and (self.exercise is None or self.exercise.id != posed):
-            # The same exercise stated again keeps its id, and how it was first written.
             self.exercise = OpenExercise(id=posed, expression=expression.strip())
+        elif type(posed) is int and self.exercise is not None:
+            # The same exercise stated again keeps its id, and how it was first
+            # written; the tutor is back on it.
+            self.exercise = replace(self.exercise, aside=False)
         return _said(answer)
 
     async def answer(self, said: str) -> str | None:
@@ -299,6 +303,10 @@ class Platform:
         )
         if (answer or {}).get("closed") is True:
             self.exercise = None
+        elif (answer or {}).get("next") == "worked_example" and self.exercise is not None:
+            # The tutor works a similar one with other numbers first: what the
+            # student says meanwhile answers that one, not theirs.
+            self.exercise = replace(self.exercise, aside=True)
         say = _said(answer)
         reveal = (answer or {}).get("reveal")
         if say and isinstance(reveal, str) and reveal:
