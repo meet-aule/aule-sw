@@ -1754,6 +1754,13 @@ async fn team_members_add_list_and_delete_their_own_passkeys(pool: PgPool) {
     fields.sort();
     assert_eq!(fields, ["created_at", "id", "label", "last_used_at"]);
     assert_eq!((added["label"].as_str(), &added["last_used_at"]), (Some("MacBook de Ana"), &Value::Null));
+    // The member is mailed about it, by the name they gave it.
+    let mail = app.mail.sent.lock().unwrap().last().unwrap().clone();
+    assert_eq!(
+        (mail.0.as_str(), mail.1.as_str()),
+        ("team@example.org", "Se agregó una passkey a tu cuenta del panel de Aule")
+    );
+    assert!(mail.2.contains("«MacBook de Ana»"), "{}", mail.2);
     let mut phone = Authenticator::device_bound();
     let (status, second) = add_passkey(&app, &team, &mut phone, "Teléfono").await;
     assert_eq!(status, StatusCode::CREATED, "{second}");
@@ -1842,15 +1849,28 @@ async fn adding_a_passkey_needs_a_recent_team_session(pool: PgPool) {
         StatusCode::OK
     );
 
-    // Sixteen minutes on, the same session still lists and deletes, and adds nothing.
-    sqlx::query(
-        "update guardian_sessions set created_at = created_at - interval '16 minutes',
-                expires_at = expires_at - interval '16 minutes' where token_hash = $1",
-    )
-    .bind(aule_platform::auth::token_hash(&team))
-    .execute(&pool)
-    .await
-    .unwrap();
+    // The session ages by the database's clock.
+    let hash = aule_platform::auth::token_hash(&team);
+    let age = |interval: &'static str| {
+        sqlx::query(
+            "update guardian_sessions set created_at = created_at - $2::interval,
+                    expires_at = expires_at - $2::interval where token_hash = $1",
+        )
+        .bind(hash.clone())
+        .bind(interval)
+        .execute(&pool)
+    };
+    // Asked for in the last seconds of the 15 minutes, a passkey is not kept
+    // once they are over: the sign-in must still be recent at the finish.
+    age("14 minutes 50 seconds").await.unwrap();
+    let started = passkey_options(&app, &team).await;
+    age("4 minutes").await.unwrap();
+    let credential = Authenticator::synced().create(&started["options"]);
+    let (status, body) = finish_passkey(&app, &team, &started["ceremony"], "Tarde", credential).await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    assert_eq!(app.count("select count(*) from team_passkeys").await, 0);
+
+    // Past them, the same session still lists and deletes, and adds nothing.
     let (status, body) = app.call(Method::POST, "/v1/admin/passkeys/options", Some(&team), None).await;
     assert_eq!(status, StatusCode::CONFLICT, "{body}");
     assert_eq!(app.call(Method::GET, "/v1/admin/passkeys", Some(&team), None).await.0, StatusCode::OK);

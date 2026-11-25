@@ -50,17 +50,9 @@ async fn load_curriculum(db: &sea_orm::DatabaseConnection) {
 
 #[tokio::main]
 async fn main() {
-    // webauthn-rs writes the browser's answers and the credentials at debug
-    // and trace, so it says no more than warnings, whatever RUST_LOG asks of
-    // it: a directive for the same target replaces RUST_LOG's.
-    let filter = ["webauthn_rs=warn", "webauthn_rs_core=warn"]
-        .into_iter()
-        .filter_map(|directive| directive.parse().ok())
-        .fold(
-            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
-            tracing_subscriber::EnvFilter::add_directive,
-        );
-    tracing_subscriber::fmt().json().with_env_filter(filter).init();
+    // webauthn-rs says no more than warnings, whatever RUST_LOG asks (lib.rs).
+    use tracing_subscriber::util::SubscriberInitExt;
+    aule_platform::log_subscriber(std::env::var("RUST_LOG").ok().as_deref(), std::io::stdout).init();
 
     let command = std::env::args().nth(1).unwrap_or_else(|| "serve".to_string());
     if command == "version" || command == "--version" {

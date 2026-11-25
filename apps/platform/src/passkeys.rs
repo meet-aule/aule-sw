@@ -58,6 +58,13 @@ pub const MAX_CREDENTIAL_ID_BYTES: usize = 1023;
 /// The body of a route that carries a credential; every other route keeps
 /// the API's own limit.
 pub const BODY_BYTES: usize = 16 * 1024;
+/// A registration from a session opened more than `RECENT_SIGN_IN_MINUTES`
+/// ago, at its start or its finish: the console tells the member to sign in
+/// again.
+const SIGN_IN_AGAIN: ApiError = ApiError::Conflict("sign in again to add a passkey");
+/// How long a mail about a passkey may hold up the answer. It goes after the
+/// change is kept, so a slow one is given up on and changes nothing.
+const MAIL_WAIT: Duration = Duration::from_secs(5);
 
 const NOT_SET_UP: ApiError = ApiError::Unavailable("passkeys are not set up here");
 /// Every refusal of a passkey sign-in, whatever went wrong: nothing tells an
@@ -166,7 +173,7 @@ fn creation_options(options: &impl serde::Serialize) -> Option<Value> {
 pub async fn register_options(member: TeamMember, State(state): State<AppState>) -> ApiResult<Json<Value>> {
     let rp = state.webauthn.clone().ok_or(NOT_SET_UP)?;
     if !member.recent {
-        return Err(ApiError::Conflict("sign in again to add a passkey"));
+        return Err(SIGN_IN_AGAIN);
     }
     let existing = state
         .db
@@ -215,13 +222,18 @@ pub struct RegisterInput {
 }
 
 /// `POST /v1/admin/passkeys`: the passkey the browser created, checked and
-/// kept. Only the session that asked for the ceremony can finish it.
+/// kept. Only the session that asked for the ceremony can finish it, and only
+/// while its sign-in is still recent: a ceremony lasts longer than what may be
+/// left of that. The member is mailed about every passkey added.
 pub async fn register(
     member: TeamMember,
     State(state): State<AppState>,
     Input(body): Input<RegisterInput>,
 ) -> ApiResult<(StatusCode, Json<Value>)> {
     let rp = state.webauthn.clone().ok_or(NOT_SET_UP)?;
+    if !member.recent {
+        return Err(SIGN_IN_AGAIN);
+    }
     let label = label_of(&body.label)
         .ok_or_else(|| ApiError::bad_request("label must be 1 to 60 characters on one line"))?;
     let taken = state.passkey_ceremonies.lock().expect("lock").take(&body.ceremony, Instant::now());
@@ -299,10 +311,33 @@ pub async fn register(
     tracing::info!(by = %who, "a team passkey was added");
     let id: Uuid = inserted.try_get("", "id")?;
     let created_at: DateTime<Utc> = inserted.try_get("", "created_at")?;
+    // Told every time, so a passkey added with someone else's session is seen.
+    tell(&state, &member.email, added_texts(&label), &who).await;
     Ok((
         StatusCode::CREATED,
         Json(json!({ "id": id, "label": label, "created_at": created_at, "last_used_at": null })),
     ))
+}
+
+/// Mails a team member about their own passkeys, where mail is set up. The
+/// change is already kept, so a mail that fails or is slow changes nothing: it
+/// is logged, with nothing of the address or of the mail server's words.
+async fn tell(state: &AppState, email: &str, (subject, text): (String, String), who: &str) {
+    let Some(mailer) = state.mailer.as_ref() else { return };
+    if !matches!(tokio::time::timeout(MAIL_WAIT, mailer.send(email, &subject, &text)).await, Ok(Ok(()))) {
+        tracing::warn!(by = %who, "a mail about a team passkey was not sent");
+    }
+}
+
+/// The mail about a passkey just added: if the member did not add it, they
+/// know where to go.
+fn added_texts(label: &str) -> (String, String) {
+    (
+        "Se agregó una passkey a tu cuenta del panel de Aule".to_string(),
+        format!(
+            "Se agregó la passkey «{label}» a tu cuenta del panel del equipo de Aule.\n\nSi no fuiste tú, entra al panel con un código por correo, borra en «Passkeys» las que no reconozcas y avisa al equipo."
+        ),
+    )
 }
 
 /// `GET /v1/admin/passkeys`: the caller's own passkeys, newest first. Never a

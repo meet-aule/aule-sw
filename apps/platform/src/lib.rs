@@ -41,6 +41,31 @@ pub fn version_line(commit: &str) -> String {
     format!("aule-platform {VERSION} ({commit})")
 }
 
+/// The platform's log: a JSON line per event, as `rust_log` (RUST_LOG) asks,
+/// or from info up when it is unset or unreadable. webauthn-rs writes the
+/// browser's answers and the credentials at debug and trace, so every crate of
+/// it is held at warn by a filter of its own: no RUST_LOG directive, however
+/// narrow its target, lifts that.
+pub fn log_subscriber<W>(rust_log: Option<&str>, writer: W) -> impl tracing::Subscriber + Send + Sync
+where
+    W: for<'writer> tracing_subscriber::fmt::MakeWriter<'writer> + Send + Sync + 'static,
+{
+    use tracing_subscriber::Layer;
+    use tracing_subscriber::filter::{EnvFilter, FilterExt, filter_fn};
+    use tracing_subscriber::layer::SubscriberExt;
+    let asked = rust_log
+        .and_then(|directives| EnvFilter::try_new(directives).ok())
+        .unwrap_or_else(|| EnvFilter::new("info"));
+    let webauthn_warnings_only =
+        filter_fn(|event| !event.target().starts_with("webauthn") || *event.level() <= tracing::Level::WARN);
+    tracing_subscriber::registry().with(
+        tracing_subscriber::fmt::layer()
+            .json()
+            .with_writer(writer)
+            .with_filter(asked.and(webauthn_warnings_only)),
+    )
+}
+
 pub static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!("./migrations");
 
 /// The migration that replaced 0001 to 0016 (see `migrations/0017_baseline.sql`).
@@ -114,4 +139,50 @@ pub async fn migrate(pool: &sqlx::PgPool) -> Result<(), MigrateError> {
     // Unlocked whatever happened; a lost connection drops the lock by itself.
     let _ = sqlx::query("select pg_advisory_unlock($1)").bind(MIGRATE_LOCK).execute(&mut *connection).await;
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::Write;
+    use std::sync::{Arc, Mutex};
+
+    /// What a log wrote, kept to read back.
+    #[derive(Clone, Default)]
+    struct Written(Arc<Mutex<Vec<u8>>>);
+
+    impl Write for Written {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().expect("the log").extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn webauthn_rs_logs_only_its_warnings_whatever_rust_log_asks() {
+        for rust_log in [
+            None,
+            Some("trace"),
+            Some("webauthn_rs_core=trace"),
+            Some("webauthn_rs_core::core=trace"),
+            Some("webauthn_rs=debug,webauthn_rs_core::core=trace,aule_platform=info"),
+        ] {
+            let written = Written::default();
+            let writer = written.clone();
+            let subscriber = super::log_subscriber(rust_log, move || writer.clone());
+            tracing::subscriber::with_default(subscriber, || {
+                tracing::trace!(target: "webauthn_rs_core::core", "the browser's answer");
+                tracing::debug!(target: "webauthn_rs", "a credential");
+                tracing::info!(target: "webauthn_rs_proto", "a challenge");
+                tracing::warn!(target: "webauthn_rs_core::core", "a fixed warning");
+            });
+            let text = String::from_utf8(written.0.lock().expect("the log").clone()).expect("text");
+            for hidden in ["the browser's answer", "a credential", "a challenge"] {
+                assert!(!text.contains(hidden), "{rust_log:?}: {text}");
+            }
+            assert!(text.contains("a fixed warning"), "{rust_log:?}: {text}");
+        }
+    }
 }
