@@ -3121,7 +3121,9 @@ async fn the_session_engine_runs_a_session_from_the_greeting_to_the_family_repor
     );
     let aside = pupil.says(json!({ "said": "¿por qué se llaman equivalentes?" })).await;
     assert_eq!(aside["lines"], json!([]));
-    assert!(aside["converse"].as_str().unwrap().contains("Nunca des la respuesta"), "{aside}");
+    let rules = aside["converse"].as_str().unwrap();
+    assert!(rules.contains("Never give the current exercise's answer"), "{aside}");
+    assert!(rules.contains("Do not call pose_exercise or check_answer"), "{aside}");
     assert_eq!(pupil.step().await["card"], step["card"], "talk moves nothing");
 
     // Discovery, step by step, until the student practises alone.
