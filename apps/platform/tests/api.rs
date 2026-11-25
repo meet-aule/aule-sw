@@ -2041,9 +2041,10 @@ async fn a_family_s_sessions_are_what_its_plan_allows_and_the_team_can_grant_one
         .unwrap();
     assert_eq!(plan().await.1["left"], 1);
 
-    // One that lasted uses the day, and starts the seven days.
+    // One that lasted uses the day, and starts the seven days. It starts now so
+    // it stays in today's Lima day even when the test runs just after midnight.
     assert_eq!(start().await.0, StatusCode::CREATED);
-    set("update sessions set started_at = now() - interval '30 minutes', ended_at = now() - interval '10 minutes'
+    set("update sessions set started_at = now(), ended_at = now() + interval '20 minutes'
          where started_at is null")
         .await
         .unwrap();
