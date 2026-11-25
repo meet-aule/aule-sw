@@ -68,6 +68,21 @@ function forwarded(t) {
 const GUARDIAN = `aule_guardian=${"0".repeat(64)}`;
 const GA = "_ga=GA1.1.1234567890.1763990000";
 const GA4 = "_ga_AB12CD34EF=GS2.1.s1763990000$o1$g0$t1763990060$j60$l0$h0";
+// PostHog's, named as posthog-js 1.447.12 names them, for a made-up project key.
+const PH_KEY = "phc_madeUpProjectKey";
+const PH = `ph_${PH_KEY}_posthog=%7B%22distinct_id%22%3A%22019ab3c4-5d6e-7f80-9a1b-2c3d4e5f6a7b%22%2C%22%24user_state%22%3A%22anonymous%22%7D`;
+const PH_CPM = `ph_${PH_KEY}_posthog_cpm=%7B%22p%22%3A%5B%5D%2C%22f%22%3A%223k.1x2y3z4.5a6b7c8%22%7D`;
+const PH_CONSENT = `__ph_opt_in_out_${PH_KEY}=1`;
+const PH_PROBES = "__ph_cookie_support_019ab3c4-5d6e-7f80-9a1b-2c3d4e5f6a7c=%22xyz%22; dmn_chk_019ab3c4-5d6e-7f80-9a1b-2c3d4e5f6a7d=1";
+// Names with ph or posthog in them, and PostHog's own with something before,
+// after or in another case: posthog-js sets a cookie under none of them.
+const NOT_POSTHOG = [
+  "ph=1", "ph_=1", "phone=1", "graph_x=1", "aule_ph_x=1", "posthog=1", "my_posthog=1", `x${PH}`,
+  `PH_${PH_KEY}_posthog=1`, `ph_${PH_KEY}_Posthog=1`, `ph_${PH_KEY}_posthogx=1`, `ph_${PH_KEY}_posthog_x=1`,
+  `ph_${PH_KEY}_posthog_cpmx=1`, `ph_${PH_KEY}_posthog_CPM=1`, "__ph=1", `_ph_opt_in_out_${PH_KEY}=1`,
+  "__ph_opt_in_out=1", `__PH_OPT_IN_OUT_${PH_KEY}=1`, "__ph_cookie_support=1", "dmn_chk=1", "dmn_chk1=1",
+  "xdmn_chk_1=1", "DMN_CHK_1=1",
+].join("; ");
 
 // The Cookie header the browser sends, and the one the server gets (null: none at all).
 const COOKIES = [
@@ -93,6 +108,18 @@ const COOKIES = [
     "_gac_UA-1=1.2.x; _gat=1; _gat_gtag_UA_1_1=1; _gid=GA1.1.9; _gcl_au=1.1.2; __ga=1; _gax=1; _ga-1=1; my_ga=1; aule_ga_x=1; x_ga_1=1; _GA=1; aule_consent2=1; _ga_gat=1",
     "_gac_UA-1=1.2.x; _gat=1; _gat_gtag_UA_1_1=1; _gid=GA1.1.9; _gcl_au=1.1.2; __ga=1; _gax=1; _ga-1=1; my_ga=1; aule_ga_x=1; x_ga_1=1; _GA=1; aule_consent2=1",
   ],
+  // PostHog's go too, from among the others, which keep their order.
+  [`${GUARDIAN}; ${PH}; aule_source=feria; ${PH_CPM}; theme=dark`, `${GUARDIAN}; aule_source=feria; theme=dark`],
+  // Every name posthog-js gives a cookie, its two probes included, with
+  // Google's and aule_consent: nothing is left, so the header goes.
+  [`${PH}; ${PH_CPM}; ${PH_CONSENT}; ${PH_PROBES}; ${GA}; aule_consent=accepted`, null],
+  // Malformed pairs of PostHog's go as Google's do: no value, spaces around
+  // the name, nothing after the prefix.
+  [`flag; ph_${PH_KEY}_posthog; __ph_opt_in_out_${PH_KEY} =0; dmn_chk_=; __ph_cookie_support_ ; a=b`, "flag; a=b"],
+  // A name that merely has ph in it, or looks like PostHog's, stays: only
+  // ph_<key>_posthog and ph_<key>_posthog_cpm, whatever the key, and the three
+  // prefixes go.
+  [`${NOT_POSTHOG}; ph_a_posthog=1`, NOT_POSTHOG],
   // No Cookie header at all.
   [null, null],
 ];
@@ -131,7 +158,7 @@ test("a WebSocket upgrade still goes to the server as it came, less those cookie
     upgrade: "websocket",
   };
   for (const [file, worker, address, env, origin] of WORKERS) {
-    await worker.fetch(new Request(address, { headers: { ...upgrade, cookie: `${GA}; ${GUARDIAN}; ${GA4}` } }), env);
+    await worker.fetch(new Request(address, { headers: { ...upgrade, cookie: `${GA}; ${GUARDIAN}; ${PH}; ${GA4}` } }), env);
     const request = asked.at(-1);
     assert.equal(request.method, "GET", file);
     assert.equal(request.url, origin, file);
