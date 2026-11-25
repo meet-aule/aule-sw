@@ -7,6 +7,7 @@ Aule's voice tutor: a [LiveKit Agents](https://github.com/livekit/agents) worker
 | Module | What it does |
 |---|---|
 | `worker` | The LiveKit worker: one tutor session per room it is dispatched to, with a time limit |
+| `comparison` | Exact comparison of bounded integer, fraction and decimal literals for hints; no exercise state or network |
 | `tutor` | The tutor's instructions, and where the gates and the camera plug into a turn |
 | `safety` | Who a session is for, and the two safety gates of [ARCHITECTURE.md](../../ARCHITECTURE.md) run together on every turn |
 | `moderation` | The content-moderation gate: what the person said and what the tutor is about to say |
@@ -49,6 +50,21 @@ publishes `session.ended.v1` for sessions with both a child and a device, and
 `safety.flagged.v1` for flags on child sessions, through its transactional outbox.
 Browser sessions have no device, so they do not emit that device-session ending
 event; their lifecycle is still recorded by the platform.
+
+## Mathematical hints and complete replies
+
+Before asserting that one number is smaller, equal or larger than another, the
+tutor uses `compare_numbers`. It compares bounded number literals with exact
+rational arithmetic, without changing the registered exercise or revealing its
+answer. Unsupported inputs return an unverified result. This is a tool for
+comparisons, not a general calculator or a guarantee that every model statement
+is correct; model adherence still needs evaluation.
+
+The final reply is moderated as a whole, including every paragraph. Blank lines
+are not treated as a boundary between reasoning and speech. Provider thinking
+stays outside the text stream, and text from a step that calls tools remains
+suppressed. A blocked or unavailable output gate still releases only a fixed
+reply, never the unchecked paragraphs.
 
 ## Pedagogy regression experiment
 

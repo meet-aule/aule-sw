@@ -13,7 +13,7 @@ import numpy as np
 from livekit import rtc
 from livekit.agents import Agent, ModelSettings, StopResponse, function_tool, llm, stt
 
-from . import drill, farewell, visuals
+from . import comparison, drill, farewell, visuals
 from .greetings import greeting as written_greeting
 from .replies import ADULT_HELP_SEQUENCE, ANSWERABLE, MEANWHILE, reply
 from .safety import Gates
@@ -189,6 +189,8 @@ Cómo enseñas:
 equivocado: trabaja su error exacto, señala dónde mirar, no qué poner. Si suelta una pista o \
 una contradicción, úsala para que él mismo lo note.
 - Celebra el esfuerzo y el razonamiento, no solo el resultado.
+- Antes de afirmar que un número es menor, igual o mayor que otro, usa compare_numbers \
+y respeta su resultado. Si no logra comprobarlo, no afirmes la comparación.
 - Si dice "no sé" o se queda callado, no repitas ni alargues la explicación: ofrécele un punto de \
 partida concreto, un ejemplo, o pártelo en algo más fácil.
 
@@ -232,6 +234,8 @@ How you teach:
 the wrong step: work their exact error, point at where to look, not at what to write. If they \
 let slip a clue or a contradiction, use it so they notice it themselves.
 - Praise effort and reasoning, not only the result.
+- Before asserting that one number is smaller, equal or larger than another, use \
+compare_numbers and follow its result. If it cannot verify them, do not assert the comparison.
 - If they say "I don't know" or go quiet, do not repeat or lengthen the explanation: offer a \
 concrete starting point, an example, or break it into something easier.
 
@@ -374,17 +378,6 @@ def _text_of(chunk: Any) -> str:
     return (delta.content or "") if delta is not None else ""
 
 
-def for_the_student(text: str) -> str:
-    """The part of a reply that is meant to be heard.
-
-    A reply is one short paragraph. When the model writes more than one, the
-    earlier ones are it reasoning about what to do, and only the last one is
-    addressed to the student.
-    """
-    paragraphs = [part.strip() for part in text.split("\n\n") if part.strip()]
-    return paragraphs[-1] if len(paragraphs) > 1 else text
-
-
 def _calls_of(chunk: Any) -> list[Any]:
     delta = getattr(chunk, "delta", None)
     return list((delta.tool_calls if delta is not None else None) or [])
@@ -412,14 +405,14 @@ async def checked(
     by a fixed one.
     """
     chunks = [chunk async for chunk in stream]
-    if meanwhile is not None and any(_calls_of(chunk) for chunk in chunks):
+    if any(_calls_of(chunk) for chunk in chunks):
         left_out = sum(len(_text_of(chunk)) for chunk in chunks)
         if left_out:
             # Counts only: what was left out is never logged.
             logger.info(
                 "nothing of the model's said in a step with a tool", extra={"chars": left_out}
             )
-        line = meanwhile()
+        line = meanwhile() if meanwhile is not None else ""
         if line:
             yield line
         for chunk in chunks:
@@ -431,21 +424,15 @@ async def checked(
             yield chunk
         return
     written = "".join(_text_of(chunk) for chunk in chunks)
-    spoken = for_the_student(written)
-    decision = await gates.spoken(spoken)
+    # A paragraph break is not a reasoning boundary: it may separate the
+    # example from its question. Provider thinking is a separate stream type,
+    # and tool-step text is suppressed above. Judge the whole final reply.
+    decision = await gates.spoken(written)
     if not decision.allowed:
         yield reply(decision.reply or "unavailable", language)
-    elif spoken == written:
+    else:
         for chunk in chunks:
             yield chunk
-    else:
-        # Counts only: what was left out is never logged.
-        logger.info("reasoning left out of a reply", extra={"chars": len(written) - len(spoken)})
-        yield spoken
-        for chunk in chunks:
-            # What is not text still has to go through: a tool call, the usage.
-            if not _text_of(chunk):
-                yield chunk
 
 
 async def present(visual: object, gates: Gates, show: Show) -> str:
@@ -497,7 +484,12 @@ class Tutor(Agent):
         instructions = INSTRUCTIONS[language]
         if persona.name != DEFAULT_TUTOR_NAME:
             instructions = instructions.replace(DEFAULT_TUTOR_NAME, persona.name)
-        tools = []
+
+        @function_tool(raw_schema=comparison.SCHEMA)
+        async def compare_numbers(raw_arguments: dict[str, object]) -> str:
+            return comparison.compare(raw_arguments.get("left"), raw_arguments.get("right"))
+
+        tools = [compare_numbers]
         if show is not None:
             instructions = with_notes(instructions, SCREEN[language])
 
