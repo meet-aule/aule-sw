@@ -12,12 +12,14 @@ from pathlib import Path
 WATCHES = ("aule-watch.sh", "aule-watch-outside.sh")
 FAKE_COMMAND = r"""
 import base64
+import datetime
 from email import policy
 from email.parser import BytesParser
 import json
 import os
 from pathlib import Path
 import sys
+from zoneinfo import ZoneInfo
 
 root = Path(os.environ["WATCH_TEST_ROOT"])
 settings = json.loads((root / "settings.json").read_text())
@@ -36,13 +38,30 @@ if command == "curl":
         failure = settings["failure"]
         unavailable = (failure == "session" and ("8091/healthz" in endpoint or
                        endpoint.endswith("/session/healthz"))) or (
-                       failure == "shop" and "shop." in endpoint)
-        sys.exit(22 if unavailable else 0)
+                       failure == "shop" and "shop." in endpoint) or (
+                       failure == "public" and "playground.meetaule.com" in endpoint)
+        counts_file = root / "probes.json"
+        counts = json.loads(counts_file.read_text()) if counts_file.exists() else {}
+        counts[endpoint] = counts.get(endpoint, 0) + 1
+        counts_file.write_text(json.dumps(counts))
+        if settings.get("blip") and counts[endpoint] > 1:
+            unavailable = False
+        if "--write-out" in args:
+            print((settings.get("http_code", "503") if unavailable else "200") + " 0.125")
+        if unavailable:
+            print("synthetic private response must not enter mail", file=sys.stderr)
+        sys.exit(settings.get("curl_code", 0) if unavailable else 0)
     with (root / "deliveries.jsonl").open("a") as out:
         out.write(json.dumps(delivery) + "\n")
     sys.exit(0 if settings["mail_ok"] else 22)
 elif command == "date":
-    print(settings["now"] if args == ["+%s"] else "2026-11-23 00:00 UTC")
+    if args == ["+%s"]:
+        print(settings["now"])
+    else:
+        stamp = int(args[args.index("-d") + 1][1:]) if "-d" in args else settings["now"]
+        zone = ZoneInfo(os.environ.get("TZ", "UTC"))
+        instant = datetime.datetime.fromtimestamp(stamp, zone)
+        print(instant.strftime(args[-1][1:] if args[-1].startswith("+") else "%a, %d %b %Y %H:%M:%S %z"))
 elif command == "docker":
     if "psql" in args:
         if settings.get("reports") == "unavailable":
@@ -51,7 +70,7 @@ elif command == "docker":
     else:
         print("healthy" if "Health.Status" in " ".join(args) else "true")
 elif command == "df":
-    print("Use%\n15%")
+    print("Use%\n" + str(settings.get("disk", 15)) + "%")
 elif command == "find":
     print("/synthetic-backup.sql.gz.gpg")
 elif command == "hostname":
@@ -126,11 +145,14 @@ class WatchHarness:
         (root / "mail-key").write_text("synthetic-key\n")
         self.script = root / watch
         self.script.write_text(text)
+        common = Path(__file__).parent / "aule-watch-common.sh"
+        (root / common.name).write_text(common.read_text())
 
     def run(self, *args: str) -> subprocess.CompletedProcess[str]:
         (self.root / "settings.json").write_text(json.dumps(self.settings))
         return subprocess.run(
-            ["bash", str(self.script), *args],
+            ["bash", self.script.name, *args],
+            cwd=self.root,
             env=self.environ,
             text=True,
             capture_output=True,
@@ -209,6 +231,10 @@ class WatchTests(unittest.TestCase):
                 deliveries = harness.deliveries()
                 self.assertEqual(len(deliveries), 3)
                 self.assertEqual(deliveries[1]["subject"], deliveries[2]["subject"])
+                self.assertIn("[RECUPERADO]", deliveries[2]["subject"])
+                self.assertIn("Duración del incidente: 5 min", deliveries[2]["body"])
+                self.assertNotIn("docker logs", deliveries[2]["body"])
+                self.assertNotIn("Desplegar", deliveries[2]["body"])
                 for check in notified[0].decode().splitlines():
                     self.assertIn(check, deliveries[2]["body"])
                 self.assertEqual(harness.state.read_text().strip(), "")
@@ -251,8 +277,109 @@ class WatchTests(unittest.TestCase):
                 harness.settings["now"] += 1
                 self.assertEqual(harness.run().returncode, 0)
                 self.assertEqual(len(harness.deliveries()), 2)
+                self.assertIn("[RECORDATORIO]", harness.deliveries()[1]["subject"])
+                self.assertIn(
+                    "Duración del incidente: 360 min", harness.deliveries()[1]["body"]
+                )
                 self.assertEqual(harness.run().returncode, 0)
                 self.assertEqual(len(harness.deliveries()), 2)
+
+    def test_transient_http_failure_does_not_send_mail(self) -> None:
+        for watch in WATCHES:
+            with self.subTest(watch=watch), tempfile.TemporaryDirectory() as directory:
+                harness = WatchHarness(Path(directory), watch)
+                harness.settings.update(failure="public", blip=True)
+                self.assertEqual(harness.run().returncode, 0)
+                self.assertEqual(harness.deliveries(), [])
+                counts = json.loads((harness.root / "probes.json").read_text())
+                public_counts = [n for url, n in counts.items() if "playground." in url]
+                self.assertEqual(public_counts, [2])
+
+    def test_alert_explains_http_error_and_local_time_without_response_data(
+        self,
+    ) -> None:
+        for watch in WATCHES:
+            with self.subTest(watch=watch), tempfile.TemporaryDirectory() as directory:
+                harness = WatchHarness(Path(directory), watch)
+                harness.settings["failure"] = "public"
+                self.assertEqual(harness.run().returncode, 0)
+                message = harness.deliveries()[0]
+                self.assertIn("[ALERTA]", message["subject"])
+                self.assertIn("HTTP 503; curl 0", message["body"])
+                self.assertIn("0.125 s; intento 2/2", message["body"])
+                self.assertIn(
+                    "2027-01-15 03:00:00 Lima / 2027-01-15 08:00:00 UTC",
+                    message["body"],
+                )
+                self.assertNotIn("synthetic private response", message["body"])
+                self.assertNotIn("synthetic-key", message["body"])
+                if watch == "aule-watch.sh":
+                    self.assertIn("La página local respondió", message["body"])
+                    self.assertIn("12/13", message["body"])
+                else:
+                    self.assertIn("3/4", message["body"])
+                # A different diagnostic does not restart the incident or spam mail.
+                harness.settings.update(http_code="502", now=1_800_000_300)
+                self.assertEqual(harness.run().returncode, 0)
+                self.assertEqual(len(harness.deliveries()), 1)
+
+    def test_network_errors_are_classified_without_copying_stderr(self) -> None:
+        for code, reason in ((6, "DNS"), (28, "tiempo de espera"), (60, "TLS")):
+            with self.subTest(code=code), tempfile.TemporaryDirectory() as directory:
+                harness = WatchHarness(Path(directory), "aule-watch-outside.sh")
+                harness.settings.update(
+                    failure="public", http_code="000", curl_code=code
+                )
+                self.assertEqual(harness.run().returncode, 0)
+                body = harness.deliveries()[0]["body"]
+                self.assertIn(f"HTTP 000; curl {code}", body)
+                self.assertIn(reason, body)
+                self.assertNotIn("synthetic private response", body)
+
+    def test_unsent_alert_keeps_start_time_when_delivery_recovers(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            harness = WatchHarness(Path(directory), "aule-watch-outside.sh")
+            harness.settings.update(failure="public", mail_ok=False)
+            self.assertNotEqual(harness.run().returncode, 0)
+            self.assertEqual(harness.snapshot(), (None, None))
+            harness.settings.update(mail_ok=True, now=1_800_000_600)
+            self.assertEqual(harness.run().returncode, 0)
+            self.assertIn(
+                "Duración del incidente: 10 min", harness.deliveries()[1]["body"]
+            )
+
+    def test_unsent_alert_that_recovers_does_not_send_spurious_recovery(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            harness = WatchHarness(Path(directory), "aule-watch-outside.sh")
+            harness.settings.update(failure="public", mail_ok=False)
+            self.assertNotEqual(harness.run().returncode, 0)
+            harness.settings.update(failure="", mail_ok=True, now=1_800_000_300)
+            self.assertEqual(harness.run().returncode, 0)
+            self.assertEqual(len(harness.deliveries()), 1)
+
+    def test_upgrade_and_invalid_timestamps_do_not_invent_a_start_time(self) -> None:
+        for stamp in (None, "garbled", "0899999999", "1999999999"):
+            with self.subTest(stamp=stamp), tempfile.TemporaryDirectory() as directory:
+                harness = WatchHarness(Path(directory), "aule-watch-outside.sh")
+                harness.state.write_text("old incident\n")
+                if stamp is not None:
+                    Path(str(harness.state) + ".since").write_text(stamp)
+                    harness.last_mail.write_text(stamp)
+                self.assertEqual(harness.run().returncode, 0)
+                message = harness.deliveries()[0]
+                self.assertIn("[RECUPERADO]", message["subject"])
+                self.assertIn("Inicio observado: no registrado", message["body"])
+                self.assertIn("Duración del incidente: no registrada", message["body"])
+
+    def test_disk_threshold_and_queue_count_are_actionable(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            harness = WatchHarness(Path(directory), "aule-watch.sh")
+            harness.settings.update(disk=85, reports="9")
+            self.assertEqual(harness.run().returncode, 0)
+            message = harness.deliveries()[0]
+            self.assertIn("(+1)", message["subject"])
+            self.assertIn("85 % usado; umbral: 85 %", message["body"])
+            self.assertIn("9 trabajos atrasados o sin reintentos", message["body"])
 
     def test_test_mail_does_not_acknowledge_an_incident(self) -> None:
         for watch in WATCHES:
