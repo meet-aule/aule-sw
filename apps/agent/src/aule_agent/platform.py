@@ -15,7 +15,7 @@ import logging
 import os
 import time
 from collections.abc import Awaitable, Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 import aiohttp
@@ -24,7 +24,7 @@ from ._version import __version__
 from .config import build_commit
 from .safety import FLAG_ACTIONS, FLAG_CATEGORIES, FLAG_GATES
 from .script import Line, Reply, lines_from, reply_from
-from .tutor import Persona, persona_from
+from .tutor import OpenExercise, Persona, persona_from
 
 logger = logging.getLogger("aule.agent.platform")
 
@@ -157,6 +157,11 @@ class Platform:
         # it reads here that one was taken.
         self._pause = False
         self.breaks_taken = 0
+        # The exercise the platform has open for the tutor, as it last said: a
+        # pose opens it, and an answer that closes it, or finds none open,
+        # clears it. An answer that asks for a worked example sets it aside,
+        # until it is posed again. A call that failed leaves it as it was.
+        self.exercise: OpenExercise | None = None
 
     async def _http(
         self, method: str, path: str, body: dict[str, Any] | None, timeout: float
@@ -189,9 +194,11 @@ class Platform:
         timeout: float,
         *,
         for_the_session: bool = False,
+        refused: Callable[[int], None] | None = None,
     ) -> dict[str, Any] | None:
         """One call. None when it failed. ``for_the_session`` marks the calls
-        whose refusal means the session itself is over for the platform."""
+        whose refusal means the session itself is over for the platform;
+        ``refused`` is told the status of a refusal of this one call."""
         if self.gone:
             return None
         try:
@@ -209,6 +216,8 @@ class Platform:
                 # Nothing kept for later: there is nobody to send it to.
                 self._pending.clear()
                 logger.warning("the platform no longer serves this session")
+            if refused is not None and status is not None:
+                refused(status)
             return None
 
     async def start(self) -> str:
@@ -273,20 +282,42 @@ class Platform:
         answer = await self._call(
             "POST", "/v1/agent/session/exercises", body, CHECK_TIMEOUT_SECONDS
         )
+        posed = (answer or {}).get("exercise")
+        if type(posed) is int and (self.exercise is None or self.exercise.id != posed):
+            self.exercise = OpenExercise(id=posed, expression=expression.strip())
+        elif type(posed) is int and self.exercise is not None:
+            # The same exercise stated again keeps its id, and how it was first
+            # written; the tutor is back on it.
+            self.exercise = replace(self.exercise, aside=False)
         return _said(answer)
 
     async def answer(self, said: str) -> str | None:
         """Has the platform judge the student's answer to the open exercise.
         Returns what the tutor should do, or None when it could not be judged."""
         answer = await self._call(
-            "POST", "/v1/agent/session/answers", {"said": said}, CHECK_TIMEOUT_SECONDS
+            "POST",
+            "/v1/agent/session/answers",
+            {"said": said},
+            CHECK_TIMEOUT_SECONDS,
+            refused=self._none_open,
         )
+        if (answer or {}).get("closed") is True:
+            self.exercise = None
+        elif (answer or {}).get("next") == "worked_example" and self.exercise is not None:
+            # The tutor works a similar one with other numbers first: what the
+            # student says meanwhile answers that one, not theirs.
+            self.exercise = replace(self.exercise, aside=True)
         say = _said(answer)
         reveal = (answer or {}).get("reveal")
         if say and isinstance(reveal, str) and reveal:
             # Only sent once the exercise is closed, to work it out together.
             return f"{say} The answer is {reveal}."
         return say
+
+    def _none_open(self, status: int) -> None:
+        # 409 to an answer: nothing is open, or what is open cannot be checked.
+        if status == 409:
+            self.exercise = None
 
     def wake(self) -> None:
         """Reports now, with or without a turn to send: the platform has

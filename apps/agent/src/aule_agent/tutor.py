@@ -57,8 +57,24 @@ logger = logging.getLogger("aule.agent.tutor")
 Show = Callable[[dict[str, Any]], Awaitable[None]]
 
 
+@dataclass(frozen=True)
+class OpenExercise:
+    """The exercise the checker has open: its id there, the expression as
+    the tutor posed it, and whether the tutor is set to work on something
+    else first: a worked example with other numbers, which the platform asks
+    for after the last hint. What the student says meanwhile answers that,
+    until the exercise is posed again."""
+
+    id: int
+    expression: str
+    aside: bool = False
+
+
 class Checker(Protocol):
     """Checks the student's answers without the model: the platform."""
+
+    # The exercise open now, as the checker last said; None when none is.
+    exercise: OpenExercise | None
 
     async def pose(self, expression: str, skill_id: str | None, form: str | None) -> str | None: ...
 
