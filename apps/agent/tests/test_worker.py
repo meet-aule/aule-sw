@@ -18,6 +18,7 @@ from aule_agent.physical_safety import PhysicalSafetyGuard
 from aule_agent.platform import Platform, PlatformSession, Refused
 from aule_agent.replies import reply
 from aule_agent.safety import Gates
+from aule_agent.timing import Timing
 from aule_agent.tutor import Tutor
 
 SETTINGS = Settings(
@@ -639,3 +640,76 @@ def test_the_check_command_says_whether_a_childs_session_could_start(monkeypatch
         worker.main()
 
     assert exited.value.code == code
+
+
+@pytest.mark.parametrize(("transcript", "then"), [("tres cuartos", "committed"), ("  ", "untimed")])
+async def test_the_talk_button_times_each_turn_from_its_end_turn(transcript, then):
+    happened = []
+
+    class Session:
+        def interrupt(self):
+            happened.append("interrupt")
+
+        def clear_user_turn(self):
+            happened.append("clear")
+
+        async def commit_user_turn(self, *, transcript_timeout):
+            happened.append(("commit", transcript_timeout))
+            return transcript
+
+    class Timed:
+        def pressed(self):
+            happened.append("pressed")
+
+        def released(self):
+            happened.append("released")
+
+        def committed(self):
+            happened.append("committed")
+
+        def nothing_heard(self):
+            # A commit with no words is no turn: LiveKit does not answer it.
+            happened.append("untimed")
+
+    room = Room()
+    await worker.enable_push_to_talk(SimpleNamespace(room=room), Session(), Timed())
+    await room.local_participant.rpcs["start_turn"](None)
+    await room.local_participant.rpcs["end_turn"](None)
+
+    assert room.local_participant.attributes == {"aule.turns": "manual"}
+    assert happened == [
+        "pressed",
+        "interrupt",
+        "clear",
+        "released",
+        ("commit", worker.COMMIT_TRANSCRIPT_TIMEOUT_SECONDS),
+        then,
+    ]
+
+
+async def test_a_tap_that_commits_no_words_times_nothing_said_after_it():
+    clock = [0.0]
+
+    class Session:
+        user_state = "listening"
+
+        def interrupt(self):
+            pass
+
+        def clear_user_turn(self):
+            pass
+
+        async def commit_user_turn(self, *, transcript_timeout):
+            clock[0] += 0.1
+            return ""
+
+    timing = Timing(lambda: clock[0])
+    room = Room()
+    await worker.enable_push_to_talk(SimpleNamespace(room=room), Session(), timing)
+    await room.local_participant.rpcs["start_turn"](None)
+    await room.local_participant.rpcs["end_turn"](None)
+    # Three minutes later the tutor asks whether the student is still there.
+    clock[0] += 180
+    timing.agent_state("speaking")
+
+    assert timing.turn == 0 and "turns_staged" not in timing.summary()

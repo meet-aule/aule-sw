@@ -92,23 +92,36 @@ async def someone_joined(ctx: JobContext) -> bool:
 COMMIT_TRANSCRIPT_TIMEOUT_SECONDS = 0.8
 
 
-async def enable_push_to_talk(ctx: JobContext, session: AgentSession) -> None:
+async def enable_push_to_talk(
+    ctx: JobContext, session: AgentSession, timing: Timing | None = None
+) -> None:
     """Hand turn-taking to the client's talk button. The attribute tells the page
     to show the hold-to-talk control; the RPCs it sends drive each turn: start on
-    press, commit on release, cancel on abandon.
+    press, commit on release, cancel on abandon. ``timing`` times each turn
+    from the moment end_turn arrives.
     """
     await ctx.room.local_participant.set_attributes({"aule.turns": "manual"})
 
     async def start_turn(_: rtc.RpcInvocationData) -> str:
+        if timing is not None:
+            timing.pressed()
         session.interrupt()
         session.clear_user_turn()
         return "ok"
 
     async def end_turn(_: rtc.RpcInvocationData) -> str:
+        if timing is not None:
+            timing.released()
         # The microphone stays attached, so there is no flush to wait for: a
         # short wait lets a final transcript in flight land, and whatever is
         # still interim is committed as it stands.
-        await session.commit_user_turn(transcript_timeout=COMMIT_TRANSCRIPT_TIMEOUT_SECONDS)
+        heard = await session.commit_user_turn(transcript_timeout=COMMIT_TRANSCRIPT_TIMEOUT_SECONDS)
+        if timing is not None:
+            # A commit with no words is no turn: nothing answers it.
+            if heard.strip():
+                timing.committed()
+            else:
+                timing.nothing_heard()
         return "ok"
 
     async def cancel_turn(_: rtc.RpcInvocationData) -> str:
@@ -373,7 +386,7 @@ async def entrypoint(ctx: JobContext) -> None:
         # The platform offers the breaks of a session, unless the engine runs
         # it and has breaks of its own.
         breaks=bool(platform and not platform.scripted),
-        heard=timing.heard,
+        timing=timing,
     )
     usage = Usage()
     model = build_llm(settings)
@@ -563,7 +576,7 @@ async def entrypoint(ctx: JobContext) -> None:
     # Tells the page that the button has somebody to answer it.
     await ctx.room.local_participant.set_attributes({"aule.show_work": "rpc"})
     if settings.push_to_talk:
-        await enable_push_to_talk(ctx, session)
+        await enable_push_to_talk(ctx, session, timing)
     logger.info("session started", extra={"audience": audience, "language": language})
 
 

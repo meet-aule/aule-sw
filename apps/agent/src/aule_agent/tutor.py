@@ -1,6 +1,7 @@
 """The tutor: what it is told to be, and where the gates and the camera plug in."""
 
 import asyncio
+import contextlib
 import itertools
 import json
 import logging
@@ -20,6 +21,7 @@ from .prompts import CHECKING, INSTRUCTIONS, PACED, SCREEN, response_language
 from .replies import ADULT_HELP_SEQUENCE, ANSWERABLE, MEANWHILE, reply
 from .safety import Gates
 from .script import Engine, Line, Reply
+from .timing import Timing
 
 logger = logging.getLogger("aule.agent.tutor")
 
@@ -240,11 +242,38 @@ def _calls_of(chunk: Any) -> list[Any]:
     return list((delta.tool_calls if delta is not None else None) or [])
 
 
+# Told how long one stage of a turn took (see ``timing.STAGES``).
+Took = Callable[[str, float], None]
+
+# Where a sentence ends, for the time to the first one.
+_SENTENCE_END = re.compile(r"[.!?…](?:\s|$)")
+
+
+async def timed(stream: AsyncIterable[Any], took: Took) -> AsyncIterable[Any]:
+    """The model's chunks as they come, telling ``took`` how long the first
+    one took and the first whole sentence, or the first tool call."""
+    started = time.monotonic()
+    first, sentence, text = True, False, ""
+    async for chunk in stream:
+        now = time.monotonic()
+        if first:
+            took("llm_ttft", now - started)
+            first = False
+        if not sentence:
+            text += _text_of(chunk)
+            if _calls_of(chunk) or _SENTENCE_END.search(text):
+                took("first_sentence", now - started)
+                sentence = True
+        yield chunk
+
+
 async def checked(
     stream: AsyncIterable[Any],
     gates: Gates,
     language: str,
     meanwhile: Callable[[], str] | None = None,
+    *,
+    took: Took | None = None,
 ) -> AsyncIterable[Any]:
     """What reaches the voice from one step of the model.
 
@@ -284,7 +313,10 @@ async def checked(
     # A paragraph break is not a reasoning boundary: it may separate the
     # example from its question. Provider thinking is a separate stream type,
     # and tool-step text is suppressed above. Judge the whole final reply.
+    started = time.monotonic()
     decision = await gates.spoken(written)
+    if took is not None:
+        took("gate_out", time.monotonic() - started)
     if not decision.allowed:
         yield reply(decision.reply or "unavailable", language)
     else:
@@ -325,7 +357,7 @@ class Tutor(Agent):
         session_number: int | None = None,
         engine: Engine | None = None,
         breaks: bool = False,
-        heard: Callable[[float], None] | None = None,
+        timing: Timing | None = None,
     ) -> None:
         # `context` is what the platform knows about this student and the
         # supervisor's plan for the session; empty when there is no platform.
@@ -424,8 +456,9 @@ class Tutor(Agent):
         # The frame taken when the student pressed the button, until it is used.
         self._shown: rtc.VideoFrame | None = None
         self._hazards_in_a_row = 0
-        # Told how sure the speech recognition was of each final transcript.
-        self._heard = heard
+        # Told how sure the speech recognition was of each final transcript,
+        # and how long each stage of a push-to-talk turn took.
+        self._timing = timing
         self._engine = engine
         # Which answer of the engine is being said. Lines of an older one stop
         # as soon as a newer answer arrives.
@@ -692,7 +725,10 @@ class Tutor(Agent):
         # Read and reset before waiting, so a cancelled or safe turn starts the
         # sequence of reminders over.
         hazards, self._hazards_in_a_row = self._hazards_in_a_row, 0
+        took = self._took()
+        started = time.monotonic()
         decision = await self._gates.heard(turn_ctx, new_message)
+        took("gates_in", time.monotonic() - started)
         if decision.allowed:
             return True
         key = decision.reply or "unavailable"
@@ -711,8 +747,10 @@ class Tutor(Agent):
     ) -> AsyncIterable[stt.SpeechEvent]:
         async for event in Agent.default.stt_node(self, self._listened(audio), model_settings):
             final = event.type == stt.SpeechEventType.FINAL_TRANSCRIPT
-            if final and event.alternatives and self._heard is not None:
-                self._heard(event.alternatives[0].confidence)
+            if final and event.alternatives and self._timing is not None:
+                self._timing.heard(event.alternatives[0].confidence)
+                if event.alternatives[0].text:
+                    self._timing.final_heard()
             yield event
 
     async def _listened(
@@ -726,17 +764,50 @@ class Tutor(Agent):
                 self._drill.hear(samples.copy(), frame.sample_rate)
             yield frame
 
+    def _took(self) -> Took:
+        """Where the stages measured from now on are reported: the staged
+        turn open now, whatever turn is open when each one ends."""
+        timing = self._timing
+        if timing is None:
+            return lambda stage, seconds: None
+        turn = timing.turn
+        return lambda stage, seconds: timing.took(stage, seconds, turn)
+
+    async def tts_node(
+        self, text: AsyncIterable[str], model_settings: ModelSettings
+    ) -> AsyncIterable[rtc.AudioFrame]:
+        took = self._took()
+        sent: list[float] = []
+
+        async def watched() -> AsyncIterable[str]:
+            async for chunk in text:
+                if not sent:
+                    sent.append(time.monotonic())
+                yield chunk
+
+        first = True
+        frames = Agent.default.tts_node(self, watched(), model_settings)
+        async with contextlib.aclosing(frames):
+            async for frame in frames:
+                if first and sent:
+                    took("tts_ttfb", time.monotonic() - sent[0])
+                first = False
+                yield frame
+
     async def llm_node(
         self, chat_ctx: llm.ChatContext, tools: list[llm.Tool], model_settings: ModelSettings
     ) -> AsyncIterable[llm.ChatChunk | str]:
+        took = self._took()
         frame = self._frame_for(chat_ctx)
-        stream = Agent.default.llm_node(self, with_frame(chat_ctx, frame), tools, model_settings)
+        stream = timed(
+            Agent.default.llm_node(self, with_frame(chat_ctx, frame), tools, model_settings), took
+        )
         if tools or self._gates.checks_spoken:
             # Buffering costs the time to the first word, so it is only paid
             # when there is a gate to wait for or a tool whose step must be
             # known whole before any of it is said.
             stream = checked(
-                stream, self._gates, self._language, self._meanwhile if tools else None
+                stream, self._gates, self._language, self._meanwhile if tools else None, took=took
             )
         started = time.monotonic()
         chars, called = 0, []

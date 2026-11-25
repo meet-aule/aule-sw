@@ -53,6 +53,18 @@ publishes `session.ended.v1` for sessions with both a child and a device, and
 Browser sessions have no device, so they do not emit that device-session ending
 event; their lifecycle is still recorded by the platform.
 
+With the session's end the platform also gets the agent's own numbers, counts and
+durations only (`usage`, `timing`): what the model, the hearing and the voice used,
+how long the tutor took to answer (`reply_ms`, from the end of speech the voice
+detector heard) and, with the talk button, each stage of a turn from the moment the
+page's `end_turn` arrives: the commit, the last final transcript (below zero when it
+came before the release), the input gates, the model's first chunk and first
+sentence, the output gate, the voice's first audio and the tutor's first audio
+(`first_audio_ms`), each at p50 and p90. A release whose commit took no words is no
+turn and is not timed, and neither is a wait longer than 30 seconds. Each model call
+is also logged with its token counts and how many were read from or written to the
+prompt cache.
+
 ## Mathematical hints and complete replies
 
 Before asserting that one number is smaller, equal or larger than another, the

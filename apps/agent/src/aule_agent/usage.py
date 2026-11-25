@@ -7,7 +7,10 @@ read from the prompt cache, which is billed at a fraction of the rest;
 ``cache_write`` is what was written to it, billed a little above the rest.
 """
 
+import logging
 from dataclasses import dataclass
+
+logger = logging.getLogger("aule.agent.usage")
 
 
 @dataclass
@@ -24,10 +27,22 @@ class Usage:
     def add(self, metrics: object) -> None:
         """Counts one model call from the metrics the model plugin emits."""
         self.calls += 1
-        self.input_tokens += _count(metrics, "prompt_tokens")
-        self.cached_tokens += _count(metrics, "prompt_cached_tokens")
-        self.cache_write_tokens += _count(metrics, "cache_creation_tokens")
-        self.output_tokens += _count(metrics, "completion_tokens")
+        call = {
+            "input_tokens": _count(metrics, "prompt_tokens"),
+            "cached_tokens": _count(metrics, "prompt_cached_tokens"),
+            "cache_write_tokens": _count(metrics, "cache_creation_tokens"),
+            "output_tokens": _count(metrics, "completion_tokens"),
+        }
+        self.input_tokens += call["input_tokens"]
+        self.cached_tokens += call["cached_tokens"]
+        self.cache_write_tokens += call["cache_write_tokens"]
+        self.output_tokens += call["output_tokens"]
+        ttft = getattr(metrics, "ttft", None)
+        if isinstance(ttft, float) and ttft >= 0:
+            call["ttft_ms"] = round(ttft * 1000)
+        # Counts only, one line per call: whether the prompt cache is read, as
+        # the cache's usage fields are the only proof of it.
+        logger.info("model call", extra=call)
 
     def heard(self, metrics: object) -> None:
         """Counts the audio the speech-to-text plugin was sent."""

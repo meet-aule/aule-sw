@@ -13,6 +13,7 @@ from aule_agent.moderation import Action, Decision
 from aule_agent.prompts import RESPONSE_LANGUAGES, response_language
 from aule_agent.replies import ADULT_HELP_SEQUENCE, MEANWHILE, REPLIES, reply
 from aule_agent.script import Line, Reply
+from aule_agent.timing import Timing
 from aule_agent.tutor import (
     FRESH_FRAME_SECONDS,
     INSTRUCTIONS,
@@ -1086,3 +1087,33 @@ async def test_an_unavailable_gate_does_not_release_any_paragraph() -> None:
     released = [c async for c in checked(stream(text), gates, "es")]
     assert gates.spoken_texts == [text]
     assert released == [reply("unavailable", "es")]
+
+
+async def test_each_stage_of_a_turn_is_timed_for_the_turn_it_belongs_to():
+    timing = Timing()
+    timing.released()
+    gates = ScriptedGates(ALLOW, ALLOW)
+    tutor = Tutor(language="es", gates=gates, timing=timing)
+
+    async def model(*_):
+        yield llm.ChatChunk(id="1", delta=llm.ChoiceDelta(role="assistant", content="Muy bien. "))
+        yield llm.ChatChunk(id="1", delta=llm.ChoiceDelta(role="assistant", content="Sigue."))
+
+    async def voice(agent, text, settings):
+        async for _ in text:
+            yield rtc.AudioFrame(bytes(4), 24_000, 1, 2)
+
+    async def words():
+        yield "Muy bien. Sigue."
+
+    assert await hear(tutor, Session())
+    with patch.object(Agent.default, "llm_node", side_effect=lambda *a: model()):
+        said = [chunk async for chunk in tutor.llm_node(llm.ChatContext.empty(), [], None)]
+    with patch.object(Agent.default, "tts_node", side_effect=voice):
+        frames = [frame async for frame in tutor.tts_node(words(), None)]
+    timing.agent_state("speaking")
+
+    assert [getattr(chunk, "id", chunk) for chunk in said] == ["1", "1"] and len(frames) == 1
+    summary = timing.summary()
+    stages = ("gates_in", "llm_ttft", "first_sentence", "gate_out", "tts_ttfb", "first_audio")
+    assert all(f"{stage}_ms_p50" in summary for stage in stages)

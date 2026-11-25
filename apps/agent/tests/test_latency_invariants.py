@@ -21,9 +21,11 @@ from pathlib import Path
 import latency_harness as harness
 import pytest
 from fakes import CHILD_WORDS, TRIGGERS, Delays, Played, TurnPlan, World, words_of
+from test_metrics import fits_the_platform
 
 from aule_agent import moderation, opinion, physical_safety, replies, safety
 from aule_agent.replies import ADULT_HELP_SEQUENCE, MEANWHILE, REPLIES
+from aule_agent.timing import STAGES
 
 FAST = Delays(scale=0.05)
 AGENT = Path(__file__).resolve().parents[1]
@@ -279,6 +281,16 @@ def test_the_tutor_reply_line_is_logged_once_per_answered_turn(sessions):
         len(SESSIONS["meanwhile"][index].tools) for index in range(len(SESSIONS["meanwhile"]))
     )
     assert len(tutor_replies) == answered + steps
+
+
+def test_the_numbers_each_session_ends_with_fit_what_the_platform_keeps(sessions):
+    runs, _ = sessions
+    for run in runs.values():
+        fits_the_platform(run.world.metrics)
+    # A session of ordinary turns times every stage.
+    ordinary = runs["ordinary"].world.metrics
+    assert ordinary["turns_staged"] == len(SESSIONS["ordinary"])
+    assert all(f"{stage}_ms_p50" in ordinary for stage in STAGES)
 
 
 def _digest(value: object) -> str:
