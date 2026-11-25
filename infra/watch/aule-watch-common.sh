@@ -8,8 +8,9 @@ CHECK_DETAIL=""
 
 http() {
   local result rc code elapsed attempt reason
+  local timeout=${2:-10} retry_delay=${3:-2}
   for attempt in 1 2; do
-    result=$(curl -sS -o /dev/null --connect-timeout 5 --max-time 10 \
+    result=$(curl -sS -o /dev/null --connect-timeout 5 --max-time "$timeout" \
       --write-out '%{http_code} %{time_total}' "$1" 2>/dev/null)
     rc=$?
     code=000 elapsed=unknown
@@ -26,7 +27,7 @@ http() {
       *) reason="falló la solicitud" ;;
     esac
     CHECK_DETAIL="HTTP $code; curl $rc ($reason); $elapsed s; intento $attempt/2"
-    if [ "$attempt" = 1 ]; then sleep 2; fi
+    if [ "$attempt" = 1 ]; then sleep "$retry_delay"; fi
   done
   return 1
 }

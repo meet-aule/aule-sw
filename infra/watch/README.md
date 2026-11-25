@@ -4,14 +4,16 @@ Two scripts that mail the team when Aule stops working, and again when it works 
 
 | Script | Runs on | What it checks | Mails through |
 |---|---|---|---|
-| `aule-watch.sh` | the server (`/etc/aule/aule-watch.sh`, root-owned, run by `aule-admin`'s cron every 5 minutes) | the platform, the session page, the voice agent, LiveKit, the database, the worker, embeddings, the public page, the shop, disk use under 85 % and a backup younger than 7 hours (taken every 6 hours) | the platform's own SMTP settings in `/etc/aule/aule.env` |
+| `aule-watch.sh` | the server (`/etc/aule/aule-watch.sh`, owned and run by `aule-admin`'s cron every 5 minutes) | the platform, the session page, the voice agent, LiveKit, the database, the worker, embeddings, the public page, the shop, disk use under 85 % and a backup younger than 7 hours (taken every 6 hours) | the platform's own SMTP settings in `/etc/aule/aule.env` |
 | `aule-watch-outside.sh` | the home server (`~/bin/aule-watch-outside.sh`, its user's cron every 5 minutes) | the public session page, LiveKit and the shop, from outside: the case where the whole server or its network is down | Resend's HTTP API, with the key in `~/.config/aule/resend-key` (mode 600) |
 
 A failure is mailed when it starts and then every six hours while it lasts; a recovery is mailed once. Subjects distinguish `ALERTA`, `RECORDATORIO` and `RECUPERADO`, name the monitor and keep the first failing check visible on a phone. The body lists every failure, successful-check counts, Lima/UTC times and the observed incident duration. It contains no response bodies, raw stderr, application logs or family data. `--test` sends one real test mail.
 
 Both scripts source `aule-watch-common.sh` from their own directory. HTTP probes
-retry once after two seconds (five-second connection and ten-second total timeout
-per attempt). A persistent failure reports the HTTP status, curl error category,
+retry once after two seconds on the primary monitor (ten-second total timeout
+per attempt). The outside monitor retains its twenty-second retry delay and
+fifteen-second total timeout. Both use a five-second connection timeout.
+A persistent failure reports the HTTP status, curl error category,
 elapsed time and attempt count. The existing success criterion remains HTTP
 2xx/3xx; this verifies reachability, not an authenticated tutoring session. Queue
 and disk failures include only counts/percentages. Troubleshooting instructions
@@ -48,13 +50,13 @@ rollback; do not delete state files or change credentials/recipients. On the ser
 
 ```sh
 scp infra/watch/aule-watch{,-common}.sh aule-prod:/tmp/
-ssh aule-prod 'sudo flock /home/aule-admin/.local/state/aule/watch.lock sh -c "install -o root -g root -m 644 /tmp/aule-watch-common.sh /etc/aule/aule-watch-common.sh && install -o root -g root -m 755 /tmp/aule-watch.sh /etc/aule/aule-watch.sh"'
+ssh aule-prod 'sudo flock /home/aule-admin/.local/state/aule/watch.lock sh -c "install -o aule-admin -g aule-admin -m 640 /tmp/aule-watch-common.sh /etc/aule/aule-watch-common.sh && install -o aule-admin -g aule-admin -m 750 /tmp/aule-watch.sh /etc/aule/aule-watch.sh"'
 # cron line, in aule-admin's crontab:
 # */5 * * * * /usr/bin/flock -n /home/aule-admin/.local/state/aule/watch.lock /etc/aule/aule-watch.sh 2>&1 | /usr/bin/logger -t aule-watch
 ```
 
 On the outside host, install the helper in `~/bin/aule-watch-common.sh` (mode
-600) and the script in `~/bin/aule-watch-outside.sh` (mode 700), as its cron user,
+640) and the script in `~/bin/aule-watch-outside.sh` (mode 750), as its cron user,
 under the existing `~/.local/state/aule/watch-outside.lock`. Install the helper
 before the script there too. Validate with `bash -n` and compare file checksums;
 the next scheduled run exercises the unchanged delivery route. Do not run

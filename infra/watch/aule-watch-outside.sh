@@ -50,9 +50,10 @@ if [ "${1:-}" = "--test" ]; then
   exit $?
 fi
 
-check "página de sesión (playground.meetaule.com)" http https://playground.meetaule.com/session/healthz
-check "audio (livekit.meetaule.com)" http https://livekit.meetaule.com/
-check "tienda (shop.meetaule.com)" http https://shop.meetaule.com/
+# Keep the outside watch's longer window for transient network failures.
+check "página de sesión (playground.meetaule.com)" http https://playground.meetaule.com/session/healthz 15 20
+check "audio (livekit.meetaule.com)" http https://livekit.meetaule.com/ 15 20
+check "tienda (shop.meetaule.com)" http https://shop.meetaule.com/ 15 20
 check "respaldo externo (falló o no se verificó en 26 h)" backup_ok
 
 watch_notify "monitor externo" "Para contrastar desde otra conexión:
