@@ -12,6 +12,7 @@ from livekit.agents.job import DEFAULT_PARTICIPANT_KINDS
 from livekit.agents.utils.participant import wait_for_participant
 
 from aule_agent import worker
+from aule_agent.observability import Observability
 from aule_agent.platform import Platform
 from aule_agent.worker import someone_joined
 
@@ -245,26 +246,72 @@ async def test_a_room_closed_before_anyone_came_ends_the_job_and_frees_the_famil
     assert ctx.cleanups == []
 
 
-async def test_observability_is_connected_to_model_metrics_and_job_shutdown(
+class ClosingSession(Session):
+    """A session whose own close, which LiveKit runs beside the job's other
+    shutdown callbacks, reports a request it stopped before it says it closed."""
+
+    def __init__(self, happened: list[Any]) -> None:
+        super().__init__(happened)
+        self.handlers: dict[str, list[Any]] = {}
+
+    def on(self, event: str, handler: Any = None) -> Any:
+        if handler is None:
+            return lambda handler: self.on(event, handler)
+        self.handlers.setdefault(event, []).append(handler)
+        return handler
+
+    async def close_reporting(self, stopped: Any) -> None:
+        await asyncio.sleep(0.05)
+        stopped()
+        for handler in self.handlers.get("close", []):
+            handler(SimpleNamespace(error=None))
+        self.happened.append("session closed")
+
+
+async def test_the_last_ai_observability_events_are_sent_after_the_sessions_own_close(
     happened: list[Any], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from unittest.mock import AsyncMock, Mock
+    class Client:
+        def capture(self, event: str, **options: Any) -> None:
+            happened.append("event")
 
-    observer = Mock()
-    observer.close = AsyncMock()
+        def flush(self, timeout_seconds: float) -> None:
+            happened.append("flushed")
+
+    observer = Observability(Client())
     callbacks: dict[str, Any] = {}
     model = SimpleNamespace(
         on=lambda event, callback: callbacks.setdefault(event, []).append(callback)
     )
+    sessions: list[ClosingSession] = []
     monkeypatch.setattr(worker.Observability, "configured", lambda settings: observer)
     monkeypatch.setattr(worker, "build_llm", lambda settings: model)
+
+    def made(**options: Any) -> ClosingSession:
+        sessions.append(ClosingSession(happened))
+        return sessions[-1]
+
+    monkeypatch.setattr(worker, "AgentSession", made)
     ctx = Job(happened)
     entrypoint = asyncio.create_task(worker.entrypoint(ctx))
     await waiting_for_someone(ctx)
     ctx.room.emit("participant_active", PERSON)
     await entrypoint
-    assert observer.llm_metrics in callbacks["metrics_collected"]
-    assert observer.llm_error in callbacks["error"]
-    for cleanup in ctx.cleanups:
-        await cleanup()
-    observer.close.assert_awaited_once()
+    assert callbacks["metrics_collected"][-1] == observer.llm_metrics
+    assert callbacks["error"] == [observer.llm_error]
+
+    # As LiveKit shuts a job down: every callback at once, the session's own
+    # close among them. A reply it stops is reported as it ends.
+    (session,) = sessions
+    stopped = SimpleNamespace(prompt_tokens=0, completion_tokens=0, cancelled=True)
+    await asyncio.gather(
+        *(cleanup() for cleanup in ctx.cleanups),
+        session.close_reporting(lambda: observer.llm_metrics(stopped)),
+    )
+
+    # The last flush comes after the session's close and the cleanup, and
+    # sends the event the close reported.
+    last = len(happened) - 1 - happened[::-1].index("flushed")
+    ended = next(i for i, step in enumerate(happened) if step[1:2] == ("/v1/agent/session/end",))
+    assert happened.index("event") < happened.index("session closed") < last
+    assert ended < last

@@ -2,14 +2,14 @@
 
 A worker with a missing key would accept a session and then fail in front of
 the user, so ``Settings.from_env`` reports every problem at once and the worker
-refuses to start.
+refuses to start. AI observability is the exception: it is optional, so a
+value that cannot be used turns it off and says why (``posthog_problem``).
 """
 
 import os
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from urllib.parse import urlsplit
 
 # The environment variable each provider's LiveKit plugin reads its key from.
 STT_KEYS = {
@@ -32,6 +32,11 @@ PHYSICAL_SAFETY_KEY = "TYPESAFE_API_KEY"
 LIVEKIT_KEYS = ("LIVEKIT_URL", "LIVEKIT_API_KEY", "LIVEKIT_API_SECRET")
 
 LANGUAGES = ("es", "en")
+
+# AI observability (``observability``) sends to PostHog's EU ingestion, where
+# Aule's project is, with the project's token, which can only send events.
+POSTHOG_HOST = "https://eu.i.posthog.com"
+POSTHOG_TOKEN = re.compile(r"phc_[A-Za-z0-9]{20,100}")
 
 
 class ConfigError(ValueError):
@@ -79,8 +84,12 @@ class Settings:
     # Kept out of the repr so a logged Settings never shows a key.
     openai_api_key: str | None = field(default=None, repr=False)
     typesafe_api_key: str | None = field(default=None, repr=False)
+    # Both set, or neither: AI observability is on only with both.
     posthog_api_key: str | None = field(default=None, repr=False)
     posthog_host: str | None = None
+    # Why AI observability is off although a POSTHOG_ variable is set. It
+    # names the variable and never shows its value.
+    posthog_problem: str | None = None
 
     @property
     def gates_complete(self) -> bool:
@@ -138,31 +147,9 @@ class Settings:
         voice_ahead = get("AULE_VOICE_AHEAD").lower() in ("1", "true", "yes", "on")
         jev_first_reading = get("AULE_JEV_FIRST_READING").lower() in ("1", "true", "yes", "on")
 
-        posthog_key, posthog_host = get("POSTHOG_API_KEY"), get("POSTHOG_HOST")
-        if bool(posthog_key) != bool(posthog_host):
-            problems.append("POSTHOG_API_KEY and POSTHOG_HOST must be set together")
-        if posthog_host:
-            try:
-                url = urlsplit(posthog_host)
-                valid = (
-                    url.scheme == "https"
-                    and bool(url.hostname)
-                    and not url.username
-                    and not url.password
-                    and not url.query
-                    and not url.fragment
-                    and url.path in ("", "/")
-                )
-            except ValueError:
-                valid = False
-            if not valid:
-                problems.append("POSTHOG_HOST must be an HTTPS origin without credentials")
-        if posthog_key and (
-            len(posthog_key) > 200
-            or not posthog_key.isascii()
-            or any(c.isspace() or not c.isprintable() for c in posthog_key)
-        ):
-            problems.append("POSTHOG_API_KEY must be a project token without whitespace")
+        posthog_key, posthog_host, posthog_problem = _posthog(
+            get("POSTHOG_API_KEY"), get("POSTHOG_HOST")
+        )
 
         if problems:
             raise ConfigError("; ".join(problems))
@@ -183,6 +170,19 @@ class Settings:
             jev_first_reading=jev_first_reading,
             openai_api_key=get(MODERATION_KEY) or None,
             typesafe_api_key=get(PHYSICAL_SAFETY_KEY) or None,
-            posthog_api_key=posthog_key or None,
-            posthog_host=posthog_host.rstrip("/") or None,
+            posthog_api_key=posthog_key,
+            posthog_host=posthog_host,
+            posthog_problem=posthog_problem,
         )
+
+
+def _posthog(key: str, host: str) -> tuple[str | None, str | None, str | None]:
+    """The token and the host AI observability sends with, or why it is off.
+    Off without a word when neither is set."""
+    if not key and not host:
+        return None, None, None
+    if not POSTHOG_TOKEN.fullmatch(key):
+        return None, None, "POSTHOG_API_KEY must be a PostHog project token (phc_...)"
+    if host.rstrip("/") != POSTHOG_HOST:
+        return None, None, f"POSTHOG_HOST must be {POSTHOG_HOST}"
+    return key, POSTHOG_HOST, None

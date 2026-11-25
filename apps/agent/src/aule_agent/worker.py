@@ -5,6 +5,7 @@ The worker only joins rooms that ask for it by name (explicit dispatch).
 """
 
 import asyncio
+import contextlib
 import json
 import logging
 import os
@@ -25,7 +26,7 @@ from livekit.agents import (
 )
 from livekit.plugins import silero
 
-from . import visuals
+from . import observability, visuals
 from ._version import __version__
 from .camera import Camera
 from .config import LANGUAGES, ConfigError, Settings, build_commit
@@ -92,6 +93,10 @@ async def someone_joined(ctx: JobContext) -> bool:
 # How long a released talk button waits for the last final transcript, when
 # one may still be on its way.
 COMMIT_TRANSCRIPT_TIMEOUT_SECONDS = 0.8
+# How long the last AI observability events of a session wait for its close,
+# which runs beside the job's other shutdown callbacks and reports the
+# requests it stops.
+LAST_EVENTS_SECONDS = 3.0
 
 
 class Hearing(Protocol):
@@ -224,6 +229,10 @@ def prewarm(proc: JobProcess) -> None:
     # The model's client takes seconds to import. Done here it is paid while
     # the process waits for a session, not while a student waits for hello.
     from livekit.plugins import anthropic  # noqa: F401
+
+    # So is AI observability's client, when it is on.
+    with contextlib.suppress(ConfigError):
+        observability.prewarm(Settings.from_env())
 
 
 # A session takes a warm process and a new one takes seconds to start, so the
@@ -559,10 +568,13 @@ async def entrypoint(ctx: JobContext) -> None:
     reconnect = ReconnectGrace(ctx.room, session) if audience == "child" else None
     provider_failed = False
 
+    session_closed = asyncio.Event()
+
     @session.on("close")
     def closed(event: CloseEvent) -> None:
         nonlocal provider_failed
         provider_failed = event.error is not None
+        session_closed.set()
 
     async def cleanup() -> None:
         if reconnect:
@@ -601,7 +613,21 @@ async def entrypoint(ctx: JobContext) -> None:
             }
             await platform.end({**usage.summary(), **timing.summary(), **measures})
 
-    ctx.add_shutdown_callback(cleanup)
+    async def cleanup_then_last_events() -> None:
+        try:
+            await cleanup()
+        finally:
+            if observer is not None:
+                # The session's own close runs beside this one, and the
+                # requests it stops (a reply, a second reading) are reported
+                # as they end: the last events go once it is done, or after a
+                # while.
+                with contextlib.suppress(TimeoutError):
+                    async with asyncio.timeout(LAST_EVENTS_SECONDS):
+                        await session_closed.wait()
+                await observer.close()
+
+    ctx.add_shutdown_callback(cleanup_then_last_events)
 
     await session.start(
         agent=tutor,
@@ -666,6 +692,9 @@ def main() -> None:
                 "OPENAI_API_KEY and TYPESAFE_API_KEY are not both set: "
                 "only operator sessions will be accepted"
             )
+        if settings.posthog_problem:
+            # Optional: the worker runs without it.
+            logger.warning("AI observability is off: %s", settings.posthog_problem)
         if command == "check":
             # The start-up check alone, without joining LiveKit: it exits 0
             # only when a child's session could start now.

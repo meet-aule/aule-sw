@@ -41,6 +41,7 @@ from livekit.agents.voice.generation import (
 
 from . import comparison, drill, farewell, visuals
 from .greetings import greeting as written_greeting
+from .observability import new_turn
 from .prompts import CHECKING, INSTRUCTIONS, PACED, SCREEN, response_language
 from .providers import EARLY, REQUEST, TOOL_STARTED, WARMING, Early, Prompt
 from .replies import ADULT_HELP_SEQUENCE, ANSWERABLE, MEANWHILE, reply
@@ -1122,6 +1123,9 @@ class Tutor(Agent):
     async def on_user_turn_completed(
         self, turn_ctx: llm.ChatContext, new_message: llm.ChatMessage
     ) -> None:
+        # The turn's model calls, from the second reader of its words to the
+        # last step of its reply, share one random id (``observability``).
+        new_turn()
         self._meanwhile_due = True
         self._drew = False
         # A spoken turn during a drill is the student's try (a typed one never comes here).
@@ -1176,6 +1180,7 @@ class Tutor(Agent):
         text = text.strip()[:MAX_TYPED_CHARS]
         if not text:
             return
+        new_turn()
         self._meanwhile_due = True
         self._drew = False
         await self._interrupt()
@@ -1207,6 +1212,7 @@ class Tutor(Agent):
         if frame is None:
             return False
         self._shown = frame
+        new_turn()
         self._meanwhile_due = True
         self._drew = False
         # The page is waiting for this answer: a long line that cannot be cut is

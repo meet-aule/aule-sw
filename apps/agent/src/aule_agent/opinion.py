@@ -225,7 +225,7 @@ class SecondOpinion:
         started = time.monotonic()
         verdict: bool | None = None
         answer = None
-        failed = True
+        failed, cancelled = True, False
         try:
             async with asyncio.timeout(TIMEOUT_SECONDS):
                 answer = await self._client.messages.create(
@@ -241,13 +241,23 @@ class SecondOpinion:
             word = words.strip().upper()
             verdict = True if word == yes else False if word == no else None
         except asyncio.CancelledError:
+            # Not a failure: the other reader of a pair answered first, or the
+            # turn ended.
+            cancelled = True
             raise
         except Exception as error:  # no opinion is not a yes
             logger.warning("second opinion unavailable", extra={"error": type(error).__name__})
         finally:
             if self._observer is not None:
+                # Which text was read decides whether the reading is reported
+                # at all: one of what the child said is not (``observability``).
                 self._observer.review(
-                    getattr(answer, "usage", None), time.monotonic() - started, failed, MODEL
+                    getattr(answer, "usage", None),
+                    about=about,
+                    latency=time.monotonic() - started,
+                    failed=failed,
+                    cancelled=cancelled,
+                    model=MODEL,
                 )
         logger.info(
             "second opinion",
