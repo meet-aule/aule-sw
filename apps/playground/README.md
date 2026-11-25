@@ -67,6 +67,8 @@ unknown page opened by a browser returns to the start page. Unknown API routes,
 files and write requests keep their error responses. These redirects are not
 cached and do not accept a destination from the request.
 
+`admin.meetaule.com` leads to the panel too: a Worker of its own redirects every request there (see [infra/edge](../../infra/edge/README.md)).
+
 ### Links per source and the family guide
 
 A link to the page can say where it was shared: `<page>/?src=cesar`. While

@@ -14,6 +14,7 @@ async function load(file) {
 }
 const playground = await load("playground.js");
 const livekit = await load("livekit.js");
+const admin = await load("admin.js");
 
 test("the bare address opens the session page with its query, on the same site", async () => {
   for (const [address, location] of [
@@ -35,6 +36,23 @@ test("any other address goes to the server as it came, query and all", async (t)
   });
   await playground.fetch(new Request("https://playground.meetaule.com/guia?src=cesar"), { ORIGIN_URL: "http://origin.invalid:8090" });
   assert.deepEqual(asked, ["http://origin.invalid:8090/guia?src=cesar"]);
+});
+
+test("the panel's address sends every request to the team's panel, and nowhere else", async (t) => {
+  const asked = forwarded(t);
+  for (const [method, address] of [
+    ["GET", "https://admin.meetaule.com/"],
+    ["GET", "https://admin.meetaule.com/session"],
+    ["GET", "https://admin.meetaule.com/session/admin?next=https://example.org/"],
+    ["GET", "https://admin.meetaule.com//example.org/x"],
+    ["POST", "https://admin.meetaule.com/api/account"],
+  ]) {
+    const response = await admin.fetch(new Request(address, { method }), {});
+    assert.equal(response.status, 302, address);
+    assert.equal(response.headers.get("location"), "https://playground.meetaule.com/session/admin", address);
+    assert.equal(response.headers.get("cache-control"), "no-store", address);
+  }
+  assert.deepEqual(asked, []);
 });
 
 // Each Worker, an address it serves, its settings, and where that address goes.

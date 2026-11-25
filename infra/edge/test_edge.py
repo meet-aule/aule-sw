@@ -53,7 +53,10 @@ class EdgeLogsTests(unittest.TestCase):
 
     def test_no_worker_logs_a_line_per_request_or_traces_one(self) -> None:
         names = sorted(path.name for path in HERE.glob("wrangler.*.jsonc"))
-        self.assertEqual(names, ["wrangler.livekit.jsonc", "wrangler.ota.jsonc", "wrangler.playground.jsonc"])
+        self.assertEqual(
+            names,
+            ["wrangler.admin.jsonc", "wrangler.livekit.jsonc", "wrangler.ota.jsonc", "wrangler.playground.jsonc"],
+        )
         for name in names:
             with self.subTest(name):
                 observability = config(name)["observability"]
@@ -70,8 +73,8 @@ class EdgeCookiesTests(unittest.TestCase):
         definition = "\nfunction stripAnalyticsCookies(headers) {\n"
         functions = set()
         for path in sorted(HERE.glob("wrangler.*.jsonc")):
-            if path.name == "wrangler.ota.jsonc":
-                continue  # OTA never forwards incoming headers at all.
+            if path.name in ("wrangler.ota.jsonc", "wrangler.admin.jsonc"):
+                continue  # OTA and the panel's address never forward incoming headers at all.
             with self.subTest(path.name):
                 source = (HERE / config(path.name)["main"]).read_text()
                 self.assertIn(definition, source)
@@ -87,6 +90,16 @@ class OtaRoutingTests(unittest.TestCase):
         self.assertIs(ota["assets"]["run_worker_first"], True)
         self.assertIs(ota["workers_dev"], False)
         self.assertIs(ota["preview_urls"], False)
+
+
+class AdminAddressTests(unittest.TestCase):
+    def test_only_its_own_host_and_no_preview(self) -> None:
+        admin = config("wrangler.admin.jsonc")
+        self.assertEqual(admin["routes"], [{"pattern": "admin.meetaule.com", "custom_domain": True}])
+        self.assertIs(admin["workers_dev"], False)
+        self.assertIs(admin["preview_urls"], False)
+        # It answers by itself: no origin to reach, so no fetch at all.
+        self.assertNotIn("fetch(", (HERE / admin["main"]).read_text().replace("async fetch(", ""))
 
 
 if __name__ == "__main__":

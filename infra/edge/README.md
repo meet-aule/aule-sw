@@ -16,6 +16,14 @@ wrangler secret put ORIGIN_URL -c wrangler.livekit.jsonc      # http://<server>:
 
 The shop and the brand site have their own Worker in the store's repository.
 
+## The team's panel address
+
+`admin.meetaule.com` is a Worker of its own (`src/admin.js`) that answers every request with a temporary redirect to the team's panel, `https://playground.meetaule.com/session/admin`, where the team signs in. It forwards nothing and reads nothing from the request, so no part of an address can choose where it leads, and the redirect is never cached, so the panel can move to this address later. Deploying it also creates the address: wrangler attaches it as the Worker's custom domain.
+
+```sh
+wrangler deploy -c wrangler.admin.jsonc
+```
+
 ## OTA firmware
 
 `ota.meetaule.com` is a separate, stateless Worker with its own static assets. It
