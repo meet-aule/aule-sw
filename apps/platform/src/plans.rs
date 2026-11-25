@@ -18,6 +18,7 @@ use sea_orm::{
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 use crate::auth::{Guardian, Input, Staff};
@@ -455,9 +456,20 @@ pub async fn grant(
     })
     .exec_without_returning(&state.db)
     .await?;
-    tracing::info!(%family_id, days = body.days, by = staff.email.as_deref().unwrap_or("operator"), "a plan was granted");
+    tracing::info!(%family_id, days = body.days, by = %who(&staff), "a plan was granted");
     let standing = standing(&state, family_id, now).await?;
     Ok((StatusCode::CREATED, Json(standing.json())))
+}
+
+/// Who on the team did something, as the log names them: the first 12 hex
+/// digits of their address's SHA-256, which the team can match against its
+/// own few addresses, or "operator". The log never holds an address; a grant
+/// also keeps who made it in `granted_by`.
+fn who(staff: &Staff) -> String {
+    match &staff.email {
+        Some(email) => hex::encode(&Sha256::digest(email.as_bytes())[..6]),
+        None => "operator".into(),
+    }
 }
 
 /// Ends what the team granted a family, from now. A paid plan is not touched.
@@ -475,7 +487,7 @@ pub async fn ungrant(
         .filter(subscription::Column::StartsAt.lt(now))
         .exec(&state.db)
         .await?;
-    tracing::info!(%family_id, by = staff.email.as_deref().unwrap_or("operator"), "a granted plan was ended");
+    tracing::info!(%family_id, by = %who(&staff), "a granted plan was ended");
     let standing = standing(&state, family_id, now).await?;
     Ok(Json(standing.json()))
 }
@@ -483,6 +495,22 @@ pub async fn ungrant(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_log_names_a_team_member_by_a_short_hash_of_their_address() {
+        let staff = Staff { email: Some("team@example.org".into()) };
+        let named = who(&staff);
+        assert_eq!(named.len(), 12);
+        assert!(named.chars().all(|c| c.is_ascii_hexdigit()));
+        assert!(!named.contains('@') && !named.contains("team"));
+        assert_eq!(
+            named,
+            who(&Staff { email: Some("team@example.org".into()) }),
+            "the same person, the same name"
+        );
+        assert_ne!(named, who(&Staff { email: Some("otra@example.org".into()) }));
+        assert_eq!(who(&Staff { email: None }), "operator");
+    }
 
     #[test]
     fn today_starts_at_midnight_where_the_family_lives() {
