@@ -6,7 +6,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
-use aule_platform::config::{Config, EventsWebhook, LiveKit};
+use aule_platform::config::{AdminPasskeys, Config, EventsWebhook, LiveKit};
 use aule_platform::google::{Identity, IdentityError, IdentityProvider};
 use aule_platform::livekit::{NewRoom, RoomError, Rooms};
 use aule_platform::llm::{Llm, LlmError, Request as LlmRequest};
@@ -230,6 +230,8 @@ fn app_with(pool: PgPool, events_webhook: Option<EventsWebhook>) -> App {
         fcm_service_account: None,
         google_client_id: Some(GOOGLE_CLIENT.into()),
         admin_emails: vec!["team@example.org".into()],
+        // The console as the tests' browser would reach it.
+        admin_passkeys: AdminPasskeys { rp_id: "localhost".into(), origin: "http://localhost:8092".into() },
         free_access: false,
         github: None,
         meta: None,
@@ -241,6 +243,7 @@ fn app_with(pool: PgPool, events_webhook: Option<EventsWebhook>) -> App {
     let phones = Arc::new(Phones::default());
     let llm = Arc::new(ScriptedLlm { asked: Mutex::new(Vec::new()) });
     let rooms = Arc::new(PretendLiveKit::default());
+    let webauthn = Arc::new(aule_platform::passkeys::relying_party(&config.admin_passkeys).unwrap());
     let state = AppState {
         db: sea_orm::SqlxPostgresConnector::from_sqlx_postgres_pool(pool.clone()),
         pool,
@@ -257,6 +260,7 @@ fn app_with(pool: PgPool, events_webhook: Option<EventsWebhook>) -> App {
         watching: Arc::new(Mutex::new(HashSet::new())),
         claim_attempts: Arc::new(Mutex::new(HashMap::new())),
         engines: Default::default(),
+        webauthn: Some(webauthn),
     };
     App { phones, rooms, router: http::router(state.clone()), state, llm, mail }
 }
