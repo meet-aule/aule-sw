@@ -452,17 +452,30 @@ test("A05 asks for the microphone alone; the camera is asked for when it is turn
   assert.match(app, /const wanted = \{ mic: true, cam: false \};/);
   assert.match(bodyOf(app, "openLobby"), /wanted\.cam = false;/);
   assert.match(html.match(/<button[^>]*id="lobby-cam"[^>]*>/)?.[0] ?? "", /aria-pressed="false"/);
-  // The camera goes on only where the child asks for it: «Mostrar mi tarea» (showWork) and,
+  // The camera goes on only where the child asks for it: «Mostrar mi tarea» (aimCamera) and,
   // with a tutor that takes no pictures, the session's «Cámara». Nothing else turns it on:
   // not join(), nor the tutor coming in or saying how it works, since the tutor says it takes
   // pictures only at the end of its start-up (apps/agent worker.py), and until then every
   // tutor looks like one that takes none (the review of 24 Nov saw the camera sent then).
-  const turnsOn = (text) => [...text.matchAll(/setCameraEnabled\(([^)]*)\)/g)].filter(([, on]) => on.trim() !== "false").length;
+  // «Mostrar mi tarea» asks for a camera of this device only; «Listo» (showWork) publishes
+  // that same one and asks for no other (D31).
+  const turnsOn = (text) =>
+    [...text.matchAll(/setCameraEnabled\(([^)]*)\)/g)].filter(([, on]) => on.trim() !== "false").length +
+    (text.match(/\bcreateLocalVideoTrack\(/g) ?? []).length;
   const [toggle] = blocks(app, '$("cam").addEventListener("click"');
-  assert.equal(turnsOn(bodyOf(app, "showWork")), 1, "«Mostrar mi tarea»");
+  assert.equal(turnsOn(bodyOf(app, "aimCamera")), 1, "«Mostrar mi tarea»");
   assert.equal(turnsOn(toggle), 1, "the session's «Cámara»");
   assert.equal(turnsOn(app), 2, "and nowhere else");
-  for (const name of ["join", "watchTutor", "usePhotos", "tutorArrived", "showCamera"]) assert.equal(turnsOn(bodyOf(app, name)), 0, name);
+  for (const name of ["join", "watchTutor", "usePhotos", "tutorArrived", "showCamera", "showWork", "stopAiming"]) {
+    assert.equal(turnsOn(bodyOf(app, name)), 0, name);
+  }
+  // Only «Listo» publishes, and what it publishes is the camera the child pointed.
+  assert.equal((app.match(/\.publishTrack\(/g) ?? []).length, 1);
+  assert.match(bodyOf(app, "showWork"), /const track = aimTrack;[\s\S]*\.publishTrack\(track, \{ source: Track\.Source\.Camera \}\)/);
+  assert.doesNotMatch(bodyOf(app, "aimCamera"), /publishTrack|setCameraEnabled/);
+  // The click turns it on, and only the click: «Mostrar mi tarea» is the one caller of aimCamera.
+  assert.equal((app.match(/\baimCamera\(\)/g) ?? []).length, 2, "its definition and the click");
+  assert.match(toggle, /if \(photos\) return aimCamera\(\);/);
   assert.doesNotMatch(bodyOf(app, "usePhotos") + bodyOf(app, "watchTutor"), /wanted\.cam/, "A05's camera is a preview, not a wish the session acts on");
   assert.match(bodyOf(app, "showCamera"), /\$\("cam"\)\.disabled = !tutorCame;/, "no camera for a room the tutor has not reached");
   assert.match(bodyOf(app, "tutorArrived"), /if \(room\) showCamera\(\);/, "and «Cámara» can be pressed once it has");
@@ -537,13 +550,21 @@ test("the talk button keeps its label in a span of its own, next to its bar, and
   assert.doesNotMatch(app, /\$\("talk"\)\.textContent/, "the label is written into its span, so the bar stays");
   // In the student's language, like the coach above it.
   assert.match(bodyOf(app, "showTalk"), /writeWords\(\$\("talk-label"\), !wanted\.mic \? "talk_off" : talking \? "talk_listening" : touchOnly \? "talk_hold" : "talk_hold_key"\);/);
-  // Over the page, above the fixed button, only on a tall screen: on a short one (a phone on
-  // its side, 800 × 480) it would cover «Terminar», «Mostrar mi tarea» and «Modo tinta».
-  const fixedCoach = [...css.matchAll(/@media ([^{]+)\{((?:[^{}]*\{[^{}]*\})+)\s*\}/g)]
-    .filter(([, query, body]) => /\.talk-coach/.test(body) && /position: fixed/.test(body))
-    .map(([, query]) => query.trim());
-  assert.deepEqual(fixedCoach, ["(max-width: 900px) and (min-height: 640px)"]);
-  assert.match(css, /@media \(max-width: 900px\) and \(max-height: 639px\) \{\s*main\.push-to-talk \.work:not\(\.with-card\) > \.tile \{\s*max-height: 28vh;/);
+  // Over the page, right above the fixed button, wherever the button is fixed: in the page, a
+  // small phone's coach went behind the button (375 × 548, the review of 24 Nov). Never on a
+  // short screen from 560 px (a phone on its side, 800 × 480), where nothing is fixed.
+  const media = [...css.matchAll(/@media ([^{]+)\{((?:[^{}]*\{[^{}]*\})+)\s*\}/g)].map(([, query, body]) => [query.trim(), body]);
+  const fixedCoach = media.filter(([, body]) => /\.talk-coach/.test(body) && /position: fixed/.test(body)).map(([query]) => query);
+  assert.deepEqual(fixedCoach, ["(max-width: 900px) and (min-height: 640px), (max-width: 559px)"]);
+  // On a short screen from 560 px the session is two columns and nothing in it is fixed: the
+  // talk button sits in the right-hand column, and the stage's actions are on the first screen.
+  const short = media.filter(([query]) => query === "(min-width: 560px) and (max-width: 900px) and (max-height: 639px)");
+  assert.equal(short.length, 1);
+  assert.match(short[0][1], /grid-template-columns: minmax\(0, 1fr\) minmax\(250px, 300px\);/);
+  assert.doesNotMatch(short[0][1], /position: fixed/);
+  // The talk button is fixed at the bottom only with one column.
+  const fixedTalk = media.filter(([, body]) => /main\.push-to-talk \.talk \{[^}]*position: fixed/.test(body)).map(([query]) => query);
+  assert.deepEqual(fixedTalk, ["(max-width: 900px) and (min-height: 640px), (max-width: 559px)"]);
   // A tap is looked at once it is let go, and only a real end of a turn is.
   assert.match(bodyOf(app, "stopTalking"), /if \(method === "end_turn"\) coachAfter\(performance\.now\(\) - heldAt, talkVoice\);/);
   assert.match(app, /const TAP_HINTS = 3;/);
@@ -657,5 +678,201 @@ test("each new state of the first steps names where it comes from in the Figma, 
   assert.match(session, /A16 Hola, soy Aule 477:190 \(Vigente · Onboarding · v1\), first run/);
   assert.match(session, /web-only state of the session: Aule did not arrive/);
   assert.match(session, /web-only state of the talk button/);
+  assert.match(session, /web-only state of the session: the stage/);
   for (const component of ["Botón/Compacto 191:1396", "Cuadro/Opción 190:806"]) assert.ok(html.includes(component), component);
+});
+
+/** The session's section, from its opening tag to the end screen's. */
+const sessionHtml = () => html.slice(html.indexOf('<section class="screen" data-screen="session"'), html.indexOf('data-screen="session-end"'));
+
+test("the session puts Aule's face on a stage, which a drawing or the camera takes while it shows (D30)", () => {
+  const session = sessionHtml();
+  // The stage holds the face, the board and the camera, in that order; the section no longer is #stage.
+  assert.doesNotMatch(session.match(/<section[^>]*>/)[0], /id="stage"/);
+  const stage = session.match(/<div class="stage" id="stage" data-shows="face">[\s\S]*?\n {10}<\/div>/)?.[0] ?? "";
+  const at = (id) => stage.indexOf(`id="${id}"`);
+  assert.ok(at("tutor") > 0 && at("tutor") < at("board") && at("board") < at("camera-view"), "face, board, camera");
+  assert.ok(at("camera") > at("camera-view"), "the video is in the camera's view");
+  assert.match(stage, /<figure id="board" class="board" hidden aria-live="polite"><\/figure>/, "no device class in the markup");
+  assert.match(stage, /<div class="camera-view" id="camera-view" hidden>/);
+  assert.match(stage, /<p id="tutor-state" class="tile-state" role="status">/);
+  // The camera tile, its sentence, the empty board's sentence and the ink sentence are gone.
+  for (const gone of ["board-empty", "camera-off", "tile-label", "pantalla de tinta", "Aquí verás lo que Aule te muestre"]) {
+    assert.ok(!html.includes(gone), `index.html: ${gone}`);
+    assert.ok(!scripts["app.js"].includes(gone), `app.js: ${gone}`);
+  }
+  const app = scripts["app.js"];
+  // What the stage shows comes from the camera's view and the board, and every change of either says so.
+  assert.match(bodyOf(app, "showStage"), /\$\("stage"\)\.dataset\.shows = !\$\("camera-view"\)\.hidden \? "camera" : !\$\("board"\)\.hidden \? "drawing" : "face";/);
+  for (const name of ["draw", "showCamera", "teardown"]) assert.match(bodyOf(app, name), /\bshowStage\(\);/, name);
+  assert.match(bodyOf(app, "showStep"), /\$\("board"\)\.hidden = true;\s*boardShows = null;\s*showStage\(\);/);
+  // A drawing stays until the next one, a new exercise or the end: no timer brings the face back.
+  assert.doesNotMatch(bodyOf(app, "draw"), /setTimeout/);
+  // While the camera shows, a drawing waits under it.
+  assert.match(css, /\.stage\[data-shows="camera"\] > \.board \{\s*display: none;/);
+  // «Modo tinta» is the team's: hidden in the markup, shown and on only for the team.
+  assert.match(session, /<button type="button" class="compact" id="device" aria-pressed="false" hidden>/);
+  assert.match(app, /let inkMode = false;/);
+  assert.match(
+    bodyOf(app, "join"),
+    /const team = getAccount\(\)\.team === true;\s*inkMode = team;\s*\$\("device"\)\.hidden = !team;\s*\$\("board"\)\.classList\.toggle\("device", team\);/,
+  );
+  assert.equal((app.match(/\$\("device"\)\.hidden = /g) ?? []).length, 1, "nothing else shows it");
+  // The ink screen draws only an exercise it kept: it has no placeholder of its own.
+  assert.match(bodyOf(app, "showInk"), /^\s*if \(boardShows\) return;\s*if \(lastExercise\) draw\(lastExercise\);\s*$/);
+});
+
+test("«Terminar» comes last in the page, after the talk button and the typed message, and the bar draws it on the title's row", () => {
+  const session = sessionHtml();
+  const end = session.indexOf('id="end"');
+  for (const id of ["talk", "type", "typed", "cam", "cam-send", "cam-cancel", "device", "mic"]) {
+    assert.ok(session.indexOf(`id="${id}"`) !== -1 && session.indexOf(`id="${id}"`) < end, `#${id} comes before «Terminar»`);
+  }
+  assert.ok(session.indexOf('class="session-bar-end"') > session.indexOf('class="talking"'));
+  assert.match(session, /Last in the page's order, first in the bar: a Tab never reaches «Terminar» before the talk button/);
+  // Every rule for exactly this selector, wherever it is in the sheet.
+  const row = (selector) =>
+    rules(css)
+      .filter(([found]) => found.replace(/\/\*[\s\S]*?\*\//g, "").trim() === selector)
+      .map(([, body]) => body)
+      .join("\n");
+  assert.match(row(".session-title"), /grid-row: 1;/);
+  assert.match(row(".session-bar-end"), /grid-row: 1;/);
+  assert.match(row(".session-bar-end"), /justify-self: end;/);
+  // A long title never runs under the clock and «Terminar».
+  assert.match(row(".session-title"), /padding-right: 168px;/);
+  assert.match(row(".session-end"), /min-height: 44px;/);
+});
+
+test("«Mostrar mi tarea» shows what the camera sees on this device first; «Listo» sends one picture, «Cancelar» and the wait turn it off (D31)", () => {
+  const session = sessionHtml();
+  assert.match(session, /<button type="button" class="compact" id="cam" hidden><span class="icon" data-icon="videocam" aria-hidden="true"><\/span>Mostrar mi tarea<\/button>/);
+  // A status, never hidden, only empty; it takes the keyboard's place as the camera opens.
+  assert.match(session, /<p class="camera-aim" id="camera-aim" role="status" tabindex="-1"><\/p>/);
+  assert.match(session, /<button type="button" class="ink-button send" id="cam-send" hidden>Listo<\/button>/);
+  assert.match(session, /<button type="button" class="ink-link" id="cam-cancel" hidden>Cancelar<\/button>/);
+  const app = scripts["app.js"];
+  const aim = bodyOf(app, "aimCamera");
+  assert.match(aim, /^\s*if \(showing \|\| aiming \|\| !room \|\| !tutorIdentity\) return;/);
+  assert.match(aim, /track = await createLocalVideoTrack\(CAMERA\);/);
+  assert.match(aim, /writeWords\(\$\("camera-aim"\), "camera_aim"\);/);
+  // The focus goes to the line that says what to do, never to «Listo», where Space, the talk
+  // key, would send a picture; «Listo» is scrolled into sight, clear of the shelf.
+  assert.match(aim, /\$\("camera-aim"\)\.focus\(\{ preventScroll: true \}\);\s*\$\("cam-send"\)\.scrollIntoView\(\{ block: "nearest" \}\);/);
+  assert.doesNotMatch(app, /\$\("(cam-send|cam-cancel)"\)\.focus\(/);
+  // The coach waits while the child aims: its shelf would cover «Listo» on a small phone.
+  assert.match(bodyOf(app, "showCoach"), /manualTurns && tutorReady && wanted\.mic && !aiming/);
+  assert.match(aim, /showCoach\(\);/);
+  assert.match(bodyOf(app, "stopAiming"), /showCoach\(\);/);
+  assert.match(aim, /aimTimer = setTimeout\(\(\) => stopAiming\(\), AIM_MS\);/);
+  assert.match(app, /const AIM_MS = 30_000;/);
+  // «Listo» does nothing unless the camera is pointed, and the wait ends as it is pressed.
+  const send = bodyOf(app, "showWork");
+  assert.match(send, /^\s*if \(!aiming \|\| showing \|\| !aimTrack \|\| !room \|\| !tutorIdentity\) return;/);
+  assert.ok(send.indexOf("clearTimeout(aimTimer);") < send.indexOf("publishTrack("));
+  assert.ok(send.indexOf("publishTrack(") < send.indexOf('method: "show_work"'), "published, then the tutor is asked");
+  // While the picture goes, «Cancelar» cannot be pressed either; and a camera that went off
+  // while it was being published (the session ended) is never looked at.
+  assert.match(send, /\$\("cam-send"\)\.disabled = true;\s*\$\("cam-cancel"\)\.disabled = true;/);
+  assert.match(send, /sent = \{ track, room: sending \};[\s\S]*?\.publishTrack\(track, \{ source: Track\.Source\.Camera \}\)\.catch\(\(error\) => \{\s*sent = null;\s*throw error;\s*\}\);\s*\/\/[^\n]*\n\s*\/\/[^\n]*\n\s*if \(!aiming \|\| aimTrack !== track \|\| room !== sending\) return;/);
+  assert.match(send, /await new Promise\(\(resolve\) => setTimeout\(resolve, SHOWN_MS\)\);/);
+  assert.match(send, /finally \{[\s\S]*\$\("cam-cancel"\)\.disabled = false;\s*await stopAiming\(\);/);
+  // Off: what «Listo» published is taken back by the track, also while its publish is still on
+  // its way (livekit-client's unpublishTrack waits for it), and the camera is stopped either way.
+  const stop = bodyOf(app, "stopAiming");
+  assert.match(stop, /clearTimeout\(aimTimer\);\s*aiming = false;/);
+  assert.match(stop, /if \(sent\?\.track === track\) \{\s*const taken = sent\.room;\s*sent = null;\s*await taken\.localParticipant\.unpublishTrack\(track\)/);
+  assert.doesNotMatch(stop, /getTrackPublication/, "not by the source, whose first publication may be another");
+  assert.match(stop, /track\.stop\(\);/);
+  assert.match(stop, /hideKeepingFocus\(\$\("cam-send"\), \$\("session-title"\)\);/);
+  // The keyboard's place, when it was on the camera's row, goes back to talking.
+  assert.match(stop, /if \(placed\) focusTalk\(\);/);
+  assert.match(bodyOf(app, "focusTalk"), /\[manualTurns \? \$\("talk"\) : null, \$\("cam"\)\]/);
+  // A camera already stopped is shown as off.
+  assert.match(bodyOf(app, "showCamera"), /publication\.track\.mediaStreamTrack\?\.readyState !== "ended"/);
+  assert.match(app, /\$\("cam-send"\)\.addEventListener\("click", \(\) => showWork\(\)\);/);
+  assert.match(app, /\$\("cam-cancel"\)\.addEventListener\("click", \(\) => stopAiming\(\)\);/);
+  // The session's end turns it off too.
+  const teardown = bodyOf(app, "teardown");
+  assert.match(teardown, /clearTimeout\(aimTimer\);\s*aiming = false;\s*aimTrack\?\.stop\(\);/);
+  assert.match(teardown, /sent = null;/);
+  assert.match(teardown, /\$\("cam-cancel"\)\.disabled = false;/);
+  assert.match(teardown, /\$\("camera-view"\)\.hidden = true;/);
+  // «Mostrar mi tarea» shows once the tutor is ready, and gives its place to «Listo» while the camera is on.
+  assert.match(bodyOf(app, "showCamera"), /\$\("cam"\)\.hidden = !tutorReady \|\| aiming;/);
+  assert.match(bodyOf(app, "watchTutor"), /showTalk\(\);\s*\/\/[^\n]*\n\s*if \(room\) showCamera\(\);/);
+});
+
+test("the line under Aule's face says whose turn it is, and follows the hold", () => {
+  const app = scripts["app.js"];
+  assert.doesNotMatch(app, /STATE_TEXT/);
+  const state = bodyOf(app, "setTutorState");
+  // «Tu turno» only once Aule has the child's turn: not in the tail after letting go, nor while
+  // end_turn is on its way (closingTurn), when it would say so before Aule heard the turn.
+  assert.match(state, /const key = state === "listening" && manualTurns && !talking && !closingTurn \? "your_turn" : STATE_KEYS\.includes\(state\) \? state : "waiting";/);
+  const [, closing] = bodyOf(app, "stopTalking").match(/closingTurn = true;([\s\S]*?)closingTurn = false;/) ?? [];
+  assert.match(closing ?? "", /showTalk\(\);/, "the line is written as the turn closes, and again once it has");
+  assert.match(state, /const text = words\(`state_\$\{key\}`, language\);/);
+  // Written only when it changes, so a status that stays is not said again.
+  assert.match(state, /if \(line\.textContent !== text \|\| line\.lang !== language\) write\(line, text, language\);/);
+  assert.match(app, /function setTutorState\(state = \$\("tutor"\)\.dataset\.state\)/);
+  // The hold starts and ends in showTalk, which writes the line again.
+  assert.match(bodyOf(app, "showTalk"), /\bsetTutorState\(\);/);
+  // Nothing is heard before the tutor is ready, so the open microphone's switch waits for it.
+  assert.match(bodyOf(app, "showTalk"), /\$\("mic-group"\)\.hidden = manualTurns \|\| !tutorReady;/);
+  assert.match(sessionHtml(), /<div class="mic-group" id="mic-group" hidden>/);
+});
+
+test("Space holds to talk on the talk button and on the camera's buttons, and never presses them", async () => {
+  const app = scripts["app.js"];
+  // A child who talks with Space presses it wherever the focus is: on «Mostrar mi tarea», «Listo»
+  // or «Cancelar» it would open the camera or send a picture (the review of 24 Nov). Enter still
+  // presses them; Space on any other control (and in a field) is that control's.
+  const source = ["SPACE_TALKS", "typing"].map((name) => app.match(new RegExp(`const ${name} = [^\\n]*;`))?.[0] ?? "").join("\n");
+  const { runInNewContext } = await import("node:vm");
+  const typing = runInNewContext(`${source}\ntyping`);
+  for (const id of ["talk", "cam", "cam-send", "cam-cancel"]) assert.equal(typing({ tagName: "BUTTON", id }), false, id);
+  for (const [tagName, id] of [["BUTTON", "end"], ["BUTTON", "device"], ["BUTTON", "answer-send"], ["INPUT", "typed"], ["TEXTAREA", "explanation-text"], ["SELECT", ""]]) {
+    assert.equal(typing({ tagName, id }), true, `${tagName}#${id}`);
+  }
+  assert.equal(typing({ tagName: "P", id: "camera-aim" }), false);
+  // Held, the key repeats: every keydown it talks on is stopped (no scroll, no press), and the
+  // turn starts once; its keyup is stopped too, so a focused button is never clicked.
+  const [down] = blocks(app, 'document.addEventListener("keydown"');
+  assert.match(down, /if \(!spaceTalks\(event\)\) return;\s*\/\/[^\n]*\n\s*event\.preventDefault\(\);\s*if \(!event\.repeat\) startTalking\(\);/);
+  const [up] = blocks(app, 'document.addEventListener("keyup"');
+  assert.match(up, /if \(spaceTalks\(event\)\) event\.preventDefault\(\);/);
+  assert.match(app, /const spaceTalks = \(event\) => event\.code === "Space" && manualTurns && current\(\) === "session" && !typing\(event\.target\);/);
+});
+
+test("the stage gives a drawing and the camera the room they need, and the camera shows all of its frame (D30, D31)", () => {
+  const media = [...css.matchAll(/@media ([^{]+)\{((?:[^{}]*\{[^{}]*\})+)\s*\}/g)].map(([, query, body]) => [query.trim(), body]);
+  const block = (query) => media.filter(([found]) => found === query).map(([, body]) => body).join("\n");
+  // A rule by its selector, past the comment before it.
+  const rule = (selector) => rules(css).find(([found]) => found.replace(/\/\*[\s\S]*?\*\//g, "").trim() === selector);
+  // The preview is the whole frame, letterboxed on the stage's paper: the child aims with what Aule gets.
+  const [, video] = rule(".camera-view video") ?? [];
+  assert.match(video ?? "", /object-fit: contain;/);
+  // The face's height is --stage; on one column a drawing takes the full width at 800 × 480's
+  // shape, with its band, and the camera what the screen leaves above «Listo» and the shelf.
+  assert.match(rule(".stage")?.[1] ?? "", /height: var\(--stage\);/);
+  const one = block("(max-width: 900px) and (min-height: 640px), (max-width: 559px)");
+  assert.match(one, /\.stage\[data-shows="drawing"\] \{\s*height: max\(var\(--stage\), calc\(\(100vw - 36px\) \* 0\.6 \+ 68px\)\);/);
+  assert.match(one, /\.stage\[data-shows="camera"\] \{\s*height: max\(var\(--stage\), min\(calc\(100vw \+ 32px\), calc\(100vh - 318px\), 560px\)\);/);
+  // On a short screen from 560 px the stage leaves room for what shows over and under it: A16's
+  // lines with the face, an engine's route and the camera's line.
+  const short = block("(min-width: 560px) and (max-width: 900px) and (max-height: 639px)");
+  assert.match(short, /--stage: max\(160px, calc\(100vh - 128px - var\(--intro-room, 0px\) - var\(--route-room, 0px\) - var\(--aim-room, 0px\)\)\);/);
+  assert.match(short, /:has\(\.session-intro:not\(:empty\)\):has\(\.stage\[data-shows="face"\]\) \{\s*--intro-room: 72px;/);
+  assert.match(short, /:has\(#route:not\(\[hidden\]\)\) \{\s*--route-room: 49px;/);
+  assert.match(short, /:has\(\.camera-aim:not\(:empty\)\) \{\s*--aim-room: 16px;/);
+  // Under 901 px A16's lines step aside while a drawing or the camera shows: out of sight, not
+  // out of the tree, since the first is a status.
+  const aside = block("(max-width: 900px)");
+  assert.match(aside, /:has\(\.stage:not\(\[data-shows="face"\]\)\) \.session-intro:not\(:empty\) \{[^}]*clip: rect\(0 0 0 0\);/);
+  assert.doesNotMatch(aside, /display: none/);
+  // On a short screen an exercise card takes the room, and Aule's face goes to its band.
+  assert.match(block("(max-width: 900px) and (max-height: 760px)"), /:has\(#card:not\(\[hidden\]\)\) \.stage\[data-shows="face"\] \{\s*height: auto;/);
+  // The message line's empty place takes no row: the stage starts right under the title.
+  assert.ok(rule(".session-message:not(:has(> :not([hidden])))"));
 });
