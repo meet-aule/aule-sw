@@ -2047,8 +2047,9 @@ async fn the_team_signs_in_with_a_passkey(pool: PgPool) {
     assert_eq!(status, StatusCode::OK, "{body}");
     let mut fields = keys(&body);
     fields.sort();
-    assert_eq!(fields, ["expires_in_hours", "token"]);
+    assert_eq!(fields, ["email", "expires_in_hours", "token"]);
     assert_eq!(body["expires_in_hours"], 12);
+    assert_eq!(body["email"], "team@example.org", "for the console's own team list");
     let token = body["token"].as_str().unwrap().to_string();
     assert_eq!(token.len(), 64);
     assert_eq!(app.call(Method::GET, "/v1/admin/families", Some(&token), None).await.0, StatusCode::OK);
@@ -2077,11 +2078,86 @@ async fn the_team_signs_in_with_a_passkey(pool: PgPool) {
     let (_, list) = app.call(Method::GET, "/v1/admin/passkeys", Some(&team), None).await;
     assert!(list["passkeys"][0]["last_used_at"].is_string(), "{list}");
 
-    // A copy whose counter went back is refused; the device itself goes on.
-    key.counter = 1;
-    assert_eq!(passkey_sign_in(&app, &mut key).await.0, StatusCode::FORBIDDEN);
+    // A copy that jumps ahead gets in: nothing yet tells it from the device.
+    // The device's next use then goes back, which means two copies are in
+    // use: the passkey is deleted with every session it opened, its owner is
+    // told by mail, and neither copy gets in again.
+    key.counter = 999;
+    let (status, copied) = passkey_sign_in(&app, &mut key).await;
+    assert_eq!(status, StatusCode::OK, "{copied}");
+    let copy = copied["token"].as_str().unwrap().to_string();
     key.counter = 2;
-    assert_eq!(passkey_sign_in(&app, &mut key).await.0, StatusCode::OK);
+    let (status, refused) = passkey_sign_in(&app, &mut key).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_eq!(
+        refused["error"]["message"], "that passkey could not be confirmed",
+        "the same answer as any other"
+    );
+    assert_eq!(app.count("select count(*) from team_passkeys").await, 0);
+    for session in [&token, &copy] {
+        assert_eq!(
+            app.call(Method::GET, "/v1/admin/families", Some(session), None).await.0,
+            StatusCode::UNAUTHORIZED
+        );
+    }
+    assert_eq!(
+        app.call(Method::GET, "/v1/admin/families", Some(&team), None).await.0,
+        StatusCode::OK,
+        "the code's session stays"
+    );
+    let mail = app.mail.sent.lock().unwrap().last().unwrap().clone();
+    assert_eq!(
+        (mail.0.as_str(), mail.1.as_str()),
+        ("team@example.org", "Borramos una passkey de tu cuenta del panel de Aule")
+    );
+    assert!(mail.2.contains("«Llave»") && mail.2.contains("contador"), "{}", mail.2);
+    key.counter = 1000;
+    assert_eq!(passkey_sign_in(&app, &mut key).await.0, StatusCode::FORBIDDEN, "the copy too");
+}
+
+/// Deleting a passkey ends every session it opened, so a stolen one stops
+/// working once its owner deletes it, and so does the session it opened, with
+/// all it could do. Sessions a code opened stay.
+#[sqlx::test(migrator = "aule_platform::MIGRATOR")]
+async fn deleting_a_passkey_ends_the_sessions_it_opened(pool: PgPool) {
+    let app = app(pool);
+    app.sign_in("team@example.org", "Equipo").await;
+    let owner = team_token(&app, "team@example.org").await;
+    let mut stolen = Authenticator::synced();
+    let (status, added) = add_passkey(&app, &owner, &mut stolen, "Teléfono").await;
+    assert_eq!(status, StatusCode::CREATED, "{added}");
+    let mut kept = Authenticator::synced();
+    assert_eq!(add_passkey(&app, &owner, &mut kept, "Mac").await.0, StatusCode::CREATED);
+    let (status, body) = passkey_sign_in(&app, &mut stolen).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let thief = body["token"].as_str().unwrap().to_string();
+    let (_, body) = passkey_sign_in(&app, &mut kept).await;
+    let other = body["token"].as_str().unwrap().to_string();
+    let passkey_of = |token: &str| {
+        sqlx::query_scalar::<_, Option<uuid::Uuid>>(
+            "select passkey_id from guardian_sessions where token_hash = $1",
+        )
+        .bind(aule_platform::auth::token_hash(token))
+        .fetch_one(&app.state.pool)
+    };
+    assert_eq!(passkey_of(&owner).await.unwrap(), None, "a code's session has no passkey");
+    assert_eq!(passkey_of(&thief).await.unwrap().map(|id| id.to_string()).as_deref(), added["id"].as_str());
+
+    let path = format!("/v1/admin/passkeys/{}", added["id"].as_str().unwrap());
+    assert_eq!(app.call(Method::DELETE, &path, Some(&owner), None).await.0, StatusCode::NO_CONTENT);
+    assert_eq!(passkey_sign_in(&app, &mut stolen).await.0, StatusCode::FORBIDDEN);
+    for (method, path) in [
+        (Method::GET, "/v1/admin/families"),
+        (Method::GET, "/v1/admin/passkeys"),
+        (Method::POST, "/v1/admin/passkeys/options"),
+    ] {
+        let (status, _) = app.call(method, path, Some(&thief), None).await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED, "{path}");
+    }
+    // The owner's code session, and the session the other passkey opened, go on.
+    for token in [&owner, &other] {
+        assert_eq!(app.call(Method::GET, "/v1/admin/families", Some(token), None).await.0, StatusCode::OK);
+    }
 }
 
 /// A sign-in's ceremony works once: the same answer sent again opens nothing.
@@ -2108,8 +2184,9 @@ async fn a_passkey_sign_in_works_once(pool: PgPool) {
 
 /// Every way a passkey sign-in fails gets one answer, so it tells nothing: a
 /// passkey nobody has, someone else's handle or none, no user verification,
-/// another origin or RP id, a bad signature, a changed backup eligibility,
-/// and a ceremony that is unknown or a registration's.
+/// another origin or RP id, a ceremony run in another site's frame, a bad
+/// signature, a changed backup eligibility, and a ceremony that is unknown or
+/// a registration's.
 #[sqlx::test(migrator = "aule_platform::MIGRATOR")]
 async fn every_failed_passkey_sign_in_gets_the_same_answer(pool: PgPool) {
     let app = app(pool);
@@ -2127,19 +2204,32 @@ async fn every_failed_passkey_sign_in_gets_the_same_answer(pool: PgPool) {
     assert_eq!(expected.0, StatusCode::FORBIDDEN);
     assert_eq!(expected.1["error"]["message"], "that passkey could not be confirmed");
 
-    let cases: [(&str, Misbehave); 6] = [
+    let cases: [(&str, Misbehave); 9] = [
         ("someone else's handle", |key| key.user_handle = uuid::Uuid::new_v4().as_bytes().to_vec()),
         ("no handle", |key| key.user_handle = Vec::new()),
         ("no user verification", |key| key.flags = UP | BE | BS),
         ("another origin", |key| key.origin = "http://localhost:8093".into()),
         ("another RP id", |key| key.rp_id = "evil.example".into()),
         ("backup eligibility changed", |key| key.flags = UP | UV),
+        ("in a frame of another site", |key| {
+            key.cross_origin = true;
+            key.top_origin = Some("https://evil.example".into());
+        }),
+        ("crossOrigin alone", |key| key.cross_origin = true),
+        ("topOrigin alone", |key| key.top_origin = Some("https://evil.example".into())),
     ];
     for (what, change) in cases {
-        let kept = (key.flags, key.origin.clone(), key.rp_id.clone(), key.user_handle.clone());
+        let kept = (
+            key.flags,
+            key.origin.clone(),
+            key.rp_id.clone(),
+            key.user_handle.clone(),
+            key.cross_origin,
+            key.top_origin.clone(),
+        );
         change(&mut key);
         assert_eq!(passkey_sign_in(&app, &mut key).await, expected, "{what}");
-        (key.flags, key.origin, key.rp_id, key.user_handle) = kept;
+        (key.flags, key.origin, key.rp_id, key.user_handle, key.cross_origin, key.top_origin) = kept;
     }
 
     // A bad signature.

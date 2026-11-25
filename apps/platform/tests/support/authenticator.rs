@@ -34,6 +34,9 @@ pub struct Authenticator {
     /// Where the browser says the ceremony ran, and the RP id it hashes.
     pub origin: String,
     pub rp_id: String,
+    /// What the browser says of a frame it ran in: `crossOrigin` and `topOrigin`.
+    pub cross_origin: bool,
+    pub top_origin: Option<String>,
     /// What the browser says of `credProps.rk` at registration, if anything.
     pub discoverable: Option<bool>,
 }
@@ -62,6 +65,8 @@ impl Authenticator {
             flags,
             origin: "http://localhost:8092".into(),
             rp_id: "localhost".into(),
+            cross_origin: false,
+            top_origin: None,
             discoverable: Some(true),
         }
     }
@@ -103,13 +108,16 @@ impl Authenticator {
     }
 
     fn client_data(&self, kind: &str, options: &Value) -> String {
-        json!({
+        let mut data = json!({
             "type": kind,
             "challenge": options["publicKey"]["challenge"],
             "origin": self.origin,
-            "crossOrigin": false,
-        })
-        .to_string()
+            "crossOrigin": self.cross_origin,
+        });
+        if let Some(top) = &self.top_origin {
+            data["topOrigin"] = json!(top);
+        }
+        data.to_string()
     }
 
     /// `navigator.credentials.create()` with the platform's options, then

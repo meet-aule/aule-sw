@@ -265,7 +265,7 @@ async fn enter(
         }
     };
 
-    let token = open_session(db, guardian_id, SESSION_DAYS, 0).await?;
+    let token = open_session(db, guardian_id, SESSION_DAYS, 0, None).await?;
     Ok(json!({
         "token": token,
         "guardian_id": guardian_id,
@@ -276,21 +276,23 @@ async fn enter(
 }
 
 /// A new session for a guardian, `days` and `hours` long: its token, of which
-/// only the hash is kept.
+/// only the hash is kept. `passkey` is the team passkey that signed it in, if
+/// one did: deleting that passkey ends the session.
 pub(crate) async fn open_session(
     db: &impl ConnectionTrait,
     guardian_id: Uuid,
     days: i32,
     hours: i32,
+    passkey: Option<Uuid>,
 ) -> ApiResult<String> {
     let mut secret = [0u8; 32];
     rand::rng().fill_bytes(&mut secret);
     let token = hex::encode(secret);
     db.execute_raw(Statement::from_sql_and_values(
         DbBackend::Postgres,
-        "insert into guardian_sessions (token_hash, guardian_id, expires_at)
-         values ($1, $2, now() + make_interval(days => $3, hours => $4))",
-        [token_hash(&token).into(), guardian_id.into(), days.into(), hours.into()],
+        "insert into guardian_sessions (token_hash, guardian_id, expires_at, passkey_id)
+         values ($1, $2, now() + make_interval(days => $3, hours => $4), $5)",
+        [token_hash(&token).into(), guardian_id.into(), days.into(), hours.into(), passkey.into()],
     ))
     .await?;
     Ok(token)
@@ -380,7 +382,7 @@ pub async fn team_verify(
         .await?;
     // A code goes only to an address with an account, which may have been erased since.
     let Some(guardian_id) = guardian_id else { return Err(wrong_code()) };
-    let token = open_session(&txn, guardian_id, 0, TEAM_SESSION_HOURS).await?;
+    let token = open_session(&txn, guardian_id, 0, TEAM_SESSION_HOURS, None).await?;
     login_code::Entity::delete_by_id(key).exec(&txn).await?;
     txn.commit().await?;
     Ok(Json(json!({ "token": token, "expires_in_hours": TEAM_SESSION_HOURS })))
