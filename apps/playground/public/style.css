@@ -2384,7 +2384,8 @@ h2[tabindex="-1"]:focus {
   font-size: 18px;
 }
 
-/* The cookie notice: a card at the bottom until it is read. */
+/* The cookie notice: a card at the bottom until it is read, its words in two lines
+   beside «Entendido» (D36). */
 .cookie-notice {
   position: fixed;
   right: 16px;
@@ -2395,14 +2396,14 @@ h2[tabindex="-1"]:focus {
   flex-wrap: wrap;
   align-items: center;
   gap: 12px 16px;
-  max-width: 720px;
+  max-width: 880px;
   margin: 0 auto;
-  padding: 14px 16px;
+  padding: 12px 16px;
   border: 1.5px solid var(--line);
   border-radius: var(--radius);
   background: var(--surface);
   color: var(--ink);
-  font: 400 14px/1.45 var(--sans);
+  font: 400 13px/1.45 var(--sans);
 }
 
 .cookie-notice p {
@@ -2411,6 +2412,34 @@ h2[tabindex="-1"]:focus {
 
 .cookie-notice a {
   color: inherit;
+}
+
+/* On a phone, and on a screen under 600 px tall (a phone on its side, the device's
+   800 × 480), a slim bar along the bottom edge, as the brand site's notice is: the
+   words beside «Entendido», which keeps Acción/Pequeña's 44 px. The sides are tight
+   enough for the words to take three lines on a 390 px phone (66 px in all). With no
+   gap under it, nothing of the page shows between the bar and the screen's edge. */
+@media (max-width: 480px), (max-height: 600px) {
+  .cookie-notice {
+    right: 0;
+    bottom: 0;
+    left: 0;
+    flex-wrap: nowrap;
+    gap: 8px;
+    padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
+    border-width: 1.5px 0 0;
+    border-radius: 0;
+    font: 400 12px/1.35 var(--sans);
+  }
+
+  .cookie-notice p {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .cookie-notice .small {
+    padding-inline: 8px;
+  }
 }
 
 html[data-surface="ink"] .cookie-notice {

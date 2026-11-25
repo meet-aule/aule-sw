@@ -383,7 +383,59 @@ test("the page's words for an ended trial and a used week are the plan's, and th
   assert.match(app, /week_used: "Ya usaste las sesiones del plan Aule de estos 7 días\./);
   assert.doesNotMatch(app + scripts["steps.js"], /Suscríbete|suscribirte|por semana/);
   const notice = html.match(/<div id="cookies"[\s\S]*?<\/div>/)?.[0] ?? "";
-  assert.match(notice.replace(/\s+/g, " "), /si llegaste por un enlace de invitación, una que lo recuerda hasta que entres/);
+  const said = notice.replace(/<!--[\s\S]*?-->/g, "").replace(/\s+/g, " ");
+  // Only the necessary ones, which is why «Entendido» is the one answer (the policy rests storage
+  // without consent on «estrictamente necesario»); the link's cookie only for whoever came by an
+  // invitation, and how long it lasts; none for advertising; the policy's own section.
+  assert.match(said, /Solo cookies propias y necesarias/);
+  assert.match(said, /si te invitaron, tu enlace hasta que entres/);
+  assert.match(said, /nada de publicidad/);
+  assert.match(notice, /<a href="https:\/\/meetaule\.com\/legal\/privacy#cookies">Política de cookies<\/a>/);
+  // The sign-in providers' own cookies are said beside their buttons, not here (D36).
+  assert.doesNotMatch(said, /Google|GitHub|Facebook|Apple/);
+  for (const [id, next] of [
+    ["p01", "p02"],
+    ["p13", "p14"],
+  ]) {
+    const screen = html.slice(html.indexOf(`data-screen="${id}"`), html.indexOf(`data-screen="${next}"`));
+    const line = screen.match(/<p class="small-help ways-note"[^>]*>([^<]*)<\/p>/);
+    assert.ok(line, `${id} has the providers' line`);
+    assert.equal(line[1], "Google, GitHub, Facebook y Apple usan sus propias cookies cuando entras con ellos.", id);
+    assert.ok(screen.indexOf("ways-note") > screen.indexOf('class="other-ways"'), `${id}: after the ways in`);
+  }
+  // It shows wherever Google or another provider is offered, and only there.
+  assert.match(bodyOf(scripts["signin.js"], "showWays"), /for \(const note of document\.querySelectorAll\("\.ways-note"\)\) note\.hidden = !google && others\.length === 0;/);
+});
+
+test("the cookie notice is a slim bar along the bottom edge on a phone and a short screen, and a card from 481 px", () => {
+  // A short screen (a phone on its side, 800 × 480) gets the bar too: under the card's inset the
+  // footer's first line showed, cut by the bottom of the screen.
+  const phone = blocks(css, "@media (max-width: 480px), (max-height: 600px)").join("\n");
+  const [, bar] = rules(phone).find(([selector]) => selector === ".cookie-notice") ?? [];
+  assert.ok(bar, "a phone's rule for the notice");
+  for (const declaration of ["bottom: 0;", "left: 0;", "right: 0;", "border-radius: 0;", "flex-wrap: nowrap;", "border-width: 1.5px 0 0;"]) {
+    assert.ok(bar.includes(declaration), declaration);
+  }
+  assert.match(bar, /padding: 8px 10px calc\(8px \+ env\(safe-area-inset-bottom\)\);/);
+  // «Entendido» keeps its 44 px (D21); the words take what is left beside it.
+  const [, words] = rules(phone).find(([selector]) => selector === ".cookie-notice p") ?? [];
+  assert.match(words ?? "", /min-width: 0;/);
+  assert.doesNotMatch(phone, /min-height/);
+  // From 481 px, the card: the rule at the top level of the sheet.
+  const card = css.match(/\n\.cookie-notice \{([^}]*)\}/)?.[1] ?? "";
+  assert.match(card, /max-width: 880px;/);
+  assert.match(card, /border-radius: var\(--radius\);/);
+  // Not drawn on a student's screen, and the room it takes is measured: from just above its top
+  // edge down, the card's inset included, so the footer after a paper screen starts behind it
+  // instead of across its edge (the old card's fixed 32 px left the phone's bar cutting a line).
+  assert.match(css, /html\[data-surface="ink"\] \.cookie-notice \{\s*display: none;/);
+  const room = bodyOf(scripts["signin.js"], "noticeRoom");
+  assert.match(room, /--notice-room/);
+  assert.match(room, /const below = parseFloat\(getComputedStyle\(notice\)\.bottom\) \|\| 0;/);
+  assert.match(room, /Math\.round\(notice\.getBoundingClientRect\(\)\.height \+ below\) \+ NOTICE_CLEAR_PX/);
+  assert.doesNotMatch(room, /\+ 32/);
+  const clear = Number(scripts["signin.js"].match(/const NOTICE_CLEAR_PX = (\d+);/)?.[1]);
+  assert.ok(clear >= 5 && clear < 24, "clear of a 3 px ring 2 px out, and under the footer's 24 px");
 });
 
 test("A05 asks for the microphone alone; the camera is asked for when it is turned on, and a session never turns it on as it joins (D12)", () => {
