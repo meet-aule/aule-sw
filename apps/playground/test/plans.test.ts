@@ -14,14 +14,8 @@ const FAMILY = "01a1f5f4-ede7-7028-a524-9d8e2f36b92d";
 
 // Stands in for the platform: one family on a plan with nothing left this
 // week, and one team member.
-const asked: { method: string; path: string; body: unknown }[] = [];
-const platform = createServer(async (request, response) => {
-  const chunks: Buffer[] = [];
-  for await (const chunk of request) chunks.push(chunk as Buffer);
-  const text = Buffer.concat(chunks).toString("utf8");
-  const body = text ? JSON.parse(text) : null;
+const platform = createServer((request, response) => {
   const path = request.url ?? "";
-  asked.push({ method: request.method ?? "", path, body });
   const answer = (status: number, value: unknown) => {
     response.writeHead(status, { "Content-Type": "application/json" });
     response.end(JSON.stringify(value));
@@ -35,15 +29,6 @@ const platform = createServer(async (request, response) => {
     return answer(200, { plan: "granted", ends_at: "2026-12-20T00:00:00Z", used: 3, allowed: 3, left: 0, period: "week", team });
   }
   if (path === "/v1/sessions") return answer(402, { error: { code: "plan_limit", message: "week_used" } });
-  if (path.startsWith("/v1/admin/") || path.startsWith("/v1/metrics/")) {
-    if (!team) return answer(403, { error: { code: "forbidden", message: "this route is for Aule's team" } });
-    if (path === "/v1/admin/families") return answer(200, { families: [{ id: FAMILY, name: "Quispe" }] });
-    if (path.startsWith("/v1/metrics/daily")) return answer(200, { days: [] });
-    if (path === "/v1/metrics/weekly?weeks=12") {
-      return answer(200, { timezone_offset_minutes: -300, weeks: 12, cohorts: [{ week: "2026-11-23", source: "cesar", families: 2 }] });
-    }
-    if (path === `/v1/admin/families/${FAMILY}/grant`) return answer(request.method === "DELETE" ? 200 : 201, { plan: "granted" });
-  }
   answer(404, { error: { message: "no such path" } });
 });
 
@@ -89,44 +74,4 @@ test("a session the plan has no room for says which limit", async () => {
 
   assert.equal(response.status, 402);
   assert.deepEqual(await response.json(), { error: "plan_limit", reason: "week_used" });
-});
-
-test("the team's panel answers only the team", async () => {
-  assert.equal((await fetch(`${base}/api/admin/families`)).status, 401);
-  const family = await fetch(`${base}/api/admin/families`, { headers: as(FAMILY_TOKEN) });
-  assert.deepEqual([family.status, await family.json()], [403, { error: "not_team" }]);
-
-  const team = await fetch(`${base}/api/admin/families`, { headers: as(TEAM_TOKEN) });
-  assert.deepEqual(await team.json(), { families: [{ id: FAMILY, name: "Quispe" }] });
-  assert.equal((await fetch(`${base}/api/admin/metrics`, { headers: as(TEAM_TOKEN) })).status, 200);
-});
-
-test("the pilot's weekly numbers are the team's only, for the last twelve weeks", async () => {
-  assert.equal((await fetch(`${base}/api/admin/weekly`)).status, 401);
-  const family = await fetch(`${base}/api/admin/weekly`, { headers: as(FAMILY_TOKEN) });
-  assert.deepEqual([family.status, await family.json()], [403, { error: "not_team" }]);
-
-  const team = await fetch(`${base}/api/admin/weekly`, { headers: as(TEAM_TOKEN) });
-  assert.equal(team.status, 200);
-  assert.deepEqual((await team.json()).cohorts, [{ week: "2026-11-23", source: "cesar", families: 2 }]);
-  assert.equal((await fetch(`${base}/api/admin/weekly`, { method: "POST", headers: as(TEAM_TOKEN) })).status, 404);
-});
-
-test("granting and ending a plan pass on only what the platform needs", async () => {
-  assert.equal((await post("admin/grant", { family_id: "../me", days: 30 }, TEAM_TOKEN)).status, 400);
-  assert.equal((await post("admin/grant", { family_id: FAMILY, days: "30" }, TEAM_TOKEN)).status, 400);
-  asked.length = 0;
-
-  const granted = await post("admin/grant", { family_id: FAMILY, days: 30, note: " piloto ", extra: 1 }, TEAM_TOKEN);
-  assert.equal(granted.status, 201);
-  const ended = await post("admin/ungrant", { family_id: FAMILY }, TEAM_TOKEN);
-  assert.equal(ended.status, 200);
-
-  assert.deepEqual(
-    asked.filter((call) => call.path.startsWith("/v1/admin/")).map(({ method, body }) => [method, body]),
-    [
-      ["POST", { days: 30, note: "piloto" }],
-      ["DELETE", null],
-    ],
-  );
 });

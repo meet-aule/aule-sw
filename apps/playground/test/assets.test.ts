@@ -103,7 +103,7 @@ test("without the right version a file is checked every time, and a match is a 3
 test("a page is never kept, not even asked for at its own hash", async () => {
   // Kept, Back after signing out would bring the signed-in page back whole,
   // and an address with the page's hash would pin it for a year.
-  for (const path of ["/", "/admin"]) {
+  for (const path of ["/", "/guia"]) {
     const page = await fetch(`${base}${path}`);
     assert.equal(page.headers.get("cache-control"), "no-store", path);
     assert.equal(page.headers.get("etag"), null, path);

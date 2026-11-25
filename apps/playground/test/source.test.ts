@@ -96,7 +96,7 @@ test("anything else in ?src= is ignored, and so is a link opened elsewhere or si
     assert.deepEqual(await opened(`/?src=${odd}`), [], odd);
   }
   assert.deepEqual(await opened("/"), []);
-  assert.deepEqual(await opened("/admin?src=cesar"), [], "the team's panel is no family's way in");
+  assert.deepEqual(await opened("/admin?src=cesar"), [], "the team's old panel address is no family's way in");
   assert.deepEqual(await opened("/style.css?src=cesar"), []);
   assert.deepEqual(await opened("/?src=cesar", { Cookie: `aule_guardian=${TOKEN}` }), [], "already signed in");
 });

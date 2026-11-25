@@ -18,7 +18,6 @@ import {
   createSession,
   eraseAccount,
   platform,
-  platformBuild,
   PlatformError,
   readPlan,
   emailCode,
@@ -109,11 +108,6 @@ const STATIC: Record<string, { file: string | URL; type: string }> = {
   "/icon-512.png": { file: new URL("icon-512.png", publicDir), type: "image/png" },
   "/icon-maskable-512.png": { file: new URL("icon-maskable-512.png", publicDir), type: "image/png" },
   "/manifest.webmanifest": { file: new URL("manifest.webmanifest", publicDir), type: "application/manifest+json" },
-  // The team's panel. The page is the same for anyone; its data only for the team.
-  "/admin": { file: new URL("admin.html", publicDir), type: "text/html; charset=utf-8" },
-  "/admin.js": { file: new URL("admin.js", publicDir), type: "text/javascript; charset=utf-8" },
-  // The panel's arithmetic for the pilot's four numbers, kept apart so it is tested.
-  "/pilot.js": { file: new URL("pilot.js", publicDir), type: "text/javascript; charset=utf-8" },
   // The one-page guide the team sends families, in Spanish and in English.
   "/guia": { file: new URL("guia.html", publicDir), type: "text/html; charset=utf-8" },
   "/guide": { file: new URL("guide.html", publicDir), type: "text/html; charset=utf-8" },
@@ -227,15 +221,16 @@ const OWN_SCRIPTS = new Set([
   "/first-steps.js",
   "/summaries.js",
   "/visuals.js",
-  "/admin.js",
-  "/pilot.js",
 ]);
 
 // The pages a family may be sent to with a link's code (?src=cesar), which is
 // kept until they sign in.
 const LINKED_PAGES = new Set(["/", "/guia", "/guide"]);
 // Pages reached from an address typed or shared by hand (see the redirects).
-const TYPED_PAGES = ["/admin", "/guia", "/guide"];
+const TYPED_PAGES = ["/guia", "/guide"];
+// The team's panel moved to its own console (apps/admin). Its old address
+// sends the team there: a fixed address, never one taken from the request.
+const TEAM_CONSOLE = "https://admin.meetaule.com/";
 
 export function createPlayground(
   settings: Settings,
@@ -610,56 +605,6 @@ export function createPlayground(
     return json(response, 200, await createSession(settings, language));
   }
 
-  // The team's panel: the platform decides who is on the team, from the sign-in.
-  async function admin(path: string, request: IncomingMessage, response: ServerResponse) {
-    if (!settings.platform) return json(response, 404, { error: "not_found" });
-    const token = guardianToken(request);
-    if (!token) return json(response, 401, { error: "not_signed_in" });
-    try {
-      if (request.method === "GET" && path === "/api/admin/families") {
-        return json(response, 200, await platform(settings, "/v1/admin/families", undefined, token));
-      }
-      if (request.method === "GET" && path === "/api/admin/metrics") {
-        return json(response, 200, await platform(settings, "/v1/metrics/daily?days=14", undefined, token));
-      }
-      if (request.method === "GET" && path === "/api/admin/weekly") {
-        return json(response, 200, await platform(settings, "/v1/metrics/weekly?weeks=12", undefined, token));
-      }
-      if (request.method === "GET" && path === "/api/admin/build") {
-        // The platform's health probe is on loopback; only the team is told what it says.
-        if (!(await readPlan(settings, token)).team) return json(response, 403, { error: "not_team" });
-        return json(response, 200, {
-          playground: { version: VERSION, commit: settings.commit },
-          platform: await platformBuild(settings),
-        });
-      }
-      if (request.method !== "POST" || !["/api/admin/grant", "/api/admin/ungrant"].includes(path)) {
-        return json(response, 404, { error: "not_found" });
-      }
-      let body: Record<string, unknown>;
-      try {
-        body = await readJson(request);
-      } catch {
-        return json(response, 400, { error: "bad_request" });
-      }
-      const id = body.family_id;
-      if (typeof id !== "string" || !ID.test(id)) return json(response, 400, { error: "bad_request" });
-      const grant = `/v1/admin/families/${id}/grant`;
-      if (path === "/api/admin/ungrant") {
-        return json(response, 200, await platform(settings, grant, undefined, token, "DELETE"));
-      }
-      const note = typeof body.note === "string" ? body.note.trim().slice(0, 500) : "";
-      if (!Number.isInteger(body.days)) return json(response, 400, { error: "bad_request" });
-      return json(response, 201, await platform(settings, grant, { days: body.days, ...(note ? { note } : {}) }, token));
-    } catch (error) {
-      if (error instanceof PlatformError && (error.status === 401 || error.status === 403)) {
-        return json(response, 403, { error: "not_team" });
-      }
-      if (error instanceof PlatformError && error.status === 400) return json(response, 400, { error: "bad_request" });
-      throw error;
-    }
-  }
-
   // GitHub, Meta and Apple: "start" sends the person there, "callback" is where
   // they come back with a code. Whatever goes wrong, they land on the page,
   // which says so; the code itself is never logged.
@@ -731,9 +676,15 @@ export function createPlayground(
       response.writeHead(status, { ...headers, Location: location });
       response.end();
     };
-    // The panel and the family guide are addresses people type and share: with
-    // a trailing slash, or without the base path, they still reach the page,
-    // and keep the query (a guide's ?src=).
+    // The team's old panel, as bookmarked, with or without the base path or a
+    // trailing slash: the team's console, with nothing from the request.
+    const panel = `${settings.basePath}/admin`;
+    if (reading && [panel, `${panel}/`, ...(settings.basePath ? ["/admin", "/admin/"] : [])].includes(pathname)) {
+      return redirect(302, TEAM_CONSOLE);
+    }
+    // The family guide is an address people type and share: with a trailing
+    // slash, or without the base path, it still reaches the page, and keeps
+    // the query (a guide's ?src=).
     for (const page of TYPED_PAGES) {
       const target = `${settings.basePath}${page}`;
       if (reading && (pathname === `${target}/` || (settings.basePath && [page, `${page}/`].includes(pathname)))) {
@@ -768,7 +719,6 @@ export function createPlayground(
         if (request.method !== expected) return json(response, 405, { error: "method_not_allowed" });
         return lifecycle(path, request, response);
       }
-      if (path.startsWith("/api/admin/")) return admin(path, request, response);
       const signingIn = SIGN_IN_PATH.exec(path);
       if (signingIn) return codeSignIn(signingIn[1] as CodeProvider, signingIn[2]!, url.searchParams, request, response);
       if (

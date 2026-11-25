@@ -11,7 +11,7 @@ const read = (name) => readFile(new URL(name, pub), "utf8");
 const html = await read("index.html");
 const css = await read("style.css");
 const guides = { es: await read("guia.html"), en: await read("guide.html") };
-const ownScripts = ["app.js", "students.js", "signin.js", "steps.js", "screens.js", "onboarding.js", "home.js", "session-messages.js", "first-steps.js", "summaries.js", "visuals.js", "admin.js", "pilot.js"];
+const ownScripts = ["app.js", "students.js", "signin.js", "steps.js", "screens.js", "onboarding.js", "home.js", "session-messages.js", "first-steps.js", "summaries.js", "visuals.js"];
 const scripts = Object.fromEntries(await Promise.all(ownScripts.map(async (name) => [name, await read(name)])));
 
 /** The body of every block that starts with `opening`, braces and all. */
@@ -1125,4 +1125,13 @@ test("the stage gives a drawing and the camera the room they need, and the camer
   assert.match(block("(max-width: 900px) and (max-height: 760px)"), /:has\(#card:not\(\[hidden\]\)\) \.stage\[data-shows="face"\] \{\s*height: auto;/);
   // The message line's empty place takes no row: the stage starts right under the title.
   assert.ok(rule(".session-message:not(:has(> :not([hidden])))"));
+});
+
+test("the team's link goes to the team's console, and the page names no other way to it", () => {
+  assert.ok(!files.includes("admin.html") && !files.includes("admin.js") && !files.includes("pilot.js"), "the panel's files are gone");
+  const link = html.match(/<a [^>]*id="team-panel"[^>]*>[^<]*<\/a>/)?.[0] ?? "";
+  assert.equal(link, '<a class="link" id="team-panel" href="https://admin.meetaule.com/" hidden>Panel del equipo</a>');
+  // Every other «admin» on the page is the team's mail address.
+  assert.deepEqual([...new Set(html.match(/[\w.:/-]*admin[\w.:/@-]*/g))].sort(), ["admin@meetaule.com", "https://admin.meetaule.com/", "mailto:admin@meetaule.com"]);
+  for (const [name, text] of Object.entries(scripts)) assert.doesNotMatch(text, /api\/admin|["'`]admin["'`]/, name);
 });
