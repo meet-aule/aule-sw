@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from aule_agent.opinion import MODEL, SecondOpinion
+from aule_agent.opinion import HEARD_QUESTION, MODEL, QUESTION, SecondOpinion
 
 
 class FakeClient:
@@ -39,6 +39,7 @@ async def test_the_reply_is_sent_alone_to_the_small_model():
     await SecondOpinion(client=client).safe("cuenta las canicas")
 
     assert client.calls[0]["model"] == MODEL
+    assert client.calls[0]["system"] == QUESTION
     assert client.calls[0]["messages"] == [{"role": "user", "content": "cuenta las canicas"}]
 
 
@@ -78,7 +79,7 @@ async def test_the_reader_gets_the_childs_words_with_the_tutors_line_before_them
     await SecondOpinion(client=client).ordinary(" ¿Hacemos otro? ", " ya no quiero seguir ")
     await SecondOpinion(client=client).ordinary("", "ya no quiero seguir")
 
-    assert client.calls[0]["system"].startswith("A child between 6 and 16")
+    assert all(call["system"] == HEARD_QUESTION for call in client.calls)
     assert [call["messages"][0]["content"] for call in client.calls] == [
         "Tutor: ¿Hacemos otro?\nChild: ya no quiero seguir",
         "Tutor: (nothing yet)\nChild: ya no quiero seguir",

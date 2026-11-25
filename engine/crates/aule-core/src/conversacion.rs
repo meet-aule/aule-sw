@@ -78,32 +78,33 @@ pub struct ContextoChat {
 
 impl ContextoChat {
     /// Reglas para la IA, en lenguaje claro.
+    // Instructions for the model are English; the engine's spoken lines stay localized.
     pub fn reglas(&self) -> String {
         let mut r = vec![
-            "Nunca des la respuesta del ejercicio actual, ni los pasos para resolverlo, ni lo resuelvas.".to_string(),
-            "Si pregunta qué significa una palabra o concepto (por ejemplo simplificar, numerador, equivalente), recuérdaselo con una explicación corta y un ejemplo con OTROS números distintos a los del ejercicio (y cuyo resultado tampoco sea el del ejercicio), y vuelve al ejercicio con una frase natural. Esto no es una pista y está permitido siempre, también en el Tamizaje.".to_string(),
-            "Si dice lo que parece su respuesta al ejercicio, no la juzgues ni digas si está bien: pídele con naturalidad que te la diga de nuevo junto con cómo lo pensó, o que te muestre su cuaderno.".to_string(),
-            "Si dice que está cansado, tómalo con calidez: la pausa la propone el motor, tú no la propongas.".to_string(),
-            "Charla, saludos o algo fuera de tema: responde con calidez en una sola línea y vuelve al ejercicio.".to_string(),
-            "Si repite la pregunta o dice \"¿qué?\", reformula distinto y más simple; nunca repitas una frase que ya dijiste.".to_string(),
+            "Never give the current exercise's answer, its solution steps, or solve it yourself. Do not call pose_exercise or check_answer: the session engine owns this exercise.".to_string(),
+            "If asked what a word or concept means (such as simplify, numerator or equivalent), give a short explanation and an example with DIFFERENT numbers and a different result from the current exercise, then return naturally to it. This is not a hint and is always allowed, including during screening.".to_string(),
+            "If they seem to give an exercise answer, do not judge it or say whether it is correct: naturally ask them to repeat it with their reasoning, or show their notebook.".to_string(),
+            "If they are tired, acknowledge it warmly; the engine proposes breaks, not you.".to_string(),
+            "For greetings, chatter or off-topic talk, respond warmly in one short line and return to the exercise.".to_string(),
+            "If they repeat a question or say 'what?', rephrase more simply; never repeat a sentence you already said.".to_string(),
         ];
         if self.sin_ayuda {
             r.push(format!(
-                "Estás en {}: aquí no hay ayuda para resolver. Si pide ayuda o la respuesta, dile con cariño que aquí no hay ayuda porque quieres ver cómo piensa él{}, y ofrécele aclarar cualquier palabra del enunciado.",
-                if self.en_tamizaje { "el Tamizaje" } else { "la Simulación" },
-                if self.en_tamizaje { "; recuérdale que puede salir del Tamizaje si se siente abrumado" } else { "" }
+                "This is {}: no help with solving is allowed. If they ask for help or the answer, explain warmly that you want to see their own thinking{}, and offer to clarify any word in the statement.",
+                if self.en_tamizaje { "screening" } else { "a simulation" },
+                if self.en_tamizaje { "; remind them they may leave screening if overwhelmed" } else { "" }
             ));
         } else if self.hay_pistas {
-            r.push("Si pide ayuda para resolver o la respuesta, responde solo una frase breve y cálida como \"¡Claro, te doy una pista!\": la pista la da el sistema justo después de tu mensaje; no la des tú.".into());
+            r.push("If they ask for help solving or for the answer, respond with one brief, warm acknowledgement: the system supplies the hint immediately after your message; do not give it yourself.".into());
         }
         if self.en_pausa {
             r.push(format!(
-                "Están en la Pausa activa (faltan {} para volver): conversa con calma y anímalo a moverse o respirar; no hables de ejercicios.",
-                self.pausa_restante_s.map(minutos).unwrap_or_else(|| "unos minutos".into())
+                "This is an active break ({} remaining): chat calmly and encourage movement or breathing; do not discuss exercises.",
+                self.pausa_restante_s.map(minutos).unwrap_or_else(|| "a few minutes".into())
             ));
         }
         if self.terminada {
-            r.push("La sesión ya terminó: conversa brevemente y despídete con cariño.".into());
+            r.push("The session has ended: chat briefly and say a warm goodbye.".into());
         }
         r.join("\n- ")
     }
@@ -111,9 +112,9 @@ impl ContextoChat {
 
 fn minutos(s: u64) -> String {
     match (s / 60, s % 60) {
-        (0, x) => format!("{x} segundos"),
-        (1, 0) => "1 minuto".into(),
-        (m, 0) => format!("{m} minutos"),
+        (0, x) => format!("{x} seconds"),
+        (1, 0) => "1 minute".into(),
+        (m, 0) => format!("{m} minutes"),
         (m, x) => format!("{m} min {x} s"),
     }
 }
@@ -460,6 +461,43 @@ mod tests {
             pausa_restante_s: None,
             terminada: false,
         }
+    }
+
+    #[test]
+    fn instrucciones_del_modelo_por_etapa() {
+        let screening = ctx(true);
+        let rules = screening.reglas();
+        assert!(rules.contains("This is screening: no help with solving is allowed"));
+        assert!(rules.contains("may leave screening if overwhelmed"));
+        assert!(rules.contains("Do not call pose_exercise or check_answer"));
+        assert!(rules.contains("different result from the current exercise"));
+        // Student-facing data is not translated or copied into the policy.
+        assert!(!rules.contains(screening.enunciado.as_ref().unwrap()));
+        let mut simulation = ctx(true);
+        simulation.en_tamizaje = false;
+        assert!(simulation
+            .reglas()
+            .contains("This is a simulation: no help"));
+        assert!(!simulation.reglas().contains("may leave screening"));
+        assert!(ctx(false).reglas().contains("the system supplies the hint"));
+        let mut rest = ctx(false);
+        rest.hay_pistas = false;
+        rest.en_pausa = true;
+        rest.pausa_restante_s = Some(90);
+        assert!(rest
+            .reglas()
+            .contains("active break (1 min 30 s remaining)"));
+        assert!(rest.reglas().contains("do not discuss exercises"));
+        assert!(!rest.reglas().contains("the system supplies the hint"));
+        rest.pausa_restante_s = None;
+        assert!(rest.reglas().contains("a few minutes remaining"));
+        let mut ended = ctx(false);
+        ended.hay_pistas = false;
+        ended.terminada = true;
+        assert!(ended.reglas().contains("The session has ended"));
+        assert_eq!(minutos(20), "20 seconds");
+        assert_eq!(minutos(60), "1 minute");
+        assert_eq!(minutos(120), "2 minutes");
     }
 
     #[test]

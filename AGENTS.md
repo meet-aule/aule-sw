@@ -74,7 +74,9 @@ python3 -m unittest discover -s scripts -p 'test_*.py'
   an error for bad input instead of panicking. Validate at the boundary and keep
   types narrow inside.
 - **The tutor's prompt stays short.** Every sentence is paid on every turn. Change a
-  sentence before adding one, in Spanish and English together.
+  sentence before adding one. Author policy once in English and keep the final
+  output-language rule; validate Spanish and English behavior together. The prompt
+  inventory and composition contract are in `apps/agent/PROMPTS.md`.
 - **A tool the model can call has a hand-written schema with no nullable
   argument.** The model's API rejects an enum on a nullable type, and unit tests do
   not see that. After changing a tool or how the model is called, make one real
@@ -109,7 +111,7 @@ python3 -m unittest discover -s scripts -p 'test_*.py'
 
 | To change | Look at |
 |---|---|
-| What the tutor says and how it teaches | `apps/agent/src/aule_agent/tutor.py` |
+| What the tutor says and how it teaches | `apps/agent/src/aule_agent/prompts.py`, assembled in `tutor.py` |
 | Speech, model and voice providers | `apps/agent/src/aule_agent/providers.py`, `config.py` |
 | What a child may hear or say | `moderation.py`, `physical_safety.py`, `safety.py`, `replies.py` |
 | What the screen can draw | `contracts/visuals/visual.v1.schema.json`, `apps/playground/public/visuals.js` |

@@ -11,7 +11,7 @@ import pytest
 
 from aule_agent.tutor import Tutor
 
-INSTRUCTIONS_BUDGET = 4_000  # characters, the most complete session (es 3,607; en 3,682)
+INSTRUCTIONS_BUDGET = 4_000  # characters of static policy, including the final language rule
 TOOLS_BUDGET = 9_000  # characters of the tools' JSON (8,361)
 
 

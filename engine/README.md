@@ -31,6 +31,10 @@ The code, its comments and its rules are in Spanish, unlike the rest of this
 repository. The vocabulary is part of the specification (Alumno, Tamizaje,
 Nivel objetivo, Pistas...) and is used as written.
 
+Instructions addressed to the model (`ContextoChat::reglas`) are authored in
+English. Stage labels, exercise statements and fixed spoken lines remain in their
+original language; the voice tutor applies its final output-language instruction.
+
 ## Running the tests
 
 ```bash

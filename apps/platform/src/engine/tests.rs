@@ -505,9 +505,9 @@ fn what_is_not_an_answer_goes_where_the_engine_expects_it() {
     let turn = student.says("¿qué significa numerador?");
     assert!(turn.lines.is_empty(), "{turn:?}");
     let rules = turn.converse.unwrap();
-    assert!(rules.contains("Tamizaje") && rules.contains("Nunca des la respuesta"), "{rules}");
-    assert!(rules.contains("no la juzgues ni digas si está bien"), "{rules}");
-    assert!(rules.contains("aquí no hay ayuda para resolver"), "{rules}");
+    assert!(rules.contains("screening") && rules.contains("Never give the current exercise"), "{rules}");
+    assert!(rules.contains("do not judge it or say whether it is correct"), "{rules}");
+    assert!(rules.contains("no help with solving is allowed"), "{rules}");
     assert!(!rules.contains("Mateo") && !rules.contains("3/8"), "{rules}");
     assert_eq!(student.at(), "tamizaje:1");
     assert_eq!(
@@ -555,7 +555,7 @@ fn what_is_not_an_answer_goes_where_the_engine_expects_it() {
     assert!(said_by_tutor(&turn).contains("Saltos de estrella"), "{turn:?}");
     let turn = student.says("¿cuánto falta?");
     assert!(turn.lines.is_empty(), "{turn:?}");
-    assert!(turn.converse.unwrap().contains("Pausa activa"));
+    assert!(turn.converse.unwrap().contains("active break"));
 
     // "Ya volví" before doing any activity is answered, then one is proposed;
     // said after the activity, it ends the break.

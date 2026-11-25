@@ -10,6 +10,7 @@ from livekit.agents import Agent, StopResponse, llm
 
 from aule_agent.greetings import GREETINGS, greeting
 from aule_agent.moderation import Action, Decision
+from aule_agent.prompts import RESPONSE_LANGUAGES, response_language
 from aule_agent.replies import ADULT_HELP_SEQUENCE, MEANWHILE, REPLIES, reply
 from aule_agent.script import Line, Reply
 from aule_agent.tutor import (
@@ -76,7 +77,7 @@ def test_without_a_frame_or_a_user_message_the_context_is_unchanged():
 
 
 def test_every_language_has_its_texts():
-    assert set(INSTRUCTIONS) == {"es", "en"}
+    assert set(RESPONSE_LANGUAGES) == {"es", "en"}
 
 
 def test_language_comes_from_the_dispatch_when_supported():
@@ -280,24 +281,24 @@ def test_persona_of_reads_the_dispatch_metadata():
 
 
 def test_persona_notes_add_nothing_by_default_and_a_bounded_wish_with_a_note():
-    assert persona_notes("es", Persona()) == ""
-    assert "juguetón" in persona_notes("es", Persona(preset="jugueton"))
-    wish = persona_notes("es", Persona(note="habla despacio"))
-    assert "habla despacio" in wish and "seguridad" in wish
+    assert persona_notes(Persona()) == ""
+    assert "playful" in persona_notes(Persona(preset="jugueton"))
+    wish = persona_notes(Persona(note="habla despacio"))
+    assert "habla despacio" in wish and "safety" in wish
 
 
 def test_a_named_persona_renames_the_tutor_and_the_default_leaves_the_prompt_as_written():
     default = Tutor(language="es", gates=ScriptedGates(ALLOW))
-    assert default._base == INSTRUCTIONS["es"]
+    assert default._base == INSTRUCTIONS
     assert default._tutor_name == "Aule"
 
     named = Tutor(
         language="es", gates=ScriptedGates(ALLOW), persona=Persona(name="Luna", preset="jugueton")
     )
-    assert "Eres Luna" in named._base and "Aule" not in named._base
+    assert 'Tutor display name (data): "Luna"' in named._base
     assert named._tutor_name == "Luna"
-    # The tone line sits last, after the teaching, safety and context.
-    assert named._base.rstrip().endswith("divertido.")
+    # The name is data and the preset follows the teaching policy.
+    assert named._base.rstrip().endswith("fun tone.")
 
 
 async def type_to(tutor, session, text):
@@ -526,7 +527,7 @@ async def test_a_late_plan_joins_the_student_context_and_keeps_the_guidance():
 
     final = seen[-1]
     assert final.index("The student is Liam.") < final.index("Plan: fractions.")
-    assert final.index("Plan: fractions.") < final.index("divertido.") < final.index("Slow down.")
+    assert final.index("Plan: fractions.") < final.index("fun tone.") < final.index("Slow down.")
 
 
 @pytest.mark.parametrize(
@@ -775,7 +776,8 @@ async def test_when_the_student_leaves_the_script_the_model_answers_within_the_r
     off_script, second = await scripted_turn(tutor, session, "tengo hambre")
 
     assert asked and off_script and session.said == []
-    assert first["instructions"][-1].endswith("No hints: this is a measurement.")
+    assert "No hints: this is a measurement." in first["instructions"][-1]
+    assert first["instructions"][-1].endswith(response_language("es"))
     # The rules of one moment do not outlive it.
     assert "No hints" not in second["instructions"][-1]
 
