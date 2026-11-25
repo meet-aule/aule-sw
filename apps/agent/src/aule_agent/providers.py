@@ -73,7 +73,7 @@ def build_tts(settings: Settings, language: str) -> tts.TTS:
     return openai.TTS(**({"voice": voice} if voice else {}))
 
 
-def build_llm(settings: Settings) -> llm.LLM:
+def build_llm(settings: Settings, *, client: Any = None) -> llm.LLM:
     from livekit.plugins import anthropic
 
     spoken = settings.llm_model.startswith(THINKS_BETWEEN_TOOLS)
@@ -94,6 +94,7 @@ def build_llm(settings: Settings) -> llm.LLM:
     # message, so it never invalidates it.
     return TutorLLM(
         model=settings.llm_model,
+        **({"client": client} if client is not None else {}),
         max_tokens=MAX_REPLY_TOKENS if spoken else MAX_TOKENS_WITH_THINKING,
         caching="ephemeral",
     )
