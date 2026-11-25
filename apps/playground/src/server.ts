@@ -66,7 +66,7 @@ import { RecoveryTickets, recoveryCookie, recoveryTicket, resumeToken, STATUS_GR
 
 const publicDir = new URL("../public/", import.meta.url);
 // The browser build that ships inside the livekit-client package.
-// Aule's animated face: one file with no imports and no network calls of its own.
+// The engine of Aule's animated face: one file with no imports and no network calls of its own.
 const mascot = join(dirname(createRequire(import.meta.url).resolve("wobnimo/package.json")), "dist", "wobnimo.js");
 
 const livekitClient = join(
@@ -100,6 +100,9 @@ const STATIC: Record<string, { file: string | URL; type: string }> = {
   // The lines the family's home says about each student's latest sessions.
   "/summaries.js": { file: new URL("summaries.js", publicDir), type: "text/javascript; charset=utf-8" },
   "/visuals.js": { file: new URL("visuals.js", publicDir), type: "text/javascript; charset=utf-8" },
+  // Aule's face: the cuy the mascot's engine draws, and the arithmetic that shows it in pixel art.
+  "/cuy.js": { file: new URL("cuy.js", publicDir), type: "text/javascript; charset=utf-8" },
+  "/pixels.js": { file: new URL("pixels.js", publicDir), type: "text/javascript; charset=utf-8" },
   "/style.css": { file: new URL("style.css", publicDir), type: "text/css; charset=utf-8" },
   "/icon.svg": { file: new URL("icon.svg", publicDir), type: "image/svg+xml" },
   // The cuy with glasses for a phone's home screen and for launchers.
@@ -221,6 +224,8 @@ const OWN_SCRIPTS = new Set([
   "/first-steps.js",
   "/summaries.js",
   "/visuals.js",
+  "/cuy.js",
+  "/pixels.js",
 ]);
 
 // The pages a family may be sent to with a link's code (?src=cesar), which is
