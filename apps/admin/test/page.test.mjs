@@ -14,11 +14,13 @@ const scripts = Object.fromEntries(await Promise.all(files.filter((name) => name
 const css = await read("style.css");
 
 test("the console has its pages and their scripts, and nothing else of the playground's", () => {
-  assert.deepEqual(Object.keys(pages).sort(), ["families.html", "family.html", "index.html", "live.html", "signin.html"]);
-  assert.deepEqual(Object.keys(scripts).sort(), ["admin.js", "common.js", "families.js", "family.js", "labels.js", "live.js", "pilot.js", "signin.js"]);
+  assert.deepEqual(Object.keys(pages).sort(), ["families.html", "family.html", "index.html", "live.html", "passkeys.html", "signin.html"]);
+  assert.deepEqual(Object.keys(scripts).sort(), [
+    "admin.js", "common.js", "credential.js", "families.js", "family.js", "labels.js", "live.js", "passkeys.js", "pilot.js", "signin.js",
+  ]);
   assert.deepEqual(files.sort(), [
-    "admin.js", "common.js", "families.html", "families.js", "family.html", "family.js", "icon.svg", "index.html", "labels.js",
-    "live.html", "live.js", "pilot.js", "signin.html", "signin.js", "style.css",
+    "admin.js", "common.js", "credential.js", "families.html", "families.js", "family.html", "family.js", "icon.svg", "index.html",
+    "labels.js", "live.html", "live.js", "passkeys.html", "passkeys.js", "pilot.js", "signin.html", "signin.js", "style.css",
   ]);
 });
 
@@ -27,6 +29,7 @@ const NAVIGATION = [
   ["/", "index.html", "Resumen"],
   ["/live", "live.html", "En vivo"],
   ["/families", "families.html", "Familias"],
+  ["/passkeys", "passkeys.html", "Passkeys"],
 ];
 // A family's page has the same header, with no link of its own.
 const HEADED = [...NAVIGATION.map(([, page]) => page), "family.html"];
@@ -49,6 +52,7 @@ test("no inline script, style or handler in any page, and exactly one module of 
   assert.match(pages["live.html"], /src="live\.js"/);
   assert.match(pages["families.html"], /src="families\.js"/);
   assert.match(pages["family.html"], /src="family\.js"/);
+  assert.match(pages["passkeys.html"], /src="passkeys\.js"/);
   assert.match(pages["signin.html"], /src="signin\.js"/);
 });
 
@@ -103,7 +107,9 @@ test("a page sends people only to the console's fixed addresses, and never to on
   assert.match(scripts["common.js"], /if \(typeof id !== "string" \|\| !FAMILY_ID\.test\(id\)\) return document\.createTextNode\(text\);\s*const link = document\.createElement\("a"\);\s*link\.href = `\/family\?id=\$\{id\}`;/);
   // Signed out on any data call, a page goes to the sign-in; signed in, the sign-in goes to the overview.
   assert.match(scripts["common.js"], /if \(response\.status !== 401 && response\.status !== 403\) return false;\s*location\.replace\("\/signin"\);/);
-  for (const name of ["admin.js", "live.js", "families.js", "family.js"]) assert.doesNotMatch(scripts[name], /\bfetch\(/, `${name} asks the API only through common.js`);
+  for (const name of ["admin.js", "live.js", "families.js", "family.js", "passkeys.js"]) {
+    assert.doesNotMatch(scripts[name], /\bfetch\(/, `${name} asks the API only through common.js`);
+  }
   assert.match(scripts["signin.js"], /if \(status === 200\) return location\.replace\("\/"\);/);
 });
 
@@ -111,9 +117,12 @@ test("the scripts import each other as the pages draw them, and the sign-in stan
   const imports = (text) => [...text.matchAll(/\bfrom\s+"\.\/([\w-]+\.js)"/g)].map(([, dep]) => dep);
   assert.deepEqual(imports(scripts["admin.js"]), ["common.js", "pilot.js"]);
   for (const page of ["live.js", "families.js", "family.js"]) assert.deepEqual(imports(scripts[page]), ["common.js", "labels.js"], page);
-  for (const alone of ["common.js", "labels.js", "pilot.js", "signin.js"]) assert.deepEqual(imports(scripts[alone]), [], alone);
-  // The words and the arithmetic touch no page, so they are tested on their own.
-  for (const pure of ["labels.js", "pilot.js"]) assert.doesNotMatch(scripts[pure], /\bdocument\b|\blocation\b|\bfetch\b|\bwindow\b/, pure);
+  assert.deepEqual(imports(scripts["passkeys.js"]), ["common.js", "credential.js", "labels.js"]);
+  for (const alone of ["common.js", "credential.js", "labels.js", "pilot.js", "signin.js"]) assert.deepEqual(imports(scripts[alone]), [], alone);
+  // The words, the arithmetic and a passkey's JSON touch no page, so they are tested on their own.
+  for (const pure of ["credential.js", "labels.js", "pilot.js"]) {
+    assert.doesNotMatch(scripts[pure], /\bdocument\b|\blocation\b|\bfetch\b|\bwindow\b|\bnavigator\b/, pure);
+  }
 });
 
 test("every element a script looks for is in its page", () => {
@@ -122,6 +131,7 @@ test("every element a script looks for is in its page", () => {
     ["live.js", "live.html"],
     ["families.js", "families.html"],
     ["family.js", "family.html"],
+    ["passkeys.js", "passkeys.html"],
     ["signin.js", "signin.html"],
     // What every page but the sign-in shares: the header's «Salir» and the message line.
     ...HEADED.map((page) => ["common.js", page]),
@@ -212,4 +222,36 @@ test("«Familias» and a family's page say what they are, in the panel's words",
   }
   // A notice is listed by its kind and date: the page has no place for its words.
   assert.match(family, /Lo que se le envió a la familia: el tipo y cuándo, nunca el texto\./);
+});
+
+test("only «Passkeys» makes a passkey, with the browser's own dialog and nothing of another site", () => {
+  const all = Object.values(scripts).join("\n");
+  for (const [name, text] of Object.entries(scripts)) {
+    const creates = [...text.matchAll(/navigator\.credentials\.create\(/g)].length;
+    assert.equal(creates, name === "passkeys.js" ? 1 : 0, name);
+  }
+  assert.match(scripts["passkeys.js"], /navigator\.credentials\.create\(\{ publicKey: PublicKeyCredential\.parseCreationOptionsFromJSON\(publicKey\) \}\)/);
+  // What it sends: the credential's JSON, by hand where a password manager's cannot write it.
+  assert.match(scripts["passkeys.js"], /post\("\/api\/passkeys\/create", \{ label: name, credential: credentialJSON\(credential\) \}\)/);
+  // The browser's own picker: never the address field's autofill, and no library.
+  assert.doesNotMatch(all, /mediation|conditional/);
+  // The ceremony stays in its HttpOnly cookie: no page script names it.
+  assert.doesNotMatch(all, /ceremony/i);
+  const page = pages["passkeys.html"];
+  for (const words of [
+    "Tus passkeys",
+    "Crear passkey",
+    "passkey (llave de acceso)",
+    "Todavía no tienes passkeys.",
+    "Este navegador no puede crear passkeys.",
+    "Tienes 10 passkeys, el máximo.",
+  ]) {
+    assert.ok(page.includes(words), words);
+  }
+  // Before anyone tries, the page says a passkey wants a recent sign-in.
+  assert.match(page, /Para crear una, tienes que haber entrado al panel en\s+los últimos 15 minutos\./);
+  assert.match(page, /<input id="label" [^>]*maxlength="60"/);
+  for (const words of ["Listo: ya puedes entrar con esta passkey.", "Ponle un nombre a la passkey.", "No se creó la passkey.", "Este dispositivo ya tiene una passkey tuya."]) {
+    assert.ok(scripts["passkeys.js"].includes(words), words);
+  }
 });

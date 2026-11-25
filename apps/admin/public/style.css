@@ -312,6 +312,21 @@ p {
   margin: 0;
 }
 
+/* «Passkeys»: the name of a new one, on the line of its button. */
+.admin .filters input[type="text"] {
+  width: 100%;
+  max-width: 320px;
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.admin .filters label {
+  font-weight: 600;
+}
+
 .admin .filters select {
   min-height: 40px;
   padding: 6px 10px;
