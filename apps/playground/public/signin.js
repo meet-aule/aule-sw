@@ -7,7 +7,7 @@
 
 import { $, call, say } from "./students.js";
 import { codeDigits, greeting, maskEmail } from "./steps.js";
-import { current, getAccount, go, landing, need, onShow, setAccount } from "./screens.js";
+import { current, flowNow, getAccount, go, landing, need, onShow, setAccount } from "./screens.js";
 
 const GOOGLE_SCRIPT = "https://accounts.google.com/gsi/client";
 // Sign-ins that leave the page for the provider's and come back with a code.
@@ -56,11 +56,15 @@ const tab = () => sessionStorage;
 // The address the code goes to, held in memory only, for P03, P14 and P15.
 let emailAddress = "";
 need("email", () => Boolean(emailAddress));
+// A new family's name, written on P02 with the address, in memory only; sent with the code (D34).
+let newName = "";
 
-/** Forgets the address, and P02's field that held it: signed in it is not needed, signed out it is not to be left behind. */
+/** Forgets the address and the name, and P02's fields that held them: signed in they are not needed, signed out they are not to be left behind. */
 function forgetAddress() {
   emailAddress = "";
+  newName = "";
   $("email-address").value = "";
+  $("email-name-new").value = "";
 }
 
 // --- C01 ¿Ya tienes cuenta? ---------------------------------------------------
@@ -212,14 +216,30 @@ function entered(account) {
 
 // --- P02 Tu correo ------------------------------------------------------------
 
+// A family signing up writes its name here too: the platform makes the account
+// with it, so P03 needs no screen after it. A family coming back does not.
+onShow("p02", () => {
+  $("email-name-field").hidden = flowNow() !== "new";
+});
+
 function emailError(on) {
   $("email-address").setAttribute("aria-invalid", String(on));
   $("email-error").hidden = !on;
   if (on) $("email-address").focus();
 }
 
+function nameError(on) {
+  $("email-name-new").setAttribute("aria-invalid", String(on));
+  $("email-name-new-error").hidden = !on;
+  if (on) $("email-name-new").focus();
+}
+
 $("email-address").addEventListener("input", () => {
   if ($("email-address").getAttribute("aria-invalid") === "true") emailError(false);
+});
+
+$("email-name-new").addEventListener("input", () => {
+  if ($("email-name-new").getAttribute("aria-invalid") === "true") nameError(false);
 });
 
 $("email-start").addEventListener("submit", async (event) => {
@@ -227,6 +247,10 @@ $("email-start").addEventListener("submit", async (event) => {
   const address = $("email-address").value.trim();
   if (!EMAIL.test(address) || address.length > 254) return emailError(true);
   emailError(false);
+  const asking = !$("email-name-field").hidden;
+  const name = $("email-name-new").value.trim();
+  if (asking && !name) return nameError(true);
+  nameError(false);
   say("");
   const send = event.submitter ?? $("email-start").querySelector("[type=submit]");
   send.disabled = true;
@@ -239,6 +263,7 @@ $("email-start").addEventListener("submit", async (event) => {
     send.disabled = false;
   }
   emailAddress = address;
+  newName = asking ? name.slice(0, 120) : "";
   clearCode();
   go("p03");
 });
@@ -284,6 +309,7 @@ codeInput.addEventListener("input", () => {
 codeInput.addEventListener("focus", drawDigits);
 codeInput.addEventListener("blur", drawDigits);
 
+/** P03's code, with a new family's name: the one written on P02, or on p03-name (`name`). */
 async function verify(name) {
   if (verifying) return;
   const code = codeDigits(codeInput.value);
@@ -298,7 +324,8 @@ async function verify(name) {
   let account = null;
   let failure = null;
   try {
-    account = await call("api/signin/email/verify", { email: emailAddress, code, ...(name ? { name } : {}) });
+    const named = name || newName;
+    account = await call("api/signin/email/verify", { email: emailAddress, code, ...(named ? { name: named } : {}) });
   } catch (error) {
     failure = error.message;
   } finally {
@@ -306,7 +333,7 @@ async function verify(name) {
     waiting(false);
   }
   if (account) return entered(account);
-  // A new address: its name first (the code is not used up by asking).
+  // A new address with no name written yet (a family coming back): its name first (the code is not used up by asking).
   if (failure === "name_needed") return go("p03-name");
   if (current() === "p03-name") {
     clearCode();

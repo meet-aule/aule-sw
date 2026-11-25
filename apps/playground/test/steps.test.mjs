@@ -29,27 +29,21 @@ const drawn = (id, flow) =>
     ?.map((part) => `${part.done}/${part.steps}${part.current ? "*" : ""}`)
     .join(" ") ?? "plain";
 
-test("the progress has three named parts of 4, 4 and 2 steps, filled up to the step showing", () => {
+test("the progress has two named parts of 3 and 2 steps, filled up to the step showing: the interview left the onboarding (D34)", () => {
   assert.deepEqual(
     SEGMENTS.map((part) => [part.name, part.steps]),
     [
-      ["Tu cuenta", 4],
-      ["Conocer a tu hijo (opcional)", 4],
+      ["Tu cuenta", 3],
       ["Su perfil", 2],
     ],
   );
   const expected = {
-    p01: "1/4* 0/4 0/2",
-    p02: "2/4* 0/4 0/2",
-    p03: "3/4* 0/4 0/2",
-    "p03-name": "3/4* 0/4 0/2",
-    p04: "4/4* 0/4 0/2",
-    p05: "4/4 1/4* 0/2",
-    p06: "4/4 2/4* 0/2",
-    "p06-grade": "4/4 3/4* 0/2",
-    p07: "4/4 4/4* 0/2",
-    "p10-name": "4/4 4/4 1/2*",
-    p12: "4/4 4/4 2/2*",
+    p01: "1/3* 0/2",
+    p02: "2/3* 0/2",
+    p03: "3/3* 0/2",
+    "p03-name": "3/3* 0/2",
+    p04: "3/3 1/2*",
+    "p10-name": "3/3 2/2*",
   };
   for (const [id, parts] of Object.entries(expected)) assert.equal(drawn(id), parts, id);
   // Wherever there is progress, one part is the current one.
@@ -60,9 +54,26 @@ test("the progress has three named parts of 4, 4 and 2 steps, filled up to the s
 });
 
 test("outside the onboarding, and for a family coming back, the header is the plain line", () => {
-  for (const id of ["c01", "p13", "p14", "p15", "home", "editor"]) assert.equal(drawn(id), "plain", id);
+  for (const id of ["c01", "p13", "p14", "p15", "home", "editor", "p05", "p06", "p06-grade", "p07"]) assert.equal(drawn(id), "plain", id);
   for (const id of ["p02", "p03", "p03-name"]) assert.equal(drawn(id, "back"), "plain", `${id} coming back`);
-  assert.equal(drawn("p04", "back"), "4/4* 0/4 0/2", "adding a child is onboarding, whoever starts it");
+  assert.equal(drawn("p04", "back"), "3/3 1/2*", "adding a child is onboarding, whoever starts it");
+});
+
+test("the interview is for a child the family has, from the home, the grade first; P12 is folded into the name (D34)", () => {
+  for (const id of ["p05", "p06-grade", "p06", "p07"]) {
+    assert.equal(SCREENS[id].needs, "interview", id);
+    assert.equal(SCREENS[id].progress, null, id);
+  }
+  // P05 goes back to the home; then the grade, the expectations and the likes, in that order.
+  assert.equal(SCREENS.p05.back, "home");
+  assert.equal(SCREENS["p06-grade"].back, "p05");
+  assert.equal(SCREENS.p06.back, "p06-grade");
+  assert.equal(SCREENS.p07.back, "p06");
+  // Consent leads to the name, which needs it; there is no P12 after it.
+  assert.equal(SCREENS["p10-name"].back, "p04");
+  assert.equal(SCREENS["p10-name"].needs, "consent");
+  assert.ok(!("p12" in SCREENS));
+  for (const [id, screen] of Object.entries(SCREENS)) assert.notEqual(screen.back, "p12", id);
 });
 
 test("each tile of A04 asks for its kind, «No lo sé» for nothing and the link for a review, and the server takes them all", () => {
@@ -205,7 +216,7 @@ test("a signed-out visit starts at C01, which has no way back: C00 was retired o
   for (const [id, screen] of Object.entries(SCREENS)) assert.ok(!String(screen.back).startsWith("c00"), id);
 });
 
-test("a02, the hand-off, is the device's A02 on ink: no progress, it needs the child handed over, and it goes back to P12", () => {
+test("a02, the hand-off, is the device's A02 on ink: no progress, it needs the child handed over, and it goes back to the home", () => {
   const { a02 } = SCREENS;
   assert.equal(a02.code, "A02");
   assert.deepEqual(a02.nodes, ["410:629"]);
@@ -214,5 +225,5 @@ test("a02, the hand-off, is the device's A02 on ink: no progress, it needs the c
   assert.equal(a02.progress, null);
   assert.equal(drawn("a02"), "plain");
   assert.equal(a02.needs, "handoff");
-  assert.equal(a02.back, "p12");
+  assert.equal(a02.back, "home");
 });

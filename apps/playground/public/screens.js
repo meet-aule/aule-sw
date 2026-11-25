@@ -236,6 +236,11 @@ export function current() {
   return showing;
 }
 
+/** "new" while a family signs up, "back" when it comes back. */
+export function flowNow() {
+  return flow;
+}
+
 /** Runs `handler` each time the screen shows; at once if it is showing already. */
 export function onShow(id, handler) {
   shownHandlers.set(id, [...(shownHandlers.get(id) ?? []), handler]);

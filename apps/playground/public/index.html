@@ -125,6 +125,13 @@
                 <input id="email-address" type="email" autocomplete="email" inputmode="email" placeholder="nombre@correo.com" maxlength="254" aria-describedby="email-error" />
                 <p class="field-error" id="email-error" role="alert" hidden>Revisa el correo: no parece una dirección válida.</p>
               </div>
+              <!-- A new family's name, with the address (D34): the platform needs it to make the account, and P03
+                   then needs no screen after it. In page memory only; hidden for a family coming back. -->
+              <div class="field" id="email-name-field" hidden>
+                <label for="email-name-new">Tu nombre</label>
+                <input id="email-name-new" type="text" autocomplete="name" maxlength="120" placeholder="Ej.: Ana" aria-describedby="email-name-new-error" />
+                <p class="field-error" id="email-name-new-error" role="alert" hidden>Escribe tu nombre para crear tu cuenta.</p>
+              </div>
             </div>
           </div>
           <div class="screen-foot">
@@ -268,6 +275,32 @@
         </div>
       </section>
 
+      <!-- Figma: web-only, interview question 1, the grade; built from Pregunta/Base 161:2101, Opción/Grande 160:1374 -->
+      <section class="screen" data-screen="p06-grade" data-surface="paper" hidden aria-labelledby="p06-grade-title">
+        <div class="frame">
+          <header class="screen-head">
+            <div class="head-row">
+              <p class="wordmark">Aule</p>
+              <button type="button" class="link back" data-back><span aria-hidden="true">←</span> Atrás</button>
+            </div>
+            <ol class="progress" aria-label="Avance"></ol>
+          </header>
+          <div class="screen-body">
+            <div class="question">
+              <p class="question-step">1 de 3</p>
+              <h2 class="question-title" id="p06-grade-title" tabindex="-1">¿En qué grado está?</h2>
+              <p class="question-help">Así Aule le propone ejercicios de su nivel.</p>
+            </div>
+            <div class="controls">
+              <div class="options two" id="grade-options"></div>
+            </div>
+          </div>
+          <div class="screen-foot">
+            <button type="button" class="link" id="grade-skip">Saltar pregunta</button>
+          </div>
+        </div>
+      </section>
+
       <!-- Figma: P06 Entrevista · expectativas · Móvil 160:1568 / Escritorio 160:1801 -->
       <section class="screen" data-screen="p06" data-surface="paper" hidden aria-labelledby="p06-title">
         <form class="frame" id="expect-form" novalidate autocomplete="off">
@@ -280,7 +313,7 @@
           </header>
           <div class="screen-body">
             <div class="question">
-              <p class="question-step">1 de 3</p>
+              <p class="question-step">2 de 3</p>
               <h2 class="question-title" id="p06-title" tabindex="-1">¿Qué esperas de Aule en el día a día?</h2>
             </div>
             <div class="controls">
@@ -296,32 +329,6 @@
             <button type="submit" class="primary">Siguiente</button>
           </div>
         </form>
-      </section>
-
-      <!-- Figma: web-only, interview question 2; built from Pregunta/Base 161:2101, Opción/Grande 160:1374 -->
-      <section class="screen" data-screen="p06-grade" data-surface="paper" hidden aria-labelledby="p06-grade-title">
-        <div class="frame">
-          <header class="screen-head">
-            <div class="head-row">
-              <p class="wordmark">Aule</p>
-              <button type="button" class="link back" data-back><span aria-hidden="true">←</span> Atrás</button>
-            </div>
-            <ol class="progress" aria-label="Avance"></ol>
-          </header>
-          <div class="screen-body">
-            <div class="question">
-              <p class="question-step">2 de 3</p>
-              <h2 class="question-title" id="p06-grade-title" tabindex="-1">¿En qué grado está?</h2>
-              <p class="question-help">Así Aule le propone ejercicios de su nivel.</p>
-            </div>
-            <div class="controls">
-              <div class="options two" id="grade-options"></div>
-            </div>
-          </div>
-          <div class="screen-foot">
-            <button type="button" class="link" id="grade-skip">Saltar pregunta</button>
-          </div>
-        </div>
       </section>
 
       <!-- Figma: P07 Entrevista · gustos · Móvil 160:1547 / Escritorio 160:1815 -->
@@ -378,36 +385,24 @@
                 <input id="child-name" type="text" maxlength="40" placeholder="Ej.: Mati" aria-describedby="child-name-error" />
                 <p class="field-error" id="child-name-error" role="alert" hidden>Escribe cómo quieres que lo llamemos.</p>
               </div>
+              <!-- Optional, after P04 like everything about the child: the interview's grades and «Prefiero decirlo
+                   después», with none chosen at first. Saved as the interview saves it, which then shows it chosen. -->
+              <div class="field">
+                <label for="child-grade">¿En qué grado está? <span class="optional">opcional</span></label>
+                <select id="child-grade">
+                  <option value="" disabled selected>Elige su grado</option>
+                </select>
+              </div>
+              <!-- With no session left in the plan, the plan's line, as the home says it (D9). -->
+              <p class="question-help" id="child-plan" hidden></p>
             </div>
           </div>
           <div class="screen-foot">
-            <button type="submit" class="primary" id="child-save">Guardar</button>
+            <!-- P12's «Empezar su primera sesión», folded in here (D34); «Empezar más tarde» saves and goes home. -->
+            <button type="submit" class="link" id="child-later">Empezar más tarde</button>
+            <button type="submit" class="primary" id="child-start">Empezar su primera sesión</button>
           </div>
         </form>
-      </section>
-
-      <!-- Figma: P12 Listo · Móvil 160:1469 / Escritorio 160:1909 -->
-      <section class="screen" data-screen="p12" data-surface="paper" hidden aria-labelledby="p12-title">
-        <div class="frame">
-          <header class="screen-head">
-            <div class="head-row"><p class="wordmark">Aule</p></div>
-            <ol class="progress" aria-label="Avance"></ol>
-          </header>
-          <div class="screen-body">
-            <div class="question">
-              <p class="question-step">Listo</p>
-              <h2 class="question-title" id="p12-title" tabindex="-1">Listo.</h2>
-              <!-- With no session left in the plan, onboarding.js puts the plan's line here instead. -->
-              <p class="question-help" id="p12-help">Ya puede empezar su primera sesión desde este navegador.</p>
-            </div>
-            <!-- Where P08–P11 (linking the device) would go. -->
-            <p class="small-help">Pronto también podrás enlazar aquí el aparato Aule.</p>
-          </div>
-          <div class="screen-foot">
-            <button type="button" class="link" id="done-finish">Terminar</button>
-            <button type="button" class="primary" id="done-start">Empezar su primera sesión</button>
-          </div>
-        </div>
       </section>
 
       <!-- Figma: P13 Entra a tu cuenta · Móvil 160:1674 / Escritorio 160:1920; P13 · De vuelta · Móvil 160:1711 / Escritorio 160:1934 -->
@@ -642,7 +637,7 @@
 
       <!-- Figma: A02 ¿Eres tú? · Aparato 410:629 (Vigente · Setup · v1), adapted: on the device the child
            confirms the profile while the parent's P11 waits; on the web the parent's browser is the child's
-           screen, so a line for the parent comes first. Reached only from P12's «Empezar su primera sesión».
+           screen, so a line for the parent comes first. Reached only from the name's «Empezar su primera sesión».
            Built from A02's title and name, Cuadro/Opción 190:806 as its two tiles (no icon) and the device
            link 195:513. The words are first-steps.js's, in the student's language. -->
       <section class="screen" data-screen="a02" data-surface="ink" hidden aria-labelledby="a02-title a02-name">
