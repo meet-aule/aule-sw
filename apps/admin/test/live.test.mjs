@@ -74,6 +74,13 @@ test("open sessions say not to deploy, in red, and each one is a line of facts",
   assert.match(drawn[2][2], /^\d\d:\d\d, hace 30 min$/);
   assert.match(drawn[3][2], /^\d\d:\d\d, hace 2 h 5 min$/);
   assert.deepEqual(page.$("sessions").children.map((line) => line.className), ["", "", "", "overdue"]);
+  // A family's name goes to its page; the team's test has no family to go to.
+  const links = [...walk(page.$("sessions"))].filter((element) => element.tagName === "A");
+  assert.deepEqual(
+    links.map((link) => [link.href, link.textContent]),
+    [0, 2, 3].map(() => ["/family?id=01a1f5f4-ede7-7028-a524-9d8e2f36b92d", "Quispe"]),
+  );
+  assert.equal(page.$("sessions").children[1].children[0].children.length, 0);
 });
 
 test("what the platform answers is drawn as text, never as HTML", async () => {
@@ -86,7 +93,8 @@ test("what the platform answers is drawn as text, never as HTML", async () => {
   assert.equal(line[1], "<script>alert(2)</script>");
   assert.equal(line[3], "<b>x</b>");
   const made = [...walk(page.$("sessions"))].map((element) => element.tagName);
-  assert.deepEqual([...new Set(made)].sort(), ["TBODY", "TD", "TR"]);
+  assert.deepEqual([...new Set(made)].sort(), ["A", "TBODY", "TD", "TR"]);
+  assert.equal(made.filter((tag) => tag === "A").length, 1, "the family's name, as a link's text");
 });
 
 test("more than 100 open: the newest are listed, and the page says so", async () => {

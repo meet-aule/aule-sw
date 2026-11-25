@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <!-- The build this page comes from, written in by the server (src/build.ts). -->
+    <meta name="aule-version" content="{{version}}" />
+    <meta name="aule-commit" content="{{commit}}" />
+    <title>Aule · Panel del equipo · Familias</title>
+    <link rel="icon" href="icon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <main class="admin">
+      <header>
+        <h1>Panel del equipo</h1>
+        <nav class="nav" aria-label="Consola del equipo">
+          <a href="/">Resumen</a>
+          <a href="/live">En vivo</a>
+          <a href="/families" aria-current="page">Familias</a>
+          <button type="button" class="link" id="signout">Salir</button>
+        </nav>
+      </header>
+
+      <p id="message" class="message" role="alert" hidden></p>
+
+      <section aria-labelledby="families-title">
+        <h2 id="families-title">Familias</h2>
+        <!-- The filters are kept in the page's address (families.js). -->
+        <form id="filters" class="filters" role="search" novalidate>
+          <input id="q" type="search" placeholder="Buscar por correo o nombre" aria-label="Buscar por correo o nombre" maxlength="100" />
+          <select id="source" aria-label="Enlace">
+            <option value="">Todos los enlaces</option>
+          </select>
+          <select id="status" aria-label="Plan">
+            <option value="">Todos los planes</option>
+            <option value="trial">Prueba</option>
+            <option value="paid">Pagado</option>
+            <option value="granted">Regalado</option>
+            <option value="none">Sin plan</option>
+            <option value="team">Equipo</option>
+            <option value="free">Gratis ilimitado</option>
+          </select>
+          <button type="submit" id="search">Buscar</button>
+        </form>
+        <p id="count" class="lead"></p>
+        <div class="scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Familia</th><th>Enlace</th><th>Correos</th><th>Alumnos</th><th>Plan</th><th>7 días</th><th>30 días</th>
+                <th>Minutos (30 días)</th><th>Última sesión</th><th></th>
+              </tr>
+            </thead>
+            <tbody id="families"></tbody>
+          </table>
+        </div>
+        <p class="more"><button type="button" id="more" hidden>Más familias</button></p>
+      </section>
+    </main>
+    <script type="module" src="families.js"></script>
+  </body>
+</html>

@@ -4,7 +4,7 @@
 // an older «se puede desplegar» standing, and neither does an old one: a line
 // older than 20 seconds gives way to «Comprobando…» while the next is asked.
 
-import { $, cell, get, say, signOutButton } from "./common.js";
+import { $, cell, familyLink, get, say, signOutButton } from "./common.js";
 import { NONE, STATUSES, clockSeconds, label, mode, since, verdict, way } from "./labels.js";
 
 const EVERY_MS = 15_000;
@@ -22,8 +22,15 @@ function row(session, now) {
   const line = document.createElement("tr");
   if (session.overdue) line.className = "overdue";
   const state = label(STATUSES, session.status) + (session.overdue ? " · ¿colgada?" : "");
+  // A family's name links to its page; the team's own tests have no family.
+  const family = document.createElement("td");
+  family.append(
+    session.family_id
+      ? familyLink(session.family_id, session.family)
+      : document.createTextNode(session.audience === "operator" ? "prueba del equipo" : NONE),
+  );
   line.append(
-    cell(session.family ?? (session.audience === "operator" ? "prueba del equipo" : NONE)),
+    family,
     cell(session.child ?? NONE),
     cell(since(session.created_at, now)),
     cell(state),

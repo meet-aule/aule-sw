@@ -136,7 +136,14 @@ export class FakePlatform {
     }
     if (!path.startsWith("/v1/admin/") && !path.startsWith("/v1/metrics/")) return error(404, "not_found", "route not found");
     if (!this.teamAtPlatform || this.#notStaff.has(token)) return error(403, "forbidden", "this route is for Aule's team");
-    if (method === "GET" && path === "/v1/admin/families") return { status: 200, body: { families: [{ id: FAMILY, name: "Quispe" }] } };
+    // The families list answers the same whatever it is asked: the tests look at what it heard.
+    if (method === "GET" && /^\/v1\/admin\/families(\?.*)?$/.test(path)) return { status: 200, body: { families: [{ id: FAMILY, name: "Quispe" }] } };
+    const family = /^\/v1\/admin\/families\/([^/?]+)(?:\/(sessions|notices))?(\?.*)?$/.exec(path);
+    if (method === "GET" && family) {
+      if (family[1] !== FAMILY) return error(404, "not_found", "family not found");
+      if (family[2]) return { status: 200, body: { [family[2]]: [], next: null } };
+      return { status: 200, body: { id: FAMILY, name: "Quispe", guardians: [], children: [] } };
+    }
     if (method === "GET" && path === "/v1/admin/sessions/open") return { status: 200, body: this.openSessions };
     if (method === "GET" && path === "/v1/metrics/daily?days=14") return { status: 200, body: { days: [] } };
     if (method === "GET" && path === "/v1/metrics/weekly?weeks=12") {

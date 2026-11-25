@@ -14,16 +14,22 @@ const scripts = Object.fromEntries(await Promise.all(files.filter((name) => name
 const css = await read("style.css");
 
 test("the console has its pages and their scripts, and nothing else of the playground's", () => {
-  assert.deepEqual(Object.keys(pages).sort(), ["index.html", "live.html", "signin.html"]);
-  assert.deepEqual(Object.keys(scripts).sort(), ["admin.js", "common.js", "labels.js", "live.js", "pilot.js", "signin.js"]);
-  assert.deepEqual(files.sort(), ["admin.js", "common.js", "icon.svg", "index.html", "labels.js", "live.html", "live.js", "pilot.js", "signin.html", "signin.js", "style.css"]);
+  assert.deepEqual(Object.keys(pages).sort(), ["families.html", "family.html", "index.html", "live.html", "signin.html"]);
+  assert.deepEqual(Object.keys(scripts).sort(), ["admin.js", "common.js", "families.js", "family.js", "labels.js", "live.js", "pilot.js", "signin.js"]);
+  assert.deepEqual(files.sort(), [
+    "admin.js", "common.js", "families.html", "families.js", "family.html", "family.js", "icon.svg", "index.html", "labels.js",
+    "live.html", "live.js", "pilot.js", "signin.html", "signin.js", "style.css",
+  ]);
 });
 
 // The pages a person moves between, in the header's order: [its address, its file, its link's words].
 const NAVIGATION = [
   ["/", "index.html", "Resumen"],
   ["/live", "live.html", "En vivo"],
+  ["/families", "families.html", "Familias"],
 ];
+// A family's page has the same header, with no link of its own.
+const HEADED = [...NAVIGATION.map(([, page]) => page), "family.html"];
 
 test("no inline script, style or handler in any page, and exactly one module of its own", () => {
   for (const [name, html] of Object.entries(pages)) {
@@ -41,6 +47,8 @@ test("no inline script, style or handler in any page, and exactly one module of 
   }
   assert.match(pages["index.html"], /src="admin\.js"/);
   assert.match(pages["live.html"], /src="live\.js"/);
+  assert.match(pages["families.html"], /src="families\.js"/);
+  assert.match(pages["family.html"], /src="family\.js"/);
   assert.match(pages["signin.html"], /src="signin\.js"/);
 });
 
@@ -75,20 +83,34 @@ test("no script makes HTML from a string, runs a string as code, or logs", () =>
 test("a page sends people only to the console's fixed addresses, and never to one the request names", () => {
   const all = Object.values(scripts).join("\n");
   const moves = [...all.matchAll(/location\.(\w+)(\([^)]*\))?/g)].map(([whole]) => whole);
-  assert.deepEqual([...new Set(moves)].sort(), ['location.replace("/")', 'location.replace("/signin")']);
+  assert.deepEqual([...new Set(moves)].sort(), ['location.replace("/")', 'location.replace("/signin")', "location.search"]);
   for (const [name, text] of Object.entries(scripts)) {
-    assert.doesNotMatch(text, /location\.(search|hash|href)|document\.referrer|window\.open|URLSearchParams|\.assign\(/, name);
+    assert.doesNotMatch(text, /location\.(hash|href|assign)|document\.referrer|window\.open|\.assign\(|pushState/, name);
   }
+  // Only «Familias» and a family's page read their address: the filters and the family's id, each checked before use.
+  for (const [name, text] of Object.entries(scripts)) {
+    const reads = [...text.matchAll(/location\.search/g)].length;
+    assert.equal(reads, name === "families.js" || name === "family.js" ? 1 : 0, name);
+    if (reads) assert.match(text, /new URLSearchParams\(location\.search\)/, name);
+  }
+  assert.match(scripts["family.js"], /if \(!FAMILY_ID\.test\(id\)\) \{\s*say\("Esa familia no existe\."\);/);
+  // «Familias» writes its filters into its own address, and nowhere else.
+  const written = [...all.matchAll(/history\.replaceState\(([^;]*)\);/g)].map(([, args]) => args);
+  assert.deepEqual(written, ['null, "", written ? `/families?${written}` : "/families"']);
+  // A link goes to a family's page only, and only for a family's id.
+  const hrefs = [...all.matchAll(/\.href = ([^;]*);/g)].map(([, value]) => value);
+  assert.deepEqual(hrefs, ["`/family?id=${id}`"]);
+  assert.match(scripts["common.js"], /if \(typeof id !== "string" \|\| !FAMILY_ID\.test\(id\)\) return document\.createTextNode\(text\);\s*const link = document\.createElement\("a"\);\s*link\.href = `\/family\?id=\$\{id\}`;/);
   // Signed out on any data call, a page goes to the sign-in; signed in, the sign-in goes to the overview.
   assert.match(scripts["common.js"], /if \(response\.status !== 401 && response\.status !== 403\) return false;\s*location\.replace\("\/signin"\);/);
-  for (const name of ["admin.js", "live.js"]) assert.doesNotMatch(scripts[name], /\bfetch\(/, `${name} asks the API only through common.js`);
+  for (const name of ["admin.js", "live.js", "families.js", "family.js"]) assert.doesNotMatch(scripts[name], /\bfetch\(/, `${name} asks the API only through common.js`);
   assert.match(scripts["signin.js"], /if \(status === 200\) return location\.replace\("\/"\);/);
 });
 
 test("the scripts import each other as the pages draw them, and the sign-in stands alone", () => {
   const imports = (text) => [...text.matchAll(/\bfrom\s+"\.\/([\w-]+\.js)"/g)].map(([, dep]) => dep);
   assert.deepEqual(imports(scripts["admin.js"]), ["common.js", "pilot.js"]);
-  assert.deepEqual(imports(scripts["live.js"]), ["common.js", "labels.js"]);
+  for (const page of ["live.js", "families.js", "family.js"]) assert.deepEqual(imports(scripts[page]), ["common.js", "labels.js"], page);
   for (const alone of ["common.js", "labels.js", "pilot.js", "signin.js"]) assert.deepEqual(imports(scripts[alone]), [], alone);
   // The words and the arithmetic touch no page, so they are tested on their own.
   for (const pure of ["labels.js", "pilot.js"]) assert.doesNotMatch(scripts[pure], /\bdocument\b|\blocation\b|\bfetch\b|\bwindow\b/, pure);
@@ -98,9 +120,11 @@ test("every element a script looks for is in its page", () => {
   for (const [script, page] of [
     ["admin.js", "index.html"],
     ["live.js", "live.html"],
+    ["families.js", "families.html"],
+    ["family.js", "family.html"],
     ["signin.js", "signin.html"],
     // What every page but the sign-in shares: the header's «Salir» and the message line.
-    ...NAVIGATION.map(([, page]) => ["common.js", page]),
+    ...HEADED.map((page) => ["common.js", page]),
   ]) {
     const ids = new Set([...scripts[script].matchAll(/\$\("([\w-]+)"\)/g), ...scripts[script].matchAll(/id = "([\w-]+)"/g)].map(([, id]) => id));
     assert.ok(ids.size >= 2, script);
@@ -109,7 +133,8 @@ test("every element a script looks for is in its page", () => {
 });
 
 test("every page but the sign-in has the same header, with its own link marked", () => {
-  for (const [address, page] of NAVIGATION) {
+  for (const page of HEADED) {
+    const address = NAVIGATION.find(([, file]) => file === page)?.[0];
     const html = pages[page];
     assert.match(html, /<h1>Panel del equipo<\/h1>/, page);
     const nav = html.match(/<nav class="nav" aria-label="Consola del equipo">([\s\S]*?)<\/nav>/)?.[1] ?? "";
@@ -126,12 +151,16 @@ test("the overview is today's panel, moved as it was, with «Salir» where «Vol
   assert.match(html, /<h1>Panel del equipo<\/h1>/);
   assert.doesNotMatch(html, /Volver a Aule/);
   assert.match(html, /<button type="button" class="link" id="signout">Salir<\/button>/);
-  for (const id of ["build", "message", "overview", "figures", "days", "pilot", "pilot-zone", "pilot-message", "pilot-figures", "weeks", "sources", "families-section", "filter", "families"]) {
+  for (const id of ["build", "message", "overview", "figures", "days", "pilot", "pilot-zone", "pilot-message", "pilot-figures", "weeks", "sources"]) {
     assert.match(html, new RegExp(`id="${id}"`), id);
   }
-  for (const words of ["Últimos 14 días", "Piloto: las cuatro cifras", "Por enlace", "Familias", "Buscar por nombre, correo o enlace", "Activas en la 4.ª semana"]) {
+  for (const words of ["Últimos 14 días", "Piloto: las cuatro cifras", "Por enlace", "Activas en la 4.ª semana"]) {
     assert.ok(html.includes(words), words);
   }
+  // The families moved to their own page; the overview counts them and links there.
+  assert.doesNotMatch(html, /id="families"|id="filter"/);
+  assert.match(html, /<p class="see"><a href="\/families">Ver las familias<\/a><\/p>/);
+  assert.match(scripts["admin.js"], /get\("\/api\/families\?limit=1"\)/);
   // The meta tags are stamped by the server (src/build.ts).
   assert.match(html, /<meta name="aule-version" content="\{\{version\}\}" \/>/);
   assert.match(html, /<meta name="aule-commit" content="\{\{commit\}\}" \/>/);
@@ -160,4 +189,27 @@ test("the stylesheet carries the panel's look on the playground's paper, with on
   assert.doesNotMatch(css, /font-style: italic/);
   assert.match(css, /--bg: #f5f2ea;/);
   assert.match(css, /--sans: "Inter"/);
+});
+
+test("«Familias» and a family's page say what they are, in the panel's words", () => {
+  const families = pages["families.html"];
+  assert.match(families, /<input id="q" type="search" placeholder="Buscar por correo o nombre"[^>]* maxlength="100" \/>/);
+  assert.match(families, /<option value="">Todos los enlaces<\/option>/);
+  const plans = [...families.matchAll(/<option value="(\w*)">([^<]+)<\/option>/g)].map(([, value, words]) => [value, words]);
+  assert.deepEqual(plans.slice(1), [
+    ["", "Todos los planes"],
+    ["trial", "Prueba"],
+    ["paid", "Pagado"],
+    ["granted", "Regalado"],
+    ["none", "Sin plan"],
+    ["team", "Equipo"],
+    ["free", "Gratis ilimitado"],
+  ]);
+  const family = pages["family.html"];
+  assert.match(family, /<a href="\/families">← Familias<\/a>/);
+  for (const words of ["Adultos", "Alumnos", "Plan", "Sesiones", "Avisos", "Más sesiones", "Más avisos", "Regalar plan", "Quitar"]) {
+    assert.ok(family.includes(words), words);
+  }
+  // A notice is listed by its kind and date: the page has no place for its words.
+  assert.match(family, /Lo que se le envió a la familia: el tipo y cuándo, nunca el texto\./);
 });

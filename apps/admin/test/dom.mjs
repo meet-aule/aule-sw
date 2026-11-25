@@ -97,7 +97,8 @@ let runs = 0;
  * Runs a page's script against a fake document made from its HTML. `answer`
  * gives what the API answers to each request: `{status, body}`, or a promise
  * of it to answer late. Returns the document and what the script did: what
- * it asked, where it sent the browser, the address it wrote and its timers.
+ * it asked, where it sent the browser, the address it wrote, its timers and
+ * what its dialogs asked.
  */
 export async function open(page, script, { search = "", answer = () => ({ status: 200, body: {} }), prompts = [], confirms = [] } = {}) {
   const html = await readFile(new URL(page, pub), "utf8");
@@ -111,6 +112,8 @@ export async function open(page, script, { search = "", answer = () => ({ status
   const moves = [];
   const addresses = [];
   const timers = [];
+  // What each prompt and confirm asked, in order.
+  const dialogs = [];
   const document = {
     visibilityState: "visible",
     getElementById: (id) => byId.get(id) ?? null,
@@ -128,7 +131,16 @@ export async function open(page, script, { search = "", answer = () => ({ status
     document,
     location: { search, replace: (to) => moves.push(to) },
     history: { replaceState: (_state, _title, to) => addresses.push(to) },
-    window: { prompt: () => prompts.shift() ?? null, confirm: () => confirms.shift() ?? false },
+    window: {
+      prompt: (message) => {
+        dialogs.push(message);
+        return prompts.shift() ?? null;
+      },
+      confirm: (message) => {
+        dialogs.push(message);
+        return confirms.shift() ?? false;
+      },
+    },
     fetch: async (path, init = {}) => {
       asked.push({ path, method: init.method ?? "GET", body: init.body ?? null });
       const { status, body } = await answer(path, init);
@@ -144,5 +156,5 @@ export async function open(page, script, { search = "", answer = () => ({ status
   // A query of its own makes each run a new instance of the page's module.
   await import(`${new URL(script, pub)}?run=${++runs}`);
   await settle();
-  return { document, $: (id) => byId.get(id), asked, moves, addresses, timers };
+  return { document, $: (id) => byId.get(id), asked, moves, addresses, timers, dialogs };
 }

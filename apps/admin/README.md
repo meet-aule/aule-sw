@@ -2,8 +2,9 @@
 
 The team's console at https://admin.meetaule.com: how Aule is used and what it
 costs, the pilot's numbers, every family with its plan and the link it came
-from, a plan granted for free, and who is in a session now, with one line that
-says whether a deploy can go. It is its own app, apart from the children's
+from, found by address or name and filtered by link and plan, a page per family
+with its sessions, a plan granted for free, and who is in a session now, with
+one line that says whether a deploy can go. It is its own app, apart from the children's
 [playground](../playground/README.md), with its own sign-in. A child's
 conversation, text or audio, appears nowhere in it.
 
@@ -17,10 +18,12 @@ decides each call.
 
 | Method | Path | Needs | What it does |
 |---|---|---|---|
-| GET, HEAD | `/` | nothing | The overview: the panel, moved from the playground as it was |
+| GET, HEAD | `/` | nothing | «Resumen»: the panel moved from the playground, less its families table: the 14 days, the pilot, how many families |
 | GET, HEAD | `/live` | nothing | «En vivo»: who is in a session now, and whether a deploy can go |
+| GET, HEAD | `/families` | nothing | «Familias»: the families, with search and filters |
+| GET, HEAD | `/family?id=<uuid>` | nothing | One family's page |
 | GET, HEAD | `/signin` | nothing | The sign-in page |
-| GET, HEAD | `/style.css`, `/admin.js`, `/live.js`, `/common.js`, `/labels.js`, `/pilot.js`, `/signin.js`, `/icon.svg`, `/fonts/serif.woff2`, `/fonts/sans.woff2` | nothing | The pages' files, fingerprinted (`src/assets.ts`, a copy of the playground's) |
+| GET, HEAD | `/style.css`, `/admin.js`, `/live.js`, `/families.js`, `/family.js`, `/common.js`, `/labels.js`, `/pilot.js`, `/signin.js`, `/icon.svg`, `/fonts/serif.woff2`, `/fonts/sans.woff2` | nothing | The pages' files, fingerprinted (`src/assets.ts`, a copy of the playground's) |
 | GET, HEAD | `/healthz` | nothing | `{"ok":true,"version":"0.0.1","commit":"abc123456789"}` |
 | GET, HEAD | `/robots.txt` | nothing | Disallows everything |
 | POST | `/api/signin/start` | the write rules | `{email}`: a code by mail, for a team address only. Always `202 {"sent":true}` |
@@ -29,7 +32,9 @@ decides each call.
 | GET | `/api/build` | a session | `{admin: {version, commit}, platform: {version, commit}}` |
 | GET | `/api/metrics/daily` | a session | The platform's `GET /v1/metrics/daily?days=14` |
 | GET | `/api/metrics/weekly` | a session | The platform's `GET /v1/metrics/weekly?weeks=12` |
-| GET | `/api/families` | a session | The platform's `GET /v1/admin/families` |
+| GET | `/api/families` | a session | The platform's `GET /v1/admin/families`, with `q` (up to 100 characters, one line), `source` (a link code), `status` (`trial`, `paid`, `granted`, `none`, `team` or `free`), `before` (a cursor) and `limit` (1 to 100) |
+| GET | `/api/families/{id}` | a session | The platform's `GET /v1/admin/families/{id}`: the family's page |
+| GET | `/api/families/{id}/sessions`, `/api/families/{id}/notices` | a session | The platform's same routes, with `before` and `limit` (1 to 50) |
 | GET | `/api/sessions/open` | a session | The platform's `GET /v1/admin/sessions/open` |
 | POST | `/api/families/{id}/grant` | a session, the write rules | `{days, note?}`: the platform's `POST /v1/admin/families/{id}/grant` |
 | POST | `/api/families/{id}/ungrant` | a session, the write rules | The platform's `DELETE /v1/admin/families/{id}/grant` |
@@ -39,7 +44,9 @@ Worker; their scripts ask the API. Any
 other path is `404 {"error":"not_found"}`, and a known path asked with another
 method `405` (`OPTIONS` too, with no CORS headers). An `{id}` must be a family's
 UUID, `days` a whole number from 1 to 366, and a note is trimmed and cut to 500
-characters; no query and no other field reaches the platform. The platform's
+characters. A query value is checked as the platform checks it and written
+again; an empty one is left out, a bad one is `400`, and no other query or field
+reaches the platform. The platform's
 refusals come back in the console's words, never in the platform's: 400, 404,
 `401 signed_out`, `403 not_team`, and `502 {"error":"platform"}` for anything else.
 
@@ -49,8 +56,8 @@ address to go back to is ever taken from a request.
 
 ## En vivo
 
-`/live` lists who is in a session now: the family, the child's nickname, since
-when, whether it is starting or running, «motor» or «libre» (the session engine
+`/live` lists who is in a session now: the family, whose name links to its page,
+the child's nickname, since when, whether it is starting or running, «motor» or «libre» (the session engine
 or the tutor on its own), and «web» or «aparato». Above it, one line:
 
 - «Ninguna sesión abierta: se puede desplegar.», in ink, only when the platform
@@ -71,6 +78,38 @@ while, or an answer that does not come, never leaves an old «se puede
 desplegar» on screen. Right before a restart, the runbook still asks the
 database itself (`infra/server/README.md`). A child's conversation is in none of it: the
 platform does not send it (`apps/platform`, «Aule's team»).
+
+## Familias
+
+`/families` lists the families, newest first, 100 at a time with «Más
+familias»: the family's name, which links to its page, the link it came by, its
+guardians' addresses, its children, its plan, its sessions in 7 and 30 days, its
+minutes and its last session, with «Regalar plan» and «Quitar» as on the old
+panel. After either, only that row asks for the family's plan again: the pages
+already loaded and the filters stay as they were. The dialogs name the family
+in one short line between «», whatever its name holds. A search box finds a family by any part of a guardian's address or of its
+name, a list of links (with how many families came by each) and a list of plans
+filter it. The filters live in the page's address (`?q=&source=&status=`, written
+with `history.replaceState`), so a reload or Back keeps them; each value read
+from the address is checked as the console checks it, and one that is no good
+is left out. A plan is known only once the platform works it out family by
+family, so a search by plan looks at 300 families at a time: its page can come
+back short, and «Seguir buscando» goes on.
+
+## Familia
+
+`/family?id=<uuid>` shows one family: its adults (name, address, language, how
+they get notices), its children (nickname, age, grade, and what each kind of
+consent says now, with when and how it was given), its plan now and its trial's
+dates, every plan it has had with its days, its note and who granted it
+(«operador» for the operator's token), its sessions (how many started and the
+latest, then date, child, length, how it ended, «motor» or «libre», «web» or
+«aparato», 20 at a time with «Más sesiones») and the notices it was sent (kind,
+date, child, read, mailed, pushed, with «Más avisos»). «Regalar plan» and
+«Quitar» work as on «Familias». An address that names no family's id is told so
+and asks nothing; a family the platform no longer has is told so too. What a
+child said, a session's review and a notice's words are not there: the platform
+does not send them.
 
 ## Settings
 
@@ -214,4 +253,7 @@ pages' rules, `pilot.js`'s arithmetic (`test/pilot.test.mjs`, moved with it) and
 `labels.js`'s words (`test/labels.test.mjs`). The pages' scripts also run in a
 fake document (`test/dom.mjs`) that cannot read HTML from a string: «En vivo»'s
 line, its table, what it draws as text, and how it asks again
-(`test/live.test.mjs`).
+(`test/live.test.mjs`); «Familias»'s filters from the address, its rows and
+links, its pages and its grants (`test/families.test.mjs`); and a family's page,
+its id checked, every section drawn as text, and its lists a page at a time
+(`test/family.test.mjs`).

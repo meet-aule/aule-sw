@@ -1,16 +1,14 @@
-// The team's panel: how Aule is used and what it costs, the pilot's four
-// numbers, every family with its plan and the link it came from, and a plan
-// granted for free. The console signs the team in; the platform decides who
-// is on the team on every call.
+// The team's overview: how Aule is used and what it costs, how many families
+// there are, and the pilot's four numbers. The families themselves, with
+// their plans, are on «Familias». The console signs the team in; the platform
+// decides who is on the team on every call.
 
-import { $, cell, get, post, say, signOutButton } from "./common.js";
+import { $, cell, get, say, signOutButton } from "./common.js";
 import { byWeek, bySource, childFigures, outOf, share, weekLabel, zoneLabel } from "./pilot.js";
 
-const PLANS = { trial: "Prueba", paid: "Pagado", granted: "Regalado", none: "Sin plan", team: "Equipo", free: "Gratis ilimitado" };
+// How many families there are, from the families list's count.
+let familiesTotal = null;
 
-let families = [];
-
-const day = (iso) => (iso ? new Date(iso).toLocaleDateString("es-PE", { day: "numeric", month: "short" }) : "");
 const money = (value) => (typeof value === "number" ? value.toFixed(2) : "");
 
 function figure(label, value) {
@@ -29,7 +27,7 @@ function showOverview(metrics) {
     figure("sesiones", total((row) => row.sessions?.started)),
     figure("minutos medidos", Math.round(total((row) => row.cost_usd?.minutes))),
     figure("USD en servicios", money(total((row) => row.cost_usd?.total))),
-    figure("familias", families.length),
+    figure("familias", Number.isInteger(familiesTotal) ? familiesTotal : "—"),
   );
   $("days").replaceChildren(
     ...days.map((row) => {
@@ -103,88 +101,6 @@ function pilotSays(text) {
   $("pilot-message").hidden = !text;
 }
 
-function planText(standing) {
-  if (!standing) return "";
-  const name = PLANS[standing.plan] ?? standing.plan;
-  const until = standing.ends_at ? ` hasta ${day(standing.ends_at)}` : "";
-  const left =
-    standing.left == null || standing.plan === "none" ? "" : ` · quedan ${standing.left} de ${standing.allowed}`;
-  return `${name}${until}${left}`;
-}
-
-const familyPath = (family, action) => `/api/families/${encodeURIComponent(family.id)}/${action}`;
-
-// Nobody can pay in the app yet, so the pilot's numbers count a plan granted
-// after a family's trial as paid; the team is told so before granting one.
-async function grant(family) {
-  const days = Number(
-    window.prompt(
-      `¿Cuántos días de plan regalar a ${family.name}?\n\nEn las cifras del piloto, un plan activado después de la prueba cuenta como pagado, aunque sea un regalo.`,
-      "30",
-    ),
-  );
-  if (!Number.isInteger(days) || days < 1) return;
-  const note = window.prompt("¿Por qué? (opcional: pagó con Yape o Plin, beca, equipo…)", "") ?? "";
-  try {
-    await post(familyPath(family, "grant"), { days, note });
-    say("");
-    await load();
-  } catch (error) {
-    if (error.message !== "signed_out") say("No se pudo regalar el plan. Inténtalo otra vez.");
-  }
-}
-
-async function ungrant(family) {
-  if (!window.confirm(`¿Quitar el plan regalado a ${family.name}?`)) return;
-  try {
-    await post(familyPath(family, "ungrant"), {});
-    say("");
-    await load();
-  } catch (error) {
-    if (error.message !== "signed_out") say("No se pudo quitar el plan. Inténtalo otra vez.");
-  }
-}
-
-function showFamilies() {
-  const wanted = $("filter").value.trim().toLowerCase();
-  const shown = families.filter(
-    (family) => !wanted || `${family.name} ${family.emails ?? ""} ${family.source ?? ""}`.toLowerCase().includes(wanted),
-  );
-  $("families").replaceChildren(
-    ...shown.map((family) => {
-      const line = document.createElement("tr");
-      const actions = document.createElement("td");
-      const give = document.createElement("button");
-      give.type = "button";
-      give.textContent = "Regalar plan";
-      give.addEventListener("click", () => grant(family));
-      actions.append(give);
-      if (family.standing?.plan === "granted") {
-        const take = document.createElement("button");
-        take.type = "button";
-        take.className = "quiet";
-        take.textContent = "Quitar";
-        take.addEventListener("click", () => ungrant(family));
-        actions.append(take);
-      }
-      line.append(
-        cell(family.name),
-        cell(family.source ?? "", "code"),
-        cell(family.emails),
-        cell(family.children),
-        cell(planText(family.standing)),
-        cell(family.sessions_7d),
-        cell(family.sessions_30d),
-        cell(family.minutes_30d),
-        cell(day(family.last_session)),
-        actions,
-      );
-      return line;
-    }),
-  );
-  $("families-section").hidden = false;
-}
-
 // Which builds answer: the console's and the platform's, as their logs name them.
 function showBuild(build) {
   const named = (name, part) => `${name} ${part?.version ?? "?"} (${(part?.commit ?? "?").slice(0, 7)})`;
@@ -194,9 +110,9 @@ function showBuild(build) {
 
 async function load() {
   try {
-    const [list, metrics] = await Promise.all([get("/api/families"), get("/api/metrics/daily")]);
-    families = list.families ?? [];
-    showFamilies();
+    // One family is enough to be told how many there are.
+    const [list, metrics] = await Promise.all([get("/api/families?limit=1"), get("/api/metrics/daily")]);
+    familiesTotal = list.total;
     showOverview(metrics);
   } catch (error) {
     if (error.message !== "signed_out") say("No se pudo cargar el panel. Recarga la página.");
@@ -213,5 +129,4 @@ async function load() {
 }
 
 signOutButton();
-$("filter").addEventListener("input", showFamilies);
 load();

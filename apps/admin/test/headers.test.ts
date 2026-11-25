@@ -43,6 +43,8 @@ test("every kind of answer carries the console's headers", async () => {
     ["the overview page", fetch(`${base}/`), 200, "no-store"],
     ["the sign-in page", fetch(`${base}/signin`), 200, "no-store"],
     ["the live page", fetch(`${base}/live`), 200, "no-store"],
+    ["the families' page", fetch(`${base}/families`), 200, "no-store"],
+    ["a family's page", fetch(`${base}/family?id=01a1f5f4-ede7-7028-a524-9d8e2f36b92d`), 200, "no-store"],
     ["a shared script", fetch(`${base}/common.js`), 200, "no-cache"],
     ["a script", fetch(`${base}/admin.js`), 200, "no-cache"],
     ["the stylesheet", fetch(`${base}/style.css`), 200, "no-cache"],
@@ -52,6 +54,9 @@ test("every kind of answer carries the console's headers", async () => {
     ["robots.txt", fetch(`${base}/robots.txt`), 200, "no-store"],
     ["the API's data", fetch(`${base}/api/families`, { headers: { Cookie: cookie } }), 200, "no-store"],
     ["who is in a session", fetch(`${base}/api/sessions/open`, { headers: { Cookie: cookie } }), 200, "no-store"],
+    ["a family", fetch(`${base}/api/families/01a1f5f4-ede7-7028-a524-9d8e2f36b92d`, { headers: { Cookie: cookie } }), 200, "no-store"],
+    ["a family's sessions", fetch(`${base}/api/families/01a1f5f4-ede7-7028-a524-9d8e2f36b92d/sessions?limit=5`, { headers: { Cookie: cookie } }), 200, "no-store"],
+    ["an id that is none", fetch(`${base}/api/families/x`, { headers: { Cookie: cookie } }), 400, "no-store"],
     ["the API signed out", fetch(`${base}/api/families`), 401, "no-store"],
     ["the API, unknown", fetch(`${base}/api/nothing`), 404, "no-store"],
     ["a wrong method", fetch(`${base}/api/families`, { method: "DELETE" }), 405, "no-store"],
@@ -84,7 +89,7 @@ test("a file's 304 carries them too, and only a fingerprinted address is kept", 
 });
 
 test("a page is never kept, whatever it is asked with", async () => {
-  for (const path of ["/", "/live", "/signin"]) {
+  for (const path of ["/", "/live", "/families", "/family", "/signin"]) {
     const page = await fetch(`${base}${path}`);
     const hash = page.headers.get("etag");
     assert.equal(hash, null, path);

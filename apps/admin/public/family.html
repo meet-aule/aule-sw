@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <!-- The build this page comes from, written in by the server (src/build.ts). -->
+    <meta name="aule-version" content="{{version}}" />
+    <meta name="aule-commit" content="{{commit}}" />
+    <title>Aule · Panel del equipo · Familia</title>
+    <link rel="icon" href="icon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <main class="admin">
+      <header>
+        <h1>Panel del equipo</h1>
+        <nav class="nav" aria-label="Consola del equipo">
+          <a href="/">Resumen</a>
+          <a href="/live">En vivo</a>
+          <a href="/families">Familias</a>
+          <button type="button" class="link" id="signout">Salir</button>
+        </nav>
+      </header>
+
+      <p class="back"><a href="/families">← Familias</a></p>
+      <p id="message" class="message" role="alert" hidden></p>
+
+      <!-- One family: drawn by family.js from the platform's answer, every value as text. -->
+      <section id="family" hidden aria-labelledby="family-name">
+        <h2 id="family-name"></h2>
+        <p id="family-facts" class="lead"></p>
+
+        <h3>Adultos</h3>
+        <div class="scroll">
+          <table class="facts">
+            <thead>
+              <tr><th>Nombre</th><th>Correo</th><th>Idioma</th><th>Avisos</th><th>Desde</th></tr>
+            </thead>
+            <tbody id="guardians"></tbody>
+          </table>
+        </div>
+
+        <h3>Alumnos</h3>
+        <div class="scroll">
+          <table class="facts">
+            <thead>
+              <tr><th>Alumno</th><th>Edad</th><th>Grado</th><th>Voz</th><th>Transcripciones</th><th>Memoria</th><th>Desde</th></tr>
+            </thead>
+            <tbody id="children"></tbody>
+          </table>
+        </div>
+
+        <h3>Plan</h3>
+        <p id="plan"></p>
+        <p id="trial" class="lead"></p>
+        <p class="actions">
+          <button type="button" id="grant">Regalar plan</button>
+          <button type="button" id="ungrant" class="quiet" hidden>Quitar</button>
+        </p>
+        <div class="scroll">
+          <table class="facts">
+            <thead>
+              <tr><th>Plan</th><th>Desde</th><th>Hasta</th><th>Días</th><th>Nota</th><th>Por</th></tr>
+            </thead>
+            <tbody id="plans"></tbody>
+          </table>
+        </div>
+
+        <h3>Sesiones</h3>
+        <p id="sessions-summary" class="lead"></p>
+        <div class="scroll">
+          <table class="facts">
+            <thead>
+              <tr><th>Fecha</th><th>Alumno</th><th>Duración</th><th>Cómo terminó</th><th>Modo</th><th>Vía</th></tr>
+            </thead>
+            <tbody id="sessions"></tbody>
+          </table>
+        </div>
+        <p class="more"><button type="button" id="more-sessions" hidden>Más sesiones</button></p>
+
+        <h3>Avisos</h3>
+        <p class="lead">Lo que se le envió a la familia: el tipo y cuándo, nunca el texto.</p>
+        <div class="scroll">
+          <table class="facts">
+            <thead>
+              <tr><th>Fecha</th><th>Tipo</th><th>Alumno</th><th>Leído</th><th>Por correo</th><th>Al teléfono</th></tr>
+            </thead>
+            <tbody id="notices"></tbody>
+          </table>
+        </div>
+        <p class="more"><button type="button" id="more-notices" hidden>Más avisos</button></p>
+      </section>
+    </main>
+    <script type="module" src="family.js"></script>
+  </body>
+</html>

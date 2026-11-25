@@ -12,7 +12,7 @@ import { dirname, join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 
-import { READS, WRITE, apiRoutes } from "./api.ts";
+import { FAMILY_READ, READS, WRITE, apiRoutes } from "./api.ts";
 import { type AssetSource, cacheFor, keptUntilEdited, loadAssets, stillFresh } from "./assets.ts";
 import { VERSION, stamps } from "./build.ts";
 import { ConfigError, isLoopback, readSettings, type Settings } from "./config.ts";
@@ -35,8 +35,12 @@ const STATIC: Record<string, AssetSource> = {
   "/": { file: new URL("index.html", publicDir), type: HTML },
   "/signin": { file: new URL("signin.html", publicDir), type: HTML },
   "/live": { file: new URL("live.html", publicDir), type: HTML },
+  "/families": { file: new URL("families.html", publicDir), type: HTML },
+  "/family": { file: new URL("family.html", publicDir), type: HTML },
   "/admin.js": { file: new URL("admin.js", publicDir), type: SCRIPT },
   "/live.js": { file: new URL("live.js", publicDir), type: SCRIPT },
+  "/families.js": { file: new URL("families.js", publicDir), type: SCRIPT },
+  "/family.js": { file: new URL("family.js", publicDir), type: SCRIPT },
   // What the pages share: the API, the header's «Salir», and the words for the platform's codes.
   "/common.js": { file: new URL("common.js", publicDir), type: SCRIPT },
   "/labels.js": { file: new URL("labels.js", publicDir), type: SCRIPT },
@@ -49,7 +53,7 @@ const STATIC: Record<string, AssetSource> = {
   "/fonts/sans.woff2": { file: font("@fontsource-variable/inter", "inter-latin-wght-normal.woff2"), type: "font/woff2" },
 };
 // The pages' own scripts: their imports of each other get the fingerprinted addresses.
-const OWN_SCRIPTS = new Set(["/admin.js", "/live.js", "/common.js", "/labels.js", "/pilot.js", "/signin.js"]);
+const OWN_SCRIPTS = new Set(["/admin.js", "/live.js", "/families.js", "/family.js", "/common.js", "/labels.js", "/pilot.js", "/signin.js"]);
 
 const SIGN_IN = new Set(["/api/signin/start", "/api/signin/verify", "/api/signout"]);
 // A write is a small JSON object: an address and a code, or a grant's days and note.
@@ -221,11 +225,11 @@ export function createConsole(settings: Settings, options: Options = {}): TeamCo
       if (path === "/api/signin/verify") return signIn.verify(request, response, body, client);
       return signIn.signOut(request, response);
     }
-    if (READS.has(path)) {
+    if (READS.has(path) || FAMILY_READ.test(path)) {
       if (method !== "GET") return notAllowed(response, "GET");
       const token = sessions.tokenFor(request);
       if (!token) return reply(response, 401, { error: "signed_out" });
-      return api.read(path, request, response, token);
+      return api.read(path, url.searchParams, request, response, token);
     }
     const write = WRITE.exec(path);
     if (write) {

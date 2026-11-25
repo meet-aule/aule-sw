@@ -86,7 +86,7 @@ test("robots are told to stay out of everything", async () => {
 });
 
 test("an unknown path is a 404 and a known one asked the wrong way a 405, never a redirect", async () => {
-  for (const path of ["/admin", "/signin/", "/index.html", "/api", "/api/admin/families", "/api/families/x", "/fonts/sans-italic.woff2", "/../etc/passwd"]) {
+  for (const path of ["/admin", "/signin/", "/index.html", "/family.html", "/families/", "/api", "/api/admin/families", "/api/families/x/y", "/fonts/sans-italic.woff2", "/../etc/passwd"]) {
     const response = await ask(path, { headers: { Accept: "text/html" } });
     assert.equal(response.status, 404, path);
     assert.deepEqual(await response.json(), { error: "not_found" }, path);
@@ -99,6 +99,9 @@ test("an unknown path is a 404 and a known one asked the wrong way a 405, never 
     ["GET", "/api/signin/start", "POST"],
     ["GET", "/api/signout", "POST"],
     ["GET", `/api/families/${"0".repeat(8)}-0000-0000-0000-${"0".repeat(12)}/grant`, "POST"],
+    ["POST", `/api/families/${"0".repeat(8)}-0000-0000-0000-${"0".repeat(12)}/sessions`, "GET"],
+    ["DELETE", "/api/sessions/open", "GET"],
+    ["POST", "/families", "GET, HEAD"],
     ["POST", "/healthz", "GET, HEAD"],
   ]) {
     const response = await ask(path!, { method });

@@ -299,6 +299,62 @@ p {
   font-size: 0.8125rem;
 }
 
+/* «Familias»: the search box, the link and the plan on one line, wrapping on a phone. */
+.admin .filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin: 8px 0 12px;
+}
+
+.admin .filters input[type="search"] {
+  margin: 0;
+}
+
+.admin .filters select {
+  min-height: 40px;
+  padding: 6px 10px;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+/* The buttons outside a table's rows: «Buscar», «Más familias», «Regalar plan» on a family's page. */
+.admin .filters button,
+.admin .more button,
+.admin .actions button {
+  min-height: 40px;
+  padding: 6px 14px;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--ink);
+}
+
+.admin .actions button.quiet {
+  border: 0;
+  text-decoration: underline;
+}
+
+.admin .more,
+.admin .actions {
+  margin: 12px 0;
+}
+
+.admin .see {
+  margin: 0 0 16px;
+}
+
+.admin .back {
+  margin: 12px 0 0;
+}
+
+/* A family's page: its sections, closer together than the overview's. */
+.admin #family h3 {
+  margin-top: 28px;
+}
+
 /* A session open past its time: perhaps stuck. */
 .admin tr.overdue td {
   color: var(--danger);
