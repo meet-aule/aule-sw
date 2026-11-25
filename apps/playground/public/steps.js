@@ -73,24 +73,27 @@ export function progressAt(id, flow = "new") {
   }));
 }
 
-/** What a student can say a session is for (A04 · Aparato 190:891), with the Figma's icons. */
+/**
+ * What a student can say a session is for (A04 · Aparato 190:891), with the
+ * Figma's icons. `key` names its words in first-steps.js, in the student's language.
+ */
 export const KINDS = [
-  { kind: "homework", label: "Terminar tareas de la escuela", icon: "task_alt" },
-  { kind: "exam_prep", label: "Repasar para una evaluación", icon: "assignment" },
-  { kind: "explore", label: "Quiero aprender algo nuevo", icon: "school" },
+  { kind: "homework", key: "kind_homework", icon: "task_alt" },
+  { kind: "exam_prep", key: "kind_exam_prep", icon: "assignment" },
+  { kind: "explore", key: "kind_explore", icon: "school" },
   // Aule decides: the session carries no objective.
-  { kind: "", label: "No lo sé", icon: "help_outline" },
+  { kind: "", key: "kind_none", icon: "help_outline" },
 ];
 /** The fifth kind the platform knows, kept on the web as a link under the tiles. */
-export const REVIEW = { kind: "exam_review", label: "Revisar una evaluación que ya di" };
+export const REVIEW = { kind: "exam_review", key: "kind_exam_review" };
 /** A day matters for these: when the homework is due, when the evaluation is. */
 export const DATED = ["homework", "exam_prep"];
 /** The one subject Aule has exercises of its own for today. */
 export const OWN_SUBJECT = "matematica";
 
-/** The words a kind is shown with, as the title of its details. */
-export function kindLabel(kind) {
-  return kind === REVIEW.kind ? REVIEW.label : (KINDS.find((one) => one.kind === kind)?.label ?? "");
+/** The key of the words a kind is shown with (first-steps.js), as its tile and the title of its details. */
+export function kindKey(kind) {
+  return kind === REVIEW.kind ? REVIEW.key : (KINDS.find((one) => one.kind === kind)?.key ?? "");
 }
 
 /**

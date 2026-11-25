@@ -38,6 +38,8 @@ function page() {
     $: () => button, document: { querySelector: () => ({ classList: { toggle() {} } }) },
     writeWords() {}, showCoach() {}, coachAfter() {}, startTalkMeter() {}, stopTalkMeter() {},
     watchTutor() {}, setTutorState() {}, showMessage: message => messages.push(message),
+    // What went wrong with a turn is said in the student's language (first-steps.js).
+    sessionLanguage: () => "es", words: key => key,
   };
   runInNewContext(handlers, state);
   return { state, mic, rpc, messages, button };

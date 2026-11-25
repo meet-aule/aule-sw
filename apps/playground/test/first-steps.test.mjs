@@ -29,15 +29,50 @@ const SPEC_KEYS = [
   "handoff_yes",
   "handoff_no",
   "back",
+  // The design pass's (24 Nov): A04 and its details in the student's language, as a02 and A05 are.
+  "a04_hello",
+  "a04_title",
+  "kind_homework",
+  "kind_exam_prep",
+  "kind_explore",
+  "kind_none",
+  "kind_exam_review",
+  "details_line",
+  "details_subject",
+  "details_due",
+  "details_topic",
+  "details_topic_example",
+  "optional",
+  "subject_matematica",
+  "subject_comunicacion",
+  "subject_ciencia",
+  "subject_personal_social",
+  "subject_ingles",
+  "subject_other",
+  "details_note",
+  "details_next",
+  // And A05's title, its one line and its round buttons, which say what each is.
+  "a05_title",
+  "a05_line",
+  "mic_label",
+  "mic_on",
+  "mic_off",
+  "cam_label",
+  "cam_on",
+  "cam_off",
   "check_line",
   "check_prompt",
   "check_heard",
   "check_quiet",
   "check_other_app",
   "retry",
+  // A problem is a line for the child and, under it, one for the adult (*_help).
   "mic_blocked",
+  "mic_blocked_help",
   "mic_missing",
+  "mic_missing_help",
   "mic_busy",
+  "mic_busy_help",
   "mic_unavailable",
   "sound_test",
   "sound_line",
@@ -70,10 +105,27 @@ const SPEC_KEYS = [
   "camera_cancel",
   "showing_work",
   "shown_work",
+  // The fix pass's (24 Nov): the camera going off after the wait says so, and a camera
+  // problem is a line for the child with one for the adult under it, as the microphone's is.
+  "camera_off",
   "camera_blocked",
+  "camera_blocked_help",
   "camera_missing",
   "camera_busy",
+  "camera_busy_help",
   "camera_unseen",
+  // And the session's own words around the stage, in the student's language like the rest.
+  "end_session",
+  "clock_label",
+  "type_label",
+  "type_placeholder",
+  "send",
+  "conversation",
+  "you",
+  "you_typed",
+  "talk_not_started",
+  "turn_unheard",
+  "message_failed",
 ];
 
 // How many times a line says the name it is given.
@@ -97,7 +149,11 @@ test("every word is there in Spanish and in English, calm, with the name in the 
     assert.equal(namings(key, "es"), namings(key, "en"), `${key} says the name as often in both`);
   }
   assert.equal(namings("handoff_lead", "es"), 1);
-  assert.equal(KEYS.filter((key) => namings(key, "es") > 0).length, 1, "only the line for the parent names the child");
+  assert.deepEqual(
+    KEYS.filter((key) => namings(key, "es") > 0),
+    ["handoff_lead", "a04_hello"],
+    "only the line for the parent and A04's greeting name the child",
+  );
 });
 
 test("the words are César's where he wrote them, and say «apretado» as the live button does", () => {
@@ -116,11 +172,52 @@ test("the words are César's where he wrote them, and say «apretado» as the li
   // «Listo» is named by the line that asks for it, in each language.
   assert.ok(words("camera_aim", "es").includes(`«${words("camera_send", "es")}»`));
   assert.ok(words("camera_aim", "en").includes(`“${words("camera_send", "en")}”`));
-  // The hints and the problems name the link they lead to, in each language.
-  for (const key of ["check_other_app", "mic_blocked", "mic_busy"]) {
+  // The hints and the adult's lines name the link they lead to, in each language.
+  for (const key of ["check_other_app", "mic_blocked_help", "mic_busy_help"]) {
     assert.ok(words(key, "es").includes(`«${words("retry", "es")}»`), key);
     assert.ok(words(key, "en").includes(`“${words("retry", "en")}”`), key);
   }
+});
+
+test("a child-facing line is one sentence: only César's AI disclosure has two (D33)", () => {
+  // A sentence ends at «.», «?» or «…» before a space or the end; a line's own closing «…» is no break.
+  const ends = (text) => (text.replace(/…$/, "").match(/[.?…](\s|$)/g) ?? []).length;
+  for (const key of KEYS) {
+    for (const language of ["es", "en"]) {
+      const text = words(key, language, { name: "Mati" });
+      if (key === "intro_line") assert.equal(ends(text), 2, `${key} in ${language}`);
+      else assert.ok(ends(text) <= 1, `${key} in ${language}: «${text}»`);
+    }
+  }
+  // A05's line is César's one: Aule needs to hear you.
+  assert.equal(words("a05_line", "es"), "Aule necesita escucharte.");
+  // The coach says what the talk button's own words do not: let go when you are done.
+  assert.equal(words("coach", "es"), "Mantenlo apretado y luego suelta.");
+  for (const language of ["es", "en"]) {
+    assert.ok(!words("coach", language).includes(words("talk_hold", language)), `the coach does not repeat the button in ${language}`);
+  }
+  assert.match(words("coach", "en"), /let go/);
+  // A problem's line is the child's; what to do is the adult's, under it.
+  for (const problem of ["mic_blocked", "mic_missing", "mic_busy", "camera_blocked", "camera_busy"]) {
+    assert.match(words(`${problem}_help`, "es"), /^Un adulto puede /, problem);
+    assert.match(words(`${problem}_help`, "en"), /^A grown-up can /, problem);
+    assert.doesNotMatch(words(problem, "es"), /adulto/, `${problem} speaks to the child`);
+    assert.doesNotMatch(words(problem, "en"), /grown-up/, `${problem} speaks to the child`);
+  }
+  assert.equal(words("mic_unavailable_help", "es"), "", "a microphone that is merely unavailable has no help line");
+  // A missing camera, or a picture not seen, is the child's to deal with: no adult's line.
+  for (const problem of ["camera_missing", "camera_unseen"]) assert.equal(words(`${problem}_help`, "es"), "", problem);
+});
+
+test("A04's tiles, its details and A05 have their words in both languages, as the Figma writes the Spanish", () => {
+  assert.equal(words("a04_title", "es"), "¿Qué hacemos hoy?");
+  assert.equal(words("a05_title", "es"), "Antes de empezar");
+  assert.equal(words("kind_none", "es"), "No lo sé");
+  assert.equal(words("kind_homework", "es"), "Terminar tareas de la escuela");
+  assert.equal(words("a04_hello", "en", { name: "Mati" }), "Hi, Mati.");
+  // The round buttons' sentences say what the button is, A15's own words.
+  assert.equal(words("mic_on", "es"), "Tu micrófono está encendido.");
+  assert.equal(words("mic_off", "es"), "Tu micrófono está apagado.");
 });
 
 test("a name takes the place of {name} as it is written, «$» and all", () => {
@@ -231,10 +328,24 @@ test("a camera the browser will not give for «Mostrar mi tarea» is named as su
     assert.equal(cameraProblem(name), "camera_unseen", String(name));
   }
   for (const key of new Set(Object.values(causes))) assert.ok(words(key, "es") && words(key, "en"), key);
-  // A blocked camera gets the help a blocked microphone gets, not a page moved closer.
-  assert.match(words("camera_blocked", "es"), /toca el ícono junto a la dirección de la página \(en un iPhone, «aA»\)/);
-  assert.match(words("camera_blocked", "en"), /tap the icon next to the page address \(“aA” on an iPhone\)/);
-  assert.doesNotMatch(words("camera_blocked", "es"), /Acerca la hoja/);
+  // A blocked camera gets the help a blocked microphone gets, for the adult, not a page moved
+  // closer; the child's own line says what happened (the review of 24 Nov).
+  for (const [language, where] of [
+    ["es", "junto a la dirección de la página (en iPhone, «aA»)"],
+    ["en", "next to the page address (“aA” on an iPhone)"],
+  ]) {
+    assert.ok(words("mic_blocked_help", language).includes(where), `mic_blocked_help in ${language}`);
+    assert.ok(words("camera_blocked_help", language).includes(where), `camera_blocked_help in ${language}`);
+  }
+  assert.match(words("camera_blocked_help", "es"), /^Un adulto puede permitir la cámara/);
+  assert.equal(words("camera_blocked", "es"), "Aule no puede usar tu cámara.");
+  assert.equal(words("camera_busy", "es"), "Otra app está usando la cámara.");
+  assert.doesNotMatch(words("camera_blocked", "es"), /Acerca/);
+  // The busy camera's adult line names the button to press again, in each language.
+  assert.ok(words("camera_busy_help", "es").includes(`«${words("show_work", "es")}»`));
+  assert.ok(words("camera_busy_help", "en").includes(`“${words("show_work", "en")}”`));
+  // «Apuntar» is to write something down at school: the line says to show it to the camera.
+  assert.equal(words("camera_aim", "es"), "Muestra tu tarea a la cámara y toca «Listo».");
 });
 
 test("the talk button's words are the page's own, and the line «Mostrar mi tarea» adds is the one the tutor hears", async () => {
