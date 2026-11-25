@@ -44,7 +44,11 @@ Before real children use it:
 - The check at the start of a session proves that each provider answers and takes the key. TypeSafe's list of models names aliases only, so it cannot say whether `jev-1.14.0` is still served; each verdict checks which model gave it. A provider that goes down after the start gets every turn the fixed reply.
 - The verdicts were evaluated on synthetic conversations only ([evals/physical-safety](evals/physical-safety/README.md) and [evals/second-reading](evals/second-reading/README.md), run by hand against the real providers), most of them for an eight-year-old. The gates do not replace an adult nearby.
 
-Not built yet: publishing `session.ended` and `safety.flagged` as events.
+The agent reports session endings and safety flags to the platform. The platform
+publishes `session.ended.v1` for sessions with both a child and a device, and
+`safety.flagged.v1` for flags on child sessions, through its transactional outbox.
+Browser sessions have no device, so they do not emit that device-session ending
+event; their lifecycle is still recorded by the platform.
 
 ## Intonation
 
