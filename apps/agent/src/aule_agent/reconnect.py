@@ -24,8 +24,13 @@ class ReconnectGrace:
             self.timer.cancel()
         self.absent = participant.identity
         # A button released while offline must not commit a partial utterance.
-        self.session.interrupt()
-        self.session.clear_user_turn()
+        # Each may raise: interrupt when the line being said may not be cut,
+        # both when the session already stopped (the child left as it closed).
+        for cancel in (self.session.interrupt, self.session.clear_user_turn):
+            try:
+                cancel()
+            except RuntimeError:
+                pass
         self.timer = asyncio.get_running_loop().call_later(GRACE_SECONDS, self.expired)
 
     def returned(self, participant: rtc.RemoteParticipant) -> None:
