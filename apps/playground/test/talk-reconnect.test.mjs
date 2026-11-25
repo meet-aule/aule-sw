@@ -114,6 +114,27 @@ test("a cut during the final audio tail cancels the queued end", async () => {
   assert.deepEqual(rpc, ["start_turn", "cancel_turn"]);
 });
 
+test("release closes the microphone before waiting for a slow start acknowledgement", async () => {
+  const { state, mic, rpc } = page();
+  const starting = deferred();
+  const tail = deferred();
+  state.setTimeout = done => tail.promise.then(done);
+  state.room.localParticipant.performRpc = async ({ method }) => {
+    rpc.push(method);
+    if (method === "start_turn") await starting.promise;
+  };
+  const pressed = state.startTalking();
+  await tick();
+  const released = state.stopTalking();
+  tail.resolve();
+  await tick();
+  assert.equal(mic.at(-1), false, "capture closes independently of the RPC response");
+  assert.deepEqual(rpc, ["start_turn"]);
+  starting.resolve();
+  await Promise.all([pressed, released]);
+  assert.deepEqual(rpc, ["start_turn", "end_turn"]);
+});
+
 test("another cut while clearing the old turn keeps controls disabled", async () => {
   const { state, button } = page();
   await state.showConnection(true);

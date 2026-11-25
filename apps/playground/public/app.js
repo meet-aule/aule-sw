@@ -825,8 +825,10 @@ async function stopTalking(method = "end_turn") {
   const speaking = room;
   if (method !== "end_turn") speaking?.localParticipant.setMicrophoneEnabled(false).catch(() => undefined);
   try {
-    if (!await talkStarted) return;
     if (method === "end_turn") await new Promise((done) => setTimeout(done, TALK_TAIL_MS));
+    // Releasing the button closes capture even if the start RPC is still slow.
+    await speaking?.localParticipant.setMicrophoneEnabled(false).catch(() => undefined);
+    if (!await talkStarted) return;
     if (!speaking || speaking !== room || generation !== turnGeneration || connectionLost) return;
     await turn(method);
   } catch {
