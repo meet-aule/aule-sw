@@ -12,7 +12,7 @@ import { test } from "node:test";
 import { runInNewContext } from "node:vm";
 
 const app = await readFile(new URL("../public/app.js", import.meta.url), "utf8");
-const handlers = ["aimCamera", "focusTalk", "stopAiming", "showWork"]
+const handlers = ["cameraTrouble", "aimCamera", "focusTalk", "stopAiming", "showWork"]
   .map((name) => {
     const source = app.match(new RegExp(`(?:async )?function ${name}\\([^]*?\\n\\}`))?.[0];
     assert.ok(source, name);
@@ -21,6 +21,7 @@ const handlers = ["aimCamera", "focusTalk", "stopAiming", "showWork"]
   .join("\n");
 const AIM_MS = Number(app.match(/const AIM_MS = ([\d_]+);/)?.[1].replaceAll("_", ""));
 const SHOWN_MS = Number(app.match(/const SHOWN_MS = (\d+);/)?.[1]);
+const PASSING_MS = Number(app.match(/const PASSING_MS = (\d+);/)?.[1]);
 
 const deferred = () => {
   let resolve;
@@ -124,6 +125,7 @@ function page() {
     aiming: false,
     aimTimer: 0,
     aimTrack: null,
+    aimNoteTimer: 0,
     sent: null,
     manualTurns: true,
     document,
@@ -133,6 +135,7 @@ function page() {
     CAMERA: { facingMode: "environment" },
     AIM_MS,
     SHOWN_MS,
+    PASSING_MS,
     async createLocalVideoTrack() {
       events.push("camera");
       return camera();
@@ -151,6 +154,7 @@ function page() {
     $: element,
     writeWords(target, key) {
       target.words = key;
+      (target.said ??= []).push(key);
     },
     hideKeepingFocus(button) {
       button.hidden = true;
@@ -258,7 +262,10 @@ test("after 30 seconds with nothing the camera turns off, never published, and t
   assert.equal(publishes(events), 0);
   assert.equal(tracks[0].stopped, true);
   assert.equal(state.aiming, false);
-  assert.equal(document.activeElement, element("talk"), "from the emptied line to the talk button");
+  assert.equal(document.activeElement, element("talk"), "from the line to the talk button");
+  // The line says the camera went off, for a moment, and then is empty again.
+  await tick();
+  assert.deepEqual(element("camera-aim").said.slice(-2), ["camera_off", ""]);
   await state.showWork();
   assert.equal(publishes(events), 0, "a late «Listo» sends nothing");
   // A child who went on to type keeps the focus where it is.
@@ -356,8 +363,11 @@ test("a camera the browser refuses is said as such, and nothing is published", a
     events.push("camera");
     throw Object.assign(new Error("refused"), { name: "NotAllowedError" });
   };
+  element("camera-aim").words = "camera_off";
   await state.aimCamera();
-  assert.deepEqual(messages, ["camera_blocked"]);
+  assert.equal(element("camera-aim").words, "", "the last wait's line goes as the camera is asked for again");
+  assert.deepEqual(messages, ["camera_blocked"], "the child's line");
+  assert.equal(element("session-help").words, "camera_blocked_help", "and under it, the adult's");
   assert.equal(state.aiming, false);
   assert.equal(element("cam-send").hidden, true);
   assert.equal(publishes(events), 0);

@@ -1240,11 +1240,13 @@ h2[tabindex="-1"]:focus {
   color: var(--device-ink);
 }
 
-/* The device's link pattern («Enlace · …» 195:513, 190:959): underlined, a 60 px hit area. */
+/* The device's link pattern («Enlace · …» 195:513, 190:959): underlined, a 60 px hit area,
+   and never narrower than 44 px, as English's «Back» would be. */
 .ink-link {
   display: inline-flex;
   align-items: center;
   align-self: flex-start;
+  min-width: 44px;
   min-height: 60px;
   padding: 0;
   border: 0;
@@ -1692,6 +1694,7 @@ h2[tabindex="-1"]:focus {
 .session-title,
 .session-intro,
 .session-message,
+.session-help,
 .session-retry,
 .route,
 .session-bar-end {
@@ -1741,6 +1744,11 @@ h2[tabindex="-1"]:focus {
 /* A web-only state of the session: Aule did not arrive. Botón/Compacto 191:1396 under the line. */
 .session-retry {
   justify-self: start;
+}
+
+/* Under a camera's problem, the adult's line (D33): empty, it takes no room. */
+.session-help:empty {
+  display: none;
 }
 
 /* The message line's place: no room (nor a gap of the grid) while it says nothing. */
@@ -1911,8 +1919,8 @@ h2[tabindex="-1"]:focus {
 }
 
 /* Under the stage: «Mostrar mi tarea»; while the camera is on, the line that says what
-   to do, «Listo» and «Cancelar»; «Modo tinta» for the team; the microphone's switch
-   with an open microphone. */
+   to do, «Listo» and «Cancelar»; «Modo tinta» for the team. The open microphone's
+   switch is with the talk, where the talk button is with held turns. */
 .session-actions {
   display: flex;
   flex-wrap: wrap;
@@ -1945,7 +1953,6 @@ h2[tabindex="-1"]:focus {
   display: flex;
   align-items: center;
   gap: 14px;
-  margin-right: auto;
 }
 
 .mic-group .round-text {

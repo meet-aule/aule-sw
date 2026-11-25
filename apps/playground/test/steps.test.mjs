@@ -15,13 +15,14 @@ import {
   defaultSubject,
   greeting,
   interestsFrom,
-  kindLabel,
+  kindKey,
   maskEmail,
   objectiveFor,
   planLine,
   progressAt,
 } from "../public/steps.js";
 import { objectiveFrom } from "../src/students.ts";
+import { words } from "../public/first-steps.js";
 
 const drawn = (id, flow) =>
   progressAt(id, flow)
@@ -66,15 +67,20 @@ test("outside the onboarding, and for a family coming back, the header is the pl
 
 test("each tile of A04 asks for its kind, «No lo sé» for nothing and the link for a review, and the server takes them all", () => {
   assert.deepEqual(
-    KINDS.map((tile) => [tile.kind, tile.icon]),
+    KINDS.map((tile) => [tile.kind, tile.key, tile.icon]),
     [
-      ["homework", "task_alt"],
-      ["exam_prep", "assignment"],
-      ["explore", "school"],
-      ["", "help_outline"],
+      ["homework", "kind_homework", "task_alt"],
+      ["exam_prep", "kind_exam_prep", "assignment"],
+      ["explore", "kind_explore", "school"],
+      ["", "kind_none", "help_outline"],
     ],
   );
-  assert.equal(KINDS[3].label, "No lo sé");
+  // Their words are first-steps.js's, the Figma's in Spanish, and in English too.
+  assert.equal(words(KINDS[3].key, "es"), "No lo sé");
+  assert.equal(words(REVIEW.key, "es"), "Revisar una evaluación que ya di");
+  for (const tile of [...KINDS, REVIEW]) {
+    assert.ok(words(tile.key, "es") && words(tile.key, "en") && words(tile.key, "es") !== words(tile.key, "en"), tile.key);
+  }
   assert.equal(objectiveFor(""), null, "«No lo sé» leaves the session to Aule");
   assert.equal(REVIEW.kind, "exam_review");
   for (const kind of ["homework", "exam_prep", "explore", REVIEW.kind]) {
@@ -82,7 +88,7 @@ test("each tile of A04 asks for its kind, «No lo sé» for nothing and the link
     assert.equal(objective.kind, kind);
     assert.equal(objective.topic, "fracciones");
     assert.deepEqual(objectiveFrom(objective), objective, `${kind} passes the server's check`);
-    assert.ok(kindLabel(kind), `${kind} has words for its details`);
+    assert.ok(words(kindKey(kind), "es") && words(kindKey(kind), "en"), `${kind} has words for its details`);
   }
   assert.deepEqual(objectiveFrom(objectiveFor("explore")), { kind: "explore", subject: "other", topic: "", due: null });
 });

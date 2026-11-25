@@ -98,6 +98,8 @@ let showing = false;
 let aiming = false;
 let aimTimer = 0;
 let aimTrack = null;
+// How long «La cámara se apagó.» stays once the wait for «Listo» is over.
+let aimNoteTimer = 0;
 // The camera «Listo» published, or is publishing, and the room it went to, until it is taken back.
 let sent = null;
 // True once the tutor is in the session and has said how turns work. Until
@@ -175,19 +177,17 @@ async function sessionAction(action, body) {
   return answer;
 }
 
-// A05 as index.html has it, to come back to from its web-only state.
-const A05_TITLE = $("a05-title").textContent;
-
 /**
  * A05, or its web-only state when this student's session is still open:
  * «¿Seguimos donde nos quedamos?», what carrying on keeps, «Seguir con la
- * sesión» where «Empezar la sesión» was, and a link to start another.
+ * sesión» where «Empezar la sesión» was, and a link to start another. Both
+ * titles are in the student's language.
  */
 function showRecoverable(answer) {
   recoverable = answer;
   const open = answer !== null;
   if (open) write($("a05-title"), recoveryText("resume_title"));
-  else write($("a05-title"), A05_TITLE, "es");
+  else writeWords($("a05-title"), "a05_title");
   $("a05-text").hidden = open;
   // The status line is never hidden, only empty, so it is in the accessibility
   // tree before its words arrive and a screen reader reads them as they come
@@ -273,6 +273,8 @@ function finishSession(line) {
 // anything else writes the line (screens.js, students.js), so the mark never
 // outlives its words.
 function showMessage(text, tone = "error", language) {
+  // The adult's line under a camera's problem goes with the line it is under.
+  writeWords($("session-help"), "");
   if (text && language) {
     const words = document.createElement("span");
     write(words, text, language);
@@ -292,6 +294,19 @@ function showPassingMessage(text, language) {
   setTimeout(() => {
     if (message.textContent === text) showMessage("");
   }, PASSING_MS);
+}
+
+/**
+ * A camera the session could not use, by the browser's error: the child's line
+ * on the message line and, under it in smaller type and not live, what an adult
+ * can do (first-steps.js camera_*_help; none for a camera that is merely
+ * missing), as A05 does for the microphone (D33). Both pass.
+ */
+function cameraTrouble(errorName) {
+  const key = cameraProblem(errorName);
+  const language = sessionLanguage();
+  showPassingMessage(words(key, language), language);
+  writeWords($("session-help"), `${key}_help`);
 }
 
 /**
@@ -335,10 +350,10 @@ function setTutorState(state = $("tutor").dataset.state) {
   $("tutor").dataset.state = state;
   const line = $("tutor-state");
   if (state === "missing") {
-    // Said once, politely, in the line under the title (showIntro): the tile
-    // shows it without saying it again.
+    // Said once, politely, in the title and the line under it (showIntro): under
+    // the sad face the line says nothing more.
     line.setAttribute("aria-live", "off");
-    write(line, recoveryText("tutor_missing_short"));
+    write(line, "");
   } else {
     line.removeAttribute("aria-live");
     const key = state === "listening" && manualTurns && !talking && !closingTurn ? "your_turn" : STATE_KEYS.includes(state) ? state : "waiting";
@@ -378,7 +393,9 @@ function setToggle(button, label, on) {
 
 // A round control (Botón/Micrófono 193:709): black with its icon when on,
 // white with the icon crossed when off. Its name stays («Micrófono»,
-// «Cámara»); the sentence next to it, which describes it, says which.
+// «Cámara»); the sentence next to it, which describes it, says which: «Tu
+// micrófono está encendido.», in the student's language (its data-on and
+// data-off name the words).
 const CROSSED = { mic: "mic_off", videocam: "videocam_off" };
 function setRound(button, on) {
   button.setAttribute("aria-pressed", String(on));
@@ -386,9 +403,14 @@ function setRound(button, on) {
   const base = icon.dataset.icon.replace("_off", "");
   icon.dataset.icon = on ? base : CROSSED[base];
   const says = $(button.getAttribute("aria-describedby"));
-  says.textContent = on ? says.dataset.on : says.dataset.off;
-  // César's sentences are the page's own Spanish.
-  says.removeAttribute("lang");
+  writeWords(says, on ? says.dataset.on : says.dataset.off);
+}
+
+/** A round control's name (`key`, first-steps.js), in the student's language. */
+function nameRound(button, key) {
+  const language = sessionLanguage();
+  button.setAttribute("aria-label", words(key, language));
+  button.lang = language;
 }
 
 function startClock(seconds) {
@@ -432,7 +454,7 @@ async function onTranscription(reader, participant) {
   if (!line) {
     line = document.createElement("li");
     line.dataset.who = mine ? "you" : "tutor";
-    line.dataset.name = mine ? "Tú" : "Aule";
+    line.dataset.name = mine ? words("you", sessionLanguage()) : "Aule";
     lines.set(id, line);
     if (mine && manualTurns) heldLines.push(line);
     $("transcript").append(line);
@@ -568,7 +590,7 @@ $("answer").addEventListener("submit", async (event) => {
     // What they wrote is part of the conversation too.
     const line = item(explanation ? `${written}. ${explanation}` : written);
     line.dataset.who = "you";
-    line.dataset.name = "Tú (escrito)";
+    line.dataset.name = words("you_typed", sessionLanguage());
     $("transcript").append(line);
     followTranscript(true);
     // The tutor says what the engine answered: tell it there is something waiting.
@@ -743,8 +765,9 @@ let coachTimer = 0;
 let taps = 0;
 
 function showCoach() {
-  // While the child aims the camera the coach waits: on a small phone its shelf would cover «Listo».
-  const key = manualTurns && tutorReady && wanted.mic && !aiming ? (coachHint ?? (coaching ? "coach" : "")) : "";
+  // While the child aims the camera, and while the camera's line says anything («La cámara se
+  // apagó.»), the coach waits: on a small phone its shelf would cover «Listo», or that line.
+  const key = manualTurns && tutorReady && wanted.mic && !aiming && !$("camera-aim").textContent ? (coachHint ?? (coaching ? "coach" : "")) : "";
   const line = $("talk-coach");
   const text = words(key, sessionLanguage());
   if (line.textContent !== text) write(line, text);
@@ -838,7 +861,8 @@ async function startTalking() {
       stopTalkMeter();
       showTalk();
       if (!connectionLost) {
-        showMessage("No se pudo avisar a Aule que estás hablando. Inténtalo otra vez.");
+        const language = sessionLanguage();
+        showMessage(words("talk_not_started", language), "error", language);
       }
       return false;
     }
@@ -865,7 +889,10 @@ async function stopTalking(method = "end_turn") {
     if (!speaking || speaking !== room || generation !== turnGeneration || connectionLost) return;
     await turn(method);
   } catch {
-    if (method === "end_turn" && !connectionLost && room === speaking) showMessage("Aule no lo escuchó. Mantén apretado el botón y dilo otra vez.");
+    if (method === "end_turn" && !connectionLost && room === speaking) {
+      const language = sessionLanguage();
+      showMessage(words("turn_unheard", language), "error", language);
+    }
   } finally {
     await speaking?.localParticipant.setMicrophoneEnabled(false).catch(() => undefined);
     if (room === speaking) {
@@ -936,15 +963,19 @@ function tutorArrived() {
 // says it is nobody's fault, and «Intentar otra vez» goes back to A05.
 function tutorMissing() {
   if (!room || tutorCame) return;
+  // The title says what happened: on it, a screen reader hears it again, as on A05's web-only state.
+  const title = $("session-title");
+  const focused = document.activeElement === title;
   tutorLate = true;
   setTutorState("missing");
   showIntro();
+  if (focused) {
+    title.blur();
+    title.focus({ preventScroll: true });
+  }
   writeWords($("retry-session"), "retry");
   $("retry-session").hidden = false;
 }
-
-// The session's title, and the line under it.
-const SESSION_TITLE = $("session-title").textContent;
 
 /**
  * The session's title and the line under it: A15's «La sesión empezó.», or on
@@ -956,13 +987,14 @@ const SESSION_TITLE = $("session-title").textContent;
  */
 function showIntro() {
   if (tutorLate) {
-    write($("session-title"), SESSION_TITLE, "es");
+    write($("session-title"), recoveryText("missing_title"));
     write($("session-intro"), recoveryText("tutor_missing"));
   } else if (firstSession) {
     writeWords($("session-title"), "intro_title");
     writeWords($("session-intro"), "intro_line");
   } else {
-    write($("session-title"), SESSION_TITLE, "es");
+    // A15's «La sesión empezó.», in the student's language too.
+    write($("session-title"), recoveryText("started"));
     write($("session-intro"), "", "es");
   }
 }
@@ -978,13 +1010,15 @@ async function aimCamera() {
   const aimed = room;
   aiming = true;
   showMessage("");
+  // «La cámara se apagó.» from the last wait goes as the camera is asked for again.
+  clearTimeout(aimNoteTimer);
+  writeWords($("camera-aim"), "");
   let track;
   try {
     track = await createLocalVideoTrack(CAMERA);
   } catch (error) {
     aiming = false;
-    const language = sessionLanguage();
-    showPassingMessage(words(cameraProblem(error?.name), language), language);
+    cameraTrouble(error?.name);
     if (room) showCamera();
     return;
   }
@@ -994,6 +1028,7 @@ async function aimCamera() {
     return;
   }
   aimTrack = track;
+  clearTimeout(aimNoteTimer);
   writeWords($("camera-aim"), "camera_aim");
   writeWords($("cam-send"), "camera_send");
   writeWords($("cam-cancel"), "camera_cancel");
@@ -1007,7 +1042,7 @@ async function aimCamera() {
   // «Listo» is scrolled into sight, clear of the fixed talk button's shelf.
   $("camera-aim").focus({ preventScroll: true });
   $("cam-send").scrollIntoView({ block: "nearest" });
-  aimTimer = setTimeout(() => stopAiming(), AIM_MS);
+  aimTimer = setTimeout(() => stopAiming({ waited: true }), AIM_MS);
 }
 
 // Where the keyboard goes once the camera is off: the talk button, which Space
@@ -1024,19 +1059,26 @@ function focusTalk() {
  * still on its way to the room (livekit-client's unpublishTrack waits for the
  * publish it is part of). The keyboard's place, if it was on the camera's row
  * (or lost as «Listo» went dashed), goes back to talking (focusTalk).
+ * `waited`: the 30 s are over, and the line says the camera went off, for a moment.
  */
-async function stopAiming() {
+async function stopAiming({ waited = false } = {}) {
   clearTimeout(aimTimer);
   aiming = false;
   const placed = [document.body, $("camera-aim"), $("cam-send"), $("cam-cancel")].includes(document.activeElement);
   const track = aimTrack;
   aimTrack = null;
+  writeWords($("camera-aim"), waited ? "camera_off" : "");
+  if (waited) {
+    aimNoteTimer = setTimeout(() => {
+      writeWords($("camera-aim"), "");
+      showCoach();
+    }, PASSING_MS);
+  }
   if (room) {
     showCamera();
     showCoach();
     if (placed) focusTalk();
   }
-  writeWords($("camera-aim"), "");
   hideKeepingFocus($("cam-send"), $("session-title"));
   hideKeepingFocus($("cam-cancel"), $("session-title"));
   if (track) {
@@ -1091,7 +1133,7 @@ async function showWork() {
     const line = item("");
     writeWords(line, "shown_work");
     line.dataset.who = "you";
-    line.dataset.name = "Tú";
+    line.dataset.name = words("you", sessionLanguage());
     $("transcript").append(line);
     followTranscript(true);
     await new Promise((resolve) => setTimeout(resolve, SHOWN_MS));
@@ -1116,6 +1158,7 @@ async function join(session, { resumed = false } = {}) {
   // A session carried on after a reload has had its first turns already.
   firstSession = !resumed && firstRun();
   coaching = firstSession;
+  sessionWords();
   // «Modo tinta» is the team's device simulator: on for the team, and never
   // shown to a family (D32).
   const team = getAccount().team === true;
@@ -1185,6 +1228,7 @@ async function join(session, { resumed = false } = {}) {
   play(hello);
 
   await syncMicrophone();
+  nameRound($("mic"), "mic_label");
   setRound($("mic"), wanted.mic);
   showTalk();
   // The camera stays off: it goes on only when the child asks (usePhotos).
@@ -1249,6 +1293,8 @@ function showCheck(now = performance.now()) {
   if (key !== checkLine) {
     checkLine = key;
     writeWords($("check-status"), key);
+    // Under the child's line, what an adult can do about it (first-steps.js *_help).
+    writeWords($("check-help"), micTrouble ? `${micTrouble}_help` : "");
   }
   // It runs on every frame of the meter: only what changes is written. Once the
   // microphone works, «Intentar otra vez» goes, and its focus to A05's title.
@@ -1346,7 +1392,11 @@ function openLobby() {
   faceSpeaksUntil = 0;
   writeWords($("lobby-note"), "");
   writeWords($("sound-line"), "");
-  // The check's own words, in the student's language; nothing of the last showing's.
+  // A05's words, in the student's language; nothing of the last showing's.
+  writeWords($("a05-text"), "a05_line");
+  nameRound($("lobby-mic"), "mic_label");
+  nameRound($("lobby-cam"), "cam_label");
+  writeWords($("lobby-back"), "back");
   writeWords($("level-line"), "check_line");
   writeWords($("mic-retry"), "retry");
   writeWords($("sound-test"), "sound_test");
@@ -1588,6 +1638,8 @@ function teardown({ quiet = false } = {}) {
   aimTrack?.detach($("camera"));
   aimTrack = null;
   sent = null;
+  clearTimeout(aimNoteTimer);
+  writeWords($("session-help"), "");
   $("camera-view").hidden = true;
   $("cam-send").hidden = true;
   $("cam-send").disabled = false;
@@ -1683,6 +1735,27 @@ onAccount((account) => {
 
 // A session can show only while its room is open.
 need("session", () => room !== null);
+
+/**
+ * The session's own words around the stage, in the student's language and
+ * marked with it, as the line under Aule's face is: «Terminar», the clock's
+ * name, the typed message and «Enviar», and the conversation, whose lines are
+ * then read in that language. The exercise card stays the engine's Spanish.
+ */
+function sessionWords() {
+  const language = sessionLanguage();
+  writeWords($("end"), "end_session");
+  writeWords($("type-send"), "send");
+  for (const [element, attribute, key] of [
+    [$("clock"), "aria-label", "clock_label"],
+    [$("typed"), "aria-label", "type_label"],
+    [$("typed"), "placeholder", "type_placeholder"],
+    [$("transcript"), "aria-label", "conversation"],
+  ]) {
+    element.setAttribute(attribute, words(key, language));
+    element.lang = language;
+  }
+}
 
 $("lobby-mic").addEventListener("click", () => {
   if (micTrouble) return;
@@ -1901,8 +1974,7 @@ $("cam").addEventListener("click", async () => {
   try {
     await turning.localParticipant.setCameraEnabled(!turning.localParticipant.isCameraEnabled);
   } catch (error) {
-    const language = sessionLanguage();
-    showPassingMessage(words(cameraProblem(error?.name), language), language);
+    cameraTrouble(error?.name);
   }
   if (turning === room) showCamera();
 });
@@ -1920,12 +1992,13 @@ $("type").addEventListener("submit", async (event) => {
     // Typed words are not transcribed back, so the page writes them itself.
     const line = item(text);
     line.dataset.who = "you";
-    line.dataset.name = "Tú (escrito)";
+    line.dataset.name = words("you_typed", sessionLanguage());
     $("transcript").append(line);
     // Their own message: back to the end, wherever they had scrolled to.
     followTranscript(true);
   } catch {
-    showMessage("No se pudo enviar el mensaje.");
+    const language = sessionLanguage();
+    showMessage(words("message_failed", language), "error", language);
   }
 });
 
