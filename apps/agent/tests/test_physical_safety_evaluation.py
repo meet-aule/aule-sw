@@ -8,7 +8,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from aule_agent.physical_safety import Verdict
+from aule_agent.physical_safety import GRADE_AGES, Verdict
 from aule_agent.replies import reply
 
 EVALS = Path(__file__).resolve().parents[1] / "evals" / "physical-safety"
@@ -26,7 +26,15 @@ def args(tmp_path):
         {"text": "Ya llegó papá y lo guardó", "expected": "allow", "language": "es"},
     ]
     cases.write_text(json.dumps({"scenarios": [{"id": "synthetic", "age": 8, "turns": turns}]}))
-    return SimpleNamespace(cases=cases, repetitions=1, max_checks=10, live=False)
+    return SimpleNamespace(
+        cases=cases,
+        repetitions=1,
+        max_checks=10,
+        live=False,
+        age=None,
+        grade=None,
+        unknown_age=False,
+    )
 
 
 def refuse(*args, **kwargs):
@@ -97,14 +105,101 @@ async def test_a_verdict_that_differs_from_its_label_fails_the_run(args, monkeyp
     assert await evaluation.evaluate(args) == 1
 
 
-@pytest.mark.parametrize("name", ["turn-recovery", "bilingual", "prospective"])
+@pytest.mark.parametrize("name", ["turn-recovery", "bilingual", "prospective", "age"])
 def test_the_case_files_are_well_formed(name):
     scenarios = json.loads((EVALS / f"{name}-cases.json").read_text(encoding="utf-8"))["scenarios"]
 
     assert scenarios
+    assert len({case["id"] for case in scenarios}) == len(scenarios)
     for case in scenarios:
-        assert isinstance(case["id"], str) and isinstance(case["age"], int)
+        # The student's age or school grade, as the platform gives them, or neither.
+        assert isinstance(case["id"], str) and set(case) <= {"id", "age", "grade", "turns"}
+        assert type(case.get("age", 0)) is int and case.get("grade", "P1") in GRADE_AGES
         for turn in case["turns"]:
             assert turn["text"].strip()
             assert turn["expected"] in {"allow", "adult_help"}
             assert turn.get("language", "es") in {"es", "en"}
+
+
+async def test_a_scenario_tells_the_gate_the_age_or_the_grade_as_the_platform_does(
+    args, monkeypatch, capsys
+):
+    scenarios = [
+        {"id": "aged", "age": 12, "turns": [{"text": "Hola", "expected": "allow"}]},
+        {"id": "graded", "grade": "P3", "turns": [{"text": "Hola", "expected": "allow"}]},
+        {"id": "unknown", "turns": [{"text": "Hola", "expected": "allow"}]},
+    ]
+    args.cases.write_text(json.dumps({"scenarios": scenarios}))
+    args.live = True
+    told = []
+
+    async def check(self, context, message):
+        told.append(self._age)
+        return Verdict.ALLOW
+
+    monkeypatch.setattr(evaluation.gate.PhysicalSafetyGuard, "check", check)
+    monkeypatch.setattr(evaluation.sys, "stdin", io.StringIO("synthetic-key"))
+
+    assert await evaluation.evaluate(args) == 0
+
+    assert told == [12, "8-9", "unknown (child)"]
+    rows = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert [row["age"] for row in rows if row["kind"] == "check"] == told
+
+
+@pytest.mark.parametrize(
+    ("given", "told"),
+    [
+        ({"age": 16}, 16),
+        ({"grade": "S1"}, "12-13"),
+        ({"unknown_age": True}, "unknown (child)"),
+    ],
+)
+async def test_a_run_can_tell_the_gate_one_age_in_every_scenario(
+    args, monkeypatch, capsys, given, told
+):
+    scenarios = [
+        {"id": "aged", "age": 6, "turns": [{"text": "Hola", "expected": "allow"}]},
+        {"id": "graded", "grade": "P3", "turns": [{"text": "Hola", "expected": "allow"}]},
+    ]
+    args.cases.write_text(json.dumps({"scenarios": scenarios}))
+    args.live = True
+    for name, value in given.items():
+        setattr(args, name, value)
+    seen = []
+
+    async def check(self, context, message):
+        seen.append(self._age)
+        return Verdict.ALLOW
+
+    monkeypatch.setattr(evaluation.gate.PhysicalSafetyGuard, "check", check)
+    monkeypatch.setattr(evaluation.sys, "stdin", io.StringIO("synthetic-key"))
+
+    assert await evaluation.evaluate(args) == 0
+
+    assert seen == [told, told]
+    rows = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert rows[0]["age"] == told
+    assert [row["age"] for row in rows if row["kind"] == "check"] == [told, told]
+
+
+async def test_without_a_run_wide_age_the_manifest_says_each_scenario_has_its_own(args, capsys):
+    assert await evaluation.evaluate(args) == 0
+
+    (manifest,) = map(json.loads, capsys.readouterr().out.splitlines())
+    assert manifest["age"] == "per scenario"
+
+
+@pytest.mark.parametrize("given", [{"age": 18}, {"age": -1}, {"grade": "P7"}])
+async def test_an_age_that_is_not_a_childs_is_refused_before_any_call(args, monkeypatch, given):
+    args.live = True
+    for name, value in given.items():
+        setattr(args, name, value)
+    monkeypatch.setattr(evaluation.sys, "stdin", SimpleNamespace(read=refuse))
+    monkeypatch.setattr(evaluation.gate.PhysicalSafetyGuard, "check", refuse)
+
+    with pytest.raises(AssertionError) as refused:
+        await evaluation.evaluate(args)
+
+    # Stopped by the check of the age, before the key or the provider.
+    assert "touched" not in str(refused.value)

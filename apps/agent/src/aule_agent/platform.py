@@ -114,10 +114,16 @@ class Platform:
         self._user_agent = user_agent(build_commit())
         # Filled by ``start`` from the agent-session body; the tutor's persona.
         self.persona: Persona | None = None
-        # For the greeting only: what to call the student and which of their
-        # sessions this is. Never logged, never stored by the agent.
+        # For the greeting: what to call the student and which of their
+        # sessions this is; the physical-safety gate gets the name only to
+        # leave it out of what it sends. Never logged, never stored by the agent.
         self.student_name: str | None = None
         self.session_number: int | None = None
+        # For the physical-safety gate only: the student's age, from their
+        # year of birth, and their school grade. Never logged; the gate decides
+        # which of them it passes on.
+        self.student_age: int | None = None
+        self.student_grade: str | None = None
         # Filled by ``start`` when the session engine runs this session: what
         # it wrote for the tutor to open with.
         self._opening: tuple[Line, ...] = ()
@@ -221,6 +227,12 @@ class Platform:
         number = answer.get("session_number")
         if type(number) is int and number >= 0:
             self.session_number = number
+        age = answer.get("student_age")
+        if type(age) is int:
+            self.student_age = age
+        grade = answer.get("student_grade")
+        if isinstance(grade, str):
+            self.student_grade = grade
         script = answer.get("script")
         if isinstance(script, dict):
             self._scripted = True

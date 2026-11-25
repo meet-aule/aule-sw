@@ -477,6 +477,10 @@ pub async fn agent_start(Agent(session): Agent, State(state): State<AppState>) -
         // For lines that are written, not generated. Never logged.
         "student_name": child.nickname,
         "session_number": session_number,
+        // For the physical-safety gate, which judges for the child's age: the
+        // age from the year of birth, and the grade for when it is not known.
+        "student_age": child.age(Utc::now()),
+        "student_grade": child.grade,
     });
     // The engine opens its sessions itself: these are the tutor's first lines.
     if engine::runs(&session) {

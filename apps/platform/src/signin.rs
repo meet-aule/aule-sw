@@ -5,7 +5,8 @@
 //! Asking for a code answers the same way whether or not the address has an
 //! account, a code works once and for ten minutes, a few wrong guesses burn
 //! it, and an address only gets a few codes an hour. A new address becomes a
-//! new family when its first code is confirmed.
+//! new family when its first code is confirmed, and keeps the link it came
+//! from when the page passes one on.
 
 use axum::Json;
 use axum::extract::State;
@@ -35,6 +36,7 @@ const CODE_MINUTES: i32 = 10;
 const MAX_ATTEMPTS: i32 = 5;
 const MAX_CODES_PER_HOUR: i32 = 5;
 const SESSION_DAYS: i32 = 30;
+const MAX_SOURCE_CHARS: usize = 24;
 
 pub fn normalized_email(email: &str) -> ApiResult<String> {
     let email = email.trim().to_lowercase();
@@ -45,6 +47,18 @@ pub fn normalized_email(email: &str) -> ApiResult<String> {
         return Err(ApiError::bad_request("email is not an email address"));
     }
     Ok(email)
+}
+
+/// The link a new family came from, when it is one: a short code of lower-case
+/// letters, digits and hyphens that starts with a letter, like `cesar` or
+/// `colegio-2`. Anything else is dropped, never refused: a sign-in does not
+/// fail over the address it was reached from.
+pub fn source_code(source: Option<&str>) -> Option<String> {
+    let source = source?;
+    let valid = source.len() <= MAX_SOURCE_CHARS
+        && source.starts_with(|c: char| c.is_ascii_lowercase())
+        && source.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-');
+    valid.then(|| source.to_string())
 }
 
 /// The code is short, so its hash is tied to the address it was sent to.
@@ -127,6 +141,10 @@ pub struct VerifyInput {
     name: Option<String>,
     #[serde(default)]
     language: Option<String>,
+    /// The link a new family came from (`source_code`); kept only when the
+    /// address is new.
+    #[serde(default)]
+    source: Option<String>,
 }
 
 pub async fn verify(
@@ -157,7 +175,8 @@ pub async fn verify(
         return Err(wrong());
     }
 
-    let account = enter(&txn, &email, body.name.as_deref(), body.language.as_deref()).await?;
+    let account =
+        enter(&txn, &email, body.name.as_deref(), body.language.as_deref(), body.source.as_deref()).await?;
     login_code::Entity::delete_by_id(email.clone()).exec(&txn).await?;
     txn.commit().await?;
     Ok(Json(account))
@@ -165,12 +184,13 @@ pub async fn verify(
 
 /// Opens a session for an address that has just been proven, by a code or by
 /// Google. An address seen for the first time becomes a new family, and for
-/// that it needs the guardian's name.
+/// that it needs the guardian's name; the family keeps the link it came from.
 async fn enter(
     db: &impl ConnectionTrait,
     email: &str,
     name: Option<&str>,
     language: Option<&str>,
+    source: Option<&str>,
 ) -> ApiResult<Value> {
     let existing: Option<(Uuid, Uuid)> = guardian::Entity::find()
         .filter(guardian::Column::Email.eq(email))
@@ -192,6 +212,7 @@ async fn enter(
             family::Entity::insert(family::ActiveModel {
                 id: Set(family_id),
                 name: Set(name.to_string()),
+                source: Set(source_code(source)),
                 ..Default::default()
             })
             .exec_without_returning(db)
@@ -248,6 +269,9 @@ pub struct GoogleInput {
     name: Option<String>,
     #[serde(default)]
     language: Option<String>,
+    /// The link a new family came from, as for a code.
+    #[serde(default)]
+    source: Option<String>,
 }
 
 pub async fn google(
@@ -268,7 +292,7 @@ pub async fn google(
             ApiError::Unavailable("Google could not be reached; try again later")
         }
     })?;
-    entered(&state, identity, body.name.as_deref(), body.language.as_deref()).await
+    entered(&state, identity, body.name.as_deref(), body.language.as_deref(), body.source.as_deref()).await
 }
 
 /// A session for someone a provider has vouched for.
@@ -277,12 +301,13 @@ async fn entered(
     identity: Identity,
     name: Option<&str>,
     language: Option<&str>,
+    source: Option<&str>,
 ) -> ApiResult<Json<Value>> {
     let email = normalized_email(&identity.email)?;
     let name = name.map(str::trim).filter(|name| !name.is_empty()).or(identity.name.as_deref());
 
     let txn = state.db.begin().await?;
-    let account = enter(&txn, &email, name, language).await?;
+    let account = enter(&txn, &email, name, language, source).await?;
     txn.commit().await?;
     Ok(Json(account))
 }
@@ -314,6 +339,9 @@ pub struct CodeInput {
     name: Option<String>,
     #[serde(default)]
     language: Option<String>,
+    /// The link a new family came from, as for a code.
+    #[serde(default)]
+    source: Option<String>,
 }
 
 pub async fn github(State(state): State<AppState>, Input(body): Input<CodeInput>) -> ApiResult<Json<Value>> {
@@ -361,7 +389,7 @@ async fn by_code(
     let local = identity.email.split('@').next().unwrap_or_default().to_string();
     let name =
         body.name.filter(|name| !name.trim().is_empty()).or_else(|| identity.name.is_none().then_some(local));
-    entered(state, identity, name.as_deref(), body.language.as_deref()).await
+    entered(state, identity, name.as_deref(), body.language.as_deref(), body.source.as_deref()).await
 }
 
 /// Ends the session this request was made with.
@@ -485,6 +513,29 @@ mod tests {
         ] {
             assert!(normalized_email(bad).is_err(), "{bad}");
         }
+    }
+
+    #[test]
+    fn only_a_short_lower_case_code_is_kept_as_the_link_a_family_came_from() {
+        for good in ["cesar", "pucp", "colegio-2", "a", "wsp-padres-1", "abcdefghijklmnopqrstuvwx"] {
+            assert_eq!(source_code(Some(good)).as_deref(), Some(good), "{good}");
+        }
+        for bad in [
+            "",
+            "Cesar",
+            "CESAR",
+            "2cesar",
+            "-cesar",
+            "ce sar",
+            "ce_sar",
+            "césar",
+            "cesar/../x",
+            "<b>cesar</b>",
+            "abcdefghijklmnopqrstuvwxy",
+        ] {
+            assert_eq!(source_code(Some(bad)), None, "{bad}");
+        }
+        assert_eq!(source_code(None), None);
     }
 
     #[test]

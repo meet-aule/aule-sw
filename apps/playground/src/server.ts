@@ -1,5 +1,5 @@
 // The playground's HTTP server: a static page and one endpoint that trades the
-// access code for a room token. Reload tickets keep room routing in bounded RAM.
+// access code for a room token. Reload tickets keep only encrypted room routing.
 
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { createRequire } from "node:module";
@@ -52,8 +52,17 @@ import {
   stateCookie,
   stateMatches,
 } from "./providers.ts";
-import { DailyLimit, guardianToken, signedInCookie, signedOutCookie } from "./signin.ts";
-import { RecoveryStore, recoveryCookie, recoveryTicket, resumeToken, STATUS_GRACE_SECONDS } from "./recovery.ts";
+import {
+  clearedSourceCookie,
+  DailyLimit,
+  guardianToken,
+  signedInCookie,
+  signedOutCookie,
+  sourceCode,
+  sourceCookie,
+  sourceOf,
+} from "./signin.ts";
+import { RecoveryTickets, recoveryCookie, recoveryTicket, resumeToken, STATUS_GRACE_SECONDS } from "./recovery.ts";
 
 const publicDir = new URL("../public/", import.meta.url);
 // The browser build that ships inside the livekit-client package.
@@ -86,6 +95,8 @@ const STATIC: Record<string, { file: string | URL; type: string }> = {
   "/home.js": { file: new URL("home.js", publicDir), type: "text/javascript; charset=utf-8" },
   // The fixed words for a session that can be resumed or has ended.
   "/session-messages.js": { file: new URL("session-messages.js", publicDir), type: "text/javascript; charset=utf-8" },
+  // A child's first steps: the hand-off, the microphone check on the device and the coached first turn.
+  "/first-steps.js": { file: new URL("first-steps.js", publicDir), type: "text/javascript; charset=utf-8" },
   "/visuals.js": { file: new URL("visuals.js", publicDir), type: "text/javascript; charset=utf-8" },
   "/style.css": { file: new URL("style.css", publicDir), type: "text/css; charset=utf-8" },
   "/icon.svg": { file: new URL("icon.svg", publicDir), type: "image/svg+xml" },
@@ -98,6 +109,11 @@ const STATIC: Record<string, { file: string | URL; type: string }> = {
   // The team's panel. The page is the same for anyone; its data only for the team.
   "/admin": { file: new URL("admin.html", publicDir), type: "text/html; charset=utf-8" },
   "/admin.js": { file: new URL("admin.js", publicDir), type: "text/javascript; charset=utf-8" },
+  // The panel's arithmetic for the pilot's four numbers, kept apart so it is tested.
+  "/pilot.js": { file: new URL("pilot.js", publicDir), type: "text/javascript; charset=utf-8" },
+  // The one-page guide the team sends families, in Spanish and in English.
+  "/guia": { file: new URL("guia.html", publicDir), type: "text/html; charset=utf-8" },
+  "/guide": { file: new URL("guide.html", publicDir), type: "text/html; charset=utf-8" },
   "/fonts/serif.woff2": { file: join(serif, "source-serif-4-latin-wght-normal.woff2"), type: "font/woff2" },
   "/fonts/serif-italic.woff2": { file: join(serif, "source-serif-4-latin-wght-italic.woff2"), type: "font/woff2" },
   "/fonts/sans.woff2": { file: join(sans, "inter-latin-wght-normal.woff2"), type: "font/woff2" },
@@ -205,9 +221,17 @@ const OWN_SCRIPTS = new Set([
   "/onboarding.js",
   "/home.js",
   "/session-messages.js",
+  "/first-steps.js",
   "/visuals.js",
   "/admin.js",
+  "/pilot.js",
 ]);
+
+// The pages a family may be sent to with a link's code (?src=cesar), which is
+// kept until they sign in.
+const LINKED_PAGES = new Set(["/", "/guia", "/guide"]);
+// Pages reached from an address typed or shared by hand (see the redirects).
+const TYPED_PAGES = ["/admin", "/guia", "/guide"];
 
 export function createPlayground(
   settings: Settings,
@@ -223,7 +247,7 @@ export function createPlayground(
   const assetFor = async (path: string) => (await assets.get()).get(path);
   const limiter = new GuessLimiter();
   const daily = new DailyLimit(settings.dailySessions);
-  const recoveries = new RecoveryStore();
+  const recoveries = new RecoveryTickets(settings);
 
   async function lifecycle(path: string, request: IncomingMessage, response: ServerResponse) {
     const token = guardianToken(request);
@@ -231,11 +255,9 @@ export function createPlayground(
     const ticket = recoveryTicket(request);
     const saved = recoveries.get(ticket, token);
     const clear = () => {
-      recoveries.forget(ticket);
       response.setHeader("Set-Cookie", recoveryCookie("", settings.basePath));
     };
     if (!saved?.session.session_id) {
-      // Do not erase another sign-in's ticket from the shared store.
       response.setHeader("Set-Cookie", recoveryCookie("", settings.basePath));
       return json(response, 200, { available: false });
     }
@@ -269,10 +291,15 @@ export function createPlayground(
       throw error;
     }
     if (path === "/api/session/end") {
+      // A session its tutor never started (the platform still has it "created")
+      // has nothing to flush and cost no speech or model time: it closes at
+      // once, and the day's session it took is given back, so a family whose
+      // tutor did not arrive can try again (the plan does not count it either).
+      const started = state.status !== "created";
       // Let the tutor flush its final turns and usage before the platform closes.
       // If room teardown or agent cleanup fails, the authorized stop still wins.
       const removed = await rooms.deleteRoom(saved.session.room).then(() => true, () => false);
-      if (removed) {
+      if (removed && started) {
         for (let attempt = 0; attempt < 20; attempt++) {
           const current = await platform(settings, endpoint, undefined, token) as typeof state;
           if (current.status === "ended") break;
@@ -280,6 +307,7 @@ export function createPlayground(
         }
       }
       await platform(settings, `${endpoint}/end`, {}, token);
+      if (!started) daily.giveBack(token);
       clear();
       return json(response, 200, { ended: true });
     }
@@ -288,7 +316,7 @@ export function createPlayground(
       end_reason: state.end_reason, language: state.language,
     };
     const remaining = Math.min(state.remaining_seconds, Math.floor((saved.expires - Date.now()) / 1000));
-    if (!state.can_resume || remaining <= 0) return json(response, 200, unavailable);
+    if (state.status !== "active" || !state.can_resume || remaining <= 0) return json(response, 200, unavailable);
     let participants: Awaited<ReturnType<RoomServiceClient["listParticipants"]>>;
     try { participants = await rooms.listParticipants(saved.session.room); }
     catch (error) {
@@ -324,9 +352,9 @@ export function createPlayground(
   async function whoIsHere(
     request: IncomingMessage,
     response: ServerResponse,
-    entered?: { token: string; cookie: string },
+    entered?: { token: string; cookies: string[] },
   ) {
-    const extra = entered ? { "Set-Cookie": entered.cookie } : {};
+    const extra = entered ? { "Set-Cookie": entered.cookies } : {};
     const reply = (body: unknown, more: Record<string, string> = {}) => {
       response.writeHead(200, { ...headers, ...extra, ...more, "Content-Type": "application/json; charset=utf-8" });
       response.end(JSON.stringify(body));
@@ -363,6 +391,12 @@ export function createPlayground(
     }
   }
 
+  // Signed in, the link a family came from has done its work: it goes.
+  const enteredCookies = (token: string, days: number, source: string | null) => [
+    signedInCookie(token, settings.basePath, days),
+    ...(source ? [clearedSourceCookie(settings.basePath)] : []),
+  ];
+
   async function signedIn(path: string, request: IncomingMessage, response: ServerResponse) {
     if (!settings.platform) return json(response, 404, { error: "not_found" });
     let body: Record<string, unknown>;
@@ -376,9 +410,10 @@ export function createPlayground(
       if (typeof body.credential !== "string" || !body.credential) {
         return json(response, 400, { error: "bad_request" });
       }
+      const source = sourceOf(request);
       let entered;
       try {
-        entered = await signIn(settings, body.credential);
+        entered = await signIn(settings, body.credential, source);
       } catch (error) {
         if (error instanceof PlatformError && error.status < 500) {
           return json(response, 403, { error: "sign_in_refused" });
@@ -387,7 +422,7 @@ export function createPlayground(
       }
       return whoIsHere(request, response, {
         token: entered.token,
-        cookie: signedInCookie(entered.token, settings.basePath, entered.days),
+        cookies: enteredCookies(entered.token, entered.days, source),
       });
     }
     if (path === "/api/signin/email/start") {
@@ -406,9 +441,10 @@ export function createPlayground(
       const code = typeof body.code === "string" ? body.code.trim() : "";
       const name = typeof body.name === "string" && body.name.trim() ? body.name.trim().slice(0, 120) : null;
       if (!EMAIL.test(email) || !/^\d{6}$/.test(code)) return json(response, 400, { error: "bad_request" });
+      const source = sourceOf(request);
       let entered;
       try {
-        entered = await signInWithEmail(settings, email, code, name);
+        entered = await signInWithEmail(settings, email, code, name, source);
       } catch (error) {
         if (!(error instanceof PlatformError) || error.status >= 500) throw error;
         // A new address needs a name; a wrong or used code is refused.
@@ -417,13 +453,11 @@ export function createPlayground(
       }
       return whoIsHere(request, response, {
         token: entered.token,
-        cookie: signedInCookie(entered.token, settings.basePath, entered.days),
+        cookies: enteredCookies(entered.token, entered.days, source),
       });
     }
     const token = guardianToken(request);
     if (path === "/api/signout") {
-      const ticket = recoveryTicket(request);
-      if (token && recoveries.get(ticket, token)) recoveries.forget(ticket);
       if (token) await signOut(settings, token).catch(() => undefined);
       response.writeHead(200, {
         ...headers,
@@ -493,7 +527,6 @@ export function createPlayground(
         if (state.status !== "ended" && state.remaining_seconds > 0) {
           return json(response, 409, { error: "session_active" });
         }
-        recoveries.forget(previous);
       }
       if (!settings.freeAccess && !daily.take(token)) return json(response, 429, { error: "daily_limit" });
       const started = await startSession(settings, token, id, language, objective);
@@ -583,6 +616,9 @@ export function createPlayground(
       if (request.method === "GET" && path === "/api/admin/metrics") {
         return json(response, 200, await platform(settings, "/v1/metrics/daily?days=14", undefined, token));
       }
+      if (request.method === "GET" && path === "/api/admin/weekly") {
+        return json(response, 200, await platform(settings, "/v1/metrics/weekly?weeks=12", undefined, token));
+      }
       if (request.method === "GET" && path === "/api/admin/build") {
         // The platform's health probe is on loopback; only the team is told what it says.
         if (!(await readPlan(settings, token)).team) return json(response, 403, { error: "not_team" });
@@ -667,8 +703,9 @@ export function createPlayground(
     // Without a code the person said no at the provider, or it failed there.
     if (!code) return back([], answer.get("error") ? "cancelled" : "failed");
     try {
-      const entered = await signInWithCode(settings, provider, code, redirectUri, appleName(answer.get("user")));
-      return back([signedInCookie(entered.token, settings.basePath, entered.days)]);
+      const source = sourceOf(request);
+      const entered = await signInWithCode(settings, provider, code, redirectUri, appleName(answer.get("user")), source);
+      return back(enteredCookies(entered.token, entered.days, source));
     } catch (error) {
       if (!(error instanceof PlatformError)) throw error;
       console.error(`sign-in with ${provider} failed: ${error.message}`);
@@ -684,13 +721,18 @@ export function createPlayground(
     // "//healthz" mean the same thing.
     const pathname = url.pathname.replace(/\/{2,}/g, "/");
     const reading = request.method === "GET" || request.method === "HEAD";
-    const panel = `${settings.basePath}/admin`;
     const redirect = (status: number, location: string) => {
       response.writeHead(status, { ...headers, Location: location });
       response.end();
     };
-    if (reading && (pathname === `${panel}/` || (settings.basePath && ["/admin", "/admin/"].includes(pathname)))) {
-      return redirect(308, panel + url.search);
+    // The panel and the family guide are addresses people type and share: with
+    // a trailing slash, or without the base path, they still reach the page,
+    // and keep the query (a guide's ?src=).
+    for (const page of TYPED_PAGES) {
+      const target = `${settings.basePath}${page}`;
+      if (reading && (pathname === `${target}/` || (settings.basePath && [page, `${page}/`].includes(pathname)))) {
+        return redirect(308, target + url.search);
+      }
     }
     const missing = () => {
       const wantsPage = (request.headers.accept ?? "").split(",").some((type) => type.trim().split(";")[0] === "text/html");
@@ -757,7 +799,15 @@ export function createPlayground(
         // has nothing to be checked against.
         const cache = cacheFor(asset, url.searchParams.get("v"));
         const etag = cache === "no-store" ? undefined : `"${asset.hash}"`;
-        const sent = { ...headers, "Cache-Control": cache, ...(etag ? { ETag: etag } : {}) };
+        // A family who has not signed in keeps the link it came from; a code
+        // that is not a short lower-case one is ignored.
+        const source = LINKED_PAGES.has(path) && !guardianToken(request) ? sourceCode(url.searchParams.get("src")) : null;
+        const sent = {
+          ...headers,
+          "Cache-Control": cache,
+          ...(etag ? { ETag: etag } : {}),
+          ...(source ? { "Set-Cookie": sourceCookie(source, settings.basePath) } : {}),
+        };
         if (etag && stillFresh(request.headers["if-none-match"], etag)) {
           response.writeHead(304, sent);
           return response.end();

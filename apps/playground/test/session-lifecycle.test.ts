@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { after, before, beforeEach, test } from "node:test";
-import { ParticipantInfo } from "livekit-server-sdk";
+import { ParticipantInfo, TokenVerifier } from "livekit-server-sdk";
 import { readSettings } from "../src/config.ts";
 import { createPlayground } from "../src/server.ts";
 import { COMPLETE } from "./fixtures.ts";
@@ -18,6 +18,7 @@ let members: ParticipantInfo[];
 let creates = 0;
 let endings = 0;
 let deletions = 0;
+let reads = 0;
 const backend = createServer(async (request, response) => {
   for await (const _ of request) { /* drain synthetic body */ }
   response.setHeader("Content-Type", "application/json");
@@ -27,7 +28,7 @@ const backend = createServer(async (request, response) => {
   }
   if (request.url === "/v1/sessions") { creates++; return response.end(JSON.stringify(started)); }
   if (request.url === `/v1/sessions/${ID}/end`) { endings++; return response.end("{}"); }
-  if (request.url === `/v1/sessions/${ID}`) return response.end(JSON.stringify(lifecycle));
+  if (request.url === `/v1/sessions/${ID}`) { reads++; return response.end(JSON.stringify(lifecycle)); }
   response.writeHead(404); response.end("{}");
 });
 let page: ReturnType<typeof createPlayground>;
@@ -37,8 +38,7 @@ const post = (path: string, body: unknown, headers: Record<string, string> = {})
   method: "POST", headers: { "Content-Type": "application/json", Cookie: cookie, ...headers }, body: JSON.stringify(body),
 });
 const get = () => fetch(`${base}/api/session/recovery`, { headers: { Cookie: cookie } });
-before(async () => {
-  await new Promise<void>(resolve => backend.listen(0, "127.0.0.1", resolve));
+async function startPage() {
   const url = `http://127.0.0.1:${(backend.address() as AddressInfo).port}`;
   page = createPlayground(readSettings({ ...COMPLETE, AULE_PLATFORM_URL: url, AULE_ADMIN_TOKEN: "operator", AULE_FREE_ACCESS: "1" }), {
     async listParticipants() { if (failure) throw new Error("synthetic unavailable"); return members; },
@@ -46,11 +46,19 @@ before(async () => {
   });
   await new Promise<void>(resolve => page.listen(0, "127.0.0.1", resolve));
   base = `http://127.0.0.1:${(page.address() as AddressInfo).port}/playground`;
+}
+async function restartPage() {
+  await new Promise<void>((resolve, reject) => page.close(error => error ? reject(error) : resolve()));
+  await startPage();
+}
+before(async () => {
+  await new Promise<void>(resolve => backend.listen(0, "127.0.0.1", resolve));
+  await startPage();
 });
 after(() => { page.close(); backend.close(); });
 beforeEach(async () => {
   lifecycle = { status: "active", can_resume: true, remaining_seconds: 450, end_reason: null, language: "es" };
-  authorization = 200; failure = false; creates = 0; endings = 0; deletions = 0;
+  authorization = 200; failure = false; creates = 0; endings = 0; deletions = 0; reads = 0;
   members = [new ParticipantInfo({ kind: 4, identity: "tutor" })];
   cookie = `aule_guardian=${TOKEN}`;
   // A fresh browser has no previous ticket. Free access keeps each fixture independent.
@@ -59,7 +67,8 @@ beforeEach(async () => {
   cookie += "; " + response.headers.get("set-cookie")!.split(";")[0];
 });
 
-test("reload resumes one room with its remaining deadline without creating another session", async () => {
+test("reload after a BFF restart resumes the same room and deadline without creating another session", async () => {
+  await restartPage();
   const response = await get();
   assert.equal(response.headers.get("cache-control"), "no-store");
   const offered = await response.json();
@@ -73,11 +82,16 @@ test("reload resumes one room with its remaining deadline without creating anoth
   assert.equal(session.room, started.room);
   assert.equal(session.expiresInSeconds, 450);
   assert.notEqual(session.token, started.token);
+  const claims = await new TokenVerifier(COMPLETE.LIVEKIT_API_KEY, COMPLETE.LIVEKIT_API_SECRET).verify(session.token);
+  assert.equal(claims.sub, `child-${ID.replaceAll("-", "")}`);
+  assert.equal(claims.video?.room, started.room);
+  assert.equal(claims.roomConfig, undefined);
   assert.equal(creates, 1);
   assert.equal((await post("session", { student_id: CHILD })).status, 409);
 });
 
 test("wrong account, revoked access and wrong profile never receive a room token", async () => {
+  await restartPage();
   assert.equal((await post("session/resume", { session_id: ID, student_id: "another" })).status, 409);
   const another = cookie.replace(TOKEN, "cd".repeat(32));
   assert.equal((await (await fetch(`${base}/api/session/recovery`, { headers: { Cookie: another } })).json()).available, false);
@@ -89,6 +103,7 @@ test("wrong account, revoked access and wrong profile never receive a room token
 });
 
 test("a missing tutor cannot be redispatched and a temporary API failure can be retried", async () => {
+  await restartPage();
   failure = true;
   assert.equal((await get()).status, 503);
   failure = false;
@@ -106,10 +121,62 @@ test("an old tab or a different origin cannot close the newer session", async ()
   assert.equal(endings, 0);
   assert.equal((await post("session/end", { session_id: ID })).status, 200);
   assert.equal(endings, 1); assert.equal(deletions, 1);
+  // Replaying the old cookie after another restart cannot reopen a closed session.
+  await restartPage();
   assert.equal((await (await get()).json()).available, false);
+  assert.equal((await (await post("session/resume", { session_id: ID, student_id: CHILD })).json()).token, undefined);
+});
+
+test("a restarted BFF refuses expired sessions and revoked sign-ins even with a valid recovery ticket", async () => {
+  await restartPage();
+  lifecycle.remaining_seconds = 0;
+  assert.equal((await (await post("session/resume", { session_id: ID, student_id: CHILD })).json()).token, undefined);
+  authorization = 401;
+  const response = await get();
+  assert.equal(response.status, 401);
+  assert.match(response.headers.get("set-cookie")!, /Max-Age=0/);
+  assert.equal(creates, 1);
 });
 
 test("a participant in another tab cannot be replaced by resume", async () => {
   members.push(new ParticipantInfo({ kind: 0, identity: "child" }));
   assert.equal((await post("session/resume", { session_id: ID, student_id: CHILD })).status, 409);
+});
+
+test("a session its tutor never started closes at once and gives its day's session back; a started one keeps it", async () => {
+  const url = `http://127.0.0.1:${(backend.address() as AddressInfo).port}`;
+  const capped = createPlayground(readSettings({ ...COMPLETE, AULE_PLATFORM_URL: url, AULE_ADMIN_TOKEN: "operator", PLAYGROUND_DAILY_SESSIONS: "1" }), {
+    async listParticipants() { return members; },
+    async deleteRoom() { deletions++; lifecycle.status = "ended"; },
+  });
+  await new Promise<void>(resolve => capped.listen(0, "127.0.0.1", resolve));
+  const at = `http://127.0.0.1:${(capped.address() as AddressInfo).port}/playground/api`;
+  let jar = `aule_guardian=${TOKEN}`;
+  const send = async (path: string, body: unknown) => {
+    const response = await fetch(`${at}/${path}`, { method: "POST", headers: { "Content-Type": "application/json", Cookie: jar }, body: JSON.stringify(body) });
+    const ticket = response.headers.get("set-cookie");
+    if (ticket?.startsWith("aule_recovery=")) jar = `aule_guardian=${TOKEN}; ${ticket.split(";")[0]}`;
+    return response;
+  };
+  try {
+    // Aule never arrived: the platform still has the session as created, never started.
+    lifecycle.status = "created";
+    assert.equal((await send("session", { student_id: CHILD })).status, 200);
+    reads = 0;
+    endings = 0;
+    assert.equal((await send("session/end", { session_id: ID })).status, 200);
+    assert.equal(endings, 1);
+    assert.equal(reads, 1, "nothing to flush: no waiting for the tutor to close it");
+    // So the family can try again today, with the one session the day has.
+    lifecycle.status = "active";
+    assert.equal((await send("session", { student_id: CHILD })).status, 200);
+    // A session the tutor started is the day's, ended or not.
+    assert.equal((await send("session/end", { session_id: ID })).status, 200);
+    assert.equal(endings, 2);
+    const again = await send("session", { student_id: CHILD });
+    assert.equal(again.status, 429);
+    assert.deepEqual(await again.json(), { error: "daily_limit" });
+  } finally {
+    capped.close();
+  }
 });

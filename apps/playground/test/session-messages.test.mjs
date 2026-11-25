@@ -26,3 +26,22 @@ test("the language an element is marked with is the one its words are in", () =>
   assert.notEqual(recoveryMessage("resume_title", "en"), recoveryMessage("resume_title", "es"));
   assert.notEqual(endedMessage("idle", "en"), endedMessage("idle", "es"));
 });
+
+test("when Aule does not arrive, the tile, the line under the title and the end screen have words in both languages", () => {
+  for (const key of ["tutor_missing_short", "tutor_missing", "no_tutor"]) {
+    const es = recoveryMessage(key, "es");
+    const en = recoveryMessage(key, "en");
+    // Words of their own, not the fallback for a key the table does not have.
+    for (const text of [es, en]) {
+      assert.ok(text.trim(), key);
+      assert.notEqual(text, recoveryMessage("failed", "es"), key);
+      assert.notEqual(text, recoveryMessage("failed", "en"), key);
+      assert.doesNotMatch(text, /[!¡]/, `${key}: calm, nobody's fault`);
+    }
+    assert.notEqual(es, en, key);
+  }
+  assert.equal(recoveryMessage("tutor_missing_short", "es"), "Aule no pudo llegar.");
+  assert.match(recoveryMessage("tutor_missing", "es"), /No es tu culpa\./);
+  assert.match(recoveryMessage("no_tutor", "es"), /no cuenta/);
+  assert.match(recoveryMessage("no_tutor", "en"), /doesn't count/);
+});

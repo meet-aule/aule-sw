@@ -51,6 +51,7 @@ test("serves the page and its scripts with a strict policy", async () => {
     "/onboarding.js",
     "/home.js",
     "/session-messages.js",
+    "/first-steps.js",
     "/students.js",
     "/visuals.js",
     "/style.css",
@@ -80,6 +81,30 @@ test("serves the page and its scripts with a strict policy", async () => {
   const font = await fetch(`${base}/fonts/sans.woff2`);
   assert.equal(font.headers.get("content-type"), "font/woff2");
   await font.arrayBuffer();
+});
+
+test("the family guide is served in Spanish and in English as a page, and the panel's arithmetic as a script", async () => {
+  for (const [path, words] of [
+    ["/guia", /Guía para familias/],
+    ["/guide", /A guide for families/],
+  ] as const) {
+    const response = await fetch(base + path);
+    assert.equal(response.status, 200, path);
+    assert.equal(response.headers.get("content-type"), "text/html; charset=utf-8");
+    assert.equal(response.headers.get("cache-control"), "no-store");
+    assert.match(response.headers.get("content-security-policy") ?? "", /default-src 'none'/);
+    const page = await response.text();
+    assert.match(page, words);
+    // Its stylesheet is the page's own, fingerprinted; the build is written in.
+    assert.match(page, /href="style\.css\?v=[0-9a-f]{12}"/);
+    assert.doesNotMatch(page, /\{\{(version|commit)\}\}/);
+  }
+  const script = await fetch(`${base}/pilot.js`);
+  assert.equal(script.status, 200);
+  assert.equal(script.headers.get("content-type"), "text/javascript; charset=utf-8");
+  await script.arrayBuffer();
+  const panel = await (await fetch(`${base}/admin`)).text();
+  assert.match(panel, /<script type="module" src="admin\.js\?v=[0-9a-f]{12}"><\/script>/);
 });
 
 test("the pictures of the old Andean page are gone, and the icons stay", async () => {
@@ -135,6 +160,29 @@ test("panel aliases keep the query and reach the panel without a trailing slash"
   assert.equal(api.status, 404, "without a platform the admin API remains unavailable");
   const bare = await fetch(`${base}?signin=cancelled`, { redirect: "manual" });
   assert.equal(bare.headers.get("location"), "/playground/?signin=cancelled");
+});
+
+test("the family guide's aliases keep the query, a link's ?src= with it, and reach the guide", async () => {
+  const origin = new URL(base).origin;
+  const headers = { Accept: "text/html" };
+  for (const [page, words] of [
+    ["/guia", /Guía para familias/],
+    ["/guide", /A guide for families/],
+  ] as const) {
+    for (const path of [`/playground${page}/`, page, `${page}/`]) {
+      for (const method of ["GET", "HEAD"]) {
+        const response = await fetch(`${origin}${path}?src=cesar`, { method, headers, redirect: "manual" });
+        assert.equal(response.status, 308, `${method} ${path}`);
+        assert.equal(response.headers.get("location"), `/playground${page}?src=cesar`, path);
+        assert.equal(response.headers.get("cache-control"), "no-store");
+      }
+    }
+    const guide = await fetch(`${origin}/playground${page}/`, { headers });
+    assert.equal(guide.url, `${origin}/playground${page}`);
+    assert.match(await guide.text(), words);
+    const posted = await fetch(`${origin}/playground${page}/`, { method: "POST", headers, redirect: "manual" });
+    assert.equal(posted.status, 404, "a write is no visit");
+  }
 });
 
 test("missing page visits return home, while API, file and write errors stay errors", async () => {
@@ -329,6 +377,9 @@ test("served at the root, the page and its health probe still answer", async () 
     const panel = await fetch(`${origin}/admin/`, { redirect: "manual" });
     assert.equal(panel.headers.get("location"), "/admin");
     assert.equal((await fetch(`${origin}/admin`)).status, 200);
+    const guide = await fetch(`${origin}/guia/?src=cesar`, { redirect: "manual" });
+    assert.equal(guide.headers.get("location"), "/guia?src=cesar");
+    assert.equal((await fetch(`${origin}/guia`)).status, 200);
     const missing = await fetch(`${origin}/old-page`, { headers: { Accept: "text/html" }, redirect: "manual" });
     assert.equal(missing.headers.get("location"), "/");
   } finally {

@@ -469,6 +469,19 @@ async def test_the_name_and_the_number_of_the_session_are_read_for_the_greeting(
     assert (odd.student_name, odd.session_number) == (None, None)
 
 
+async def test_how_old_the_student_is_is_read_for_the_physical_safety_gate():
+    platform = Platform(SESSION, Recorder({"student_age": 9, "student_grade": "P4"}))
+    odd = Platform(SESSION, Recorder({"student_age": True, "student_grade": 4}))
+    unknown = Platform(SESSION, Recorder({"student_age": None, "student_grade": None}))
+
+    for each in (platform, odd, unknown):
+        await each.start()
+
+    assert (platform.student_age, platform.student_grade) == (9, "P4")
+    assert (odd.student_age, odd.student_grade) == (None, None)
+    assert (unknown.student_age, unknown.student_grade) == (None, None)
+
+
 async def test_a_session_run_by_the_engine_opens_with_its_lines_and_asks_it_each_turn():
     send = Recorder(
         {"instructions": "Liam.", "script": {"lines": [{"say": "¡Hola, Liam!"}]}},

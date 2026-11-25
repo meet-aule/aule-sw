@@ -1365,6 +1365,45 @@ h2[tabindex="-1"]:focus {
   }
 }
 
+/* a02 «¿Eres tú?» (A02 ¿Eres tú? · Aparato 410:629, adapted): a line for the parent, A02's
+   title, the name large (Inter 700; four fifths of it on a phone), and A02's two tiles,
+   Cuadro/Opción 190:806 with no icon, side by side from 800 px and stacked below that. The
+   tiles are A02's 200 px where the screen has room; on the device's 800 × 480 they are
+   152 px, so «Volver» still fits under the added line for the parent (FIGMA.md D25). */
+.handoff-name {
+  font: 700 calc(56px * var(--k)) / 1.15 var(--sans);
+  overflow-wrap: anywhere;
+}
+
+.handoff-tiles {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+}
+
+.choice.handoff {
+  justify-content: center;
+  min-height: 112px;
+  text-align: center;
+}
+
+@media (min-width: 800px) {
+  .handoff-tiles {
+    grid-template-columns: repeat(2, 348px);
+    gap: 24px;
+  }
+
+  .choice.handoff {
+    height: 152px;
+  }
+}
+
+@media (min-width: 800px) and (min-height: 560px) {
+  .choice.handoff {
+    height: 200px;
+  }
+}
+
 /* Figma: Campo/Línea · Aparato 191:1333: 60 px tall, a 2 px black rule; the example in italic. */
 .ink-fields {
   display: grid;
@@ -1461,6 +1500,15 @@ h2[tabindex="-1"]:focus {
   color: var(--device-ink);
 }
 
+/* A microphone the browser will not give (Pendiente 260:716): the button cannot be pressed,
+   so it is white with a dashed black border, as a disabled device button is (D14), and
+   its icon is crossed; its sentence says the microphone is not available. */
+.round-toggle:disabled {
+  border-style: dashed;
+  background: var(--device-paper);
+  color: var(--device-ink);
+}
+
 .round-toggle.round-88 {
   --size: 88px;
 }
@@ -1473,12 +1521,21 @@ h2[tabindex="-1"]:focus {
   font: 400 calc(22px * var(--k)) / calc(34px * var(--k)) var(--sans);
 }
 
-/* A05: the microphone (and the web's camera) with the sentence that explains its colour. */
+/* A05: the microphone (and the web's camera) with the sentence that explains its colour.
+   From 800 px the rows sit in one centred column as wide as the camera's row with its
+   preview, so a longer line of the check never moves them. */
 .device-rows {
   display: grid;
-  justify-content: center;
+  grid-template-columns: minmax(0, 1fr);
   gap: 24px;
   margin: 8px 0;
+}
+
+@media (min-width: 800px) {
+  .device-rows {
+    grid-template-columns: minmax(0, 670px);
+    justify-content: center;
+  }
 }
 
 .device-row {
@@ -1500,12 +1557,13 @@ h2[tabindex="-1"]:focus {
   margin: 0 12px;
 }
 
-/* The microphone's level: a black fill in a 2 px black frame. */
+/* The microphone's level, as Pendiente · Sesión del alumno 260:654 draws it under the camera:
+   a black fill in a 2 px black frame, 24 px tall, across the sentence column. */
 .level {
-  height: 14px;
+  height: 24px;
   overflow: hidden;
   border: 2px solid var(--device-ink);
-  border-radius: 7px;
+  border-radius: 12px;
 }
 
 .level span {
@@ -1514,6 +1572,56 @@ h2[tabindex="-1"]:focus {
   height: 100%;
   background: var(--device-ink);
   transition: width 80ms linear;
+}
+
+/* The bar's line («Si la barra se mueve cuando hablas, Aule te escucha.»), the camera's
+   note and the sound test's line: smaller than the sentences they follow. */
+.level-line,
+.device-note {
+  font: 400 calc(18px * var(--k)) / 1.4 var(--sans);
+}
+
+/* A05's check (web-only): Aule's face, the session's mascot at 72 px, beside the status
+   line and, when it is needed, «Intentar otra vez». It takes the row's whole width under
+   the microphone, so a long line has room; from 800 px it starts at the sentence column.
+   Where the face cannot be drawn, the bar and the words do the job alone. */
+.mic-check {
+  display: flex;
+  flex: 1 1 100%;
+  align-items: center;
+  gap: 12px;
+}
+
+.check-words {
+  display: grid;
+  justify-items: start;
+}
+
+@media (min-width: 800px) {
+  .mic-check {
+    margin-left: 152px;
+  }
+}
+
+.check-face {
+  display: none;
+  flex: none;
+  width: 72px;
+  height: 72px;
+}
+
+.mic-check.has-mascot .check-face {
+  display: block;
+}
+
+.check-status {
+  font: 600 calc(22px * var(--k)) / calc(30px * var(--k)) var(--sans);
+}
+
+/* A05's sound test (web-only): its line, a status that is never hidden, only empty;
+   empty, it takes no room. */
+.sound-line:empty {
+  position: absolute;
 }
 
 .preview {
@@ -1534,10 +1642,6 @@ h2[tabindex="-1"]:focus {
   width: 100%;
   height: 100%;
   object-fit: cover;
-}
-
-.preview-off {
-  font: 400 15px/1.3 var(--sans);
 }
 
 @media (max-width: 799px) {
@@ -1576,7 +1680,9 @@ h2[tabindex="-1"]:focus {
 }
 
 .session-title,
+.session-intro,
 .session-message,
+.session-retry,
 .route {
   grid-column: 1 / -1;
 }
@@ -1584,6 +1690,23 @@ h2[tabindex="-1"]:focus {
 .session-title {
   margin: 0;
   font: 600 calc(28px * var(--k)) / 1.3 var(--sans);
+}
+
+/* A16 Hola, soy Aule 477:190, on a first run: the line under the title; while Aule does not
+   arrive, the line that says so. A status that is never hidden, only empty; empty, it takes
+   no room. */
+.session-intro {
+  margin-top: -10px;
+  font: 400 calc(22px * var(--k)) / calc(30px * var(--k)) var(--sans);
+}
+
+.session-intro:empty {
+  position: absolute;
+}
+
+/* A web-only state of the session: Aule did not arrive. Botón/Compacto 191:1396 under the line. */
+.session-retry {
+  justify-self: start;
 }
 
 .session-message:empty {
@@ -1634,6 +1757,13 @@ h2[tabindex="-1"]:focus {
 .tile-state {
   position: relative;
   font: 400 15px/1.4 var(--sans);
+}
+
+/* The camera tile's sentence («La cámara se enciende solo cuando muestras tu tarea.») keeps
+   clear of the tile's border when it wraps on a phone. */
+.tile-empty {
+  padding: 0 16px;
+  text-align: center;
 }
 
 .work .tile {
@@ -2038,8 +2168,10 @@ h2[tabindex="-1"]:focus {
 
 /* Hold to talk: white until held, black while it listens. */
 .talk {
+  position: relative;
   display: block;
   width: 100%;
+  overflow: hidden;
   padding: 22px 12px;
   border: 2px solid var(--device-ink);
   border-radius: var(--device-radius);
@@ -2054,6 +2186,54 @@ h2[tabindex="-1"]:focus {
 .talk[aria-pressed="true"] {
   background: var(--device-ink);
   color: var(--device-paper);
+}
+
+/* A web-only state of the talk button: while it is held, a 4 px white bar along its bottom
+   follows the microphone's level, measured in this browser. */
+.talk-level {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: none;
+  height: 4px;
+}
+
+.talk[aria-pressed="true"] .talk-level {
+  display: block;
+}
+
+.talk-level span {
+  display: block;
+  width: 0;
+  height: 100%;
+  background: var(--device-paper);
+  transition: width 80ms linear;
+}
+
+/* A web-only state of the talk button: the coach right above it, on a first run, and a hint
+   after a tap. A status that is never hidden, only empty; empty, it takes no room. */
+.talk-coach {
+  padding: 10px 14px;
+  border: 2px solid var(--device-ink);
+  border-radius: var(--device-radius);
+  background: var(--device-paper);
+  color: var(--device-ink);
+  font: 600 17px/1.35 var(--sans);
+  animation: coach-in 200ms ease-out;
+}
+
+.talk-coach:empty {
+  position: absolute;
+  padding: 0;
+  border: 0;
+  animation: none;
+}
+
+@keyframes coach-in {
+  from {
+    opacity: 0;
+  }
 }
 
 .talk:disabled {
@@ -2121,6 +2301,65 @@ h2[tabindex="-1"]:focus {
     z-index: 10;
     width: auto;
     margin: 0;
+  }
+}
+
+/* On a tall screen (a phone held upright, a tablet) the coach sits right above the fixed
+   button, and the session leaves it room. On a short one (a phone on its side, the device's
+   800 × 480) a line there would cover the session's controls: it stays in the page, under
+   Aule's tile, and the camera's tile is lower, so the controls clear the fixed button
+   where the session opens. */
+@media (max-width: 900px) and (min-height: 640px) {
+  main.push-to-talk .talk-coach:not(:empty) {
+    position: fixed;
+    right: 16px;
+    bottom: calc(max(12px, env(safe-area-inset-bottom)) + 84px);
+    left: 16px;
+    z-index: 10;
+  }
+
+  main.push-to-talk.coached .screen[data-screen="session"] {
+    padding-bottom: 200px;
+  }
+}
+
+@media (max-width: 900px) and (max-height: 639px) {
+  main.push-to-talk .work:not(.with-card) > .tile {
+    max-height: 28vh;
+  }
+}
+
+/* A web-only shelf under the fixed talk button (and the coach, when it shows): the page
+   scrolls behind it, so nothing of the session shows between the coach and the button. */
+@media (max-width: 900px) {
+  main.push-to-talk .screen[data-screen="session"]::after {
+    content: "";
+    position: fixed;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 9;
+    height: calc(max(12px, env(safe-area-inset-bottom)) + 100px);
+    background: linear-gradient(to bottom, transparent, var(--device-paper) 16px);
+    pointer-events: none;
+  }
+}
+
+@media (max-width: 900px) and (min-height: 640px) {
+  main.push-to-talk.coached .screen[data-screen="session"]::after {
+    height: calc(max(12px, env(safe-area-inset-bottom)) + 208px);
+  }
+}
+
+/* With less motion asked for, the bars jump to each level and the coach appears at once. */
+@media (prefers-reduced-motion: reduce) {
+  .level span,
+  .talk-level span {
+    transition: none;
+  }
+
+  .talk-coach {
+    animation: none;
   }
 }
 
@@ -2199,6 +2438,132 @@ html[data-screen="session"] .site-footer {
   display: none;
 }
 
+/* ---- The family guide (guia.html, guide.html): one column of paper -------- */
+
+/* The parent's screens' column and type: the wordmark over the plain line,
+   Source Serif titles, Inter text, copper for what leads. */
+.guide {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 24px 24px 8px;
+}
+
+@media (max-width: 359px) {
+  .guide {
+    padding-inline: 16px;
+  }
+}
+
+.guide-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 25px;
+  border-bottom: 2px solid var(--line);
+}
+
+.guide-head .link {
+  font-size: 14px;
+}
+
+.guide h1 {
+  margin: 40px 0 10px;
+  font: 500 32px/38px var(--serif);
+  color: var(--ink);
+}
+
+.guide-lead {
+  font: 400 17px/26px var(--sans);
+}
+
+.guide section {
+  margin-top: 32px;
+  padding-top: 24px;
+  border-top: 1px solid var(--line);
+}
+
+.guide h2 {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin: 0 0 12px;
+  font: 500 22px/28px var(--serif);
+}
+
+.guide-number {
+  flex: none;
+  color: var(--copper);
+  font: 600 15px/1 var(--sans);
+}
+
+.guide h3 {
+  margin: 20px 0 8px;
+  font: 600 16px/1.35 var(--sans);
+}
+
+.guide section p,
+.guide li {
+  font: 400 16px/24px var(--sans);
+}
+
+.guide section > p + p {
+  margin-top: 10px;
+}
+
+.guide ol,
+.guide ul {
+  margin: 0;
+  padding-left: 22px;
+}
+
+.guide li + li {
+  margin-top: 8px;
+}
+
+.guide ol + p,
+.guide ul + p {
+  margin-top: 12px;
+}
+
+.guide a:not(.primary, .link) {
+  color: var(--ink);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+
+/* The plan's price on a card, as the landing shows it. */
+.guide-plan {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 12px;
+  padding: 16px;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.guide .guide-price {
+  font: 500 28px/34px var(--serif);
+}
+
+.guide-price span {
+  color: var(--muted);
+  font: 400 16px/1 var(--sans);
+}
+
+.guide-foot {
+  display: grid;
+  gap: 14px;
+  margin-top: 40px;
+  padding-top: 24px;
+  border-top: 1px solid var(--line);
+}
+
+.guide-note {
+  color: var(--muted);
+  font: 400 13px/1.45 var(--sans);
+}
+
 /* ---- The team's panel: wide tables on plain paper ------------------------ */
 
 .admin {
@@ -2269,6 +2634,7 @@ html[data-screen="session"] .site-footer {
 }
 
 .admin input[type="search"] {
+  width: 100%;
   max-width: 320px;
   margin: 8px 0 12px;
   padding: 8px 12px;
@@ -2293,4 +2659,39 @@ html[data-screen="session"] .site-footer {
 
 .admin .message {
   margin: 12px 0;
+}
+
+/* The pilot's numbers: a week's total in bold over its links, and what each column means. */
+.admin h3 {
+  margin: 24px 0 8px;
+  font: 600 16px/1.3 var(--sans);
+}
+
+.admin .lead {
+  max-width: 72ch;
+  margin: 8px 0 12px;
+  color: var(--muted);
+}
+
+.admin tr.week td {
+  font-weight: 600;
+}
+
+/* On a phone the pilot's tables scroll sideways rather than grow tall, and a link's code stays whole. */
+.admin table.pilot th,
+.admin table.pilot td,
+.admin td.code {
+  white-space: nowrap;
+}
+
+.admin .notes {
+  max-width: 72ch;
+  margin: 16px 0 32px;
+  padding-left: 20px;
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+.admin .notes li + li {
+  margin-top: 4px;
 }
