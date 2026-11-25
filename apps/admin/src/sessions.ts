@@ -4,9 +4,9 @@
 // the playground cannot be pasted into the console, and the console's length
 // and limits hold. A restart signs the team out.
 //
-// The platform's session underneath lasts its own 30 days: it cannot issue a
-// shorter one. The console ends it whenever its own session ends: on sign-out,
-// expiry, eviction and SIGTERM.
+// The platform's session underneath lasts 12 hours too, not a family's 30
+// days: the platform's team sign-in opens it so. The console also ends it
+// whenever its own session ends: on sign-out, expiry, eviction and SIGTERM.
 
 import { createHash, randomBytes } from "node:crypto";
 import type { IncomingMessage } from "node:http";
