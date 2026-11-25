@@ -5,8 +5,9 @@ costs, the pilot's numbers, every family with its plan and the link it came
 from, found by address or name and filtered by link and plan, a page per family
 with its sessions, a plan granted for free, and who is in a session now, with
 one line that says whether a deploy can go. It is its own app, apart from the children's
-[playground](../playground/README.md), with its own sign-in. A child's
-conversation, text or audio, appears nowhere in it.
+[playground](../playground/README.md), with its own sign-in, and each team
+member's passkeys for it. A child's conversation, text or audio, appears
+nowhere in it.
 
 A Node server with no framework and no build step, as the playground: Node runs
 the TypeScript in `src/` as it is, and `public/` holds the pages. It has no
@@ -22,8 +23,9 @@ decides each call.
 | GET, HEAD | `/live` | nothing | «En vivo»: who is in a session now, and whether a deploy can go |
 | GET, HEAD | `/families` | nothing | «Familias»: the families, with search and filters |
 | GET, HEAD | `/family?id=<uuid>` | nothing | One family's page |
+| GET, HEAD | `/passkeys` | nothing | «Passkeys»: the team member's own, to create and delete |
 | GET, HEAD | `/signin` | nothing | The sign-in page |
-| GET, HEAD | `/style.css`, `/admin.js`, `/live.js`, `/families.js`, `/family.js`, `/common.js`, `/labels.js`, `/pilot.js`, `/signin.js`, `/icon.svg`, `/fonts/serif.woff2`, `/fonts/sans.woff2` | nothing | The pages' files, fingerprinted (`src/assets.ts`, a copy of the playground's) |
+| GET, HEAD | `/style.css`, `/admin.js`, `/live.js`, `/families.js`, `/family.js`, `/passkeys.js`, `/credential.js`, `/common.js`, `/labels.js`, `/pilot.js`, `/signin.js`, `/icon.svg`, `/fonts/serif.woff2`, `/fonts/sans.woff2` | nothing | The pages' files, fingerprinted (`src/assets.ts`, a copy of the playground's) |
 | GET, HEAD | `/healthz` | nothing | `{"ok":true,"version":"0.0.1","commit":"abc123456789"}` |
 | GET, HEAD | `/robots.txt` | nothing | Disallows everything |
 | POST | `/api/signin/start` | the write rules | `{email}`: a code by mail, for a team address only. Always `202 {"sent":true}` |
@@ -38,6 +40,10 @@ decides each call.
 | GET | `/api/sessions/open` | a session | The platform's `GET /v1/admin/sessions/open` |
 | POST | `/api/families/{id}/grant` | a session, the write rules | `{days, note?}`: the platform's `POST /v1/admin/families/{id}/grant` |
 | POST | `/api/families/{id}/ungrant` | a session, the write rules | The platform's `DELETE /v1/admin/families/{id}/grant` |
+| GET | `/api/passkeys` | a session | The platform's `GET /v1/admin/passkeys`: the member's own, by name and dates |
+| POST | `/api/passkeys/options` | a session, the write rules | The platform's `POST /v1/admin/passkeys/options`: `200 {publicKey}` for the browser, and the ceremony in its own cookie. `409 {"error":"sign_in_again"}` when the sign-in is more than 15 minutes old; the session stays |
+| POST | `/api/passkeys/create` | a session, the write rules, 16 KB | `{label, credential}`: the platform's `POST /v1/admin/passkeys`, with the ceremony from its cookie. `201 {id, label, created_at, last_used_at}`, or `409 {"error":"sign_in_again"}` when the sign-in grew too old meanwhile; the cookie is cleared whatever the answer |
+| POST | `/api/passkeys/{id}/delete` | a session, the write rules | The platform's `DELETE /v1/admin/passkeys/{id}`: `200 {}`, or `404` for one that is not the member's |
 
 Pages hold no data and are served to anyone who comes through the console's
 Worker; their scripts ask the API. Any
@@ -110,6 +116,46 @@ date, child, read, mailed, pushed, with «Más avisos»). «Regalar plan» and
 and asks nothing; a family the platform no longer has is told so too. What a
 child said, a session's review and a notice's words are not there: the platform
 does not send them.
+
+## Passkeys
+
+`/passkeys` lists the signed-in team member's own passkeys: the name they gave
+it, when it was made and when it was last used, with «Borrar» on each, which
+asks first and names the passkey in one short line. «Crear passkey» takes a
+name (1 to 60 characters, one line), then asks the console for the options,
+opens the browser's own dialog (fingerprint, face or PIN), and sends the
+passkey back. The page uses the browser's own WebAuthn JSON methods
+(`PublicKeyCredential.parseCreationOptionsFromJSON` and the credential's
+`toJSON`): no library and no change to the CSP. Some password managers hand
+the page a credential whose `toJSON` fails; `public/credential.js` then writes
+the same fields by hand, and a credential it cannot read either is told as the
+password manager's failure. A browser without the parser is told it cannot,
+and the page offers nothing else. At 10 passkeys, the most there can be, the
+button is off.
+
+- **The platform decides.** It checks every passkey with webauthn-rs and keeps
+  only its public half (`apps/platform`, «Aule's team»), and mails the member
+  about every passkey added. Adding one needs a sign-in from the last 15
+  minutes, when it starts and when it is kept: an older session is told to
+  sign in again, and stays. The page says so before anyone tries. Deleting one
+  needs a session only, and ends the sessions that passkey opened.
+- **A passkey the console did not keep.** Once the browser has made one, a
+  refusal leaves it on the device, where it would open nothing. The page then
+  asks the browser to forget it (`PublicKeyCredential.signalUnknownCredential`,
+  where the browser has it), says to delete it there, and lists the passkeys
+  again; after a failure that may have kept it, it only says to look.
+- **The ceremony stays out of the page.** The platform's handle for it travels
+  in its own cookie, `__Host-aule_admin_passkey`
+  (`Path=/; Max-Age=300; HttpOnly; Secure; SameSite=Strict`), never in a body
+  a script can read, and is cleared once it is used.
+- **Nothing is passed on as it came.** The console builds the browser's
+  credential again from the fields the platform reads (`src/passkeys.ts`),
+  each checked for its shape and length, and checks the name as the platform
+  does.
+- **Deleting a passkey here does not delete it from the device.** The dialog
+  says to delete it there too, from the device or the password manager, and
+  that the sessions it opened end: this one included, if it came in with
+  that passkey, and the page then goes to the sign-in.
 
 ## Settings
 
@@ -215,11 +261,13 @@ machine (the container's check and the watch) answers without it.
 **Writes** (every POST) need `Origin` equal to `ADMIN_PUBLIC_URL` (never
 compared with `Host`, which behind the Worker names the server),
 `Sec-Fetch-Site: same-origin` when the browser sends it, `Content-Type:
-application/json`, and a JSON object of at most 4 KB.
+application/json`, and a JSON object of at most 4 KB, or 16 KB where it carries
+a passkey the browser made or used (`/api/passkeys/create`).
 
 **The log** has one fixed event per line, with numbers and yes-or-no fields
 only: never an address, a code, a token, a cookie, a body, a request's address,
-a client's address or the platform's words.
+a client's address or the platform's words. A passkey made or deleted is
+`passkey_created` or `passkey_deleted`, with nothing of it.
 
 ## Running it locally
 
@@ -250,10 +298,14 @@ sign-in's neutral answers and its limits per client (a burst sent together, a
 slow body, IPv6 by its /64), the sessions and their revocation (SIGTERM
 included), the logs, the
 pages' rules, `pilot.js`'s arithmetic (`test/pilot.test.mjs`, moved with it) and
-`labels.js`'s words (`test/labels.test.mjs`). The pages' scripts also run in a
+`labels.js`'s words (`test/labels.test.mjs`), and a passkey's JSON written by
+hand (`test/credential.test.mjs`). The pages' scripts also run in a
 fake document (`test/dom.mjs`) that cannot read HTML from a string: «En vivo»'s
 line, its table, what it draws as text, and how it asks again
 (`test/live.test.mjs`); «Familias»'s filters from the address, its rows and
 links, its pages and its grants (`test/families.test.mjs`); and a family's page,
 its id checked, every section drawn as text, and its lists a page at a time
-(`test/family.test.mjs`).
+(`test/family.test.mjs`); and «Passkeys», with a stand-in for the browser's
+WebAuthn: its list as text, «Crear passkey» from the name to the passkey sent
+back, what each failure says, a browser that cannot, and «Borrar»
+(`test/passkeys.test.mjs`).
