@@ -174,6 +174,18 @@ class OfflineSession(AgentSession):
     def __init__(self, **options: Any) -> None:
         super().__init__(**options)
         CURRENT_WORLD.get().session = self
+        # Whether the session was asked to close (by the worker, the pace or
+        # the engine) and whether it closed.
+        self.shutdown_asked = False
+        self.closed = False
+        self.on("close", self._closed)
+
+    def shutdown(self, *, drain: bool = True) -> None:
+        self.shutdown_asked = True
+        super().shutdown(drain=drain)
+
+    def _closed(self, _event: Any) -> None:
+        self.closed = True
 
     async def start(self, agent: Any, **options: Any) -> Any:  # type: ignore[override]
         world = CURRENT_WORLD.get()
@@ -398,11 +410,13 @@ RPC = SimpleNamespace(
 
 
 async def quiet(world: World, timeout: float = 30.0) -> None:
-    """Until the tutor has said everything it had to say."""
+    """Until the tutor has said everything it had to say, or the session closed."""
     session = world.session
     deadline = time.monotonic() + timeout
     calm_since: float | None = None
     while time.monotonic() < deadline:
+        if session.closed:
+            return
         calm = session.agent_state == "listening" and session.current_speech is None
         if calm:
             calm_since = calm_since or time.monotonic()

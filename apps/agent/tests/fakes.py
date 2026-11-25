@@ -20,11 +20,13 @@ import random
 import re
 import socket
 import time
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 from dataclasses import dataclass, field
 from types import SimpleNamespace
 from typing import Any
 
+import anthropic
+import httpx2
 import numpy as np
 from anthropic import types as wire
 from livekit import rtc
@@ -229,6 +231,10 @@ class World:
         # "between_tools" (after a tool's result, as thinking between tools
         # does), "always" or "never".
         self.thinking = "between_tools"
+        # Awaited with each request to the tutor's model before it answers:
+        # it may raise what the API answers instead (``refusal``) or never
+        # return, as a request that hangs.
+        self.model_trouble: Callable[[dict[str, Any]], Awaitable[None]] | None = None
         self.speaker = Speaker(self)
         self.stt = FakeSTT(self)
         self.vad = FakeVAD(self)
@@ -826,6 +832,29 @@ class FakeAPIError(Exception):
     """A request the real API would refuse with a 400."""
 
 
+# What the API answered every request with once the account's credit ran out
+# on 2026-11-25: a 400 whose message says the credit balance is too low.
+NO_CREDIT = (
+    "Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing "
+    "to upgrade or purchase credits."
+)
+_REFUSALS = {
+    400: anthropic.BadRequestError,
+    401: anthropic.AuthenticationError,
+    403: anthropic.PermissionDeniedError,
+    529: anthropic.OverloadedError,
+}
+
+
+def refusal(status: int, kind: str, message: str) -> anthropic.APIStatusError:
+    """An answer of the Messages API that is not a reply, as its client raises it."""
+    body = {"type": "error", "error": {"type": kind, "message": message}}
+    request = httpx2.Request("POST", "https://api.anthropic.invalid/v1/messages")
+    response = httpx2.Response(status, request=request, json=body)
+    made = _REFUSALS.get(status, anthropic.APIStatusError)
+    return made(f"Error code: {status} - {body}", response=response, body=body)
+
+
 @dataclass
 class _Entry:
     expires: float
@@ -1060,6 +1089,8 @@ class FakeAnthropic:
         except FakeAPIError as error:
             self._world.api_errors.append(str(error))
             raise
+        if self._world.model_trouble is not None:
+            await self._world.model_trouble(kwargs)
         call = ModelCall(
             kwargs=kwargs,
             opened_at=time.time(),
