@@ -189,6 +189,11 @@ TURNS: dict[str, Any] = {
         "min_duration": 0.8,
         "min_words": 1,
     },
+    # LiveKit's own early start: in VAD mode it runs the tutor's llm_node
+    # before on_user_turn_completed, so the gates had not judged the words
+    # the model got, and the output gate judged text that might never be
+    # said. The tutor asks early itself where it may (AULE_EARLY_REPLY).
+    "preemptive_generation": {"enabled": False},
 }
 # With the talk button the button ends the turn. The pause TURNS waits for, a
 # child going on after thinking, cannot happen once the button is up, and
@@ -429,6 +434,7 @@ async def entrypoint(ctx: JobContext) -> None:
         # it and has breaks of its own.
         breaks=bool(platform and not platform.scripted),
         timing=timing,
+        early_reply=settings.early_reply,
     )
     usage = Usage()
     model = build_llm(settings)
@@ -549,6 +555,8 @@ async def entrypoint(ctx: JobContext) -> None:
         camera.stop()
         logger.info("session usage", extra=usage.summary())
         logger.info("session timing", extra=timing.summary())
+        if settings.early_reply:
+            logger.info("session early replies", extra=dict(tutor.early_replies))
         await gates.close()
         if platform:
             if not platform.end_reason:

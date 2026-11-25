@@ -3,9 +3,12 @@
 number under a name of at most 40 characters of a-z, 0-9 and _. Past 40 the
 platform drops names silently, in its own order."""
 
+import contextvars
 import math
 import re
+from types import SimpleNamespace
 
+from aule_agent.providers import EARLY, Early
 from aule_agent.timing import STAGES, Timing
 from aule_agent.usage import Usage
 
@@ -48,3 +51,15 @@ def test_a_session_with_every_stage_timed_fits_what_the_platform_keeps():
     assert {f"{stage}_ms_p90" for stage in STAGES} <= set(timing)
 
     fits_the_platform({**Usage().summary(), **timing, **MEASURES})
+
+
+def test_with_early_replies_every_number_still_fits():
+    usage = Usage()
+    early = Early()
+    context = contextvars.copy_context()
+    context.run(EARLY.set, early)
+    context.run(usage.add, SimpleNamespace(prompt_tokens=9000, completion_tokens=30))
+
+    metrics = {**usage.summary(), **every_stage_timed(), **MEASURES}
+    assert "early_calls_dropped" in metrics
+    fits_the_platform(metrics)

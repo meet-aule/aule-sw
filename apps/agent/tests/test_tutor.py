@@ -6,7 +6,7 @@ from unittest.mock import PropertyMock, patch
 
 import pytest
 from livekit import rtc
-from livekit.agents import Agent, StopResponse, llm, stt
+from livekit.agents import Agent, ModelSettings, StopResponse, llm, stt
 from livekit.agents.voice.generation import mark_instructions_cache_boundary, update_instructions
 
 from aule_agent.greetings import GREETINGS, greeting
@@ -1248,3 +1248,292 @@ async def test_a_new_press_forgets_what_was_heard_before():
     tutor.hold_started()
 
     assert tutor.words_in_flight is False
+
+
+class Model:
+    """Stands in for LiveKit's default llm_node: one reply per request, and
+    whether each request ran to its end or was closed before."""
+
+    def __init__(self, *texts, delay=0.0):
+        self.texts, self.delay = texts or ("Muy bien. ", "Sigue."), delay
+        self.requests, self.finished, self.closed = [], [], []
+
+    def __call__(self, agent, chat_ctx, tools, settings):
+        number = len(self.requests)
+        self.requests.append((chat_ctx, REQUEST.get()))
+        return self._reply(number)
+
+    async def _reply(self, number):
+        try:
+            for text in self.texts:
+                await asyncio.sleep(self.delay)
+                yield llm.ChatChunk(
+                    id=str(number), delta=llm.ChoiceDelta(role="assistant", content=text)
+                )
+            self.finished.append(number)
+        finally:
+            self.closed.append(number)
+
+
+class SlowGates(ScriptedGates):
+    """Gates that answer once the model has written its whole reply."""
+
+    def __init__(self, model, *decisions):
+        super().__init__(*decisions)
+        self.model = model
+
+    async def heard(self, context, message):
+        while not self.model.finished:
+            await asyncio.sleep(0.001)
+        return await super().heard(context, message)
+
+
+def the_turn(text="tres cuartos"):
+    """A turn as LiveKit hands it to the tutor, and the conversation its
+    reply is then asked with."""
+    turn_ctx = llm.ChatContext.empty()
+    turn_ctx.add_message(role="assistant", content="¿Cuánto es tres cuartos?")
+    message = llm.ChatMessage(role="user", content=[text])
+    reply_ctx = turn_ctx.copy()
+    reply_ctx.insert(message)
+    mark_instructions_cache_boundary(reply_ctx)
+    return turn_ctx, message, reply_ctx
+
+
+async def answer(tutor, session, model, turn_ctx, message, reply_ctx):
+    """One turn: the hook, then the reply if the gates let it through."""
+    session.agent_state = "speaking"
+    with (
+        patch.object(Tutor, "session", new_callable=PropertyMock, return_value=session),
+        patch.object(Agent.default, "llm_node", side_effect=model),
+    ):
+        try:
+            await tutor.on_user_turn_completed(turn_ctx, message)
+        except StopResponse:
+            return None
+        tools = llm.ToolContext(tutor.tools).flatten()
+        return [chunk async for chunk in tutor.llm_node(reply_ctx, tools, ModelSettings())]
+
+
+@pytest.mark.parametrize("decision", [HAZARD, Decision(Action.SUPPORT, "self_harm_support")])
+async def test_a_reply_asked_early_for_a_stopped_turn_is_never_heard(decision, caplog):
+    model, session = Model(), Session()
+    gates = SlowGates(model, decision)
+    tutor = Tutor(language="es", gates=gates, early_reply=True)
+
+    with caplog.at_level("INFO", logger="aule.agent.tutor"):
+        said = await answer(tutor, session, model, *the_turn())
+
+    # The model wrote its whole reply before the gates answered; none of it
+    # was said, judged, kept or logged, and its stream was closed.
+    assert said is None and model.finished == [0] and model.closed == [0]
+    assert [text for text, _, _ in session.said] == [REPLIES[decision.reply]["es"]]
+    assert gates.spoken_texts == []
+    assert tutor._early is None and tutor.early_replies == {"used": 0, "dropped": 1}
+    assert not [r for r in caplog.records if r.message == "tutor reply"]
+
+
+class LateGates(ScriptedGates):
+    """Gates that take a moment, as real ones do."""
+
+    async def heard(self, context, message):
+        await asyncio.sleep(0.01)
+        return await super().heard(context, message)
+
+
+async def test_a_stopped_turn_closes_the_early_request_before_the_fixed_line_is_said():
+    model, session = Model(delay=0.05), Session()
+    tutor = Tutor(language="es", gates=LateGates(HAZARD), early_reply=True)
+    closed_when_said = []
+    say = session.say
+
+    def saying(text, **options):
+        closed_when_said.append(list(model.closed))
+        return say(text, **options)
+
+    session.say = saying
+    assert await answer(tutor, session, model, *the_turn()) is None
+    await asyncio.sleep(0)
+
+    assert closed_when_said == [[0]] and model.finished == []
+
+
+async def test_an_allowed_turn_asks_the_model_once_and_hears_what_it_would_have():
+    early_model, plain_model = Model(), Model()
+    turn = the_turn()
+
+    early = await answer(
+        Tutor(language="es", gates=SlowGates(early_model, ALLOW, ALLOW), early_reply=True),
+        Session(),
+        early_model,
+        *turn,
+    )
+    plain = await answer(
+        Tutor(language="es", gates=ScriptedGates(ALLOW, ALLOW)), Session(), plain_model, *turn
+    )
+
+    assert len(early_model.requests) == len(plain_model.requests) == 1
+    assert [c.delta.content for c in early] == [c.delta.content for c in plain]
+    # The early request was the one the reply would have made.
+    (asked_ctx, asked_prompt), (reply_ctx, reply_prompt) = (
+        early_model.requests[0],
+        plain_model.requests[0],
+    )
+    assert asked_ctx.is_equivalent(reply_ctx) and asked_prompt == reply_prompt
+
+
+@pytest.mark.parametrize("change", ["conversation", "guidance", "button", "late"])
+async def test_an_early_reply_for_another_request_is_dropped_and_the_model_asked_again(
+    change, monkeypatch
+):
+    model, session = Model(), Session()
+    session.agent_state = "speaking"
+    tutor = Tutor(language="es", gates=ScriptedGates(ALLOW, ALLOW), early_reply=True)
+    turn_ctx, message, reply_ctx = the_turn()
+    with (
+        patch.object(Tutor, "session", new_callable=PropertyMock, return_value=session),
+        patch.object(Agent.default, "llm_node", side_effect=model),
+    ):
+        await tutor.on_user_turn_completed(turn_ctx, message)
+        await asyncio.sleep(0.01)
+        if change == "conversation":
+            reply_ctx.add_message(role="assistant", content="Un momento.")
+        elif change == "guidance":
+            await tutor.advise("Slow down.")
+        elif change == "button":
+            tutor._shown = frame()
+        else:
+            monkeypatch.setattr("aule_agent.tutor.EARLY_REPLY_KEPT_SECONDS", 0)
+        tools = llm.ToolContext(tutor.tools).flatten()
+        said = [chunk async for chunk in tutor.llm_node(reply_ctx, tools, ModelSettings())]
+
+    assert len(model.requests) == 2 and model.closed[0] == 0
+    assert [chunk.id for chunk in said] == ["1", "1"]
+    assert tutor.early_replies == {"used": 0, "dropped": 1}
+
+
+async def test_a_reply_interrupted_while_it_is_written_closes_the_early_request():
+    model, session = Model(delay=0.05), Session()
+    session.agent_state = "speaking"
+    tutor = Tutor(language="es", gates=ScriptedGates(ALLOW, ALLOW), early_reply=True)
+    turn_ctx, message, reply_ctx = the_turn()
+    with (
+        patch.object(Tutor, "session", new_callable=PropertyMock, return_value=session),
+        patch.object(Agent.default, "llm_node", side_effect=model),
+    ):
+        await tutor.on_user_turn_completed(turn_ctx, message)
+        tools = llm.ToolContext(tutor.tools).flatten()
+        reply = tutor.llm_node(reply_ctx, tools, ModelSettings())
+        consuming = asyncio.create_task(anext(reply))
+        await asyncio.sleep(0.01)
+        consuming.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await consuming
+        await reply.aclose()
+        await asyncio.sleep(0)
+
+    assert model.closed == [0] and model.finished == []
+    assert tutor.early_replies["used"] == 1
+
+
+async def test_a_press_drops_an_early_reply_still_waiting():
+    model, session = Model(delay=0.05), Session()
+    session.agent_state = "speaking"
+    tutor = Tutor(language="es", gates=ScriptedGates(ALLOW), early_reply=True)
+    turn_ctx, message, _ = the_turn()
+    with (
+        patch.object(Tutor, "session", new_callable=PropertyMock, return_value=session),
+        patch.object(Agent.default, "llm_node", side_effect=model),
+    ):
+        await tutor.on_user_turn_completed(turn_ctx, message)
+        await asyncio.sleep(0.01)  # the request is under way
+        tutor.hold_started()
+        await asyncio.sleep(0.01)
+
+    assert tutor._early is None and model.closed == [0] and model.finished == []
+    assert tutor.early_replies == {"used": 0, "dropped": 1}
+
+
+async def test_a_dropped_early_reply_leaves_the_tutor_as_it_was():
+    model, session = Model(), Session()
+    gates = SlowGates(model, Decision(Action.REDIRECT, "redirect"))
+    tutor = Tutor(language="es", gates=gates, early_reply=True, camera=Lens(latest="frame"))
+    before = (tutor._drew, tutor._model_done_at, tutor._meanwhile_due)
+
+    assert await answer(tutor, session, model, *the_turn()) is None
+
+    # The turn's own bookkeeping only: no reply, no drawing.
+    assert model.finished == [0]
+    assert (tutor._drew, tutor._model_done_at) == before[:2] and tutor._meanwhile_due
+    assert not hasattr(session, "replies_to")
+
+
+@pytest.mark.parametrize("shown", ["button", "words"])
+async def test_a_turn_that_takes_a_camera_frame_is_asked_only_once_the_gates_let_it_through(
+    shown,
+):
+    model, session, gates = Model(), Session(), LateGates(ALLOW, ALLOW)
+    tutor = Tutor(language="es", gates=gates, early_reply=True, camera=Lens(latest=frame()))
+    button = tutor._shown = frame() if shown == "button" else None
+    turn = the_turn("mira mi cuaderno" if shown == "words" else "tres cuartos")
+    asked = []
+
+    def asking(agent, chat_ctx, tools, settings):
+        # Asked once the gates decided, with the frame on the turn's message.
+        asked.append((len(gates.heard_texts), len(images(chat_ctx.items[-1]))))
+        return model(agent, chat_ctx, tools, settings)
+
+    said = await answer(tutor, session, asking, *turn)
+
+    assert said and asked == [(1, 1)] and len(model.requests) == 1
+    assert tutor.early_replies == {"used": 0, "dropped": 0}
+    if button is not None:
+        assert tutor._shown is None
+
+
+class Timed(Model):
+    """A model whose first chunk takes a moment, so that its time is told."""
+
+    async def _reply(self, number):
+        await asyncio.sleep(0.02)
+        async for chunk in super()._reply(number):
+            yield chunk
+
+
+@pytest.mark.parametrize("allowed", [True, False])
+async def test_an_early_request_times_the_turns_stages_only_when_its_reply_is_used(allowed):
+    model, session, timing = Timed(), Session(), Timing()
+    decision = ALLOW if allowed else Decision(Action.REDIRECT, "redirect")
+    gates = SlowGates(model, decision, ALLOW)
+    tutor = Tutor(language="es", gates=gates, early_reply=True, timing=timing)
+    timing.released()
+
+    said = await answer(tutor, session, model, *the_turn())
+    timing.agent_state("speaking")
+
+    summary = timing.summary()
+    assert (said is not None) == allowed and len(model.requests) == 1
+    if allowed:
+        # The reply heard is the early one: its stages are the turn's.
+        assert summary["llm_ttft_ms_p50"] >= 20 and "first_sentence_ms_p50" in summary
+    else:
+        # Nobody heard it: the stopped turn times only its gates.
+        assert "llm_ttft_ms_p50" not in summary and "first_sentence_ms_p50" not in summary
+        assert "gates_in_ms_p50" in summary
+
+
+async def test_no_early_reply_with_the_session_engine_or_by_default():
+    engine_model, plain_model = Model(), Model()
+    engine = ScriptedEngine([Line("hola")], Reply(converse="No hints."))
+    scripted = Tutor(
+        language="es", gates=ScriptedGates(ALLOW, ALLOW), engine=engine, early_reply=True
+    )
+    with patch.object(Tutor, "update_instructions", side_effect=lambda value: None):
+        await answer(scripted, Session(), engine_model, *the_turn())
+    await answer(
+        Tutor(language="es", gates=ScriptedGates(ALLOW, ALLOW)), Session(), plain_model, *the_turn()
+    )
+
+    # Each asked the model only for the reply, after the gates and the engine.
+    assert len(engine_model.requests) == len(plain_model.requests) == 1
+    assert scripted.early_replies == {"used": 0, "dropped": 0}

@@ -14,12 +14,15 @@ from typing import Any, Protocol
 import numpy as np
 from livekit import rtc
 from livekit.agents import Agent, ModelSettings, StopResponse, function_tool, llm, stt
-from livekit.agents.voice.generation import INSTRUCTIONS_MESSAGE_ID
+from livekit.agents.voice.generation import (
+    INSTRUCTIONS_MESSAGE_ID,
+    mark_instructions_cache_boundary,
+)
 
 from . import comparison, drill, farewell, visuals
 from .greetings import greeting as written_greeting
 from .prompts import CHECKING, INSTRUCTIONS, PACED, SCREEN, response_language
-from .providers import REQUEST, WARMING, Prompt
+from .providers import EARLY, REQUEST, WARMING, Early, Prompt
 from .replies import ADULT_HELP_SEQUENCE, ANSWERABLE, MEANWHILE, reply
 from .safety import Gates
 from .script import Engine, Line, Reply
@@ -107,6 +110,12 @@ MAX_TYPED_CHARS = 500
 # What the request that warms the prompt cache asks in place of a student's
 # words. The model writes nothing back (max_tokens 0).
 WARM_UP = "(warm-up)"
+
+# How long an early reply waits to be taken (see ``EarlyReply``). Later than
+# this, the turn it was asked for is over.
+EARLY_REPLY_KEPT_SECONDS = 10.0
+# How long a stopped turn's fixed line waits for its early request to close.
+EARLY_REPLY_CLOSE_SECONDS = 0.5
 
 DEFAULT_TUTOR_NAME = "Aule"
 PERSONAS = ("calido", "jugueton", "aventurero", "tranquilo")
@@ -355,6 +364,128 @@ async def checked(
             yield chunk
 
 
+class HeldTimes:
+    """The stage times of a request made before its turn passed the input
+    gates (``EarlyReply``): kept until the tutor takes its reply, then told
+    on (``tell``) with those still to come; forgotten otherwise, so a reply
+    nobody heard times no stage."""
+
+    def __init__(self) -> None:
+        self._kept: list[tuple[str, float]] = []
+        self._took: Took | None = None
+
+    def __call__(self, stage: str, seconds: float) -> None:
+        if self._took is not None:
+            self._took(stage, seconds)
+        else:
+            self._kept.append((stage, seconds))
+
+    def tell(self, took: Took) -> None:
+        self._took = took
+        kept, self._kept = self._kept, []
+        for stage, seconds in kept:
+            took(stage, seconds)
+
+
+class EarlyReply:
+    """The model's reply to a turn, asked while the input gates still judge
+    the turn (AULE_EARLY_REPLY).
+
+    What the model writes is kept here and nowhere else. Only the tutor's
+    ``llm_node`` takes it, once the gates let the turn through, and only for
+    the very request it would have made itself; otherwise it is dropped
+    unseen and its stream closed. Until then nothing of it is said, shown,
+    run as a tool, added to the conversation, reported or logged, and none
+    of its stage times is told (``times``). The request writes nothing of the
+    turn to the prompt cache and carries no camera frame (``providers.EARLY``).
+    """
+
+    def __init__(
+        self,
+        stream: Callable[[], AsyncIterable[Any]],
+        *,
+        chat_ctx: llm.ChatContext,
+        tool_ids: list[str],
+        tool_choice: Any,
+        prompt: Prompt,
+        times: HeldTimes,
+    ) -> None:
+        self.chat_ctx = chat_ctx
+        self.tool_ids = tool_ids
+        self.tool_choice = tool_choice
+        self.prompt = prompt
+        self.times = times
+        # The request, and whether the tutor took its reply (``usage``).
+        self.request = Early()
+        self.asked_at = time.monotonic()
+        self._chunks: list[Any] = []
+        self._error: Exception | None = None
+        self._done = False
+        self._more = asyncio.Event()
+        self._task = asyncio.create_task(self._read(stream))
+
+    async def _read(self, stream: Callable[[], AsyncIterable[Any]]) -> None:
+        # Read by the model's client as the request is laid out, and by
+        # ``usage`` when its call is counted (``providers``).
+        REQUEST.set(self.prompt)
+        EARLY.set(self.request)
+        try:
+            async with contextlib.aclosing(stream()) as chunks:  # type: ignore[type-var]
+                async for chunk in chunks:
+                    self._chunks.append(chunk)
+                    self._more.set()
+        except Exception as error:
+            # Raised where the reply is taken, as a failed request would be.
+            self._error = error
+        finally:
+            self._done = True
+            self._more.set()
+
+    def matches(
+        self,
+        chat_ctx: llm.ChatContext,
+        tools: list[llm.Tool],
+        model_settings: ModelSettings | None,
+        prompt: Prompt,
+        frame: rtc.VideoFrame | None,
+    ) -> bool:
+        """Whether this is the request the tutor is about to make: the same
+        conversation, tools, tool choice and prompt, no camera frame, in time.
+        The same test LiveKit makes before it uses a preemptive generation."""
+        tool_choice = model_settings.tool_choice if model_settings is not None else None
+        return (
+            time.monotonic() - self.asked_at <= EARLY_REPLY_KEPT_SECONDS
+            and chat_ctx.is_equivalent(self.chat_ctx)
+            and [tool.id for tool in tools] == self.tool_ids
+            and tool_choice == self.tool_choice
+            and prompt == self.prompt
+            and frame is None
+        )
+
+    async def chunks(self) -> AsyncIterable[Any]:
+        """What the model wrote so far, then the rest as it comes."""
+        taken = 0
+        while True:
+            while taken < len(self._chunks):
+                yield self._chunks[taken]
+                taken += 1
+            if self._done:
+                if self._error is not None:
+                    raise self._error
+                return
+            self._more.clear()
+            await self._more.wait()
+
+    def drop(self) -> None:
+        """Stops the request, if it still runs, and forgets what it wrote."""
+        self._task.cancel()
+        self._chunks.clear()
+
+    async def closed(self, timeout: float) -> None:
+        """Once the request has stopped, or after ``timeout``."""
+        await asyncio.wait({self._task}, timeout=timeout)
+
+
 async def present(visual: object, gates: Gates, show: Show) -> str:
     """Puts a visual on the student's screen, if it can be drawn and may be read.
 
@@ -389,6 +520,7 @@ class Tutor(Agent):
         engine: Engine | None = None,
         breaks: bool = False,
         timing: Timing | None = None,
+        early_reply: bool = False,
     ) -> None:
         # `context` is what the platform knows about this student and the
         # supervisor's plan for the session; empty when there is no platform.
@@ -492,6 +624,11 @@ class Tutor(Agent):
         self._timing = timing
         # Whether the hearing heard speech after its last final transcript.
         self._words_in_flight = False
+        # Whether a turn's reply is asked while the gates judge it, the reply
+        # asked so, and how many were taken and dropped (counts only).
+        self._asks_early = early_reply
+        self._early: EarlyReply | None = None
+        self.early_replies = {"used": 0, "dropped": 0}
         self._engine = engine
         # Which answer of the engine is being said. Lines of an older one stop
         # as soon as a newer answer arrives.
@@ -675,17 +812,23 @@ class Tutor(Agent):
         self._drew = False
         # A spoken turn during a drill is the student's try (a typed one never comes here).
         self._drill.took()
-        if not await self._may_answer(turn_ctx, new_message):
-            # The stopped turn never reaches the model: StopResponse discards it.
-            raise StopResponse()
-        if self._goodbye(new_message.text_content or ""):
-            raise StopResponse()
-        if await self._scripted(new_message.text_content or ""):
-            # The engine answered. The student's words stay in the conversation;
-            # the model is not asked.
-            turn_ctx.items.append(new_message)
-            await self.update_chat_ctx(turn_ctx)
-            raise StopResponse()
+        self._ask_early(turn_ctx, new_message)
+        try:
+            if not await self._may_answer(turn_ctx, new_message):
+                # The stopped turn gets no reply: StopResponse discards it. An
+                # early reply asked for it is dropped unseen.
+                raise StopResponse()
+            if self._goodbye(new_message.text_content or ""):
+                raise StopResponse()
+            if await self._scripted(new_message.text_content or ""):
+                # The engine answered. The student's words stay in the
+                # conversation; the model is not asked.
+                turn_ctx.items.append(new_message)
+                await self.update_chat_ctx(turn_ctx)
+                raise StopResponse()
+        except BaseException:
+            self._drop_early_reply()
+            raise
         watch = asyncio.create_task(self._report_a_missing_reply(time.monotonic()))
         self._watches.add(watch)
         watch.add_done_callback(self._watches.discard)
@@ -782,11 +925,57 @@ class Tutor(Agent):
     def _frame_for(self, chat_ctx: llm.ChatContext) -> rtc.VideoFrame | None:
         """The image that goes with this turn, if any: what the student just
         showed with the button, or what the camera sees when their words say
-        they are showing something."""
-        frame, self._shown = self._shown, None
-        if frame is None and self._camera is not None and shows_something(chat_ctx):
-            frame = self._camera.latest()
+        they are showing something. The button's frame is used once."""
+        frame = self._peek_frame(chat_ctx)
+        self._shown = None
         return frame
+
+    def _peek_frame(self, chat_ctx: llm.ChatContext) -> rtc.VideoFrame | None:
+        if self._shown is not None:
+            return self._shown
+        if self._camera is not None and shows_something(chat_ctx):
+            return self._camera.latest()
+        return None
+
+    def _ask_early(self, turn_ctx: llm.ChatContext, new_message: llm.ChatMessage) -> None:
+        """Asks the model for this turn's reply while the gates judge it, with
+        the request LiveKit makes once they let it through: the turn's
+        conversation with its message inserted and the instructions marked,
+        as the tutor holds them, and the tutor's tools and prompt. Not with
+        the session engine, which reads the turn first and may change the
+        rules, and not for a turn that takes a camera frame: no image goes to
+        the model before the gates let its turn through."""
+        self._drop_early_reply()
+        if not self._asks_early or self._engine is not None:
+            return
+        chat_ctx = turn_ctx.copy()
+        chat_ctx.insert(new_message)
+        if self._peek_frame(chat_ctx) is not None:
+            return
+        mark_instructions_cache_boundary(chat_ctx)
+        prompt = self._prompt()
+        chat_ctx = with_instructions(chat_ctx, prompt.text)
+        tools = llm.ToolContext(self.tools).flatten()
+        settings = ModelSettings()
+        times = HeldTimes()
+
+        def stream() -> AsyncIterable[Any]:
+            return timed(Agent.default.llm_node(self, chat_ctx, tools, settings), times)
+
+        self._early = EarlyReply(
+            stream,
+            chat_ctx=chat_ctx,
+            tool_ids=[tool.id for tool in tools],
+            tool_choice=settings.tool_choice,
+            prompt=prompt,
+            times=times,
+        )
+
+    def _drop_early_reply(self) -> None:
+        if self._early is not None:
+            self._early.drop()
+            self._early = None
+            self.early_replies["dropped"] += 1
 
     async def _may_answer(self, turn_ctx: llm.ChatContext, new_message: llm.ChatMessage) -> bool:
         """Judges what the person said or typed. When it must not reach the
@@ -800,6 +989,12 @@ class Tutor(Agent):
         took("gates_in", time.monotonic() - started)
         if decision.allowed:
             return True
+        # Before the fixed line is said, the model's request for this turn
+        # stops: nothing it wrote goes on.
+        early = self._early
+        self._drop_early_reply()
+        if early is not None:
+            await early.closed(EARLY_REPLY_CLOSE_SECONDS)
         key = decision.reply or "unavailable"
         if key == "adult_help":
             key = ADULT_HELP_SEQUENCE[hazards]
@@ -819,8 +1014,10 @@ class Tutor(Agent):
         return self._words_in_flight
 
     def hold_started(self) -> None:
-        """The talk button went down: what was heard before is not this turn's."""
+        """The talk button went down: what was heard before is not this turn's,
+        and neither is a reply asked for an earlier one."""
         self._words_in_flight = False
+        self._drop_early_reply()
 
     async def stt_node(
         self, audio: AsyncIterable[rtc.AudioFrame], model_settings: ModelSettings
@@ -890,10 +1087,40 @@ class Tutor(Agent):
         # with the instructions as they are now.
         REQUEST.set(prompt)
         chat_ctx = with_instructions(chat_ctx, prompt.text)
-        frame = self._frame_for(chat_ctx)
-        stream = timed(
-            Agent.default.llm_node(self, with_frame(chat_ctx, frame), tools, model_settings), took
-        )
+        early, self._early = self._early, None
+        if early is not None and early.matches(
+            chat_ctx, tools, model_settings, prompt, self._peek_frame(chat_ctx)
+        ):
+            # The gates let the turn through and this is the request the early
+            # reply made: what the model wrote so far, then the rest, and the
+            # stages it timed.
+            early.request.used = True
+            early.times.tell(took)
+            self.early_replies["used"] += 1
+            stream = early.chunks()
+        else:
+            if early is not None:
+                early.drop()
+                self.early_replies["dropped"] += 1
+                early = None
+            frame = self._frame_for(chat_ctx)
+            stream = timed(
+                Agent.default.llm_node(self, with_frame(chat_ctx, frame), tools, model_settings),
+                took,
+            )
+        try:
+            async for chunk in self._said(stream, tools, took):
+                yield chunk
+        finally:
+            if early is not None:
+                # Interrupted while it still ran: the request stops.
+                early.drop()
+
+    async def _said(
+        self, stream: AsyncIterable[Any], tools: list[llm.Tool], took: Took
+    ) -> AsyncIterable[llm.ChatChunk | str]:
+        """What reaches the voice from one step of the model: through the
+        output gate, with a word for a drawing that had none."""
         if tools or self._gates.checks_spoken:
             # Buffering costs the time to the first word, so it is only paid
             # when there is a gate to wait for or a tool whose step must be

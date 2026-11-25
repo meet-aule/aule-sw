@@ -656,6 +656,10 @@ def summarize(
             "input_tokens_per_call": round(total / max(1, len(calls))),
             "cache_read_share": round(read / total, 3) if total else None,
         },
+        "early_replies": {
+            kind: sum(run.world.tutor.early_replies[kind] for run in runs if run.world.tutor)
+            for kind in ("used", "dropped")
+        },
         "model_requests_before_the_input_gates": asked_early,
         "second_reader_calls": sum(len(run.world.reader_calls) for run in runs),
         "zero_counters": {

@@ -20,14 +20,17 @@ from pathlib import Path
 
 import latency_harness as harness
 import pytest
-from fakes import CHILD_WORDS, TRIGGERS, Delays, Played, TurnPlan, World, words_of
+from fakes import CHILD_WORDS, TRIGGERS, Delays, Played, Spread, TurnPlan, World, words_of
 from test_metrics import fits_the_platform
 
 from aule_agent import moderation, opinion, physical_safety, replies, safety
 from aule_agent.replies import ADULT_HELP_SEQUENCE, MEANWHILE, REPLIES
 from aule_agent.timing import STAGES
 
-FAST = Delays(scale=0.05)
+# The input gates take longer than the model takes to write its whole reply,
+# so with early replies the reply is written, and waiting, when they decide.
+FAST = Delays(scale=0.05, moderation=Spread(6.0, 8.0), typesafe=Spread(6.0, 8.0))
+MODES = {"early_off": {}, "early_on": {"AULE_EARLY_REPLY": "1"}}
 AGENT = Path(__file__).resolve().parents[1]
 
 
@@ -188,8 +191,14 @@ async def run_all(env: dict[str, str] | None = None) -> tuple[dict[str, Run], li
 
 
 @pytest.fixture(scope="module")
-def sessions() -> tuple[dict[str, Run], list[str]]:
-    return asyncio.run(run_all())
+def modes() -> dict[str, tuple[dict[str, Run], list[str]]]:
+    return {mode: asyncio.run(run_all(env)) for mode, env in MODES.items()}
+
+
+@pytest.fixture(scope="module", params=list(MODES))
+def sessions(request, modes) -> tuple[dict[str, Run], list[str]]:
+    """Every invariant holds with early replies off and on."""
+    return modes[request.param]
 
 
 def spoken(text: str) -> str:
@@ -210,6 +219,46 @@ def kept_words(world: World, words: str) -> list[str]:
     ]
     kept += ["platform" for turn in world.reported_turns if words in turn["content"]]
     return kept
+
+
+# With the microphone open, the voice detector ends each turn (``harness.MODES``).
+OPEN_MIC = ("ordinary", "redirect", "meanwhile")
+
+
+@pytest.fixture(scope="module")
+def open_mic() -> dict[str, Run]:
+    async def run() -> dict[str, Run]:
+        with harness.offline(mode="open-mic"):
+            worlds = {name: World(seed=index, delays=FAST) for index, name in enumerate(OPEN_MIC)}
+            runs = await asyncio.gather(
+                *(
+                    harness.run_session(world, scripted(world, SESSIONS[name]), mode="open-mic")
+                    for name, world in worlds.items()
+                )
+            )
+        return {name: Run(run.world, run.results) for name, run in zip(worlds, runs, strict=True)}
+
+    return asyncio.run(run())
+
+
+def test_with_the_microphone_open_no_words_reach_the_model_before_the_gates_let_them_through(
+    open_mic,
+):
+    for name, run in open_mic.items():
+        for result in run.results:
+            assert result.decided_at is not None, name
+            for call in result.calls:
+                if result.words in json.dumps(call.kwargs["messages"], ensure_ascii=False):
+                    assert result.allowed, (name, result.number)
+                    assert call.opened_at >= result.decided_at, (name, result.number)
+            assert all(s.started_at >= result.decided_at for s in result.played), name
+        assert harness.unapproved(run.world) == 0, name
+        assert run.world.api_errors == [], name
+    stopped = open_mic["redirect"].results[-1]
+    assert stopped.allowed is False and stopped.calls == []
+    assert heard(stopped.played) == spoken(REPLIES["redirect"]["es"])
+    answered = [heard(r.played) for r in open_mic["ordinary"].results]
+    assert answered == [spoken(spec.reply) for spec in SESSIONS["ordinary"]]
 
 
 def test_every_ordinary_turn_is_answered_with_the_models_reply(sessions):
@@ -375,6 +424,56 @@ def test_the_numbers_each_session_ends_with_fit_what_the_platform_keeps(sessions
     ordinary = runs["ordinary"].world.metrics
     assert ordinary["turns_staged"] == len(SESSIONS["ordinary"])
     assert all(f"{stage}_ms_p50" in ordinary for stage in STAGES)
+
+
+def test_an_early_reply_to_a_stopped_turn_is_written_closed_and_never_reaches_the_child(modes):
+    off, _ = modes["early_off"]
+    on, _ = modes["early_on"]
+    for name in STOPPED:
+        assert off[name].results[-1].calls == [], name
+        stopped = on[name].results[-1]
+        (call,) = stopped.calls
+        # The model wrote all of it before the gates said no.
+        assert call.finished_at is not None and call.finished_at < stopped.decided_at, name
+        assert call.closed and call.output_text
+        assert spoken(call.output_text) not in heard(stopped.played)
+        assert spoken(call.output_text) not in spoken("".join(stopped.shown))
+
+
+def test_early_replies_change_nothing_the_child_hears_reads_or_the_platform_keeps(modes):
+    off, _ = modes["early_off"]
+    on, _ = modes["early_on"]
+    for name in SESSIONS:
+        assert [heard(r.played) for r in on[name].results] == [
+            heard(r.played) for r in off[name].results
+        ], name
+        assert [spoken("".join(r.shown)) for r in on[name].results] == [
+            spoken("".join(r.shown)) for r in off[name].results
+        ], name
+        assert on[name].world.flags == off[name].world.flags, name
+        assert [t["content"] for t in on[name].world.reported_turns] == [
+            t["content"] for t in off[name].world.reported_turns
+        ], name
+
+
+def test_an_answered_turn_asks_the_model_once_per_step_and_a_stopped_one_once_more(modes):
+    off, _ = modes["early_off"]
+    on, _ = modes["early_on"]
+    for name in SESSIONS:
+        for before, after in zip(off[name].results, on[name].results, strict=True):
+            extra = 0 if before.allowed else 1
+            assert len(after.calls) == len(before.calls) + extra, (name, before.number)
+        # The dropped call is paid, and counted as a call and as one dropped;
+        # it is no turn.
+        stopped = sum(1 for r in off[name].results if r.allowed is False)
+        metrics_off, metrics_on = off[name].world.metrics, on[name].world.metrics
+        assert metrics_on["llm_calls"] == metrics_off["llm_calls"] + stopped, name
+        assert metrics_on["early_calls_dropped"] == stopped, name
+        assert "early_calls_dropped" not in metrics_off, name
+        for key in ("turns_staged", "replies_timed"):
+            assert metrics_on.get(key) == metrics_off.get(key), (name, key)
+        used = on[name].world.tutor.early_replies
+        assert used["dropped"] == stopped, name
 
 
 def _digest(value: object) -> str:

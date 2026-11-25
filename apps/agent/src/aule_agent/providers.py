@@ -72,6 +72,20 @@ REQUEST: contextvars.ContextVar[Prompt | None] = contextvars.ContextVar(
 WARMING: contextvars.ContextVar[bool] = contextvars.ContextVar("aule_warming", default=False)
 
 
+@dataclass
+class Early:
+    """A request made for a turn the input gates are still judging
+    (AULE_EARLY_REPLY), and whether the tutor took its reply. Its tokens are
+    paid either way (``usage``)."""
+
+    used: bool = False
+
+
+# Set, for a request made before the input gates let its turn through, to what
+# is known of it. Set like ``REQUEST``.
+EARLY: contextvars.ContextVar[Early | None] = contextvars.ContextVar("aule_early", default=None)
+
+
 def _plain(block: dict[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in block.items() if key != "cache_control"}
 
@@ -86,6 +100,7 @@ def layout(
     previous: list[dict[str, Any]] | None = None,
     *,
     system_messages: bool,
+    mark_newest: bool = True,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     """The request as it is sent, laid out for the prompt cache, and its
     messages as the next request will find them.
@@ -106,7 +121,9 @@ def layout(
     rule that ends them stays the last instruction. Instructions that are
     not the prompt's text go as they are, marked at their end. ``tool_choice``
     is the same on every call, as a change of it would drop the cached
-    history. At most four markers.
+    history. At most four markers. Without ``mark_newest`` the newest
+    message from the user's side is not marked, so nothing of it is
+    written to the cache.
     """
     out = dict(request)
     messages = [
@@ -135,7 +152,7 @@ def layout(
         system[-1] = _marked(system[-1])
 
     users = [index for index, message in enumerate(messages) if message["role"] == "user"]
-    if users:
+    if users and mark_newest:
         newest = messages[users[-1]]["content"]
         # Not on a camera frame: it rides in this turn only, and the next
         # request would not find the history it is part of.
@@ -178,9 +195,19 @@ class PromptLayout:
     async def create(self, **request: Any) -> Any:
         if WARMING.get():
             return await self._warm(request)
-        sent, self._previous = layout(
-            request, REQUEST.get(), self._previous, system_messages=self._system_messages
+        # A request made before the input gates let its turn through writes
+        # nothing of that turn to the cache, and is not the history the next
+        # request builds on: the turn may yet be stopped.
+        early = EARLY.get() is not None
+        sent, kept = layout(
+            request,
+            REQUEST.get(),
+            self._previous,
+            system_messages=self._system_messages,
+            mark_newest=not early,
         )
+        if not early:
+            self._previous = kept
         return await self._client.messages.create(**sent)
 
     async def _warm(self, request: dict[str, Any]) -> Any:

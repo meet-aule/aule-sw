@@ -33,3 +33,11 @@ async def test_a_released_talk_button_ends_the_turn_at_once():
     assert options["endpointing"]["max_delay"] == TURNS["endpointing"]["max_delay"]
     # Without the button, a child's pause still does not end the turn.
     assert TURNS["endpointing"]["min_delay"] >= 0.7
+
+
+async def test_livekit_never_asks_the_model_before_the_gates_in_either_mode():
+    # In VAD mode LiveKit's preemptive generation would run the tutor's
+    # llm_node before on_user_turn_completed, so before the input gates.
+    for turns in (TURNS, PUSH_TO_TALK_TURNS):
+        options = AgentSession(turn_handling=turns).options
+        assert options.preemptive_generation["enabled"] is False

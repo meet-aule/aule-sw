@@ -17,8 +17,10 @@ from livekit.agents.utils import is_given
 from aule_agent.config import Settings
 from aule_agent.prompts import response_language
 from aule_agent.providers import (
+    EARLY,
     REQUEST,
     WARMING,
+    Early,
     Prompt,
     PromptLayout,
     build_llm,
@@ -310,6 +312,41 @@ async def test_no_thinking_block_is_ever_sent_back(world):
     ]
     assert blocks and all(block.get("type") != "thinking" for block in blocks)
     assert world.api_errors == []
+
+
+async def test_a_request_asked_early_writes_nothing_of_its_turn_and_is_not_built_on(world):
+    model, tool_list = build_llm(Settings.from_env(ENV)), tools()
+    chat = llm.ChatContext()
+    chat.add_message(role="system", content=Prompt(RULES, STUDENT).system)
+    chat.add_message(role="assistant", content="¡Hola! ¿Cómo te fue hoy?")
+    chat.add_message(role="user", content="bien, estudié fracciones")
+    await ask(model, chat, Prompt(RULES, STUDENT), tool_list)
+    chat.add_message(role="assistant", content="¿Cuánto es tres cuartos más un octavo?")
+    chat.add_message(role="user", content="siete octavos")
+
+    async def early():
+        # As ``tutor.EarlyReply`` asks, in a task of its own.
+        EARLY.set(Early())
+        await ask(model, chat, Prompt(RULES, STUDENT), tool_list)
+
+    await asyncio.create_task(early())
+    # The gates let the turn through and its reply was used; the next turn.
+    chat.add_message(role="assistant", content="¡Correcto!")
+    chat.add_message(role="user", content="¿y ahora qué hacemos?")
+    await ask(model, chat, Prompt(RULES, STUDENT), tool_list)
+
+    first, asked_early, after = world.model_calls
+    ended = len(plain(first.kwargs)["messages"]) - 1
+    turn = len(plain(asked_early.kwargs)["messages"]) - 1
+    found = markers(asked_early.kwargs)
+    # No marker on the turn's words: the cache is read up to the request before
+    # and nothing of the turn is written to it.
+    assert not [where for where in found if where[0] == turn]
+    assert ("system", 1) in found and any(where[0] == ended for where in found)
+    assert asked_early.cache_write == 0 and asked_early.cache_read > 0
+    # The next request builds on the one before the early one, which it reads back.
+    assert any(where[0] == ended for where in markers(after.kwargs))
+    assert after.cache_read == asked_early.cache_read and world.api_errors == []
 
 
 def test_the_plugin_calls_the_layout_around_its_own_client(world):
