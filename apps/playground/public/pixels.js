@@ -26,9 +26,25 @@ export function pixelsFor(box, ratio = 1) {
   return { side: Math.floor(box / times), times, line: 1 / fine };
 }
 
-/** Keeps a face in pixels as its box changes size. The face is the only child of its box. */
+/**
+ * Has `mascot` drawn with all its pixels while `inPixels()` says it is shown in
+ * them. The engine draws a mascot with fewer pixels when frames come slowly,
+ * to keep up, and it takes a browser held at thirty frames a second (a laptop
+ * or a tablet saving its battery) for a slow one. A face of SPRITE pixels has
+ * nothing to save that way, and with half of them its mouth is gone.
+ */
+export function drawWhole(mascot, inPixels) {
+  const tick = mascot.tick.bind(mascot);
+  mascot.tick = (dt, time, quality) => tick(dt, time, inPixels() ? 1 : quality);
+}
+
+/**
+ * Keeps a face in pixels as its box changes size. The face is the only child
+ * of its box, and already has the character it will keep.
+ */
 export function pixelate(face) {
   const box = face.parentElement;
+  if (face.mascot) drawWhole(face.mascot, () => box.classList.contains("pixels"));
   const fit = () => {
     const pixels = pixelsFor(Math.min(box.clientWidth, box.clientHeight), globalThis.devicePixelRatio);
     box.classList.toggle("pixels", Boolean(pixels));
