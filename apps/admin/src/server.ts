@@ -43,6 +43,8 @@ const STATIC: Record<string, AssetSource> = {
   "/families.js": { file: new URL("families.js", publicDir), type: SCRIPT },
   "/family.js": { file: new URL("family.js", publicDir), type: SCRIPT },
   "/passkeys.js": { file: new URL("passkeys.js", publicDir), type: SCRIPT },
+  // A passkey's JSON, written by hand where a password manager's credential cannot write it.
+  "/credential.js": { file: new URL("credential.js", publicDir), type: SCRIPT },
   // What the pages share: the API, the header's «Salir», and the words for the platform's codes.
   "/common.js": { file: new URL("common.js", publicDir), type: SCRIPT },
   "/labels.js": { file: new URL("labels.js", publicDir), type: SCRIPT },
@@ -61,6 +63,7 @@ const OWN_SCRIPTS = new Set([
   "/families.js",
   "/family.js",
   "/passkeys.js",
+  "/credential.js",
   "/common.js",
   "/labels.js",
   "/pilot.js",

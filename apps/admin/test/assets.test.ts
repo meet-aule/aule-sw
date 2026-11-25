@@ -120,6 +120,7 @@ test("only the console's own files are served: no italic, no other package, noth
     "signin.html",
     "admin.js",
     "common.js",
+    "credential.js",
     "labels.js",
     "live.js",
     "families.js",

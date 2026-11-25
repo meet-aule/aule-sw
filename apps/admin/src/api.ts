@@ -126,20 +126,24 @@ export function apiRoutes({ platform, sessions, commit, reply }: ApiParts) {
     return [502, { error: "platform" }];
   }
 
-  /** Answers with what the platform gave, or with what its refusal means here; `cookies` go with either. */
+  /**
+   * Answers with what the platform gave, or with what its refusal means here;
+   * `cookies` go with either, and a 409 is `conflict` where the route has one.
+   */
   async function asTeam(
     request: IncomingMessage,
     response: ServerResponse,
     status: number,
     call: () => Promise<unknown>,
     cookies?: string[],
+    conflict?: string,
   ): Promise<void> {
     let answer: unknown;
     try {
       answer = await call();
     } catch (error) {
       if (!(error instanceof PlatformError)) throw error;
-      const [refused, body] = await refusal(request, error);
+      const [refused, body] = await refusal(request, error, conflict);
       return reply(response, refused, body, cookies);
     }
     return reply(response, status, answer, cookies);
@@ -231,7 +235,8 @@ export function apiRoutes({ platform, sessions, commit, reply }: ApiParts) {
         log("passkey_created");
         return passkey;
       };
-      return asTeam(request, response, 201, made, done);
+      // The sign-in must still be recent when the passkey is kept, as when it was asked for.
+      return asTeam(request, response, 201, made, done, "sign_in_again");
     }
     const id = route[2] ?? "";
     if (!UUID.test(id)) return reply(response, 400, { error: "bad_request" });

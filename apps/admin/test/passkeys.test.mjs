@@ -11,13 +11,19 @@ import { open, rows, settle, walk } from "./dom.mjs";
 
 const ID = "01a1f5f4-ede7-7028-a524-9d8e2f36b9f0";
 const passkey = (more) => ({ id: ID, label: "MacBook de Ana", created_at: "2026-11-20T15:00:00Z", last_used_at: "2026-11-24T21:10:00Z", ...more });
-const OPTIONS = { challenge: "Zm9vYmFy", user: { id: "dXNlcg", name: "team@example.org", displayName: "team@example.org" } };
+const OPTIONS = {
+  challenge: "Zm9vYmFy",
+  rp: { id: "admin.example.org", name: "Aule" },
+  user: { id: "dXNlcg", name: "team@example.org", displayName: "team@example.org" },
+};
 const MADE = { id: "AQIDBA", rawId: "AQIDBA", type: "public-key" };
-/** A browser whose dialog makes a passkey, or throws what the test gives. */
-const browser = (failure) => ({
+/** What the page asks the browser to forget: the passkey it made, for the console's RP id. */
+const FORGET = ["signal", { rpId: "admin.example.org", credentialId: "AQIDBA" }];
+/** A browser whose dialog makes a passkey (`made`, or one whose toJSON() gives MADE), or throws what the test gives. */
+const browser = (failure, made) => ({
   create: async () => {
     if (failure) throw failure;
-    return { toJSON: () => MADE };
+    return made ?? { id: MADE.id, toJSON: () => MADE };
   },
   get: async () => {
     throw new Error("the page signs nobody in");
@@ -96,13 +102,23 @@ test("«Crear passkey» takes a name, then the options, the browser's dialog and
   assert.equal(page.$("create").disabled, false);
 });
 
-test("a sign-in too old, a cancelled dialog, a device that has one, and a failure each say so", async () => {
-  for (const [what, failure, options, made, said] of [
-    ["an old sign-in", null, { status: 409, body: { error: "sign_in_again" } }, null, "Por seguridad, para crear una passkey tienes que haber entrado hace poco. Sal y vuelve a entrar, y créala enseguida."],
-    ["a cancel", new DOMException("cancelled", "NotAllowedError"), null, null, "No se creó la passkey."],
-    ["an excluded device", new DOMException("there already", "InvalidStateError"), null, null, "Este dispositivo ya tiene una passkey tuya."],
-    ["a refusal", null, null, { status: 400, body: { error: "bad_request" } }, "No se pudo crear la passkey. Inténtalo otra vez."],
-    ["a failure", null, { status: 502, body: { error: "platform" } }, null, "No se pudo crear la passkey. Inténtalo otra vez."],
+const AGAIN = "Por seguridad, para crear una passkey tienes que haber entrado hace poco. Sal y vuelve a entrar, y créala enseguida.";
+const FAILED = "No se pudo crear la passkey. Inténtalo otra vez.";
+/** What is added once the browser has made a passkey the console may not have kept. */
+const LEFT = "Si tu dispositivo o tu gestor de contraseñas guardó una passkey de Aule que no está en esta lista, bórrala allí.";
+
+test("a sign-in too old, a cancelled dialog, a device that has one, a browser that will not, and a failure each say so", async () => {
+  for (const [what, failure, options, made, said, signals] of [
+    ["an old sign-in", null, { status: 409, body: { error: "sign_in_again" } }, null, AGAIN, []],
+    ["a cancel", new DOMException("cancelled", "NotAllowedError"), null, null, "No se creó la passkey.", []],
+    ["an excluded device", new DOMException("there already", "InvalidStateError"), null, null, "Este dispositivo ya tiene una passkey tuya.", []],
+    ["a browser that will not here", new DOMException("not here", "SecurityError"), null, null, "Este navegador no permitió crear la passkey aquí.", []],
+    ["a failure before the dialog", null, { status: 502, body: { error: "platform" } }, null, FAILED, []],
+    // Once the browser has made it: the console's refusal, or a sign-in grown too old,
+    // and the browser is asked to forget it; a failure may have kept it, so it is not.
+    ["a refusal", null, null, { status: 400, body: { error: "bad_request" } }, `${FAILED} ${LEFT}`, [FORGET]],
+    ["a sign-in too old by the end", null, null, { status: 409, body: { error: "sign_in_again" } }, `${AGAIN} ${LEFT}`, [FORGET]],
+    ["a failure after the dialog", null, null, { status: 502, body: { error: "platform" } }, `${FAILED} ${LEFT}`, []],
   ]) {
     const page = await open("passkeys.html", "passkeys.js", {
       credentials: browser(failure),
@@ -118,7 +134,68 @@ test("a sign-in too old, a cancelled dialog, a device that has one, and a failur
     assert.equal(page.$("done").hidden, true, what);
     assert.equal(page.$("create").disabled, false, `${what}: the button comes back`);
     assert.equal(page.$("label").value, "Mac", `${what}: the name stays for another try`);
+    assert.deepEqual(page.passkeys.filter(([asked]) => asked === "signal"), signals, what);
   }
+});
+
+test("a password manager's passkey whose toJSON() fails is sent all the same, written by hand", async () => {
+  const buffer = (...values) => new Uint8Array(values).buffer;
+  const made = {
+    id: "AQIDBA",
+    rawId: buffer(1, 2, 3, 4),
+    type: "public-key",
+    response: { clientDataJSON: buffer(123, 125), attestationObject: buffer(0xa1, 0x63), getTransports: () => ["internal"] },
+    getClientExtensionResults: () => ({ credProps: { rk: true } }),
+    toJSON() {
+      throw new TypeError("Illegal invocation");
+    },
+  };
+  const page = await open("passkeys.html", "passkeys.js", {
+    credentials: browser(null, made),
+    answer: console_({
+      "GET /api/passkeys": { status: 200, body: { passkeys: [] } },
+      "POST /api/passkeys/options": { status: 200, body: { publicKey: OPTIONS } },
+      "POST /api/passkeys/create": { status: 201, body: passkey() },
+    }),
+  });
+  page.$("label").value = "Mac";
+  await page.$("create-form").fire("submit");
+  const credential = {
+    id: "AQIDBA",
+    rawId: "AQIDBA",
+    type: "public-key",
+    response: { clientDataJSON: "e30", attestationObject: "oWM", transports: ["internal"] },
+    clientExtensionResults: { credProps: { rk: true } },
+  };
+  assert.ok(asked(page).includes(`POST /api/passkeys/create ${JSON.stringify({ label: "Mac", credential })}`), asked(page).join("\n"));
+  assert.equal(page.$("done").textContent, "Listo: ya puedes entrar con esta passkey.");
+});
+
+test("a passkey the page cannot read at all is not sent: the browser is asked to forget it, and the page says what to do", async () => {
+  const sealed = {
+    id: "AQIDBA",
+    get rawId() {
+      throw new TypeError("Illegal invocation");
+    },
+    toJSON() {
+      throw new TypeError("Illegal invocation");
+    },
+  };
+  const page = await open("passkeys.html", "passkeys.js", {
+    credentials: browser(null, sealed),
+    answer: console_({
+      "GET /api/passkeys": { status: 200, body: { passkeys: [] } },
+      "POST /api/passkeys/options": { status: 200, body: { publicKey: OPTIONS } },
+    }),
+  });
+  page.$("label").value = "Mac";
+  await page.$("create-form").fire("submit");
+  assert.equal(
+    page.$("message").textContent,
+    "Tu gestor de contraseñas no pudo completar la passkey. Si la guardó, bórrala allí y prueba con el llavero del navegador.",
+  );
+  assert.ok(!asked(page).some((line) => line.startsWith("POST /api/passkeys/create")), "nothing is sent");
+  assert.deepEqual(page.passkeys.filter(([what]) => what === "signal"), [FORGET]);
 });
 
 test("a browser that cannot make passkeys is told so, and offers nothing", async () => {

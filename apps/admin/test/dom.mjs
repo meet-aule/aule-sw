@@ -95,9 +95,10 @@ let runs = 0;
 
 /**
  * Stands in for the browser's WebAuthn: `PublicKeyCredential` with its JSON
- * methods, and `navigator.credentials`, whose `create` and `get` are the
- * test's own. Null is a browser without them. Returns what the page asked of
- * them, in order: `[what, options]`.
+ * methods and `signalUnknownCredential`, and `navigator.credentials`, whose
+ * `create` and `get` are the test's own. Null is a browser without them.
+ * Returns what the page asked of them, in order: `[what, options]`, with
+ * "signal" for a passkey the page asked the browser to forget.
  */
 function webauthn(credentials) {
   const asked = [];
@@ -110,6 +111,9 @@ function webauthn(credentials) {
       }
       static parseRequestOptionsFromJSON(json) {
         return { parsed: json };
+      }
+      static async signalUnknownCredential(options) {
+        asked.push(["signal", options]);
       }
       toJSON() {
         return {};

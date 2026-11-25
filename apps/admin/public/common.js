@@ -38,7 +38,8 @@ export async function get(path) {
 /**
  * A write to the API, as JSON; the browser adds the page's Origin, which the
  * console checks. A failure is an error named signed_out, sign_in_again (a
- * passkey wants a recent sign-in) or failed.
+ * passkey wants a recent sign-in) or failed, which carries the answer's
+ * status: a refusal (400) is not an outage.
  */
 export async function post(path, body) {
   const response = await fetch(path, {
@@ -48,7 +49,11 @@ export async function post(path, body) {
   });
   if (signedOut(response)) throw new Error("signed_out");
   if (response.status === 409) throw new Error("sign_in_again");
-  if (!response.ok) throw new Error("failed");
+  if (!response.ok) {
+    const failed = new Error("failed");
+    failed.status = response.status;
+    throw failed;
+  }
   return response.json();
 }
 

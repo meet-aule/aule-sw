@@ -53,7 +53,7 @@ test("only pages are stamped: the scripts and the stylesheet keep their fingerpr
   const withCommit = versions(await (await fetch(`${base}/`)).text());
   assert.ok(withCommit.some((entry) => entry.startsWith("style.css=")) && withCommit.some((entry) => entry.startsWith("admin.js=")));
   assert.deepEqual(withCommit, versions(await (await fetch(`${plainBase}/`)).text()));
-  for (const name of ["admin.js", "common.js", "labels.js", "live.js", "families.js", "family.js", "passkeys.js", "pilot.js", "signin.js", "style.css"]) {
+  for (const name of ["admin.js", "common.js", "credential.js", "labels.js", "live.js", "families.js", "family.js", "passkeys.js", "pilot.js", "signin.js", "style.css"]) {
     const file = await (await fetch(`${base}/${name}`)).text();
     assert.ok(!file.includes(COMMIT), `${name} is never stamped`);
   }

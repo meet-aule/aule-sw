@@ -16,11 +16,11 @@ const css = await read("style.css");
 test("the console has its pages and their scripts, and nothing else of the playground's", () => {
   assert.deepEqual(Object.keys(pages).sort(), ["families.html", "family.html", "index.html", "live.html", "passkeys.html", "signin.html"]);
   assert.deepEqual(Object.keys(scripts).sort(), [
-    "admin.js", "common.js", "families.js", "family.js", "labels.js", "live.js", "passkeys.js", "pilot.js", "signin.js",
+    "admin.js", "common.js", "credential.js", "families.js", "family.js", "labels.js", "live.js", "passkeys.js", "pilot.js", "signin.js",
   ]);
   assert.deepEqual(files.sort(), [
-    "admin.js", "common.js", "families.html", "families.js", "family.html", "family.js", "icon.svg", "index.html", "labels.js",
-    "live.html", "live.js", "passkeys.html", "passkeys.js", "pilot.js", "signin.html", "signin.js", "style.css",
+    "admin.js", "common.js", "credential.js", "families.html", "families.js", "family.html", "family.js", "icon.svg", "index.html",
+    "labels.js", "live.html", "live.js", "passkeys.html", "passkeys.js", "pilot.js", "signin.html", "signin.js", "style.css",
   ]);
 });
 
@@ -116,10 +116,13 @@ test("a page sends people only to the console's fixed addresses, and never to on
 test("the scripts import each other as the pages draw them, and the sign-in stands alone", () => {
   const imports = (text) => [...text.matchAll(/\bfrom\s+"\.\/([\w-]+\.js)"/g)].map(([, dep]) => dep);
   assert.deepEqual(imports(scripts["admin.js"]), ["common.js", "pilot.js"]);
-  for (const page of ["live.js", "families.js", "family.js", "passkeys.js"]) assert.deepEqual(imports(scripts[page]), ["common.js", "labels.js"], page);
-  for (const alone of ["common.js", "labels.js", "pilot.js", "signin.js"]) assert.deepEqual(imports(scripts[alone]), [], alone);
-  // The words and the arithmetic touch no page, so they are tested on their own.
-  for (const pure of ["labels.js", "pilot.js"]) assert.doesNotMatch(scripts[pure], /\bdocument\b|\blocation\b|\bfetch\b|\bwindow\b/, pure);
+  for (const page of ["live.js", "families.js", "family.js"]) assert.deepEqual(imports(scripts[page]), ["common.js", "labels.js"], page);
+  assert.deepEqual(imports(scripts["passkeys.js"]), ["common.js", "credential.js", "labels.js"]);
+  for (const alone of ["common.js", "credential.js", "labels.js", "pilot.js", "signin.js"]) assert.deepEqual(imports(scripts[alone]), [], alone);
+  // The words, the arithmetic and a passkey's JSON touch no page, so they are tested on their own.
+  for (const pure of ["credential.js", "labels.js", "pilot.js"]) {
+    assert.doesNotMatch(scripts[pure], /\bdocument\b|\blocation\b|\bfetch\b|\bwindow\b|\bnavigator\b/, pure);
+  }
 });
 
 test("every element a script looks for is in its page", () => {
@@ -228,14 +231,25 @@ test("only «Passkeys» makes a passkey, with the browser's own dialog and nothi
     assert.equal(creates, name === "passkeys.js" ? 1 : 0, name);
   }
   assert.match(scripts["passkeys.js"], /navigator\.credentials\.create\(\{ publicKey: PublicKeyCredential\.parseCreationOptionsFromJSON\(publicKey\) \}\)/);
+  // What it sends: the credential's JSON, by hand where a password manager's cannot write it.
+  assert.match(scripts["passkeys.js"], /post\("\/api\/passkeys\/create", \{ label: name, credential: credentialJSON\(credential\) \}\)/);
   // The browser's own picker: never the address field's autofill, and no library.
   assert.doesNotMatch(all, /mediation|conditional/);
   // The ceremony stays in its HttpOnly cookie: no page script names it.
   assert.doesNotMatch(all, /ceremony/i);
   const page = pages["passkeys.html"];
-  for (const words of ["Tus passkeys", "Crear passkey", "Todavía no tienes passkeys.", "Este navegador no puede crear passkeys.", "Tienes 10 passkeys, el máximo."]) {
+  for (const words of [
+    "Tus passkeys",
+    "Crear passkey",
+    "passkey (llave de acceso)",
+    "Todavía no tienes passkeys.",
+    "Este navegador no puede crear passkeys.",
+    "Tienes 10 passkeys, el máximo.",
+  ]) {
     assert.ok(page.includes(words), words);
   }
+  // Before anyone tries, the page says a passkey wants a recent sign-in.
+  assert.match(page, /Para crear una, tienes que haber entrado al panel en\s+los últimos 15 minutos\./);
   assert.match(page, /<input id="label" [^>]*maxlength="60"/);
   for (const words of ["Listo: ya puedes entrar con esta passkey.", "Ponle un nombre a la passkey.", "No se creó la passkey.", "Este dispositivo ya tiene una passkey tuya."]) {
     assert.ok(scripts["passkeys.js"].includes(words), words);

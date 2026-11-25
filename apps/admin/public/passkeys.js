@@ -5,6 +5,7 @@
 // needs no library; where they are missing, it says so and offers nothing.
 
 import { $, cell, dialogName, get, post, say, signOutButton } from "./common.js";
+import { credentialJSON } from "./credential.js";
 import { dayTime, dayYear } from "./labels.js";
 
 const MAX_PASSKEYS = 10;
@@ -18,15 +19,18 @@ const WORDS = {
     "Por seguridad, para crear una passkey tienes que haber entrado hace poco. Sal y vuelve a entrar, y créala enseguida.",
   not_made: "No se creó la passkey.",
   already_here: "Este dispositivo ya tiene una passkey tuya.",
+  blocked: "Este navegador no permitió crear la passkey aquí.",
+  unreadable:
+    "Tu gestor de contraseñas no pudo completar la passkey. Si la guardó, bórrala allí y prueba con el llavero del navegador.",
   failed: "No se pudo crear la passkey. Inténtalo otra vez.",
+  left_behind: "Si tu dispositivo o tu gestor de contraseñas guardó una passkey de Aule que no está en esta lista, bórrala allí.",
   not_deleted: "No se pudo borrar la passkey. Inténtalo otra vez.",
   not_loaded: "No se pudieron cargar tus passkeys. Recarga la página.",
 };
 
-const supported =
-  typeof PublicKeyCredential === "function" &&
-  typeof PublicKeyCredential.parseCreationOptionsFromJSON === "function" &&
-  typeof PublicKeyCredential.prototype?.toJSON === "function";
+// The browser's own parser for the platform's options; the credential's JSON
+// has a way around a password manager that cannot write it (credential.js).
+const supported = typeof PublicKeyCredential === "function" && typeof PublicKeyCredential.parseCreationOptionsFromJSON === "function";
 
 let count = 0;
 let busy = false;
@@ -37,14 +41,35 @@ function ready() {
   $("full").hidden = count < MAX_PASSKEYS;
 }
 
-/** The words for what went wrong: the console's answer, or the browser's. */
-function failure(error) {
-  if (error?.message === "sign_in_again") return WORDS.sign_in_again;
+/** The words for what went wrong, the console's answer or the browser's; `made` says whether the browser had made the passkey by then. */
+function failure(error, made) {
+  if (error?.message === "unreadable") return WORDS.unreadable;
   // A cancel, a timeout or a device that could not verify the person.
   if (error?.name === "NotAllowedError") return WORDS.not_made;
   // The device already holds one of this member's passkeys.
   if (error?.name === "InvalidStateError") return WORDS.already_here;
-  return WORDS.failed;
+  // This browser will not make one here, however often it is asked.
+  if (error?.name === "SecurityError") return WORDS.blocked;
+  const said = error?.message === "sign_in_again" ? WORDS.sign_in_again : WORDS.failed;
+  // The device may now keep a passkey the console never kept.
+  return made ? `${said} ${WORDS.left_behind}` : said;
+}
+
+/** Whether the console surely did not keep the passkey: it refused it, or it never got it. */
+const notKept = (error) => ["sign_in_again", "signed_out", "unreadable"].includes(error?.message) || error?.status === 400;
+
+/**
+ * Asks the browser to forget a passkey it has just made and the console did
+ * not keep, where it can (signalUnknownCredential): otherwise the device
+ * offers one that opens nothing. The words say to delete it in any case.
+ */
+function forget({ rpId, credential }) {
+  try {
+    if (typeof PublicKeyCredential.signalUnknownCredential !== "function" || typeof rpId !== "string") return;
+    PublicKeyCredential.signalUnknownCredential({ rpId, credentialId: credential.id }).catch(() => {});
+  } catch {
+    // Nothing more the page can do.
+  }
 }
 
 function row(passkey) {
@@ -97,15 +122,22 @@ async function create(event) {
   if ([...name].length > MAX_NAME || /\p{Cc}/u.test(name)) return say(WORDS.long_name);
   busy = true;
   ready();
+  // The passkey the browser made, once it has: from then on a failure may leave it on the device.
+  let made = null;
   try {
     const { publicKey } = await post("/api/passkeys/options", {});
     const credential = await navigator.credentials.create({ publicKey: PublicKeyCredential.parseCreationOptionsFromJSON(publicKey) });
-    await post("/api/passkeys/create", { label: name, credential: credential.toJSON() });
+    made = { rpId: publicKey.rp?.id, credential };
+    await post("/api/passkeys/create", { label: name, credential: credentialJSON(credential) });
     $("label").value = "";
     say(WORDS.created, "done");
     await load();
   } catch (error) {
-    if (error?.message !== "signed_out") say(failure(error));
+    if (made && notKept(error)) forget(made);
+    if (error?.message === "signed_out") return;
+    say(failure(error, made !== null));
+    // Whether it was kept after all, the list says.
+    if (made) await load();
   } finally {
     busy = false;
     ready();

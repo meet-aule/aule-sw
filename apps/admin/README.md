@@ -25,7 +25,7 @@ decides each call.
 | GET, HEAD | `/family?id=<uuid>` | nothing | One family's page |
 | GET, HEAD | `/passkeys` | nothing | «Passkeys»: the team member's own, to create and delete |
 | GET, HEAD | `/signin` | nothing | The sign-in page |
-| GET, HEAD | `/style.css`, `/admin.js`, `/live.js`, `/families.js`, `/family.js`, `/passkeys.js`, `/common.js`, `/labels.js`, `/pilot.js`, `/signin.js`, `/icon.svg`, `/fonts/serif.woff2`, `/fonts/sans.woff2` | nothing | The pages' files, fingerprinted (`src/assets.ts`, a copy of the playground's) |
+| GET, HEAD | `/style.css`, `/admin.js`, `/live.js`, `/families.js`, `/family.js`, `/passkeys.js`, `/credential.js`, `/common.js`, `/labels.js`, `/pilot.js`, `/signin.js`, `/icon.svg`, `/fonts/serif.woff2`, `/fonts/sans.woff2` | nothing | The pages' files, fingerprinted (`src/assets.ts`, a copy of the playground's) |
 | GET, HEAD | `/healthz` | nothing | `{"ok":true,"version":"0.0.1","commit":"abc123456789"}` |
 | GET, HEAD | `/robots.txt` | nothing | Disallows everything |
 | POST | `/api/signin/start` | the write rules | `{email}`: a code by mail, for a team address only. Always `202 {"sent":true}` |
@@ -44,7 +44,7 @@ decides each call.
 | POST | `/api/families/{id}/ungrant` | a session, the write rules | The platform's `DELETE /v1/admin/families/{id}/grant` |
 | GET | `/api/passkeys` | a session | The platform's `GET /v1/admin/passkeys`: the member's own, by name and dates |
 | POST | `/api/passkeys/options` | a session, the write rules | The platform's `POST /v1/admin/passkeys/options`: `200 {publicKey}` for the browser, and the ceremony in its own cookie. `409 {"error":"sign_in_again"}` when the sign-in is more than 15 minutes old; the session stays |
-| POST | `/api/passkeys/create` | a session, the write rules, 16 KB | `{label, credential}`: the platform's `POST /v1/admin/passkeys`, with the ceremony from its cookie. `201 {id, label, created_at, last_used_at}`; the cookie is cleared whatever the answer |
+| POST | `/api/passkeys/create` | a session, the write rules, 16 KB | `{label, credential}`: the platform's `POST /v1/admin/passkeys`, with the ceremony from its cookie. `201 {id, label, created_at, last_used_at}`, or `409 {"error":"sign_in_again"}` when the sign-in grew too old meanwhile; the cookie is cleared whatever the answer |
 | POST | `/api/passkeys/{id}/delete` | a session, the write rules | The platform's `DELETE /v1/admin/passkeys/{id}`: `200 {}`, or `404` for one that is not the member's |
 
 Pages hold no data and are served to anyone who comes through the console's
@@ -127,15 +127,25 @@ asks first and names the passkey in one short line. «Crear passkey» takes a
 name (1 to 60 characters, one line), then asks the console for the options,
 opens the browser's own dialog (fingerprint, face or PIN), and sends the
 passkey back. The page uses the browser's own WebAuthn JSON methods
-(`PublicKeyCredential.parseCreationOptionsFromJSON` and `toJSON`): no library
-and no change to the CSP. A browser without them is told it cannot, and the
-page offers nothing else. At 10 passkeys, the most there can be, the button is
-off.
+(`PublicKeyCredential.parseCreationOptionsFromJSON` and the credential's
+`toJSON`): no library and no change to the CSP. Some password managers hand
+the page a credential whose `toJSON` fails; `public/credential.js` then writes
+the same fields by hand, and a credential it cannot read either is told as the
+password manager's failure. A browser without the parser is told it cannot,
+and the page offers nothing else. At 10 passkeys, the most there can be, the
+button is off.
 
 - **The platform decides.** It checks every passkey with webauthn-rs and keeps
-  only its public half (`apps/platform`, «Aule's team»). Adding one needs a
-  sign-in from the last 15 minutes: an older session is told to sign in again,
-  and stays. Deleting one needs a session only.
+  only its public half (`apps/platform`, «Aule's team»), and mails the member
+  about every passkey added. Adding one needs a sign-in from the last 15
+  minutes, when it starts and when it is kept: an older session is told to
+  sign in again, and stays. The page says so before anyone tries. Deleting one
+  needs a session only, and ends the sessions that passkey opened.
+- **A passkey the console did not keep.** Once the browser has made one, a
+  refusal leaves it on the device, where it would open nothing. The page then
+  asks the browser to forget it (`PublicKeyCredential.signalUnknownCredential`,
+  where the browser has it), says to delete it there, and lists the passkeys
+  again; after a failure that may have kept it, it only says to look.
 - **The ceremony stays out of the page.** The platform's handle for it travels
   in its own cookie, `__Host-aule_admin_passkey`
   (`Path=/; Max-Age=300; HttpOnly; Secure; SameSite=Strict`), never in a body

@@ -108,7 +108,7 @@ export class FakePlatform {
   openSessions: unknown = OPEN_SESSIONS;
   /** The team member's passkeys, as GET /v1/admin/passkeys lists them. */
   passkeys: unknown[] = [];
-  /** Whether the sign-in is too old for the platform to add a passkey (409). */
+  /** Whether the sign-in is too old for the platform to add a passkey (409), at the start or the finish. */
   staleSignIn = false;
   // Tokens the platform's Staff check refuses (403) although they are alive.
   readonly #notStaff = new Set<string>();
@@ -229,6 +229,7 @@ export class FakePlatform {
       return { status: 200, body: { ceremony: CEREMONY, options: { publicKey: CREATE_OPTIONS } } };
     }
     if (method === "POST" && path === "/v1/admin/passkeys") {
+      if (this.staleSignIn) return error(409, "conflict", "sign in again to add a passkey");
       if (body?.ceremony !== CEREMONY) return error(400, "bad_request", "that passkey request is unknown or has expired");
       return { status: 201, body: { ...PASSKEY, label: body.label } };
     }

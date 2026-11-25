@@ -266,6 +266,10 @@ test("a sign-in too old to add a passkey is told as sign_in_again, and the sessi
   platform.staleSignIn = true;
   try {
     assert.deepEqual(await answer(await post("/api/passkeys/options", {})), [409, { error: "sign_in_again" }]);
+    // At the finish too: the ceremony outlived what was left of the sign-in. Its cookie goes.
+    const late = await write(base, "/api/passkeys/create", { label: "Mac", credential: CREATED }, { cookie: withCeremony() });
+    assert.deepEqual(await answer(late), [409, { error: "sign_in_again" }]);
+    assert.deepEqual(late.headers.getSetCookie(), [CLEARED_CEREMONY]);
   } finally {
     platform.staleSignIn = false;
   }
