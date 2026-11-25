@@ -1667,36 +1667,70 @@ h2[tabindex="-1"]:focus {
   }
 }
 
-/* ---- The session (A15, then the session as it was) ---------------------- */
+/* ---- The session (A15, A16): Aule on a stage (D30) ---------------------------- */
 
+/* One column on a phone held upright, and on any screen under 560 px. From 560 px on
+   a short screen (a phone on its side, the device's 800 × 480) and from 901 px, two:
+   the stage and what is done under it on the left, the talk on the right. The page's
+   order puts the clock and «Terminar» last, so a Tab never reaches «Terminar» before
+   the talk button; the grid draws them in the top bar, on the title's row. */
 .screen[data-screen="session"] {
+  /* Aule's face on the stage; 52 px in the band when a drawing or the camera takes it. */
+  --face: clamp(120px, calc(42vh - 80px), 200px);
+  /* The stage's height while Aule's face is on it; on one column a drawing or the camera
+     may take more (below). */
+  --stage: clamp(220px, 42vh, 440px);
   display: grid;
-  grid-template-columns: minmax(0, 3fr) minmax(320px, 2fr);
-  gap: 16px 20px;
+  grid-template-columns: minmax(0, 1fr);
   align-items: start;
+  gap: 12px 20px;
   max-width: 1280px;
   margin: 0 auto;
-  padding: 16px 16px 32px;
+  padding: 8px 16px 32px;
 }
 
 .session-title,
 .session-intro,
 .session-message,
 .session-retry,
-.route {
+.route,
+.session-bar-end {
   grid-column: 1 / -1;
 }
 
+/* The top bar: the title on the left; the clock and «Terminar», small, on the right,
+   where a long title never runs under them. */
 .session-title {
+  display: flex;
+  grid-row: 1;
+  align-items: center;
+  min-height: 48px;
   margin: 0;
-  font: 600 calc(28px * var(--k)) / 1.3 var(--sans);
+  padding-right: 168px;
+  font: 600 20px/1.25 var(--sans);
+}
+
+.session-bar-end {
+  display: flex;
+  grid-row: 1;
+  align-items: center;
+  align-self: center;
+  justify-self: end;
+  gap: 12px;
+}
+
+/* Botón/Compacto 191:1396 in the top bar: «Terminar», 44 px tall. */
+.session-end {
+  min-height: 44px;
+  padding: 0 14px;
+  font-size: 15px;
 }
 
 /* A16 Hola, soy Aule 477:190, on a first run: the line under the title; while Aule does not
    arrive, the line that says so. A status that is never hidden, only empty; empty, it takes
    no room. */
 .session-intro {
-  margin-top: -10px;
+  margin-top: -6px;
   font: 400 calc(22px * var(--k)) / calc(30px * var(--k)) var(--sans);
 }
 
@@ -1709,7 +1743,8 @@ h2[tabindex="-1"]:focus {
   justify-self: start;
 }
 
-.session-message:empty {
+/* The message line's place: no room (nor a gap of the grid) while it says nothing. */
+.session-message:not(:has(> :not([hidden]))) {
   display: none;
 }
 
@@ -1720,78 +1755,37 @@ h2[tabindex="-1"]:focus {
   min-width: 0;
 }
 
-.tile {
-  position: relative;
+/* The stage (web-only, D30): Aule's face, large, with one line under it; or what Aule
+   draws, or the camera while the child aims at their work, with the face small in a
+   band at the bottom. The stage swaps at once, as the ink screens do. */
+.stage {
   display: grid;
-  place-items: center;
-  aspect-ratio: 4 / 3;
+  grid-template-rows: minmax(0, 1fr);
+  height: var(--stage);
   overflow: hidden;
   border: 2px solid var(--device-ink);
-  border-radius: var(--device-radius);
+  border-radius: var(--device-card-radius);
   background: var(--device-paper);
   color: var(--device-ink);
 }
 
-.tile video {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  /* Not mirrored: what the student holds up (a notebook, a sheet) reads the
-     right way round, the way the tutor sees it. */
+.stage .tutor {
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 8px;
+  min-height: 0;
+  padding: 12px;
 }
 
-.tile-label {
-  position: absolute;
-  bottom: 10px;
-  left: 10px;
-  padding: 2px 8px;
-  border-radius: 6px;
-  background: var(--device-ink);
-  color: var(--device-paper);
-  font: 600 13px/1.4 var(--sans);
-}
-
-.tile-empty,
+/* «Tu turno», «Te escucho», «Pensando…», «Hablando»: Inter 600, 24 px (19 on a phone). */
 .tile-state {
-  position: relative;
-  font: 400 15px/1.4 var(--sans);
-}
-
-/* The camera tile's sentence («La cámara se enciende solo cuando muestras tu tarea.») keeps
-   clear of the tile's border when it wraps on a phone. */
-.tile-empty {
-  padding: 0 16px;
+  font: 600 calc(24px * var(--k)) / 1.3 var(--sans);
   text-align: center;
 }
 
-.work .tile {
-  width: 100%;
-  max-height: 40vh;
-  aspect-ratio: 16 / 9;
-}
-
-.tutor {
-  grid-template-rows: 1fr auto;
-  padding: 18px;
-}
-
-.talking .tutor {
-  min-height: 0;
-  aspect-ratio: auto;
-}
-
-.tutor .tile-label {
-  background: none;
-  color: var(--device-ink);
-  font: 700 11px/1.4 var(--sans);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
 .tutor[data-state="reconnecting"] .tile-state {
-  font-weight: 600;
+  font-weight: 700;
 }
 
 /* The dot, where Aule's face cannot be drawn. */
@@ -1840,8 +1834,8 @@ h2[tabindex="-1"]:focus {
 /* Aule's face, in place of the dot when the browser can draw it. */
 .mascot {
   display: none;
-  width: 132px;
-  height: 132px;
+  width: var(--face);
+  height: var(--face);
 }
 
 .tutor.has-mascot .mascot {
@@ -1852,14 +1846,98 @@ h2[tabindex="-1"]:focus {
   display: none;
 }
 
-/* The controls stay next to the camera, above the board: a drawing never
-   pushes the microphone out of reach. */
-.work .controls {
+/* A drawing or the camera takes the stage: two rows, and the face shrinks to a band
+   under them, with its line beside it. The band never covers the drawing. */
+.stage[data-shows="drawing"],
+.stage[data-shows="camera"] {
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+
+.stage[data-shows="drawing"] .tutor,
+.stage[data-shows="camera"] .tutor {
   display: flex;
-  flex-direction: row;
+  grid-row: 2;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+  padding: 4px 12px 6px;
+  border-top: 2px solid var(--device-ink);
+}
+
+.stage[data-shows="drawing"] .mascot,
+.stage[data-shows="camera"] .mascot {
+  width: 52px;
+  height: 52px;
+}
+
+.stage[data-shows="drawing"] .orb,
+.stage[data-shows="camera"] .orb {
+  width: 40px;
+  height: 40px;
+}
+
+.stage[data-shows="drawing"] .tile-state,
+.stage[data-shows="camera"] .tile-state {
+  font-size: 17px;
+  text-align: left;
+}
+
+.stage > .board,
+.stage > .camera-view {
+  grid-row: 1;
+  min-height: 0;
+}
+
+/* While the camera shows, a drawing waits under it and comes back after. */
+.stage[data-shows="camera"] > .board {
+  display: none;
+}
+
+/* What the camera sees while the child aims: on this device only until «Listo» (D31). */
+.camera-view {
+  position: relative;
+}
+
+/* All of the frame, on the stage's paper: the child aims with what Aule will get, a
+   phone's upright frame as much as a laptop's wide one, never a crop of it. */
+.camera-view video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  /* Not mirrored: what the student holds up (a notebook, a sheet) reads the
+     right way round, the way the tutor sees it. */
+}
+
+/* Under the stage: «Mostrar mi tarea»; while the camera is on, the line that says what
+   to do, «Listo» and «Cancelar»; «Modo tinta» for the team; the microphone's switch
+   with an open microphone. */
+.session-actions {
+  display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 10px 12px;
+  gap: 8px 16px;
+}
+
+/* A status that is never hidden, only empty; empty, it takes no room. */
+.camera-aim {
+  flex: 1 1 100%;
+  font: 600 calc(22px * var(--k)) / 1.3 var(--sans);
+}
+
+.camera-aim:empty {
+  position: absolute;
+}
+
+/* Botón/Negro 190:834 «Listo», in the row, and the device link «Cancelar» beside it. */
+.ink-button.send {
+  min-width: 160px;
+  margin: 0;
+}
+
+.session-actions .ink-link {
+  align-self: center;
 }
 
 /* A15: the round microphone and the sentence that says how it is. */
@@ -1944,23 +2022,23 @@ h2[tabindex="-1"]:focus {
   text-transform: uppercase;
 }
 
-/* What the tutor shows: a sheet, black on white like the device's screen. */
+/* What the tutor shows, on the stage: the drawing fits it and sits in its middle. */
 .board {
+  display: grid;
+  place-items: center;
   margin: 0;
   overflow: hidden;
-  border: 2px solid var(--device-ink);
-  border-radius: var(--device-radius);
   background: var(--device-paper);
 }
 
 .board svg {
   display: block;
   width: 100%;
-  height: auto;
+  height: 100%;
 }
 
-/* The drawing as the device shows it: the panel's shape (800 x 480), its
-   greys, and the flash it makes when it redraws. */
+/* The drawing as the device shows it, for the team (D32): the panel's shape (800 x 480),
+   its greys, and the flash it makes when it redraws. */
 .board.device {
   display: grid;
   place-items: center;
@@ -1973,6 +2051,11 @@ h2[tabindex="-1"]:focus {
 .board.device svg {
   max-height: 100%;
   filter: url("#four-greys");
+}
+
+/* On the stage the panel fills the space a drawing has, and never runs under the band. */
+.stage > .board.device {
+  aspect-ratio: auto;
 }
 
 .board.device.redraw svg {
@@ -2008,60 +2091,6 @@ h2[tabindex="-1"]:focus {
   .board:not([hidden]) svg {
     animation: none;
   }
-}
-
-/* The ink screen before Aule has drawn anything. */
-.board .ink-waiting {
-  padding: 24px;
-  font: 400 16px/1.5 var(--sans);
-  text-align: center;
-}
-
-/* Until something is drawn, the board says what it is for. */
-.board-empty {
-  display: none;
-  padding: 44px 16px;
-  border: 2px dashed var(--device-ink);
-  border-radius: var(--device-radius);
-  font: 400 16px/1.5 var(--sans);
-  text-align: center;
-}
-
-.board[hidden] + .board-empty {
-  display: block;
-}
-
-.work > .tile {
-  order: 1;
-}
-
-.work > .controls {
-  order: 2;
-}
-
-.work > .board,
-.work > .board-empty {
-  order: 3;
-}
-
-/* With an exercise in hand the work comes first: the card, its drawing, the
-   controls, and the camera small at the end, since it is only on for a picture. */
-.work.with-card > .card {
-  order: 0;
-}
-
-.work.with-card > .board,
-.work.with-card > .board-empty {
-  order: 1;
-}
-
-.work.with-card > .controls {
-  order: 2;
-}
-
-.work.with-card > .tile {
-  order: 3;
-  max-height: 22vh;
 }
 
 /* A session the engine runs: where it is, and the exercise in hand. */
@@ -2245,40 +2274,86 @@ h2[tabindex="-1"]:focus {
   gap: 8px;
 }
 
-/* The conversation keeps to its column and scrolls inside it, so the page and
-   its buttons stay where they are. */
-.talking {
-  position: sticky;
-  top: 16px;
-  display: flex;
-  flex-direction: column;
-  max-height: calc(100vh - 120px);
-}
-
-.talking > * {
-  flex: none;
-}
-
-.talking #transcript {
-  flex: 1 1 auto;
-  align-content: start;
-  min-height: 0;
-  padding-right: 4px;
-  overflow-y: auto;
-}
-
-@media (max-width: 900px) {
-  .screen[data-screen="session"] {
-    grid-template-columns: minmax(0, 1fr);
+/* Two columns: the conversation keeps to its column and scrolls inside it, so the page
+   and its buttons stay where they are. */
+@media (min-width: 901px), (min-width: 560px) and (max-width: 900px) and (max-height: 639px) {
+  .talking {
+    position: sticky;
+    top: 16px;
+    display: flex;
+    flex-direction: column;
+    max-height: calc(100vh - 32px);
   }
 
-  .talking {
-    position: static;
-    max-height: none;
+  .talking > * {
+    flex: none;
   }
 
   .talking #transcript {
-    max-height: 50vh;
+    flex: 1 1 auto;
+    align-content: start;
+    min-height: 0;
+    padding-right: 4px;
+    overflow-y: auto;
+  }
+}
+
+@media (min-width: 901px) {
+  .screen[data-screen="session"] {
+    --face: 240px;
+    --stage: clamp(300px, calc(100vh - 300px), 520px);
+    grid-template-columns: minmax(0, 3fr) minmax(300px, 2fr);
+    padding-top: 16px;
+  }
+
+  .session-title {
+    font-size: 22px;
+  }
+}
+
+/* A short screen from 560 px (the device's 800 × 480, a phone on its side): two columns,
+   and nothing is fixed. The stage takes what the bar and the row under it leave, and
+   what shows over it (A16's lines, an engine's route), so «Mostrar mi tarea» stays on
+   the first screen. */
+@media (min-width: 560px) and (max-width: 900px) and (max-height: 639px) {
+  .screen[data-screen="session"] {
+    --face: clamp(72px, calc(100vh - 230px - var(--intro-room, 0px) - var(--route-room, 0px)), 200px);
+    --stage: max(160px, calc(100vh - 128px - var(--intro-room, 0px) - var(--route-room, 0px) - var(--aim-room, 0px)));
+    grid-template-columns: minmax(0, 1fr) minmax(250px, 300px);
+    gap: 8px 16px;
+    padding-top: 4px;
+    padding-bottom: 8px;
+  }
+
+  /* A16's lines, while Aule's face is on the stage: a drawing or the camera sets them aside. */
+  .screen[data-screen="session"]:has(.session-intro:not(:empty)):has(.stage[data-shows="face"]) {
+    --intro-room: 72px;
+  }
+
+  /* A session the engine runs: its route, over the stage. */
+  .screen[data-screen="session"]:has(#route:not([hidden])) {
+    --route-room: 49px;
+  }
+
+  .talking {
+    top: 4px;
+    max-height: calc(100vh - 8px);
+  }
+
+  .session-intro {
+    font-size: 17px;
+    line-height: 1.35;
+  }
+
+  /* While the camera is on, its line shares the row with «Listo» and «Cancelar», and the
+     stage leaves room for their height, so both stay on the first screen. */
+  .camera-aim {
+    flex: 1 1 160px;
+    font-size: 17px;
+  }
+
+  .screen[data-screen="session"]:has(.camera-aim:not(:empty)) {
+    --aim-room: 16px;
   }
 
   .route li span {
@@ -2286,9 +2361,39 @@ h2[tabindex="-1"]:focus {
   }
 }
 
-/* On a phone the talk button stays at the bottom of the screen, under the
-   thumb, however far the board and the conversation push the page down. */
-@media (max-width: 900px) {
+/* One column: the conversation scrolls in its own box, and A16's lines take room from the
+   stage. With held turns the talk button stays at the bottom of the screen, under the
+   thumb, however far the conversation pushes the page down. */
+@media (max-width: 900px) and (min-height: 640px), (max-width: 559px) {
+  .screen[data-screen="session"]:has(.session-intro:not(:empty)) {
+    --face: clamp(110px, calc(42vh - 140px), 180px);
+  }
+
+  .screen[data-screen="session"]:has(.session-intro:not(:empty)) .stage {
+    --stage: clamp(200px, calc(42vh - 64px), 400px);
+  }
+
+  .talking #transcript {
+    max-height: 50vh;
+    overflow-y: auto;
+  }
+
+  .route li span {
+    display: none;
+  }
+
+  /* A drawing takes the stage at the screen's full width, with the band under it (D30):
+     its words are as large as the width allows. */
+  .stage[data-shows="drawing"] {
+    height: max(var(--stage), calc((100vw - 36px) * 0.6 + 68px));
+  }
+
+  /* The camera takes what the screen leaves above «Listo» and the shelf (D31), up to a
+     square at the full width: an upright frame and a wide one both show whole. */
+  .stage[data-shows="camera"] {
+    height: max(var(--stage), min(calc(100vw + 32px), calc(100vh - 318px), 560px));
+  }
+
   main.push-to-talk .screen[data-screen="session"] {
     padding-bottom: 128px;
   }
@@ -2302,36 +2407,9 @@ h2[tabindex="-1"]:focus {
     width: auto;
     margin: 0;
   }
-}
 
-/* On a tall screen (a phone held upright, a tablet) the coach sits right above the fixed
-   button, and the session leaves it room. On a short one (a phone on its side, the device's
-   800 × 480) a line there would cover the session's controls: it stays in the page, under
-   Aule's tile, and the camera's tile is lower, so the controls clear the fixed button
-   where the session opens. */
-@media (max-width: 900px) and (min-height: 640px) {
-  main.push-to-talk .talk-coach:not(:empty) {
-    position: fixed;
-    right: 16px;
-    bottom: calc(max(12px, env(safe-area-inset-bottom)) + 84px);
-    left: 16px;
-    z-index: 10;
-  }
-
-  main.push-to-talk.coached .screen[data-screen="session"] {
-    padding-bottom: 200px;
-  }
-}
-
-@media (max-width: 900px) and (max-height: 639px) {
-  main.push-to-talk .work:not(.with-card) > .tile {
-    max-height: 28vh;
-  }
-}
-
-/* A web-only shelf under the fixed talk button (and the coach, when it shows): the page
-   scrolls behind it, so nothing of the session shows between the coach and the button. */
-@media (max-width: 900px) {
+  /* A web-only shelf under the fixed talk button (and the coach, when it shows): the page
+     scrolls behind it, so nothing of the session shows between the coach and the button. */
   main.push-to-talk .screen[data-screen="session"]::after {
     content: "";
     position: fixed;
@@ -2343,11 +2421,78 @@ h2[tabindex="-1"]:focus {
     background: linear-gradient(to bottom, transparent, var(--device-paper) 16px);
     pointer-events: none;
   }
+
+  /* The coach sits right above the fixed button, wherever the button is fixed: on a small
+     phone too, where in the page it went behind the button. It is one short line, so the
+     shelf grows by about its height, and the session leaves it room. */
+  main.push-to-talk .talk-coach:not(:empty) {
+    position: fixed;
+    right: 16px;
+    bottom: calc(max(12px, env(safe-area-inset-bottom)) + 84px);
+    left: 16px;
+    z-index: 10;
+  }
+
+  main.push-to-talk.coached .screen[data-screen="session"] {
+    padding-bottom: 176px;
+  }
+
+  main.push-to-talk.coached .screen[data-screen="session"]::after {
+    height: calc(max(12px, env(safe-area-inset-bottom)) + 148px);
+  }
+
+  /* What the keyboard reaches, and «Listo» as the camera opens, scroll to above the shelf. */
+  html[data-screen="session"]:has(main.push-to-talk) {
+    scroll-padding-bottom: calc(max(12px, env(safe-area-inset-bottom)) + 108px);
+  }
+
+  html[data-screen="session"]:has(main.push-to-talk.coached) {
+    scroll-padding-bottom: calc(max(12px, env(safe-area-inset-bottom)) + 156px);
+  }
 }
 
-@media (max-width: 900px) and (min-height: 640px) {
-  main.push-to-talk.coached .screen[data-screen="session"]::after {
-    height: calc(max(12px, env(safe-area-inset-bottom)) + 208px);
+/* Under 901 px, A16's lines step aside while a drawing or the camera takes the stage, so
+   either has the room, and come back with Aule's face. Out of sight only: the first is a
+   status, and stays where a screen reader reads it. */
+@media (max-width: 900px) {
+  .screen[data-screen="session"]:has(.stage:not([data-shows="face"])) .session-intro:not(:empty) {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+}
+
+/* On a short screen an exercise card takes the room: Aule's face goes to its band, as with
+   a drawing, so the card's words and its answer are on the first screen. */
+@media (max-width: 900px) and (max-height: 760px) {
+  .screen[data-screen="session"]:has(#card:not([hidden])) .stage[data-shows="face"] {
+    height: auto;
+  }
+
+  .screen[data-screen="session"]:has(#card:not([hidden])) .stage[data-shows="face"] .tutor {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 10px;
+    padding: 4px 12px 6px;
+  }
+
+  .screen[data-screen="session"]:has(#card:not([hidden])) .stage[data-shows="face"] .mascot {
+    width: 52px;
+    height: 52px;
+  }
+
+  .screen[data-screen="session"]:has(#card:not([hidden])) .stage[data-shows="face"] .orb {
+    width: 40px;
+    height: 40px;
+  }
+
+  .screen[data-screen="session"]:has(#card:not([hidden])) .stage[data-shows="face"] .tile-state {
+    font-size: 17px;
+    text-align: left;
   }
 }
 

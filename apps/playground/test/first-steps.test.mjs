@@ -54,7 +54,20 @@ const SPEC_KEYS = [
   "coach",
   "coach_tap",
   "coach_done",
+  // The design pass's (24 Nov): the line under Aule's face on the stage, by the tutor's state.
+  "state_waiting",
+  "state_initializing",
+  "state_listening",
+  "state_your_turn",
+  "state_thinking",
+  "state_speaking",
+  "state_left",
+  "state_reconnecting",
   "show_work",
+  // And «Mostrar mi tarea» in two steps: the camera on the stage, then «Listo» or «Cancelar».
+  "camera_aim",
+  "camera_send",
+  "camera_cancel",
   "showing_work",
   "shown_work",
   "camera_blocked",
@@ -96,6 +109,13 @@ test("the words are César's where he wrote them, and say «apretado» as the li
   assert.equal(words("intro_line", "es"), "Soy tu tutor. Soy una inteligencia artificial.");
   assert.match(words("coach", "es"), /apretado/);
   assert.match(words("coach_tap", "es"), /apretado/);
+  // The line under Aule's face: whose turn it is, in the words the live session used.
+  assert.equal(words("state_your_turn", "es"), "Tu turno");
+  assert.equal(words("state_listening", "es"), "Te escucho");
+  assert.equal(words("state_speaking", "es"), "Hablando");
+  // «Listo» is named by the line that asks for it, in each language.
+  assert.ok(words("camera_aim", "es").includes(`«${words("camera_send", "es")}»`));
+  assert.ok(words("camera_aim", "en").includes(`“${words("camera_send", "en")}”`));
   // The hints and the problems name the link they lead to, in each language.
   for (const key of ["check_other_app", "mic_blocked", "mic_busy"]) {
     assert.ok(words(key, "es").includes(`«${words("retry", "es")}»`), key);

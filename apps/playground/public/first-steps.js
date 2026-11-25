@@ -1,8 +1,8 @@
 // A child's first steps on the page: the hand-off from the parent (a02, from
 // César's A02 ¿Eres tú?), the microphone check on A05 and the coached first
 // turn of a session. Their words, in the student's language, with those of the
-// talk button and the camera they speak of, and the small arithmetic behind
-// them. Pure: nothing here touches the page, so the tests import it as it is.
+// talk button, the line under Aule's face and the camera they speak of, and the
+// small arithmetic behind them. Pure: nothing here touches the page, so the tests import it as it is.
 // What is measured is a level, worked out in the browser; no sound is kept or
 // sent anywhere.
 
@@ -48,10 +48,24 @@ const WORDS = {
     coach: "Mantén apretado mientras hablas. Suelta cuando termines.",
     coach_tap: "Déjalo apretado mientras hablas.",
     coach_done: "Eso es.",
-    // «Mostrar mi tarea», the line it adds to the conversation (the tutor hears the
-    // same one, SHOWN_WORK in apps/agent), and what went wrong, by cameraProblem.
+    // The line under Aule's face in the session, by the tutor's state; with held
+    // turns, «Tu turno» until the button is held.
+    state_waiting: "Esperando a Aule…",
+    state_initializing: "Aule se está preparando…",
+    state_listening: "Te escucho",
+    state_your_turn: "Tu turno",
+    state_thinking: "Pensando…",
+    state_speaking: "Hablando",
+    state_left: "Aule salió de la sesión.",
+    state_reconnecting: "Reconectando…",
+    // «Mostrar mi tarea», its two steps (the camera on the stage, then «Listo» or
+    // «Cancelar»), the line it adds to the conversation (the tutor hears the same
+    // one, SHOWN_WORK in apps/agent), and what went wrong, by cameraProblem.
     show_work: "Mostrar mi tarea",
-    showing_work: "Mostrando…",
+    camera_aim: "Apunta a tu tarea y toca «Listo».",
+    camera_send: "Listo",
+    camera_cancel: "Cancelar",
+    showing_work: "Aule está mirando…",
     shown_work: "Mira mi trabajo.",
     camera_blocked:
       "El navegador no deja que Aule vea tu cámara. Con ayuda de un adulto, toca el ícono junto a la dirección de la página (en un iPhone, «aA») y permite la cámara.",
@@ -89,8 +103,19 @@ const WORDS = {
     coach: "Hold it down while you talk. Let go when you're done.",
     coach_tap: "Keep it pressed while you talk.",
     coach_done: "That's it.",
+    state_waiting: "Waiting for Aule…",
+    state_initializing: "Aule is getting ready…",
+    state_listening: "I'm listening",
+    state_your_turn: "Your turn",
+    state_thinking: "Thinking…",
+    state_speaking: "Talking",
+    state_left: "Aule left the session.",
+    state_reconnecting: "Reconnecting…",
     show_work: "Show my homework",
-    showing_work: "Showing…",
+    camera_aim: "Point at your homework and tap “Done”.",
+    camera_send: "Done",
+    camera_cancel: "Cancel",
+    showing_work: "Aule is looking…",
     shown_work: "Look at my work.",
     camera_blocked:
       "The browser isn't letting Aule see your camera. With a grown-up's help, tap the icon next to the page address (“aA” on an iPhone) and allow the camera.",
