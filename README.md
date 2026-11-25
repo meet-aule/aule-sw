@@ -15,7 +15,7 @@ A tutor for children should not stop working when a company changes its plans. S
 ## What it does
 
 - **The voice tutor.** A [LiveKit Agents](https://github.com/livekit/agents) worker joins the session's room, listens, thinks and answers out loud. It keeps turns short and patient, asks before it explains, and does not hand out answers.
-- **The browser experience.** Families sign in, manage students and consent, and start voice or typed sessions with exercises and a device-style display. The team has an administration panel. Reload recovery can rejoin a still-running tutor within the room's departure window.
+- **The browser experience.** Families sign in, manage students and consent, and start voice or typed sessions with exercises and a device-style display. The team has its own console at admin.meetaule.com. Reload recovery can rejoin a still-running tutor within the room's departure window.
 - **Devices.** Links a new device to its family, issues per-device credentials and room tokens, and serves firmware updates over the air, speaking the bootstrap protocol of [xiaozhi-esp32](https://github.com/78/xiaozhi-esp32) that the [firmware](https://github.com/meet-aule/aule-fw) is built on.
 - **Families.** The API used by the browser and intended for the planned [mobile app](https://github.com/meet-aule/aule-app): setup, progress, invitations, consent, privacy settings and deleting a child's data.
 - **A model of what each child knows.** An open learner model estimates, skill by skill, what a child has mastered and what they are forgetting, and picks what to work on next. It needs no language model and can be corrected by a parent or a teacher.
@@ -25,7 +25,7 @@ A tutor for children should not stop working when a company changes its plans. S
 ## Running it yourself
 
 The Compose stack runs the platform, background worker, voice agent, playground,
-PostgreSQL with pgvector and local embeddings. It uses Linux host networking;
+the team's console, PostgreSQL with pgvector and local embeddings. It uses Linux host networking;
 run a LiveKit server and an HTTPS reverse proxy separately. The browser needs
 HTTPS for microphone and camera access.
 
@@ -76,6 +76,7 @@ apps/
   platform/   the API and the worker: children, consent, sessions, learning, memory, supervisor (Rust)
   agent/      the voice tutor on LiveKit Agents (Python)
   playground/ a web page to talk to the tutor with a microphone and a camera (Node, TypeScript)
+  admin/      the team's console at admin.meetaule.com, with its own sign-in (Node, TypeScript)
 contracts/    the events they exchange, as JSON Schema
 engine/       deterministic session stages, exercises, hints and report (Rust)
 curriculum/   skill catalogs and prerequisites
@@ -85,7 +86,7 @@ compose.yaml  everything above with its database, next to your LiveKit server
 ```
 
 ```bash
-pnpm install --frozen-lockfile && pnpm test  # contracts, curriculum and playground
+pnpm install --frozen-lockfile && pnpm test  # contracts, curriculum, playground and console
 (cd apps/agent && uv sync --locked && uv run pytest)
 (cd engine && cargo test --locked)
 (cd apps/platform && cargo test --locked)  # needs DATABASE_URL to PostgreSQL with pgvector

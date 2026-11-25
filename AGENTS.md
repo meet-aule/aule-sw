@@ -29,6 +29,7 @@ than a change that breaks a feature.
 | `apps/platform` | API, database, learner model, memory, supervisor, exercise checker | Rust | `apps/platform/README.md` |
 | `apps/agent` | The voice tutor on LiveKit Agents, and the two safety gates | Python 3.13+, `uv` | `apps/agent/README.md` |
 | `apps/playground` | Web page to talk to the tutor | Node 24, TypeScript, no build step | `apps/playground/README.md` |
+| `apps/admin` | The team's console at admin.meetaule.com | Node 24, TypeScript, no build step | `apps/admin/README.md` |
 | `engine/` | The session engine: stages, exercises, hints, the report. No model, no IO | Rust, in Spanish | `engine/README.md` |
 | `contracts/` | Events and visuals as JSON Schema; the source of truth between apps | JSON Schema | `contracts/README.md` |
 | `curriculum/` | Skills and their prerequisites | JSON | `curriculum/README.md` |

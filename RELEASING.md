@@ -53,12 +53,15 @@ nothing: the server is updated as before ([infra/server](infra/server/README.md)
 
 - The page: the last line of «Mi cuenta y mis datos», `Aule 0.0.1 · abc1234` (only
   `Aule 0.0.1` while the commit is unknown), and its `aule-version` and `aule-commit` meta tags.
-- https://playground.meetaule.com/session/healthz: `{"ok":true,"version":"0.0.1","commit":"abc123456789"}`.
-- The team's panel, under its title: the page's and the platform's version and commit.
-- The logs, at start: `aule-playground 0.0.1 (abc123456789)`, `aule-agent 0.0.1 (abc123456789)`,
-  and the platform's `version` and `commit` fields. In its container, `aule-platform version`
-  prints `aule-platform 0.0.1 (abc123456789)`.
-- Each request to the platform: `User-Agent: aule-playground/0.0.1 (+abc1234)` or `aule-agent/0.0.1 (+abc1234)`.
+- https://playground.meetaule.com/session/healthz and https://admin.meetaule.com/healthz:
+  `{"ok":true,"version":"0.0.1","commit":"abc123456789"}`.
+- The team's console, under its title: the console's and the platform's version and commit,
+  `aule-admin 0.0.1 (abc1234) · aule-platform 0.0.1 (def5678)`, and its pages' meta tags.
+- The logs, at start: `aule-playground 0.0.1 (abc123456789)`, `aule-admin 0.0.1 (abc123456789)`,
+  `aule-agent 0.0.1 (abc123456789)`, and the platform's `version` and `commit` fields. In its
+  container, `aule-platform version` prints `aule-platform 0.0.1 (abc123456789)`.
+- Each request to the platform: `User-Agent: aule-playground/0.0.1 (+abc1234)`, `aule-admin/0.0.1 (+abc1234)`
+  or `aule-agent/0.0.1 (+abc1234)`.
 
 The commit comes from the `AULE_COMMIT` build argument: `infra/server/aule-compose.sh`
 takes it from the checkout in `/opt/aule-sw`, and CI from the commit it builds; without

@@ -17,6 +17,34 @@ so name it, or no service (which rebuilds them all), only when no session is ope
 
 The alerts are in `infra/watch`.
 
+## Team console
+
+The team's console (`apps/admin`, compose service `admin`) answers at
+https://admin.meetaule.com through its Cloudflare Worker (`infra/edge`), on port
+8092. `aule-compose.sh` sets `AULE_ADMIN_HOST=0.0.0.0` so the Worker can reach
+it, so the port must be open to Cloudflare's addresses only, as the playground's
+8090 is: a jump from raw `PREROUTING` to the origin firewall's `AULE_ORIGIN`
+chain (the store repository's `deploy/origin-firewall.sh`) for tcp/8092, for
+IPv4 and IPv6, made before anything listens there and brought back after a
+reboot the same way as 8090's; and a ufw rule for 8092 if ufw lets 8090 in.
+From outside, `curl -m 5 http://<server>:8092/healthz` must time out.
+
+It keeps no tutoring state, so it can be rebuilt on its own at any time, with
+sessions open (pull and build under `umask 002`, as for every service):
+
+```sh
+sudo -u aule-admin bash -c 'umask 002; /etc/aule/aule-compose.sh up -d --build --no-deps admin'
+```
+
+A restart signs the team out, and also clears its sign-in limits for a team
+member locked out by them. The playground still restarts only when no session
+is open (`select count(*) from sessions where status <> 'ended'` is 0).
+
+The first deploy goes in this order: the firewall rule, the console (its
+`/healthz` on loopback), the Worker (`infra/edge/README.md`), a sign-in with a
+team address, then the watch's new checks (`infra/watch/README.md`), and only
+then the playground without its old panel.
+
 ## Offsite copy health
 
 On the offsite host, install the same `offsite-health.py` in both the existing
