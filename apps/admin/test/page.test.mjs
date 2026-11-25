@@ -118,7 +118,9 @@ test("the scripts import each other as the pages draw them, and the sign-in stan
   assert.deepEqual(imports(scripts["admin.js"]), ["common.js", "pilot.js"]);
   for (const page of ["live.js", "families.js", "family.js"]) assert.deepEqual(imports(scripts[page]), ["common.js", "labels.js"], page);
   assert.deepEqual(imports(scripts["passkeys.js"]), ["common.js", "credential.js", "labels.js"]);
-  for (const alone of ["common.js", "credential.js", "labels.js", "pilot.js", "signin.js"]) assert.deepEqual(imports(scripts[alone]), [], alone);
+  // The sign-in takes nothing of the pages behind it: only a passkey's JSON.
+  assert.deepEqual(imports(scripts["signin.js"]), ["credential.js"]);
+  for (const alone of ["common.js", "credential.js", "labels.js", "pilot.js"]) assert.deepEqual(imports(scripts[alone]), [], alone);
   // The words, the arithmetic and a passkey's JSON touch no page, so they are tested on their own.
   for (const pure of ["credential.js", "labels.js", "pilot.js"]) {
     assert.doesNotMatch(scripts[pure], /\bdocument\b|\blocation\b|\bfetch\b|\bwindow\b|\bnavigator\b/, pure);
@@ -253,5 +255,28 @@ test("only «Passkeys» makes a passkey, with the browser's own dialog and nothi
   assert.match(page, /<input id="label" [^>]*maxlength="60"/);
   for (const words of ["Listo: ya puedes entrar con esta passkey.", "Ponle un nombre a la passkey.", "No se creó la passkey.", "Este dispositivo ya tiene una passkey tuya."]) {
     assert.ok(scripts["passkeys.js"].includes(words), words);
+  }
+});
+
+test("only the sign-in signs in with a passkey, with the browser's own picker, and says so in the panel's words", () => {
+  for (const [name, text] of Object.entries(scripts)) {
+    const gets = [...text.matchAll(/navigator\.credentials\.get\(/g)].length;
+    assert.equal(gets, name === "signin.js" ? 1 : 0, name);
+  }
+  assert.match(scripts["signin.js"], /navigator\.credentials\.get\(\{ publicKey: PublicKeyCredential\.parseRequestOptionsFromJSON\(publicKey\) \}\)/);
+  assert.match(scripts["signin.js"], /if \(finished\.status === 200\) return location\.replace\("\/"\);/);
+  // What it sends: the credential's JSON, and nothing else.
+  assert.match(scripts["signin.js"], /post\("\/api\/signin\/passkey\/finish", \{ credential: credentialJSON\(credential\) \}\)/);
+  assert.match(pages["signin.html"], /<div id="passkey-box" class="signin-passkey" hidden>\s*<button type="button" id="passkey">Entrar con passkey<\/button>/);
+  // The lead the page has speaks of the code alone; signin.js changes it where a passkey can be used.
+  assert.match(pages["signin.html"], /<p class="lead" id="lead">Entra con tu correo del equipo de Aule\. Te enviamos un código\.<\/p>/);
+  // Where a passkey is made, and what a passkey is in the browsers' own words.
+  assert.ok(pages["signin.html"].includes("¿Aún no tienes una passkey (llave de acceso)? Entra con tu correo y créala en «Passkeys»."));
+  for (const words of [
+    "No pudimos confirmar esa passkey. Entra con tu correo.",
+    "No se completó el ingreso con passkey. Si no tienes una aquí, entra con tu correo.",
+    "Entra con tu passkey o con un código que te enviamos a tu correo del equipo.",
+  ]) {
+    assert.ok(scripts["signin.js"].includes(words), words);
   }
 });

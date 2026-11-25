@@ -15,8 +15,16 @@
     <main class="admin signin">
       <header>
         <h1>Panel del equipo</h1>
-        <p class="lead">Entra con tu correo del equipo de Aule. Te enviamos un código.</p>
+        <!-- Where a passkey can be used too, signin.js says so here. -->
+        <p class="lead" id="lead">Entra con tu correo del equipo de Aule. Te enviamos un código.</p>
       </header>
+
+      <!-- With a passkey: no address, the browser's own picker. Shown only where the browser can (signin.js). -->
+      <div id="passkey-box" class="signin-passkey" hidden>
+        <button type="button" id="passkey">Entrar con passkey</button>
+        <p class="hint">¿Aún no tienes una passkey (llave de acceso)? Entra con tu correo y créala en «Passkeys».</p>
+        <p class="or">O entra con un código por correo:</p>
+      </div>
 
       <!-- Step one: the address. Every address gets the same answer (signin.js). -->
       <form id="email-form" class="signin-form" novalidate>
