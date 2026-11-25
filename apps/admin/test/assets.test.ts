@@ -27,7 +27,7 @@ const versionOf = (text: string, name: string) =>
   text.match(new RegExp(`${name.replace(/\./g, "\\.")}\\?v=([0-9a-f]{12})`))?.[1];
 
 test("the pages point at fingerprinted files, and those are kept for a year", async () => {
-  for (const path of ["/", "/signin"]) {
+  for (const path of ["/", "/live", "/signin"]) {
     const html = await (await fetch(`${base}${path}`)).text();
     for (const name of ["style.css", "icon.svg"]) assert.ok(versionOf(html, name), `${path} names ${name} by its fingerprint`);
   }
@@ -63,6 +63,11 @@ test("a module has one address wherever it is named, so it runs once", async () 
   assert.equal(fingerprint(Buffer.from(await file.arrayBuffer())), pilot);
   const signin = await (await fetch(`${base}/signin`)).text();
   assert.ok(versionOf(signin, "signin.js"), "the sign-in page's script is fingerprinted too");
+  // What the pages share is one module wherever it is named: the panel's copy of common.js is live.js's.
+  const liveHtml = await (await fetch(`${base}/live`)).text();
+  const live = await (await fetch(`${base}/live.js?v=${versionOf(liveHtml, "live.js")}`)).text();
+  for (const shared of ["common.js", "labels.js"]) assert.ok(versionOf(live, shared), `live.js imports ${shared} at its fingerprint`);
+  assert.equal(versionOf(live, "common.js"), versionOf(text, "common.js"));
 });
 
 test("without the right version a file is checked every time, and a match is a 304", async () => {
@@ -85,7 +90,7 @@ test("without the right version a file is checked every time, and a match is a 3
 
 test("a page is never kept, not even asked for at its own hash", async () => {
   // Kept, Back after signing out could bring the panel back whole, with the families' addresses.
-  for (const path of ["/", "/signin"]) {
+  for (const path of ["/", "/live", "/signin"]) {
     const page = await fetch(`${base}${path}`);
     assert.equal(page.headers.get("cache-control"), "no-store", path);
     assert.equal(page.headers.get("etag"), null, path);
@@ -106,7 +111,7 @@ test("only the console's own files are served: no italic, no other package, noth
     await missing.arrayBuffer();
   }
   const dir = new URL("../public/", import.meta.url);
-  for (const name of ["index.html", "signin.html", "admin.js", "pilot.js", "signin.js", "style.css", "icon.svg"]) {
+  for (const name of ["index.html", "live.html", "signin.html", "admin.js", "common.js", "labels.js", "live.js", "pilot.js", "signin.js", "style.css", "icon.svg"]) {
     assert.ok((await readFile(new URL(name, dir))).length > 0, name);
   }
 });

@@ -2,7 +2,8 @@
 
 The team's console at https://admin.meetaule.com: how Aule is used and what it
 costs, the pilot's numbers, every family with its plan and the link it came
-from, and a plan granted for free. It is its own app, apart from the children's
+from, a plan granted for free, and who is in a session now, with one line that
+says whether a deploy can go. It is its own app, apart from the children's
 [playground](../playground/README.md), with its own sign-in. A child's
 conversation, text or audio, appears nowhere in it.
 
@@ -17,8 +18,9 @@ decides each call.
 | Method | Path | Needs | What it does |
 |---|---|---|---|
 | GET, HEAD | `/` | nothing | The overview: the panel, moved from the playground as it was |
+| GET, HEAD | `/live` | nothing | «En vivo»: who is in a session now, and whether a deploy can go |
 | GET, HEAD | `/signin` | nothing | The sign-in page |
-| GET, HEAD | `/style.css`, `/admin.js`, `/pilot.js`, `/signin.js`, `/icon.svg`, `/fonts/serif.woff2`, `/fonts/sans.woff2` | nothing | The pages' files, fingerprinted (`src/assets.ts`, a copy of the playground's) |
+| GET, HEAD | `/style.css`, `/admin.js`, `/live.js`, `/common.js`, `/labels.js`, `/pilot.js`, `/signin.js`, `/icon.svg`, `/fonts/serif.woff2`, `/fonts/sans.woff2` | nothing | The pages' files, fingerprinted (`src/assets.ts`, a copy of the playground's) |
 | GET, HEAD | `/healthz` | nothing | `{"ok":true,"version":"0.0.1","commit":"abc123456789"}` |
 | GET, HEAD | `/robots.txt` | nothing | Disallows everything |
 | POST | `/api/signin/start` | the write rules | `{email}`: a code by mail, for a team address only. Always `202 {"sent":true}` |
@@ -28,6 +30,7 @@ decides each call.
 | GET | `/api/metrics/daily` | a session | The platform's `GET /v1/metrics/daily?days=14` |
 | GET | `/api/metrics/weekly` | a session | The platform's `GET /v1/metrics/weekly?weeks=12` |
 | GET | `/api/families` | a session | The platform's `GET /v1/admin/families` |
+| GET | `/api/sessions/open` | a session | The platform's `GET /v1/admin/sessions/open` |
 | POST | `/api/families/{id}/grant` | a session, the write rules | `{days, note?}`: the platform's `POST /v1/admin/families/{id}/grant` |
 | POST | `/api/families/{id}/ungrant` | a session, the write rules | The platform's `DELETE /v1/admin/families/{id}/grant` |
 
@@ -43,6 +46,31 @@ refusals come back in the console's words, never in the platform's: 400, 404,
 **No redirects.** No answer carries a `Location`. A page's script sends a
 signed-out visitor to the fixed path `/signin`, and a sign-in goes to `/`; no
 address to go back to is ever taken from a request.
+
+## En vivo
+
+`/live` lists who is in a session now: the family, the child's nickname, since
+when, whether it is starting or running, «motor» or «libre» (the session engine
+or the tutor on its own), and «web» or «aparato». Above it, one line:
+
+- «Ninguna sesión abierta: se puede desplegar.», in ink, only when the platform
+  says that no session is open;
+- otherwise how many are open and «no despliegues ahora», in red. Every open
+  session counts, the team's tests too: restarting the playground or the agent
+  ends the sessions in progress (`infra/server/README.md`);
+- a session open longer than the session's length and 50 minutes more is said
+  apart, as perhaps stuck; it still counts, and the platform's housekeeping
+  closes it after 3 hours.
+
+The page asks again every 15 seconds while it is in view, at once when it comes
+back into view, and on «Actualizar». A failed answer takes the line away rather
+than leave an older «se puede desplegar» standing, and an answer that comes
+after a newer one is dropped. A line older than 20 seconds gives way to
+«Comprobando…» as soon as the next question goes, so a tab come back to after a
+while, or an answer that does not come, never leaves an old «se puede
+desplegar» on screen. Right before a restart, the runbook still asks the
+database itself (`infra/server/README.md`). A child's conversation is in none of it: the
+platform does not send it (`apps/platform`, «Aule's team»).
 
 ## Settings
 
@@ -181,5 +209,9 @@ floor and the platform's timeout are injected, so the tests are fast. They cover
 every route, the headers on every kind of answer, the Worker's secret, the
 sign-in's neutral answers and its limits per client (a burst sent together, a
 slow body, IPv6 by its /64), the sessions and their revocation (SIGTERM
-included), the logs, the pages' rules, and `pilot.js`'s arithmetic
-(`test/pilot.test.mjs`, moved with it).
+included), the logs, the
+pages' rules, `pilot.js`'s arithmetic (`test/pilot.test.mjs`, moved with it) and
+`labels.js`'s words (`test/labels.test.mjs`). The pages' scripts also run in a
+fake document (`test/dom.mjs`) that cannot read HTML from a string: «En vivo»'s
+line, its table, what it draws as text, and how it asks again
+(`test/live.test.mjs`).

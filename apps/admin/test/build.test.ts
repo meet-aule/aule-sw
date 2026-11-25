@@ -34,12 +34,12 @@ test("the version is the repository's, as package.json copies it", async () => {
   assert.equal(userAgent(COMMIT), `aule-admin/${VERSION} (+${COMMIT.slice(0, 7)})`);
 });
 
-test("both pages carry the build in two meta tags, and nothing is left unstamped", async () => {
+test("every page carries the build in two meta tags, and nothing is left unstamped", async () => {
   for (const [origin, commit] of [
     [base, COMMIT],
     [plainBase, "unknown"],
   ]) {
-    for (const path of ["/", "/signin"]) {
+    for (const path of ["/", "/live", "/signin"]) {
       const page = await (await fetch(`${origin}${path}`)).text();
       assert.ok(page.includes(`<meta name="aule-version" content="${VERSION}" />`), path);
       assert.ok(page.includes(`<meta name="aule-commit" content="${commit}" />`), path);
@@ -53,7 +53,7 @@ test("only pages are stamped: the scripts and the stylesheet keep their fingerpr
   const withCommit = versions(await (await fetch(`${base}/`)).text());
   assert.ok(withCommit.some((entry) => entry.startsWith("style.css=")) && withCommit.some((entry) => entry.startsWith("admin.js=")));
   assert.deepEqual(withCommit, versions(await (await fetch(`${plainBase}/`)).text()));
-  for (const name of ["admin.js", "pilot.js", "signin.js", "style.css"]) {
+  for (const name of ["admin.js", "common.js", "labels.js", "live.js", "pilot.js", "signin.js", "style.css"]) {
     const file = await (await fetch(`${base}/${name}`)).text();
     assert.ok(!file.includes(COMMIT), `${name} is never stamped`);
   }

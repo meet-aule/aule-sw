@@ -3,49 +3,12 @@
 // granted for free. The console signs the team in; the platform decides who
 // is on the team on every call.
 
+import { $, cell, get, post, say, signOutButton } from "./common.js";
 import { byWeek, bySource, childFigures, outOf, share, weekLabel, zoneLabel } from "./pilot.js";
 
-const $ = (id) => document.getElementById(id);
 const PLANS = { trial: "Prueba", paid: "Pagado", granted: "Regalado", none: "Sin plan", team: "Equipo", free: "Gratis ilimitado" };
 
 let families = [];
-
-function say(text) {
-  $("message").textContent = text;
-  $("message").hidden = !text;
-}
-
-// Signed out, or not on the team: the sign-in page, a fixed address.
-function signedOut(response) {
-  if (response.status !== 401 && response.status !== 403) return false;
-  location.replace("/signin");
-  return true;
-}
-
-async function get(path) {
-  const response = await fetch(path);
-  if (signedOut(response)) throw new Error("signed_out");
-  if (!response.ok) throw new Error("failed");
-  return response.json();
-}
-
-async function post(path, body) {
-  const response = await fetch(path, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  if (signedOut(response)) throw new Error("signed_out");
-  if (!response.ok) throw new Error("failed");
-  return response.json();
-}
-
-function cell(text, className) {
-  const element = document.createElement("td");
-  element.textContent = text ?? "";
-  if (className) element.className = className;
-  return element;
-}
 
 const day = (iso) => (iso ? new Date(iso).toLocaleDateString("es-PE", { day: "numeric", month: "short" }) : "");
 const money = (value) => (typeof value === "number" ? value.toFixed(2) : "");
@@ -249,16 +212,6 @@ async function load() {
   get("/api/build").then(showBuild, () => {});
 }
 
-// «Salir»: the console's session ends, and its platform session with it.
-async function signOut() {
-  $("signout").disabled = true;
-  try {
-    await fetch("/api/signout", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
-  } finally {
-    location.replace("/signin");
-  }
-}
-
+signOutButton();
 $("filter").addEventListener("input", showFamilies);
-$("signout").addEventListener("click", signOut);
 load();

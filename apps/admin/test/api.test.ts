@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 
-import { FAMILY, FakePlatform, signIn, startConsole, write } from "./fake-platform.ts";
+import { FAMILY, FakePlatform, OPEN_SESSIONS, signIn, startConsole, write } from "./fake-platform.ts";
 
 const platform = await new FakePlatform().listen();
 let base = "";
@@ -29,11 +29,12 @@ const answer = async (response: Response) => [response.status, await response.js
 const heardSince = (from: number) =>
   platform.heard.slice(from).map((heard) => [heard.method, heard.path, heard.headers.authorization, heard.body]);
 
-test("each of the panel's reads is the one platform call the old panel made", async () => {
+test("each read is the one platform call it stands for, made with the team member's token", async () => {
   for (const [path, target, expected] of [
     ["/api/families", "/v1/admin/families", { families: [{ id: FAMILY, name: "Quispe" }] }],
     ["/api/metrics/daily", "/v1/metrics/daily?days=14", { days: [] }],
     ["/api/metrics/weekly", "/v1/metrics/weekly?weeks=12", { timezone_offset_minutes: -300, weeks: 12, cohorts: [{ week: "2026-11-23", source: "cesar", families: 2 }] }],
+    ["/api/sessions/open", "/v1/admin/sessions/open", OPEN_SESSIONS],
   ] as const) {
     const from = platform.heard.length;
     // A query is never passed on: the console asks for what the panel shows.
@@ -114,7 +115,7 @@ test("the platform's refusals are told in the console's words, never in the plat
 });
 
 test("every data route needs a session, and a write the console's own Origin", async () => {
-  for (const path of ["/api/build", "/api/families", "/api/metrics/daily", "/api/metrics/weekly"]) {
+  for (const path of ["/api/build", "/api/families", "/api/metrics/daily", "/api/metrics/weekly", "/api/sessions/open"]) {
     assert.deepEqual(await answer(await fetch(`${base}${path}`)), [401, { error: "signed_out" }], path);
   }
   for (const action of ["grant", "ungrant"]) {

@@ -13,11 +13,17 @@ const pages = Object.fromEntries(await Promise.all(files.filter((name) => name.e
 const scripts = Object.fromEntries(await Promise.all(files.filter((name) => name.endsWith(".js")).map(async (name) => [name, await read(name)])));
 const css = await read("style.css");
 
-test("the console has its two pages and three scripts, and nothing else of the playground's", () => {
-  assert.deepEqual(Object.keys(pages).sort(), ["index.html", "signin.html"]);
-  assert.deepEqual(Object.keys(scripts).sort(), ["admin.js", "pilot.js", "signin.js"]);
-  assert.deepEqual(files.sort(), ["admin.js", "icon.svg", "index.html", "pilot.js", "signin.html", "signin.js", "style.css"]);
+test("the console has its pages and their scripts, and nothing else of the playground's", () => {
+  assert.deepEqual(Object.keys(pages).sort(), ["index.html", "live.html", "signin.html"]);
+  assert.deepEqual(Object.keys(scripts).sort(), ["admin.js", "common.js", "labels.js", "live.js", "pilot.js", "signin.js"]);
+  assert.deepEqual(files.sort(), ["admin.js", "common.js", "icon.svg", "index.html", "labels.js", "live.html", "live.js", "pilot.js", "signin.html", "signin.js", "style.css"]);
 });
+
+// The pages a person moves between, in the header's order: [its address, its file, its link's words].
+const NAVIGATION = [
+  ["/", "index.html", "Resumen"],
+  ["/live", "live.html", "En vivo"],
+];
 
 test("no inline script, style or handler in any page, and exactly one module of its own", () => {
   for (const [name, html] of Object.entries(pages)) {
@@ -34,6 +40,7 @@ test("no inline script, style or handler in any page, and exactly one module of 
     assert.match(html, /<html lang="es">/, name);
   }
   assert.match(pages["index.html"], /src="admin\.js"/);
+  assert.match(pages["live.html"], /src="live\.js"/);
   assert.match(pages["signin.html"], /src="signin\.js"/);
 });
 
@@ -42,9 +49,11 @@ test("every reference is the console's own: no address of another site in a page
     assert.doesNotMatch(text, /\b(https?:|wss?:)|\/\/[a-z0-9.-]+\.[a-z]{2,}/i, name);
     assert.doesNotMatch(text, /@import|fonts\.googleapis|fonts\.gstatic|googletagmanager|posthog|analytics/i, name);
   }
+  const links = new Set(NAVIGATION.map(([address]) => address));
   for (const [name, html] of Object.entries(pages)) {
     for (const [, reference] of html.matchAll(/\b(?:href|src)="([^"]*)"/g)) {
-      assert.match(reference, /^[a-z-]+\.(css|js|svg)$/, `${name}: ${reference}`);
+      // A file of the page's own, or one of the console's pages by its fixed address.
+      assert.ok(/^[a-z-]+\.(css|js|svg)$/.test(reference) || links.has(reference), `${name}: ${reference}`);
     }
   }
   const urls = [...css.matchAll(/url\(\s*["']?([^"')]+)/g)].map(([, url]) => url);
@@ -70,27 +79,45 @@ test("a page sends people only to the console's fixed addresses, and never to on
   for (const [name, text] of Object.entries(scripts)) {
     assert.doesNotMatch(text, /location\.(search|hash|href)|document\.referrer|window\.open|URLSearchParams|\.assign\(/, name);
   }
-  // Signed out on any data call, the panel goes to the sign-in; signed in, the sign-in goes to the panel.
-  assert.match(scripts["admin.js"], /if \(response\.status !== 401 && response\.status !== 403\) return false;\s*location\.replace\("\/signin"\);/);
+  // Signed out on any data call, a page goes to the sign-in; signed in, the sign-in goes to the overview.
+  assert.match(scripts["common.js"], /if \(response\.status !== 401 && response\.status !== 403\) return false;\s*location\.replace\("\/signin"\);/);
+  for (const name of ["admin.js", "live.js"]) assert.doesNotMatch(scripts[name], /\bfetch\(/, `${name} asks the API only through common.js`);
   assert.match(scripts["signin.js"], /if \(status === 200\) return location\.replace\("\/"\);/);
 });
 
-test("the scripts import each other as the panel draws them: the panel and its arithmetic, and the sign-in alone", () => {
+test("the scripts import each other as the pages draw them, and the sign-in stands alone", () => {
   const imports = (text) => [...text.matchAll(/\bfrom\s+"\.\/([\w-]+\.js)"/g)].map(([, dep]) => dep);
-  assert.deepEqual(imports(scripts["admin.js"]), ["pilot.js"]);
-  assert.deepEqual(imports(scripts["pilot.js"]), []);
-  assert.deepEqual(imports(scripts["signin.js"]), []);
+  assert.deepEqual(imports(scripts["admin.js"]), ["common.js", "pilot.js"]);
+  assert.deepEqual(imports(scripts["live.js"]), ["common.js", "labels.js"]);
+  for (const alone of ["common.js", "labels.js", "pilot.js", "signin.js"]) assert.deepEqual(imports(scripts[alone]), [], alone);
+  // The words and the arithmetic touch no page, so they are tested on their own.
+  for (const pure of ["labels.js", "pilot.js"]) assert.doesNotMatch(scripts[pure], /\bdocument\b|\blocation\b|\bfetch\b|\bwindow\b/, pure);
 });
 
 test("every element a script looks for is in its page", () => {
   for (const [script, page] of [
     ["admin.js", "index.html"],
+    ["live.js", "live.html"],
     ["signin.js", "signin.html"],
+    // What every page but the sign-in shares: the header's «Salir» and the message line.
+    ...NAVIGATION.map(([, page]) => ["common.js", page]),
   ]) {
-    const ids = new Set([...scripts[script].matchAll(/\$\("([\w-]+)"\)/g)].map(([, id]) => id));
-    assert.ok(ids.size > 3, script);
+    const ids = new Set([...scripts[script].matchAll(/\$\("([\w-]+)"\)/g), ...scripts[script].matchAll(/id = "([\w-]+)"/g)].map(([, id]) => id));
+    assert.ok(ids.size >= 2, script);
     for (const id of ids) assert.match(pages[page], new RegExp(`id="${id}"`), `${script} → ${page}#${id}`);
   }
+});
+
+test("every page but the sign-in has the same header, with its own link marked", () => {
+  for (const [address, page] of NAVIGATION) {
+    const html = pages[page];
+    assert.match(html, /<h1>Panel del equipo<\/h1>/, page);
+    const nav = html.match(/<nav class="nav" aria-label="Consola del equipo">([\s\S]*?)<\/nav>/)?.[1] ?? "";
+    const links = [...nav.matchAll(/<a href="([^"]+)"( aria-current="page")?>([^<]+)<\/a>/g)].map(([, href, current, words]) => [href, words, Boolean(current)]);
+    assert.deepEqual(links, NAVIGATION.map(([href, , words]) => [href, words, href === address]), page);
+    assert.match(nav, /<button type="button" class="link" id="signout">Salir<\/button>\s*$/, page);
+  }
+  assert.doesNotMatch(pages["signin.html"], /<nav\b|id="signout"/);
 });
 
 test("the overview is today's panel, moved as it was, with «Salir» where «Volver a Aule» was", () => {

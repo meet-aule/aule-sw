@@ -38,7 +38,9 @@ sudo -u aule-admin bash -c 'umask 002; /etc/aule/aule-compose.sh up -d --build -
 
 A restart signs the team out, and also clears its sign-in limits for a team
 member locked out by them. The playground still restarts only when no session
-is open (`select count(*) from sessions where status <> 'ended'` is 0).
+is open (`select count(*) from sessions where status <> 'ended'` is 0): the
+console's «En vivo» page says so in one line, «Ninguna sesión abierta: se puede
+desplegar.».
 
 The first deploy goes in this order: the firewall rule, the console (its
 `/healthz` on loopback), the Worker (`infra/edge/README.md`), a sign-in with a

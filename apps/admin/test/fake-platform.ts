@@ -24,6 +24,19 @@ export const PUBLIC_URL = "https://admin.example.org";
 export const EDGE_SECRET = "an-edge-secret-of-the-tests-0123456789abcdef";
 export const COMMIT = "0123456789ab";
 
+/** Two sessions open: Mateo's on the web with the engine, and a test of the team's. */
+export const OPEN_SESSIONS = {
+  open: 2,
+  starting: 0,
+  overdue: 0,
+  overdue_after_minutes: 70,
+  more: false,
+  sessions: [
+    { family_id: FAMILY, family: "Quispe", child: "Mateo", audience: "child", status: "active", created_at: "2026-11-25T15:30:00Z", started_at: "2026-11-25T15:30:20Z", engine: true, via: "web", overdue: false },
+    { family_id: null, family: null, child: null, audience: "operator", status: "active", created_at: "2026-11-25T15:20:00Z", started_at: "2026-11-25T15:20:20Z", engine: false, via: "web", overdue: false },
+  ],
+};
+
 export type Heard = { method: string; path: string; headers: IncomingHttpHeaders; body: unknown };
 type Answer = { status: number; body?: unknown; waitMs?: number };
 
@@ -38,6 +51,8 @@ export class FakePlatform {
   /** How long /v1/auth/team/start takes to answer. */
   startWaitMs = 0;
   health: Answer = { status: 200, body: { ok: true, version: "0.0.7", commit: "fedcba987654" } };
+  /** Who is in a session now, as GET /v1/admin/sessions/open says it. */
+  openSessions: unknown = OPEN_SESSIONS;
   // Tokens the platform's Staff check refuses (403) although they are alive.
   readonly #notStaff = new Set<string>();
   // Answers given once, before any rule: "METHOD /path" → answer.
@@ -122,6 +137,7 @@ export class FakePlatform {
     if (!path.startsWith("/v1/admin/") && !path.startsWith("/v1/metrics/")) return error(404, "not_found", "route not found");
     if (!this.teamAtPlatform || this.#notStaff.has(token)) return error(403, "forbidden", "this route is for Aule's team");
     if (method === "GET" && path === "/v1/admin/families") return { status: 200, body: { families: [{ id: FAMILY, name: "Quispe" }] } };
+    if (method === "GET" && path === "/v1/admin/sessions/open") return { status: 200, body: this.openSessions };
     if (method === "GET" && path === "/v1/metrics/daily?days=14") return { status: 200, body: { days: [] } };
     if (method === "GET" && path === "/v1/metrics/weekly?weeks=12") {
       return { status: 200, body: { timezone_offset_minutes: -300, weeks: 12, cohorts: [{ week: "2026-11-23", source: "cesar", families: 2 }] } };

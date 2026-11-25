@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <!-- The build this page comes from, written in by the server (src/build.ts). -->
+    <meta name="aule-version" content="{{version}}" />
+    <meta name="aule-commit" content="{{commit}}" />
+    <title>Aule · Panel del equipo · En vivo</title>
+    <link rel="icon" href="icon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <main class="admin">
+      <header>
+        <h1>Panel del equipo</h1>
+        <nav class="nav" aria-label="Consola del equipo">
+          <a href="/">Resumen</a>
+          <a href="/live" aria-current="page">En vivo</a>
+          <button type="button" class="link" id="signout">Salir</button>
+        </nav>
+      </header>
+
+      <p id="message" class="message" role="alert" hidden></p>
+
+      <section aria-labelledby="live-title">
+        <h2 id="live-title">En vivo</h2>
+        <!-- Whether a deploy can go now: in ink when it can, in red when it cannot (labels.js verdict). -->
+        <p id="verdict" class="verdict" role="status" hidden></p>
+        <p class="refresh">
+          <span id="updated"></span>
+          <button type="button" id="refresh">Actualizar</button>
+        </p>
+        <div class="scroll">
+          <table class="facts">
+            <thead>
+              <tr><th>Familia</th><th>Alumno</th><th>Desde</th><th>Estado</th><th>Modo</th><th>Vía</th></tr>
+            </thead>
+            <tbody id="sessions"></tbody>
+          </table>
+        </div>
+        <p id="more" class="lead" hidden>Hay más de 100 sesiones abiertas: se muestran las 100 más nuevas.</p>
+        <ul class="notes">
+          <li>
+            Reiniciar el playground o el agente termina las sesiones en curso. Cuentan todas las sesiones abiertas,
+            también las pruebas del equipo.
+          </li>
+          <li>La página se actualiza sola cada 15 segundos mientras está a la vista.</li>
+        </ul>
+      </section>
+    </main>
+    <script type="module" src="live.js"></script>
+  </body>
+</html>

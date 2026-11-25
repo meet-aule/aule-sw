@@ -7,6 +7,7 @@
 //   GET  /api/metrics/daily            GET /v1/metrics/daily?days=14
 //   GET  /api/metrics/weekly           GET /v1/metrics/weekly?weeks=12
 //   GET  /api/families                 GET /v1/admin/families
+//   GET  /api/sessions/open            GET /v1/admin/sessions/open
 //   POST /api/families/{id}/grant      POST /v1/admin/families/{id}/grant {days, note?}
 //   POST /api/families/{id}/ungrant    DELETE /v1/admin/families/{id}/grant
 
@@ -30,6 +31,8 @@ export const READS: ReadonlyMap<string, string | null> = new Map([
   ["/api/metrics/daily", "/v1/metrics/daily?days=14"],
   ["/api/metrics/weekly", "/v1/metrics/weekly?weeks=12"],
   ["/api/families", "/v1/admin/families"],
+  // Who is in a session now, for «En vivo».
+  ["/api/sessions/open", "/v1/admin/sessions/open"],
 ]);
 
 /** A family's plan: «Regalar plan» and «Quitar». */
