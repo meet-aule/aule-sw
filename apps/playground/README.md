@@ -65,8 +65,8 @@ together.
 Rooms wait up to two minutes after a network disconnect so LiveKit can rejoin
 the same session. This applies both with the platform and to operator sessions
 issued by the playground. The page shows its reconnecting state while the SDK
-retries; a failed recovery still reports that the connection was lost. This
-does not resume a session after a page reload or after its tutor has ended.
+retries; a failed recovery still reports that the connection was lost. Reload
+recovery for families is described below; an ended tutor cannot be resumed.
 
 ## What it does not do
 
@@ -105,14 +105,32 @@ and no clock reset. Another tab that is still connected must leave before resume
 succeeds. Choosing a new session («Empezar otra sesión») explicitly closes the
 previous one first, then asks A04 what the new one is for, as any new session is.
 
-The browser holds an opaque HttpOnly/Secure/SameSite cookie, scoped to the app.
-The BFF keeps at most 512 entries with room routing, a hashed sign-in owner and
-the original deadline, never the original room JWT or transcript. Each recovery
-rechecks family authorization, voice consent, remaining time and the live tutor.
-Tickets expire five minutes after the deadline so the final reason can be read;
-those extra minutes never allow a resume. A BFF restart loses tickets. Operator
-access-code sessions do not support reload recovery. No hardware IoT reconnection
-flow has been tested by this change.
+The browser holds an encrypted HttpOnly/Secure/SameSite=Strict cookie scoped to
+the app. It contains only room routing, the student identifier, a hashed sign-in
+owner and the original deadline, never a room JWT, dispatch metadata, names or
+transcripts. There is no BFF ticket cache to lose on a restart or evict when full.
+AES-256-GCM authenticates the cookie; HKDF derives a separate key from the existing
+LiveKit credentials and binds the ticket to the app's base path. These use
+[Node's crypto primitives](https://nodejs.org/docs/latest-v24.x/api/crypto.html).
+No new secret, database, volume or service is needed.
+
+Each recovery still rechecks family authorization, voice consent, remaining time
+and the live tutor. The ticket is routing, never permission to join: platform
+revocation or closure wins even if an old cookie is replayed. Tickets expire five
+minutes after the deadline so the final reason can be read; those extra minutes
+never allow a resume. Rotating the LiveKit credentials, changing the base path or
+deploying this format over the old RAM tickets invalidates old tickets. Deploy
+when rooms are idle. A tutor restart still loses its in-memory conversation;
+this recovers a live tutor across a BFF restart, not an ended tutor. Operator
+access-code sessions do not support reload recovery.
+
+When signalling or media reconnects, a held microphone is muted locally at once.
+Pending microphone starts and delayed releases cannot submit the interrupted
+turn. On return the page asks the tutor to cancel partial input, then a fresh
+press starts a new turn; automatic turns still respect the microphone switch.
+The original clock continues. Tests cover HTTP recovery after recreating the BFF,
+tampered tickets, revocation, and delayed microphone/RPC promises on the page.
+These synthetic checks do not validate a physical IoT board or mobile radio.
 
 `LIVEKIT_URL` is also the server-side RoomService address (converted to HTTP);
 the browser still uses `AULE_LIVEKIT_PUBLIC_URL`. Session lifecycle responses are

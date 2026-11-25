@@ -1,5 +1,5 @@
 // The playground's HTTP server: a static page and one endpoint that trades the
-// access code for a room token. Reload tickets keep room routing in bounded RAM.
+// access code for a room token. Reload tickets keep only encrypted room routing.
 
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { createRequire } from "node:module";
@@ -62,7 +62,7 @@ import {
   sourceCookie,
   sourceOf,
 } from "./signin.ts";
-import { RecoveryStore, recoveryCookie, recoveryTicket, resumeToken, STATUS_GRACE_SECONDS } from "./recovery.ts";
+import { RecoveryTickets, recoveryCookie, recoveryTicket, resumeToken, STATUS_GRACE_SECONDS } from "./recovery.ts";
 
 const publicDir = new URL("../public/", import.meta.url);
 // The browser build that ships inside the livekit-client package.
@@ -247,7 +247,7 @@ export function createPlayground(
   const assetFor = async (path: string) => (await assets.get()).get(path);
   const limiter = new GuessLimiter();
   const daily = new DailyLimit(settings.dailySessions);
-  const recoveries = new RecoveryStore();
+  const recoveries = new RecoveryTickets(settings);
 
   async function lifecycle(path: string, request: IncomingMessage, response: ServerResponse) {
     const token = guardianToken(request);
@@ -255,11 +255,9 @@ export function createPlayground(
     const ticket = recoveryTicket(request);
     const saved = recoveries.get(ticket, token);
     const clear = () => {
-      recoveries.forget(ticket);
       response.setHeader("Set-Cookie", recoveryCookie("", settings.basePath));
     };
     if (!saved?.session.session_id) {
-      // Do not erase another sign-in's ticket from the shared store.
       response.setHeader("Set-Cookie", recoveryCookie("", settings.basePath));
       return json(response, 200, { available: false });
     }
@@ -318,7 +316,7 @@ export function createPlayground(
       end_reason: state.end_reason, language: state.language,
     };
     const remaining = Math.min(state.remaining_seconds, Math.floor((saved.expires - Date.now()) / 1000));
-    if (!state.can_resume || remaining <= 0) return json(response, 200, unavailable);
+    if (state.status !== "active" || !state.can_resume || remaining <= 0) return json(response, 200, unavailable);
     let participants: Awaited<ReturnType<RoomServiceClient["listParticipants"]>>;
     try { participants = await rooms.listParticipants(saved.session.room); }
     catch (error) {
@@ -460,8 +458,6 @@ export function createPlayground(
     }
     const token = guardianToken(request);
     if (path === "/api/signout") {
-      const ticket = recoveryTicket(request);
-      if (token && recoveries.get(ticket, token)) recoveries.forget(ticket);
       if (token) await signOut(settings, token).catch(() => undefined);
       response.writeHead(200, {
         ...headers,
@@ -531,7 +527,6 @@ export function createPlayground(
         if (state.status !== "ended" && state.remaining_seconds > 0) {
           return json(response, 409, { error: "session_active" });
         }
-        recoveries.forget(previous);
       }
       if (!settings.freeAccess && !daily.take(token)) return json(response, 429, { error: "daily_limit" });
       const started = await startSession(settings, token, id, language, objective);
