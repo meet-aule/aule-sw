@@ -4,8 +4,8 @@ Two scripts that mail the team when Aule stops working, and again when it works 
 
 | Script | Runs on | What it checks | Mails through |
 |---|---|---|---|
-| `aule-watch.sh` | the server (`/etc/aule/aule-watch.sh`, owned and run by `aule-admin`'s cron every 5 minutes) | the platform, the session page, the voice agent, LiveKit, the database, the worker, embeddings, the public page, the shop, disk use under 85 % and a backup younger than 7 hours (taken every 6 hours) | the platform's own SMTP settings in `/etc/aule/aule.env` |
-| `aule-watch-outside.sh` | the home server (`~/bin/aule-watch-outside.sh`, its user's cron every 5 minutes) | the public session page, LiveKit and the shop, from outside: the case where the whole server or its network is down | Resend's HTTP API, with the key in `~/.config/aule/resend-key` (mode 600) |
+| `aule-watch.sh` | the server (`/etc/aule/aule-watch.sh`, owned and run by `aule-admin`'s cron every 5 minutes) | the platform, the session page, the team's console (on loopback and at admin.meetaule.com), the voice agent, LiveKit, the database, the worker, embeddings, the public page, the shop, disk use under 85 % and a backup younger than 7 hours (taken every 6 hours) | the platform's own SMTP settings in `/etc/aule/aule.env` |
+| `aule-watch-outside.sh` | the home server (`~/bin/aule-watch-outside.sh`, its user's cron every 5 minutes) | the public session page, LiveKit and the shop, from outside: the case where the whole server or its network is down; and that the team console's port (8092) on the server answers nobody but Cloudflare, once the server's address is in `~/.config/aule/origin-host` (one line, mode 600; kept off the repository, and the check is skipped without it) | Resend's HTTP API, with the key in `~/.config/aule/resend-key` (mode 600) |
 
 A failure is mailed when it starts and then every six hours while it lasts; a recovery is mailed once. Subjects distinguish `ALERTA`, `RECORDATORIO` and `RECUPERADO`, name the monitor and keep the first failing check visible on a phone. The body lists every failure, successful-check counts, Lima/UTC times and the observed incident duration. It contains no response bodies, raw stderr, application logs or family data. `--test` sends one real test mail.
 
@@ -45,7 +45,9 @@ python3 -m unittest discover -s infra/watch -p 'test_*.py' -v
 ```
 
 To install or update after deployment review, copy the shared helper first and
-install the script under the existing cron lock. Keep the previous files for
+install the script under the existing cron lock. Install the version that checks
+the team's console only once the console answers on the server and at
+admin.meetaule.com, or its two checks alert from the first run. Keep the previous files for
 rollback; do not delete state files or change credentials/recipients. On the server:
 
 ```sh

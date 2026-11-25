@@ -44,6 +44,9 @@ if command == "curl":
         counts = json.loads(counts_file.read_text()) if counts_file.exists() else {}
         counts[endpoint] = counts.get(endpoint, 0) + 1
         counts_file.write_text(json.dumps(counts))
+        if ":8092/" in endpoint and "127.0.0.1" not in endpoint:
+            # The console's port on the server, from outside: closed unless a test opens it.
+            sys.exit(0 if settings.get("console_open") else 7)
         if settings.get("blip") and counts[endpoint] > 1:
             unavailable = False
         if "--write-out" in args:
@@ -126,6 +129,8 @@ class WatchHarness:
                 + shlex.quote(str(self.state_dir)),
                 'KEY_FILE="$HOME/.config/aule/resend-key"': "KEY_FILE="
                 + shlex.quote(str(root / "mail-key")),
+                'ORIGIN_FILE="$HOME/.config/aule/origin-host"': "ORIGIN_FILE="
+                + shlex.quote(str(root / "origin-host")),
             }
         else:
             replacements = {
@@ -215,6 +220,29 @@ class WatchTests(unittest.TestCase):
             self.assertEqual(harness.run().returncode, 0)
             self.assertEqual(harness.state.read_text().strip(), "")
             self.assertEqual(len(harness.deliveries()), 2)
+
+    def test_a_console_port_open_to_anyone_alerts_from_outside(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            harness = WatchHarness(Path(directory), "aule-watch-outside.sh")
+            # Without the server's address on this machine, the port is not probed.
+            self.assertEqual(harness.run().returncode, 0)
+            probes = json.loads((harness.root / "probes.json").read_text())
+            self.assertFalse([endpoint for endpoint in probes if ":8092/" in endpoint])
+            (harness.root / "origin-host").write_text("203.0.113.5\n")
+            self.assertEqual(harness.run().returncode, 0)
+            self.assertEqual(harness.deliveries(), [], "closed, as it should be")
+            harness.settings["console_open"] = True
+            self.assertEqual(harness.run().returncode, 0)
+            self.assertIn("consola cerrada", harness.state.read_text())
+            [alert] = harness.deliveries()
+            self.assertIn("responde desde fuera de Cloudflare", alert["body"])
+            self.assertNotIn("203.0.113.5", alert["subject"] + alert["body"])
+            harness.settings["console_open"] = False
+            self.assertEqual(harness.run().returncode, 0)
+            self.assertEqual(harness.state.read_text().strip(), "")
+            self.assertEqual(len(harness.deliveries()), 2)
+            probes = json.loads((harness.root / "probes.json").read_text())
+            self.assertEqual(probes["http://203.0.113.5:8092/healthz"], 3)
 
     def test_failed_recovery_is_retried_at_next_check(self) -> None:
         for watch in WATCHES:
@@ -315,7 +343,7 @@ class WatchTests(unittest.TestCase):
                 self.assertNotIn("synthetic-key", message["body"])
                 if watch == "aule-watch.sh":
                     self.assertIn("La página local respondió", message["body"])
-                    self.assertIn("12/13", message["body"])
+                    self.assertIn("14/15", message["body"])
                 else:
                     self.assertIn("3/4", message["body"])
                 # A different diagnostic does not restart the incident or spam mail.

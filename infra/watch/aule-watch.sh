@@ -105,12 +105,14 @@ now=$(date +%s)
 when=$(date -u '+%Y-%m-%d %H:%M UTC')
 
 if [ "${1:-}" = "--test" ]; then
-  mail "Aule: prueba de alertas" "Las alertas de $host están activas ($when). Revisan cada 5 minutos: plataforma, página, tutor, LiveKit, base de datos, worker, embeddings, página pública, tienda, disco y respaldo cada 6 horas. Si algo falla llega un correo, y otro cuando vuelve a funcionar."
+  mail "Aule: prueba de alertas" "Las alertas de $host están activas ($when). Revisan cada 5 minutos: plataforma, página, consola del equipo, tutor, LiveKit, base de datos, worker, embeddings, página pública, consola pública, tienda, disco y respaldo cada 6 horas. Si algo falla llega un correo, y otro cuando vuelve a funcionar."
   exit $?
 fi
 
 check "plataforma (API)" http http://127.0.0.1:8091/healthz
 check "página de sesión" http http://127.0.0.1:8090/session/healthz
+check "consola del equipo" http http://127.0.0.1:8092/healthz
+check "consola pública (admin.meetaule.com)" http https://admin.meetaule.com/healthz
 check "tutor (agente de voz)" http http://127.0.0.1:8081/
 check "LiveKit (audio)" http http://127.0.0.1:7880/
 check "base de datos" healthy aule-sw-postgres-1
