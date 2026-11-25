@@ -463,6 +463,113 @@ async def test_a_turn_begun_while_the_one_before_is_checked_never_takes_its_chec
     assert checker.calls == [("answer", "31"), ("answer", "31")]
 
 
+# An exercise the student brings, with their answer, before any is open.
+
+BROUGHT = "Estoy haciendo 25 + 3 × 2. Me salió 56. ¿Está bien?"
+
+
+async def test_an_answer_brought_with_its_exercise_is_checked_once_that_exercise_is_posed():
+    checker = ScriptedChecker(posed="Ask it and wait.", judged="Incorrect. Give one hint.")
+    tutor = Tutor(language="es", gates=ScriptedGates(ALLOW), checker=checker)
+    turn_ctx, _ = await spoken(tutor, Session(), BROUGHT)
+    assert turn_ctx.items == [] and checker.calls == []
+
+    told = await tool(tutor, "pose_exercise")({"expression": "25 + 3 * 2"})
+
+    assert told == "Ask it and wait. Their answer in this turn, checked: Incorrect. Give one hint."
+    assert checker.calls == [
+        ("pose", "25 + 3 * 2", None, None),
+        ("answer", "Estoy haciendo . Me salió 56. ¿Está bien?"),
+    ]
+    assert tutor.turn_check == TurnCheck("answer", 1, "Incorrect. Give one hint.", ("pose",))
+    # The model's own check of it gets the same answer, from no second call.
+    assert await tool(tutor, "check_answer")({"said": "56"}) == "Incorrect. Give one hint."
+    assert len(checker.calls) == 2
+
+
+@pytest.mark.parametrize(
+    "words",
+    [
+        # Not the exercise posed: an answer to something else, or no answer at all.
+        "Me salió 56. ¿Está bien?",
+        "Estoy haciendo 1/2 + 1/3. Me salió 2/5.",
+        "Tengo 10 años",
+        "Estoy haciendo 25 + 3 × 2. ¿Me ayudas a empezar con 3 por 2?",
+    ],
+)
+async def test_a_pose_checks_nothing_the_turn_did_not_bring_with_that_exercise(words):
+    checker = ScriptedChecker(posed="Ask it.", judged="Incorrect.")
+    tutor = Tutor(language="es", gates=ScriptedGates(ALLOW), checker=checker)
+    await spoken(tutor, Session(), words)
+
+    assert await tool(tutor, "pose_exercise")({"expression": "25 + 3 * 2"}) == "Ask it."
+    assert checker.calls == [("pose", "25 + 3 * 2", None, None)]
+
+
+async def test_a_pose_checks_nothing_in_a_turn_already_checked():
+    checker = ScriptedChecker(posed="Ask it.", judged="Incorrect.", exercise=ORDER)
+    tutor = Tutor(language="es", gates=ScriptedGates(ALLOW), checker=checker)
+    # Left by code against the exercise open; the model checked something of it itself.
+    await spoken(tutor, Session(), "Estoy haciendo 1/2 + 1/3. Me salió 2/5")
+    await tool(tutor, "check_answer")({"said": "2/5"})
+
+    assert await tool(tutor, "pose_exercise")({"expression": "1/2 + 1/3"}) == "Ask it."
+    assert checker.calls == [("answer", "2/5"), ("pose", "1/2 + 1/3", None, None)]
+
+
+async def test_a_pose_that_opened_nothing_new_checks_nothing():
+    refused = ScriptedChecker(posed=None, judged="Incorrect.")
+    tutor = Tutor(language="es", gates=ScriptedGates(ALLOW), checker=refused)
+    await spoken(tutor, Session(), BROUGHT)
+    assert await tool(tutor, "pose_exercise")({"expression": "25 + 3 * 2"}) == UNCHECKED
+    assert refused.calls == [("pose", "25 + 3 * 2", None, None)]
+
+    # The exercise was open, though the agent did not know it when the turn came:
+    # posed again it is the same one, which this turn's words are not checked against.
+    same = ScriptedChecker(posed="Same exercise.", judged="Incorrect.")
+    tutor = Tutor(language="es", gates=ScriptedGates(ALLOW), checker=same)
+    await spoken(tutor, Session(), BROUGHT)
+    same.exercise = ORDER
+    assert await tool(tutor, "pose_exercise")({"expression": "25 + 3 * 2"}) == "Same exercise."
+    assert same.calls == [("pose", "25 + 3 * 2", None, None)]
+
+
+async def test_a_pose_never_checks_the_words_of_an_earlier_turn():
+    checker = ScriptedChecker(posed="Ask it.", judged="Incorrect.")
+    tutor = Tutor(
+        language="es", gates=ScriptedGates(ALLOW), checker=checker, camera=Lens(fresh="page")
+    )
+    await spoken(tutor, Session(), BROUGHT)
+    # The button is a turn of its own: the words before it are not its words.
+    with patch.object(Tutor, "session", new_callable=PropertyMock, return_value=Session()):
+        assert await tutor.show_work() is True
+
+    assert await tool(tutor, "pose_exercise")({"expression": "25 + 3 * 2"}) == "Ask it."
+    assert checker.calls == [("pose", "25 + 3 * 2", None, None)]
+
+
+async def test_a_pose_never_checks_the_words_of_a_turn_the_gates_stopped():
+    checker = ScriptedChecker(posed="Ask it.", judged="Incorrect.")
+    tutor = Tutor(language="es", gates=ScriptedGates(HAZARD), checker=checker)
+    stopped, _ = await spoken(tutor, Session(), BROUGHT)
+    assert stopped is None
+
+    assert await tool(tutor, "pose_exercise")({"expression": "25 + 3 * 2"}) == "Ask it."
+    assert checker.calls == [("pose", "25 + 3 * 2", None, None)]
+
+
+async def test_a_pose_never_checks_the_words_of_a_turn_that_answers_a_gates_line():
+    checker = ScriptedChecker(posed="Ask it.", judged="Incorrect.")
+    tutor = Tutor(language="es", gates=ScriptedGates(HAZARD, ALLOW), checker=checker)
+    stopped, _ = await spoken(tutor, Session(), "voy a meter un tenedor al enchufe")
+    assert stopped is None
+    # It passed its gates, but it follows the gate's line: it is not checked.
+    await spoken(tutor, Session(), BROUGHT)
+
+    assert await tool(tutor, "pose_exercise")({"expression": "25 + 3 * 2"}) == "Ask it."
+    assert checker.calls == [("pose", "25 + 3 * 2", None, None)]
+
+
 # The safety invariants.
 
 

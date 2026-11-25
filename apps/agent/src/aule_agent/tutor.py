@@ -141,8 +141,9 @@ class TurnCheck:
     ``kind`` is how code read the turn against the exercise open once it
     passed the gates (see ``answers``); None when none was open. ``told`` is
     what the checker said, None while nobody asked it. ``by`` says who asked
-    it: "code" after the gates, "model" with its own call, and "reused" for
-    each later call of the model that got the same answer back.
+    it: "code" after the gates, "pose" right after the exercise the turn
+    brought was posed, "model" with its own call, and "reused" for each
+    later call of the model that got the same answer back.
     """
 
     kind: answers.Kind | None = None
@@ -914,7 +915,8 @@ class Tutor(Agent):
                 if not isinstance(expression, str) or not expression.strip():
                     return UNCHECKED
                 async with self._checking:
-                    return (
+                    before = checker.exercise
+                    told = (
                         await checker.pose(
                             expression,
                             skill_id if isinstance(skill_id, str) else None,
@@ -922,6 +924,7 @@ class Tutor(Agent):
                         )
                         or UNCHECKED
                     )
+                    return await self._checked_after_a_pose(checker, before, told)
 
             @function_tool(raw_schema=CHECK_ANSWER)
             async def check_answer(raw_arguments: dict[str, object]) -> str:
@@ -1110,6 +1113,32 @@ class Tutor(Agent):
             kind = done.kind if done is not None else None
             turn.check = TurnCheck(kind=kind, exercise=open_now, told=told, by=("model",))
             return told
+
+    async def _checked_after_a_pose(
+        self, checker: Checker, before: OpenExercise | None, told: str
+    ) -> str:
+        """What the model reads after posing an exercise. When the student's
+        turn brought that exercise with their answer ("Estoy haciendo 25 + 3 ×
+        2. Me salió 56"), nothing was open to check it against after the
+        gates: it is checked now, against the exercise just opened. Only when
+        their words say it again as posed, or an answer to the exercise before,
+        or "tengo 10 años", would be taken for an answer to it. Called with the
+        checker's lock held."""
+        posed, turn = checker.exercise, self._turn
+        if (
+            posed is None
+            or (before is not None and posed.id == before.id)
+            or (turn.check is not None and turn.check.told is not None)
+        ):
+            return told
+        reading = answers.to_check(turn.words, posed.expression, self._language)
+        if not reading.restated or reading.said is None:
+            return told
+        answer = await self._told(checker, reading.said)
+        turn.check = TurnCheck(kind=reading.kind, exercise=posed.id, told=answer, by=("pose",))
+        # The kind only: never the words, nor what the checker said.
+        logger.info("answer checked after a pose", extra={"kind": reading.kind})
+        return f"{told} Their answer in this turn, checked: {answer}"
 
     async def _told(self, checker: Checker, said: str) -> str:
         """What the checker says of ``said``; UNCHECKED when it could not tell.
