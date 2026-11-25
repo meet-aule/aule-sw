@@ -1,7 +1,8 @@
 //! What the team reads to know how the tutor is doing: one row of numbers per
-//! day, and the pilot's four numbers per week of sign-ups. Everything here is a
-//! count, a rate or a duration. No name, no id of a child and nothing anybody
-//! said is read or returned.
+//! day, the pilot's four numbers per week of sign-ups, and how many children
+//! come back and how much they talk. Everything here is a count, a rate or a
+//! duration. No name, no id of a child and nothing anybody said is read or
+//! returned.
 
 use axum::Json;
 use axum::extract::{Query, State};
@@ -330,6 +331,19 @@ pub struct WeeklyQuery {
 ///
 /// Sessions count as they do for the plan (`plans`), and the team's own
 /// families are left out.
+///
+/// Next to them, two numbers about children rather than families, in the same
+/// weeks (from the oldest one's Monday at midnight, local time) and from child
+/// sessions only, counted as for the plan:
+///
+/// - `children`: those whose first session falls in these weeks
+///   (`with_a_session`), and of them the ones with a second within seven days
+///   of it: `back_in_week1` out of `week1_over`, those whose seven days are
+///   over, and `back_so_far` out of all of them;
+/// - `talk`: `median_child_turns_per_minute`, the median over the sessions
+///   started in these weeks with a known length of the child's turns per
+///   minute from start to end, breaks included, to one decimal (null when
+///   there is none), and how many `sessions` that is.
 pub async fn weekly(
     _: Staff,
     State(state): State<AppState>,
@@ -395,7 +409,7 @@ pub async fn weekly(
          order by week desc, source nulls last",
             [
                 offset.into(),
-                team.into(),
+                team.as_str().into(),
                 SHORT_MINUTES.into(),
                 weeks.into(),
                 STARTED_MINUTES.into(),
@@ -423,7 +437,85 @@ pub async fn weekly(
             }))
         })
         .collect::<Result<_, DbErr>>()?;
-    Ok(Json(json!({ "timezone_offset_minutes": offset, "weeks": weeks, "cohorts": cohorts })))
+    let (children, talk) = children_and_talk(&state.db, weeks, offset, &team).await?;
+    Ok(Json(json!({
+        "timezone_offset_minutes": offset,
+        "weeks": weeks,
+        "cohorts": cohorts,
+        "children": children,
+        "talk": talk,
+    })))
+}
+
+/// `weekly()`'s `children` and `talk`, without the team's children.
+async fn children_and_talk(
+    db: &DatabaseConnection,
+    weeks: i32,
+    offset: i32,
+    team: &str,
+) -> Result<(Value, Value), DbErr> {
+    let row = db
+        .query_one_raw(Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            "with counted as (
+           select sessions.child_id, sessions.created_at, sessions.started_at, sessions.ended_at,
+                  sessions.child_turns
+           from sessions join children on children.id = sessions.child_id
+           where sessions.audience = 'child' and sessions.started_at is not null
+             and (sessions.ended_at is null or sessions.ended_at - sessions.started_at >= make_interval(mins => $3))
+             and not exists (select 1 from guardians where guardians.family_id = children.family_id
+                               and guardians.email = any(string_to_array($2, ',')))
+         ),
+         -- The cohorts' weeks, this one included: from the oldest one's Monday,
+         -- at midnight in the configured local time.
+         since as (
+           select (date_trunc('week', (now() at time zone 'UTC') + make_interval(mins => $5))
+                   - make_interval(weeks => $1 - 1, mins => $5)) at time zone 'UTC' as at
+         ),
+         firsts as (
+           select child_id, min(started_at) as first from counted group by child_id
+           having min(started_at) >= (select at from since)
+         ),
+         per_child as (
+           select first, exists (select 1 from counted where counted.child_id = firsts.child_id
+                                   and counted.started_at > firsts.first
+                                   and counted.started_at < firsts.first + interval '7 days') as back
+           from firsts
+         ),
+         -- From the sessions that count too: a slip of a few seconds with one
+         -- turn in it would read as several turns a minute.
+         talked as (
+           select child_turns::float8 / (extract(epoch from (ended_at - started_at))::float8 / 60) as per_minute
+           from counted
+           where started_at >= (select at from since)
+             and ended_at > started_at and child_turns is not null
+             -- One the housekeeping closed hours later has no known length.
+             and ended_at < created_at + make_interval(hours => $4)
+         )
+         select
+           (select count(*) from per_child) as with_a_session,
+           (select count(*) from per_child where first <= now() - interval '7 days') as week1_over,
+           (select count(*) from per_child where first <= now() - interval '7 days' and back) as back_in_week1,
+           (select count(*) from per_child where back) as back_so_far,
+           (select round((percentile_cont(0.5) within group (order by per_minute))::numeric, 1)::float8
+            from talked) as median,
+           (select count(*) from talked) as sessions",
+            [weeks.into(), team.into(), SHORT_MINUTES.into(), STALE_SESSION_HOURS.into(), offset.into()],
+        ))
+        .await?
+        .ok_or_else(|| DbErr::Custom("the children's numbers came back without a row".into()))?;
+    let count = |name: &str| row.try_get::<i64>("", name);
+    let children = json!({
+        "with_a_session": count("with_a_session")?,
+        "week1_over": count("week1_over")?,
+        "back_in_week1": count("back_in_week1")?,
+        "back_so_far": count("back_so_far")?,
+    });
+    let talk = json!({
+        "median_child_turns_per_minute": row.try_get::<Option<f64>>("", "median")?,
+        "sessions": count("sessions")?,
+    });
+    Ok((children, talk))
 }
 
 #[cfg(test)]
