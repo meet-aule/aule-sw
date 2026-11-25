@@ -9,6 +9,7 @@ Aule's voice tutor: a [LiveKit Agents](https://github.com/livekit/agents) worker
 | `worker` | The LiveKit worker: one tutor session per room it is dispatched to, with a time limit |
 | `comparison` | Exact comparison of bounded integer, fraction and decimal literals for hints; no exercise state or network |
 | `tutor` | The tutor's instructions, and where the gates and the camera plug into a turn |
+| `prompts` | Canonical English tutor policy, optional capability rules and the final output-language rule; see the [prompt inventory](PROMPTS.md) |
 | `safety` | Who a session is for, and the two safety gates of [ARCHITECTURE.md](../../ARCHITECTURE.md) run together on every turn |
 | `moderation` | The content-moderation gate: what the person said and what the tutor is about to say |
 | `physical_safety` | The physical-safety gate: whether what the person said needs a nearby adult |

@@ -137,13 +137,12 @@ def test_the_tutor_only_talks_about_a_screen_when_there_is_one():
     # Comparison and pronunciation tools are independent of a screen.
     always = ["compare_numbers", "pose_phrase", "check_phrase"]
     assert [tool.info.name for tool in without.tools] == always
-    assert SCREEN["es"] not in without.instructions
+    assert SCREEN not in without.instructions
     assert [tool.info.name for tool in with_screen.tools] == [
         "compare_numbers",
         "show",
         "pose_phrase",
         "check_phrase",
     ]
-    assert SCREEN["es"] in with_screen.instructions
-    assert with_screen.instructions.endswith("Plan: fracciones"), "the plan still comes last"
-    assert set(SCREEN) == {"es", "en"}
+    assert SCREEN in with_screen.instructions
+    assert "Plan: fracciones" in with_screen.instructions

@@ -72,4 +72,4 @@ async def test_the_real_tool_checks_without_a_platform_and_does_not_leak_an_answ
     result = json.loads(await tool(args))
     assert result == {"verified": True, "left": "2/29", "relation": "greater_than", "right": "1/15"}
     assert json.loads(await tool({"left": "2/29"}))["verified"] is False
-    assert all("compare_numbers" in INSTRUCTIONS[language] for language in ("es", "en"))
+    assert "compare_numbers" in INSTRUCTIONS

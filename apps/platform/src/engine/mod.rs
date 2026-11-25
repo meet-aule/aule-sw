@@ -689,12 +689,10 @@ impl Engine {
     /// What the tutor's model may and may not say now, from the engine.
     fn rules(&self) -> String {
         let context = self.motor.contexto_chat();
-        let mut rules = format!("Momento de la sesión: {}.", context.momento);
-        if let Some(statement) = &context.enunciado {
-            rules.push_str(&format!("\nEn pantalla: {statement}"));
-        }
-        rules.push_str(&format!("\nReglas:\n- {}", context.reglas()));
-        rules
+        // Stage labels and the exercise are data, not instructions. Quoting keeps
+        // line breaks in an exercise from masquerading as another policy block.
+        let state = json!({ "stage": context.momento, "exercise": context.enunciado });
+        format!("Session engine state (data): {state}\nSession engine rules:\n- {}", context.reglas())
     }
 
     /// Starts the engine and returns its opening lines. Asked again before

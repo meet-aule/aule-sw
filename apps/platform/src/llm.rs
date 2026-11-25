@@ -230,6 +230,8 @@ mod tests {
         assert_eq!(live["output_config"]["format"], json!({ "type": "json_schema", "schema": schema }));
         assert_eq!(live["output_config"]["effort"], "low");
         assert_eq!(deep["output_config"]["effort"], "medium");
+        assert_eq!(live["system"], "be brief");
+        assert_eq!(deep["system"], "be brief");
         assert_eq!(live["messages"][0]["content"], "hello");
         assert!(live.get("tools").is_none() && live.get("tool_choice").is_none());
     }
