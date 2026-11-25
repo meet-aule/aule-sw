@@ -7,10 +7,12 @@ from unittest.mock import PropertyMock, patch
 import pytest
 from livekit import rtc
 from livekit.agents import Agent, StopResponse, llm, stt
+from livekit.agents.voice.generation import mark_instructions_cache_boundary, update_instructions
 
 from aule_agent.greetings import GREETINGS, greeting
 from aule_agent.moderation import Action, Decision
 from aule_agent.prompts import RESPONSE_LANGUAGES, response_language
+from aule_agent.providers import REQUEST, layout
 from aule_agent.replies import ADULT_HELP_SEQUENCE, MEANWHILE, REPLIES, reply
 from aule_agent.script import Line, Reply
 from aule_agent.timing import Timing
@@ -510,10 +512,49 @@ async def test_an_answered_turn_is_not_reported(caplog):
     assert caplog.records == []
 
 
+async def request_for_a_reply(tutor, session=None, *, instructions=None):
+    """The request the tutor's next reply is asked with, as it is sent: the
+    instructions LiveKit copied for the turn (``instructions``, else those
+    the tutor last gave it), as the tutor's node hands them on, with its
+    prompt of that moment, laid out by the model's client."""
+    asked = []
+
+    async def model(agent, chat_ctx, *_):
+        asked.append((REQUEST.get(), chat_ctx))
+        yield "Muy bien."
+
+    # As LiveKit asks for a reply: its own instructions message, marked.
+    turn = llm.ChatContext.empty()
+    update_instructions(turn, instructions=instructions or tutor.instructions, add_if_missing=True)
+    mark_instructions_cache_boundary(turn)
+    with (
+        patch.object(Tutor, "session", new_callable=PropertyMock, return_value=session),
+        patch.object(Agent.default, "llm_node", side_effect=model),
+    ):
+        [chunk async for chunk in tutor.llm_node(turn, [], None)]
+    ((prompt, handed),) = asked
+    (told,) = [item for item in handed.items if item.type == "message" and item.role == "system"]
+    request = {
+        "model": "claude-sonnet-5-5",
+        "system": [{"type": "text", "text": told.text_content}],
+        "messages": [{"role": "user", "content": [{"type": "text", "text": "hola"}]}],
+    }
+    return layout(request, prompt, system_messages=True)[0]
+
+
+def model_reads(request):
+    """Everything a request tells the model, in the order it reads it."""
+    parts = [block["text"] for block in request.get("system", [])]
+    for message in request["messages"]:
+        content = message["content"]
+        parts += [content] if isinstance(content, str) else [b.get("text", "") for b in content]
+    return "\n\n".join(parts)
+
+
 async def test_a_late_plan_joins_the_student_context_and_keeps_the_guidance():
     tutor = Tutor(
         language="es",
-        gates=ScriptedGates(),
+        gates=ScriptedGates(ALLOW),
         context="The student is Liam.",
         persona=persona_from("Aule", "jugueton", None),
     )
@@ -529,6 +570,16 @@ async def test_a_late_plan_joins_the_student_context_and_keeps_the_guidance():
     final = seen[-1]
     assert final.index("The student is Liam.") < final.index("Plan: fractions.")
     assert final.index("Plan: fractions.") < final.index("fun tone.") < final.index("Slow down.")
+    # What the model reads, in order: the prefix the prompt cache keeps, then
+    # the notes of the moment after the history, the language rule last.
+    request = await request_for_a_reply(tutor, instructions=final)
+    read = model_reads(request)
+    assert read.index("The student is Liam.") < read.index("Plan: fractions.")
+    assert read.index("Plan: fractions.") < read.index("fun tone.") < read.index("Slow down.")
+    assert read.endswith(response_language("es"))
+    # The guidance is a note: the two marked system blocks do not carry it.
+    assert ["cache_control" in block for block in request["system"]] == [True, True]
+    assert all("Slow down." not in block["text"] for block in request["system"])
 
 
 @pytest.mark.parametrize(
@@ -769,18 +820,28 @@ async def test_when_the_student_leaves_the_script_the_model_answers_within_the_r
         [Line("hola")], Reply(converse="No hints: this is a measurement."), None
     )
     tutor, session = (
-        Tutor(language="es", gates=ScriptedGates(ALLOW, ALLOW), engine=engine),
+        Tutor(language="es", gates=ScriptedGates(ALLOW, ALLOW, ALLOW, ALLOW), engine=engine),
         Session(),
     )
 
     asked, first = await scripted_turn(tutor, session, "¿qué es un denominador?")
+    # The reply to this very turn is asked within the rules the engine just set,
+    # though LiveKit copied the turn's instructions before they were set.
+    first_reply = await request_for_a_reply(tutor, session)
     off_script, second = await scripted_turn(tutor, session, "tengo hambre")
+    second_reply = await request_for_a_reply(tutor, session)
 
     assert asked and off_script and session.said == []
     assert "No hints: this is a measurement." in first["instructions"][-1]
     assert first["instructions"][-1].endswith(response_language("es"))
+    assert "No hints: this is a measurement." in model_reads(first_reply)
+    assert model_reads(first_reply).endswith(response_language("es"))
     # The rules of one moment do not outlive it.
     assert "No hints" not in second["instructions"][-1]
+    assert "No hints" not in model_reads(second_reply)
+    # The prefix the prompt cache keeps is the same with them and without.
+    assert all("No hints" not in block["text"] for block in first_reply["system"])
+    assert first_reply["system"] == second_reply["system"]
 
 
 async def test_lines_that_may_repeat_the_student_are_judged_together_before_any_is_said():

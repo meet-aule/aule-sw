@@ -89,6 +89,11 @@ def test_push_to_talk_is_off_unless_turned_on():
     assert Settings.from_env({**COMPLETE, "AULE_PUSH_TO_TALK": "no"}).push_to_talk is False
 
 
+def test_the_notes_stay_in_the_system_prompt_unless_moved_after_the_history():
+    assert Settings.from_env(COMPLETE).notes_after_history is False
+    assert Settings.from_env({**COMPLETE, "AULE_NOTES_AFTER_HISTORY": "1"}).notes_after_history
+
+
 def test_the_moderation_key_is_also_the_speech_key_when_openai_speaks():
     settings = Settings.from_env({**COMPLETE, "AULE_TTS": "openai", "OPENAI_API_KEY": "sk"})
 

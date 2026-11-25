@@ -58,6 +58,11 @@ class Settings:
     push_to_talk: bool
     # How long a break lasts before the tutor asks to go on.
     break_minutes: int = 5
+    # Where the notes of the moment (the supervisor's guidance, the engine's
+    # rules for talk, then the output-language rule) go: after the
+    # conversation, as a system message, on a model that takes one; otherwise
+    # at the end of the system prompt.
+    notes_after_history: bool = False
     # Kept out of the repr so a logged Settings never shows a key.
     openai_api_key: str | None = field(default=None, repr=False)
     typesafe_api_key: str | None = field(default=None, repr=False)
@@ -113,6 +118,7 @@ class Settings:
             problems.append("AULE_BREAK_MINUTES must be a whole number from 1 to 15")
 
         push_to_talk = get("AULE_PUSH_TO_TALK").lower() in ("1", "true", "yes", "on")
+        notes_after_history = get("AULE_NOTES_AFTER_HISTORY").lower() in ("1", "true", "yes", "on")
 
         if problems:
             raise ConfigError("; ".join(problems))
@@ -127,6 +133,7 @@ class Settings:
             session_max_minutes=minutes,
             push_to_talk=push_to_talk,
             break_minutes=break_minutes,
+            notes_after_history=notes_after_history,
             openai_api_key=get(MODERATION_KEY) or None,
             typesafe_api_key=get(PHYSICAL_SAFETY_KEY) or None,
         )

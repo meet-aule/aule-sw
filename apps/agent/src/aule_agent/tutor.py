@@ -14,10 +14,12 @@ from typing import Any, Protocol
 import numpy as np
 from livekit import rtc
 from livekit.agents import Agent, ModelSettings, StopResponse, function_tool, llm, stt
+from livekit.agents.voice.generation import INSTRUCTIONS_MESSAGE_ID
 
 from . import comparison, drill, farewell, visuals
 from .greetings import greeting as written_greeting
 from .prompts import CHECKING, INSTRUCTIONS, PACED, SCREEN, response_language
+from .providers import REQUEST, Prompt
 from .replies import ADULT_HELP_SEQUENCE, ANSWERABLE, MEANWHILE, reply
 from .safety import Gates
 from .script import Engine, Line, Reply
@@ -225,9 +227,34 @@ def with_frame(chat_ctx: llm.ChatContext, frame: rtc.VideoFrame | None) -> llm.C
     return chat_ctx
 
 
+def with_instructions(chat_ctx: llm.ChatContext, text: str) -> llm.ChatContext:
+    """A copy of the context whose instructions are ``text``, the tutor's as
+    they are now.
+
+    LiveKit copies a turn's context before ``on_user_turn_completed``, where
+    the engine may change the rules for talk, so that turn's reply would be
+    asked with the instructions of the turn before. Only LiveKit's own
+    instructions message is touched; the session's history is left alone.
+    """
+    index = chat_ctx.index_by_id(INSTRUCTIONS_MESSAGE_ID)
+    if index is None:
+        return chat_ctx
+    message = chat_ctx.items[index]
+    if message.type != "message" or message.text_content == text:
+        return chat_ctx
+    items = list(chat_ctx.items)
+    kept = [part for part in message.content if not isinstance(part, str)]
+    items[index] = message.model_copy(update={"content": [text, *kept]})
+    return llm.ChatContext(items)
+
+
 def with_notes(instructions: str, notes: str) -> str:
     notes = notes.strip()
     return f"{instructions}\n\n{notes}" if notes else instructions
+
+
+def _joined(*parts: str) -> str:
+    return "\n\n".join(part.strip() for part in parts if part.strip())
 
 
 def _text_of(chunk: Any) -> str:
@@ -439,10 +466,10 @@ class Tutor(Agent):
         self._context = context
         self._tone = persona_notes(persona)
         self._guidance = ""
-        self._base = with_notes(with_notes(instructions, context), self._tone)
         self._drill = practice
         self._language = language
         self._rules_for_talk = ""
+        self._base = self._prompt().system
         super().__init__(instructions=self._instructions_now(), tools=tools)
         self._gates = gates
         self._camera = camera
@@ -485,7 +512,9 @@ class Tutor(Agent):
     async def advise(self, guidance: str) -> None:
         """Applies the supervisor's latest guidance to the turns that follow.
 
-        It replaces the previous guidance instead of piling up.
+        It replaces the previous guidance instead of piling up. It is one of
+        the notes (see ``_prompt``): sent after the prefix the prompt cache
+        reads, which it leaves as it was.
         """
         self._guidance = guidance
         await self.update_instructions(self._instructions_now())
@@ -498,8 +527,19 @@ class Tutor(Agent):
         it come with the first call.
         """
         self._context = with_notes(self._context, plan)
-        self._base = with_notes(with_notes(self._rules, self._context), self._tone)
+        self._base = self._prompt().system
         await self.update_instructions(self._instructions_now())
+
+    def _prompt(self) -> Prompt:
+        """What the model is told now (``PROMPTS.md``): the rules, the
+        student's part (what is known of them, the plan, then the tone) and
+        the notes of this moment, which end with the output-language rule:
+        the last instruction of every request, after any update."""
+        return Prompt(
+            rules=self._rules,
+            student=_joined(self._context, self._tone),
+            notes=_joined(self._guidance, self._rules_for_talk, response_language(self._language)),
+        )
 
     async def on_enter(self) -> None:
         # The engine's own opening when it runs the session; otherwise a
@@ -581,7 +621,8 @@ class Tutor(Agent):
         rules = reply.converse if reply is not None else None
         if (rules or "") != self._rules_for_talk:
             # What the model may do while the student talks changes with the
-            # moment of the session (no hints in a measurement, for one).
+            # moment of the session (no hints in a measurement, for one). The
+            # reply to this very turn follows them too (``llm_node``).
             self._rules_for_talk = rules or ""
             await self.update_instructions(self._instructions_now())
         if reply is None:
@@ -596,10 +637,7 @@ class Tutor(Agent):
         return reply.converse is None
 
     def _instructions_now(self) -> str:
-        return with_notes(
-            with_notes(with_notes(self._base, self._guidance), self._rules_for_talk),
-            response_language(self._language),
-        )
+        return self._prompt().text
 
     async def on_user_turn_completed(
         self, turn_ctx: llm.ChatContext, new_message: llm.ChatMessage
@@ -818,6 +856,11 @@ class Tutor(Agent):
         self, chat_ctx: llm.ChatContext, tools: list[llm.Tool], model_settings: ModelSettings
     ) -> AsyncIterable[llm.ChatChunk | str]:
         took = self._took()
+        prompt = self._prompt()
+        # Read by the model's client as the request is laid out (``providers``),
+        # with the instructions as they are now.
+        REQUEST.set(prompt)
+        chat_ctx = with_instructions(chat_ctx, prompt.text)
         frame = self._frame_for(chat_ctx)
         stream = timed(
             Agent.default.llm_node(self, with_frame(chat_ctx, frame), tools, model_settings), took

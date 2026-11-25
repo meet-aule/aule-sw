@@ -66,6 +66,8 @@ transcript that comes after its turn was committed, too late for that turn, is
 counted (`stt_finals_after_commit`). Each model call is also logged with its token
 counts and how many were read from or written to the prompt cache.
 
+Each call to the model is laid out for that cache just before it is sent (`providers.layout`, around the plugin's own client). The cache is a prefix match over tools, system prompt and messages, in that order, so the system prompt is two marked blocks, the rules (the same for every session of their kind) and the student's part (what is known of them, the plan and the tone, the same all session but for a late plan), and the history, which only grows, is marked where the newest turn ends and where the previous request ended. What changes between turns, the supervisor's guidance and the engine's rules for talk, is read for each request and sent last with the output-language rule after it, unmarked and not kept: at the end of the system prompt, or after the history with `AULE_NOTES_AFTER_HISTORY`. Either way the language rule is the last instruction of every request ([PROMPTS.md](PROMPTS.md)). The tutor still holds the whole prompt as its instructions, updated on every change; a reply is asked with them as they are when it is asked, so a turn whose rules the engine has just changed is answered within them. `tool_choice` is the same on every call, since a change of it drops the cached history.
+
 ## Mathematical hints and complete replies
 
 Before asserting that one number is smaller, equal or larger than another, the
@@ -108,6 +110,7 @@ Environment variables; `.env.example` at the repository root lists them all.
 | `AULE_SESSION_MAX_MINUTES` | Default 15 |
 | `AULE_AGENT_NAME` | Default `aule-tutor` |
 | `AULE_PLATFORM_URL` | Optional. Where the [platform](../platform/README.md) is; without it the tutor has no memory of the student |
+| `AULE_NOTES_AFTER_HISTORY` | `1` puts the supervisor's guidance and the engine's rules for talk, and the output-language rule after them, after the conversation, as a system message (`claude-sonnet-5-5` only), so a change of them leaves the cached conversation readable. Default: at the end of the system prompt, as before. Check in a live session that the tutor never talks about them first (#56) |
 
 The worker refuses to start if a setting is missing and says which. Without both gate keys it starts, warns, and accepts operator sessions only. Once it runs, it asks each configured gate's provider whether it answers and says in its log which one does not and why: a refused key names the setting to check, never its value. A gate with a key always runs: there is no setting to turn it off. Before using a provider with children, check that its terms allow minors' data with zero retention.
 
