@@ -43,7 +43,7 @@ const MAX_ATTEMPTS: i32 = 5;
 const MAX_CODES_PER_HOUR: i32 = 5;
 const SESSION_DAYS: i32 = 30;
 /// A session the team's console opens lasts this long, as the console's own does.
-const TEAM_SESSION_HOURS: i32 = 12;
+pub(crate) const TEAM_SESSION_HOURS: i32 = 12;
 const MAX_SOURCE_CHARS: usize = 24;
 
 pub fn normalized_email(email: &str) -> ApiResult<String> {

@@ -53,3 +53,7 @@ webauthn-rs = { version = "=0.5.5", default-features = false, features = ["condi
 sea-orm = { version = "2.0.4", default-features = false, features = ["schema-sync"] }
 jsonschema = "0.61.2"
 tower = { version = "0.5", features = ["util"] }
+# The passkey tests' software authenticator: its P-256 keys and its CBOR, from
+# crates the platform already builds (rustls and webauthn-rs bring them).
+aws-lc-rs = "1.19"
+serde_cbor_2 = "0.13"

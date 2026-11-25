@@ -2,6 +2,9 @@
 //! gets its own empty database. The language model and the embedding model
 //! are fakes, so nothing leaves the machine.
 
+#[path = "support/authenticator.rs"]
+mod authenticator;
+
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
@@ -16,6 +19,7 @@ use aule_platform::oauth::CodeProvider;
 use aule_platform::push::{Delivery, Push, PushError, Pusher};
 use aule_platform::state::AppState;
 use aule_platform::{events, http, jobs};
+use authenticator::{Authenticator, BE, BS, UP, UV};
 use axum::Router;
 use axum::body::Body;
 use axum::http::{Method, Request, StatusCode};
@@ -261,8 +265,19 @@ fn app_with(pool: PgPool, events_webhook: Option<EventsWebhook>) -> App {
         claim_attempts: Arc::new(Mutex::new(HashMap::new())),
         engines: Default::default(),
         webauthn: Some(webauthn),
+        passkey_ceremonies: Default::default(),
     };
     App { phones, rooms, router: http::router(state.clone()), state, llm, mail }
+}
+
+/// The app with `team` as Aule's team (`AULE_ADMIN_EMAILS`).
+fn team_app(pool: PgPool, team: &[&str]) -> App {
+    let mut app = app(pool);
+    let mut config = (*app.state.config).clone();
+    config.admin_emails = team.iter().map(|email| email.to_string()).collect();
+    app.state.config = Arc::new(config);
+    app.router = http::router(app.state.clone());
+    app
 }
 
 impl App {
@@ -1641,6 +1656,322 @@ async fn the_team_signs_in_with_codes_of_its_own(pool: PgPool) {
     }
     assert_eq!(team_verify("team@example.org", &team_code).await.0, StatusCode::FORBIDDEN);
     assert_eq!(family_verify("team@example.org", &family_code).await.0, StatusCode::OK);
+}
+
+/// Signs a team member in with the team's code, as the console does: a fresh
+/// session of 12 hours. The address must have an account already.
+async fn team_token(app: &App, email: &str) -> String {
+    let (status, _) =
+        app.call(Method::POST, "/v1/auth/team/start", None, Some(json!({ "email": email }))).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let code = app.mail.sent.lock().unwrap().last().unwrap().1[..6].to_string();
+    let (status, body) = app
+        .call(Method::POST, "/v1/auth/team/verify", None, Some(json!({ "email": email, "code": code })))
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    body["token"].as_str().unwrap().to_string()
+}
+
+/// The options for a passkey for the holder of `token`: `{ceremony, options}`.
+async fn passkey_options(app: &App, token: &str) -> Value {
+    let (status, started) = app.call(Method::POST, "/v1/admin/passkeys/options", Some(token), None).await;
+    assert_eq!(status, StatusCode::OK, "{started}");
+    started
+}
+
+/// Finishes adding a passkey: what the console sends on.
+async fn finish_passkey(
+    app: &App,
+    token: &str,
+    ceremony: &Value,
+    label: &str,
+    credential: Value,
+) -> (StatusCode, Value) {
+    let body = json!({ "ceremony": ceremony, "label": label, "credential": credential });
+    app.call(Method::POST, "/v1/admin/passkeys", Some(token), Some(body)).await
+}
+
+/// Adds a passkey of `authenticator` for the holder of `token`, as the
+/// console's page does: the options, the browser's creation, the finish.
+async fn add_passkey(
+    app: &App,
+    token: &str,
+    authenticator: &mut Authenticator,
+    label: &str,
+) -> (StatusCode, Value) {
+    let started = passkey_options(app, token).await;
+    let credential = authenticator.create(&started["options"]);
+    finish_passkey(app, token, &started["ceremony"], label, credential).await
+}
+
+/// The names of the passkeys the holder of `token` sees, newest first.
+async fn passkey_names(app: &App, token: &str) -> Vec<String> {
+    let (status, list) = app.call(Method::GET, "/v1/admin/passkeys", Some(token), None).await;
+    assert_eq!(status, StatusCode::OK, "{list}");
+    list["passkeys"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|passkey| passkey["label"].as_str().unwrap().to_string())
+        .collect()
+}
+
+/// A team member adds passkeys from the console, sees them (name, when made,
+/// when last used) and deletes them; nobody else sees or deletes them, and no
+/// answer carries anything of the key.
+#[sqlx::test(migrator = "aule_platform::MIGRATOR")]
+async fn team_members_add_list_and_delete_their_own_passkeys(pool: PgPool) {
+    let app = team_app(pool, &["team@example.org", "otra@example.org"]);
+    let family_of_team = app.sign_in("team@example.org", "Equipo").await;
+    app.sign_in("otra@example.org", "Otra").await;
+    let (team, otra) =
+        (team_token(&app, "team@example.org").await, team_token(&app, "otra@example.org").await);
+    assert!(passkey_names(&app, &team).await.is_empty());
+
+    let started = passkey_options(&app, &team).await;
+    assert_eq!(started["ceremony"].as_str().unwrap().len(), 64);
+    let user = &started["options"]["publicKey"]["user"];
+    assert_eq!(
+        (user["name"].as_str(), user["displayName"].as_str()),
+        (Some("team@example.org"), Some("team@example.org"))
+    );
+    let mut laptop = Authenticator::synced();
+    let credential = laptop.create(&started["options"]);
+    let (status, added) =
+        finish_passkey(&app, &team, &started["ceremony"], "  MacBook de Ana ", credential).await;
+    assert_eq!(status, StatusCode::CREATED, "{added}");
+    let mut fields = keys(&added);
+    fields.sort();
+    assert_eq!(fields, ["created_at", "id", "label", "last_used_at"]);
+    assert_eq!((added["label"].as_str(), &added["last_used_at"]), (Some("MacBook de Ana"), &Value::Null));
+    let mut phone = Authenticator::device_bound();
+    let (status, second) = add_passkey(&app, &team, &mut phone, "Teléfono").await;
+    assert_eq!(status, StatusCode::CREATED, "{second}");
+
+    // Newest first, each with its name and dates only.
+    let (_, list) = app.call(Method::GET, "/v1/admin/passkeys", Some(&team), None).await;
+    assert_eq!(passkey_names(&app, &team).await, ["Teléfono", "MacBook de Ana"]);
+    let mut fields = keys(&list);
+    fields.sort();
+    fields.dedup();
+    assert_eq!(fields, ["created_at", "id", "label", "last_used_at", "passkeys"]);
+    for answer in [&added, &second, &list] {
+        let text = answer.to_string();
+        let handle = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(&laptop.user_handle);
+        for secret in [laptop.id(), phone.id(), handle, "cred".into(), "counter".into(), "public".into()] {
+            assert!(!text.contains(&secret), "{secret} in {text}");
+        }
+    }
+
+    // One user handle for all of a member's passkeys: random, never their guardian's id.
+    let handles: Vec<(uuid::Uuid, uuid::Uuid)> = sqlx::query_as(
+        "select distinct p.user_handle, g.id from team_passkeys p join guardians g on g.id = p.guardian_id",
+    )
+    .fetch_all(&app.state.pool)
+    .await
+    .unwrap();
+    assert_eq!(handles.len(), 1);
+    assert_ne!(handles[0].0, handles[0].1);
+    assert_eq!(laptop.user_handle, phone.user_handle);
+    assert_eq!(laptop.user_handle, handles[0].0.as_bytes());
+
+    // Someone else on the team sees none of them and deletes none.
+    assert!(passkey_names(&app, &otra).await.is_empty());
+    let first = format!("/v1/admin/passkeys/{}", added["id"].as_str().unwrap());
+    assert_eq!(app.call(Method::DELETE, &first, Some(&otra), None).await.0, StatusCode::NOT_FOUND);
+    let nobody = format!("/v1/admin/passkeys/{}", uuid::Uuid::now_v7());
+    let (status, gone) = app.call(Method::DELETE, &nobody, Some(&team), None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "the same answer for one that never was");
+    let (_, theirs) = app.call(Method::DELETE, &first, Some(&otra), None).await;
+    assert_eq!(theirs, gone);
+    // Nor do a family's session of the same member, or the operator.
+    for token in [family_of_team.as_str(), ADMIN] {
+        assert_eq!(app.call(Method::DELETE, &first, Some(token), None).await.0, StatusCode::FORBIDDEN);
+        assert_eq!(
+            app.call(Method::GET, "/v1/admin/passkeys", Some(token), None).await.0,
+            StatusCode::FORBIDDEN
+        );
+    }
+
+    // The member deletes theirs, once.
+    assert_eq!(app.call(Method::DELETE, &first, Some(&team), None).await.0, StatusCode::NO_CONTENT);
+    assert_eq!(app.call(Method::DELETE, &first, Some(&team), None).await.0, StatusCode::NOT_FOUND);
+    assert_eq!(passkey_names(&app, &team).await, ["Teléfono"]);
+}
+
+/// Adding a passkey needs a session the team's sign-in opened in the last 15
+/// minutes: a stolen older one cannot add a passkey to outlive its 12 hours.
+/// Never the operator's token, a family's, or a team member's own 30-day one.
+#[sqlx::test(migrator = "aule_platform::MIGRATOR")]
+async fn adding_a_passkey_needs_a_recent_team_session(pool: PgPool) {
+    let app = app(pool.clone());
+    let family_of_team = app.sign_in("team@example.org", "Equipo").await;
+    let family = app.sign_in("ana@example.org", "Ana").await;
+    let team = team_token(&app, "team@example.org").await;
+    let some_passkey = format!("/v1/admin/passkeys/{}", uuid::Uuid::now_v7());
+    for (method, path) in [
+        (Method::POST, "/v1/admin/passkeys/options"),
+        (Method::POST, "/v1/admin/passkeys"),
+        (Method::GET, "/v1/admin/passkeys"),
+        (Method::DELETE, some_passkey.as_str()),
+    ] {
+        assert_eq!(app.call(method.clone(), path, None, None).await.0, StatusCode::UNAUTHORIZED, "{path}");
+        assert_eq!(
+            app.call(method.clone(), path, Some("nope"), None).await.0,
+            StatusCode::UNAUTHORIZED,
+            "{path}"
+        );
+        for token in [ADMIN, family.as_str(), family_of_team.as_str()] {
+            let (status, body) = app.call(method.clone(), path, Some(token), None).await;
+            assert_eq!(status, StatusCode::FORBIDDEN, "{path}");
+            assert_eq!(body["error"]["message"], "this route is for Aule's team");
+        }
+    }
+    assert_eq!(
+        app.call(Method::POST, "/v1/admin/passkeys/options", Some(&team), None).await.0,
+        StatusCode::OK
+    );
+
+    // Sixteen minutes on, the same session still lists and deletes, and adds nothing.
+    sqlx::query(
+        "update guardian_sessions set created_at = created_at - interval '16 minutes',
+                expires_at = expires_at - interval '16 minutes' where token_hash = $1",
+    )
+    .bind(aule_platform::auth::token_hash(&team))
+    .execute(&pool)
+    .await
+    .unwrap();
+    let (status, body) = app.call(Method::POST, "/v1/admin/passkeys/options", Some(&team), None).await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    assert_eq!(app.call(Method::GET, "/v1/admin/passkeys", Some(&team), None).await.0, StatusCode::OK);
+    assert_eq!(app.call(Method::DELETE, &some_passkey, Some(&team), None).await.0, StatusCode::NOT_FOUND);
+
+    // Taken off the team, the session reaches none of it.
+    let without = team_app(pool, &[]);
+    for (method, path) in [(Method::POST, "/v1/admin/passkeys/options"), (Method::GET, "/v1/admin/passkeys")]
+    {
+        assert_eq!(without.call(method, path, Some(&team), None).await.0, StatusCode::FORBIDDEN, "{path}");
+    }
+}
+
+/// A passkey being added works once, and only for the session that asked for
+/// it; a new request replaces the session's earlier one.
+#[sqlx::test(migrator = "aule_platform::MIGRATOR")]
+async fn a_registration_works_once_for_the_session_that_asked(pool: PgPool) {
+    let app = app(pool);
+    app.sign_in("team@example.org", "Equipo").await;
+    let first = team_token(&app, "team@example.org").await;
+    let second = team_token(&app, "team@example.org").await;
+    let mut key = Authenticator::synced();
+
+    // Asked for in one session and finished in another: refused, and gone for both.
+    let started = passkey_options(&app, &first).await;
+    let credential = key.create(&started["options"]);
+    let (status, body) = finish_passkey(&app, &second, &started["ceremony"], "Mac", credential.clone()).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    let again = finish_passkey(&app, &first, &started["ceremony"], "Mac", credential).await;
+    assert_eq!(again.0, StatusCode::BAD_REQUEST, "taken by the try that failed");
+
+    // Finished by the session that asked, it works once.
+    let started = passkey_options(&app, &first).await;
+    let credential = key.create(&started["options"]);
+    let done = finish_passkey(&app, &first, &started["ceremony"], "Mac", credential.clone()).await;
+    assert_eq!(done.0, StatusCode::CREATED, "{}", done.1);
+    let replayed = finish_passkey(&app, &first, &started["ceremony"], "Mac", credential).await;
+    assert_eq!(replayed.0, StatusCode::BAD_REQUEST, "replayed");
+
+    // A session has one passkey being added at a time.
+    let earlier = passkey_options(&app, &first).await;
+    let later = passkey_options(&app, &first).await;
+    let mut phone = Authenticator::synced();
+    let credential = phone.create(&earlier["options"]);
+    let replaced = finish_passkey(&app, &first, &earlier["ceremony"], "Teléfono", credential).await;
+    assert_eq!(replaced.0, StatusCode::BAD_REQUEST, "replaced by the later one");
+    let handle = later["ceremony"].as_str().unwrap();
+    for odd in [json!(""), json!("x"), json!("0".repeat(64)), json!(handle.to_uppercase()), json!(42)] {
+        let credential = phone.create(&later["options"]);
+        let (status, _) = finish_passkey(&app, &first, &odd, "Teléfono", credential).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{odd}");
+    }
+    let credential = phone.create(&later["options"]);
+    assert_eq!(
+        finish_passkey(&app, &first, &later["ceremony"], "Teléfono", credential).await.0,
+        StatusCode::CREATED
+    );
+    assert_eq!(app.count("select count(*) from team_passkeys").await, 2);
+}
+
+/// What a test does to the software authenticator to make it misbehave.
+type Misbehave = fn(&mut Authenticator);
+
+/// The library checks the passkey itself: user verification, the console's
+/// origin and RP id. The platform also wants it discoverable, named, unique,
+/// and at most ten per member.
+#[sqlx::test(migrator = "aule_platform::MIGRATOR")]
+async fn a_registration_needs_user_verification_the_origin_and_the_rp_id(pool: PgPool) {
+    let app = team_app(pool, &["team@example.org", "otra@example.org"]);
+    app.sign_in("team@example.org", "Equipo").await;
+    app.sign_in("otra@example.org", "Otra").await;
+    let team = team_token(&app, "team@example.org").await;
+    let cases: [(&str, Misbehave); 7] = [
+        ("no user verification", |key| key.flags = UP | BE | BS),
+        ("another port", |key| key.origin = "http://localhost:8093".into()),
+        ("another site", |key| key.origin = "https://evil.example".into()),
+        ("another scheme", |key| key.origin = "https://localhost:8092".into()),
+        ("another RP id", |key| key.rp_id = "evil.example".into()),
+        ("backed up but not eligible", |key| key.flags = UP | UV | BS),
+        ("not discoverable", |key| key.discoverable = Some(false)),
+    ];
+    for (what, change) in cases {
+        let mut key = Authenticator::synced();
+        change(&mut key);
+        let (status, body) = add_passkey(&app, &team, &mut key, "Mac").await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{what}: {body}");
+    }
+    assert_eq!(app.count("select count(*) from team_passkeys").await, 0);
+
+    // A credential that is not one, and a name that is not one, are refused;
+    // a bad name leaves the request for the next try.
+    let started = passkey_options(&app, &team).await;
+    let (status, _) = finish_passkey(&app, &team, &started["ceremony"], "Mac", json!({ "id": "x" })).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let started = passkey_options(&app, &team).await;
+    let mut key = Authenticator::synced();
+    let credential = key.create(&started["options"]);
+    for bad in ["", "   ", &"a".repeat(61), "Mac\nBook", "Mac\u{7}"] {
+        let (status, _) = finish_passkey(&app, &team, &started["ceremony"], bad, credential.clone()).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{bad:?}");
+    }
+    let named = finish_passkey(&app, &team, &started["ceremony"], &"ñ".repeat(60), credential).await;
+    assert_eq!(named.0, StatusCode::CREATED, "{}", named.1);
+    // A browser that says nothing of discoverability is believed.
+    let mut quiet = Authenticator::synced();
+    quiet.discoverable = None;
+    assert_eq!(add_passkey(&app, &team, &mut quiet, "Firefox").await.0, StatusCode::CREATED);
+
+    // A credential id is anyone's once: the same key brought by someone else.
+    let otra = team_token(&app, "otra@example.org").await;
+    let (status, body) = add_passkey(&app, &otra, &mut key, "Robada").await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert_eq!(body["error"]["message"], "that passkey is already registered");
+
+    // Ten at most, even with two finished together from two sessions.
+    for n in 2..9 {
+        assert_eq!(
+            add_passkey(&app, &team, &mut Authenticator::synced(), &format!("Llave {n}")).await.0,
+            StatusCode::CREATED
+        );
+    }
+    let other = team_token(&app, "team@example.org").await;
+    let (one, two) = (passkey_options(&app, &team).await, passkey_options(&app, &other).await);
+    let (mut tenth, mut eleventh) = (Authenticator::synced(), Authenticator::synced());
+    let (tenth, eleventh) = (tenth.create(&one["options"]), eleventh.create(&two["options"]));
+    assert_eq!(finish_passkey(&app, &team, &one["ceremony"], "Décima", tenth).await.0, StatusCode::CREATED);
+    let (status, body) = finish_passkey(&app, &other, &two["ceremony"], "Undécima", eleventh).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert_eq!(app.count("select count(*) from team_passkeys").await, 10);
+    let (status, body) = app.call(Method::POST, "/v1/admin/passkeys/options", Some(&team), None).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
 }
 
 async fn claim(app: &App, token: &str, code: &str, child: Option<&str>) -> (StatusCode, Value) {

@@ -330,6 +330,7 @@ version = "0.0.1"
 dependencies = [
  "async-trait",
  "aule-core",
+ "aws-lc-rs",
  "axum",
  "base64 0.23.1",
  "chrono",
@@ -344,6 +345,7 @@ dependencies = [
  "sea-orm",
  "semver",
  "serde",
+ "serde_cbor_2",
  "serde_json",
  "sha2",
  "sqlx",
