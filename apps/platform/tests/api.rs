@@ -2046,8 +2046,8 @@ async fn a_family_s_sessions_are_what_its_plan_allows_and_the_team_can_grant_one
     assert_eq!(start().await.0, StatusCode::CREATED);
     set("update sessions set started_at = now(), ended_at = now() + interval '20 minutes'
          where started_at is null")
-        .await
-        .unwrap();
+    .await
+    .unwrap();
     let (_, standing) = plan().await;
     assert_eq!((standing["used"].as_i64(), standing["left"].as_i64()), (Some(1), Some(0)));
     assert!(standing["ends_at"].is_string());
