@@ -208,7 +208,8 @@ class World:
         self.plans: dict[str, TurnPlan] = {}
         self.moderated: list[str] = []
         self.typesafe_asked: list[str] = []
-        self.warmups = {"moderation": 0, "typesafe": 0, "reader": 0}
+        # Requests that only open a connection (lists of models), by client.
+        self.warmups = {"typesafe": 0, "reader": 0, "model": 0}
         self.platform_calls: list[tuple[str, str, Any]] = []
         self.flags: list[tuple[str, str, list[str]]] = []
         self.reported_turns: list[dict[str, Any]] = []
@@ -226,8 +227,8 @@ class World:
         self.stt = FakeSTT(self)
         self.vad = FakeVAD(self)
         self.voice = FakeVoice(self)
-        self.model_client = FakeAnthropic(self)
-        self.reader_client = FakeAnthropic(self)
+        self.model_client = FakeAnthropic(self, role="model")
+        self.reader_client = FakeAnthropic(self, role="reader")
         self.moderation_client = FakeModeration(self)
         self.typesafe = FakeTypeSafe(self)
         self.platform = FakePlatform(self)
@@ -803,6 +804,7 @@ class FakeTypeSafe:
         return json.dumps(answer).encode()
 
     async def list_models(self) -> bytes:
+        self._world.warmups["typesafe"] += 1
         async with self._one_at_a_time:
             await self._wait()
         return (
@@ -1015,8 +1017,9 @@ class FakeAnthropic:
     """Anthropic's client: the tutor's model when asked to stream, the second
     reader when asked for a word."""
 
-    def __init__(self, world: World, **_options: Any) -> None:
+    def __init__(self, world: World, *, role: str, **_options: Any) -> None:
         self._world = world
+        self._role = role
         self._connections = Connections(world.delays.model_keepalive)
         self._reader_connections = Connections(world.delays.reader_keepalive)
         self.messages = SimpleNamespace(create=self.create)
@@ -1027,6 +1030,7 @@ class FakeAnthropic:
 
     async def list_models(self, **_options: Any) -> Any:
         world = self._world
+        world.warmups[self._role] += 1
         warm = self._reader_connections.take()
         delay = 0.05 * world.delays.scale
         if not warm:

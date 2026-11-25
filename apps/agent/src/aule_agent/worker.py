@@ -107,18 +107,26 @@ async def enable_push_to_talk(
     session: AgentSession,
     timing: Timing | None = None,
     hearing: Hearing | None = None,
+    gates: Gates | None = None,
 ) -> None:
     """Hand turn-taking to the client's talk button. The attribute tells the page
     to show the hold-to-talk control; the RPCs it sends drive each turn: start on
     press, commit on release, cancel on abandon. ``timing`` times each turn
     from the moment end_turn arrives; ``hearing`` says whether a final
-    transcript may still come.
+    transcript may still come; ``gates`` get their connections ready while the
+    child speaks.
     """
     await ctx.room.local_participant.set_attributes({"aule.turns": "manual"})
+    warming: set[asyncio.Task[None]] = set()
 
     async def start_turn(_: rtc.RpcInvocationData) -> str:
         if timing is not None:
             timing.pressed()
+        if gates is not None:
+            # Not waited for: the press is answered at once.
+            task = asyncio.create_task(gates.warm())
+            warming.add(task)
+            task.add_done_callback(warming.discard)
         session.interrupt()
         session.clear_user_turn()
         if hearing is not None:
@@ -610,7 +618,7 @@ async def entrypoint(ctx: JobContext) -> None:
     # Tells the page that the button has somebody to answer it.
     await ctx.room.local_participant.set_attributes({"aule.show_work": "rpc"})
     if settings.push_to_talk:
-        await enable_push_to_talk(ctx, session, timing, tutor)
+        await enable_push_to_talk(ctx, session, timing, tutor, gates)
     logger.info("session started", extra={"audience": audience, "language": language})
 
 

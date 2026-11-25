@@ -11,11 +11,13 @@ from livekit.agents import llm
 
 from aule_agent.moderation import Action, Decision, Probe
 from aule_agent.physical_safety import (
+    FIRST_TRY_SECONDS,
     GRADE_AGES,
     MAX_BYTES,
     MAX_HISTORY_ITEMS,
     QUESTION,
     UNKNOWN_AGE,
+    WARM_SECONDS,
     PhysicalSafetyGuard,
     Verdict,
     _StatusError,
@@ -610,3 +612,65 @@ async def test_the_probe_and_the_turns_reach_the_provider_as_written(monkeypatch
     # The turn went out on the connection the probe opened.
     assert check[3] is probe[3]
     assert other[3] is not probe[3]
+
+
+async def test_a_warm_up_lists_the_models_and_sends_nothing_of_the_conversation():
+    asked = []
+
+    async def send(body):
+        raise AssertionError("a warm-up sent a request body")
+
+    async def list_models():
+        asked.append("models")
+        raise ConnectionError("down")
+
+    guard = PhysicalSafetyGuard("synthetic-test-key", send=send, list_models=list_models)
+
+    await guard.warm()
+    await guard.close()
+    await guard.warm()
+
+    # A failure is nothing, and a closed gate asks nothing.
+    assert asked == ["models"]
+
+
+async def test_a_warm_up_gives_up_well_inside_a_checks_first_try():
+    gave_up = asyncio.Event()
+
+    async def list_models():
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            gave_up.set()
+            raise
+
+    guard = PhysicalSafetyGuard("synthetic-test-key", list_models=list_models)
+    async with asyncio.timeout(FIRST_TRY_SECONDS + 2):
+        await guard.warm()
+
+    # A warm-up that gets no answer stops by itself, within a part of a check's first try.
+    assert gave_up.is_set()
+    assert WARM_SECONDS <= FIRST_TRY_SECONDS / 2
+
+
+async def test_no_warm_up_starts_while_a_check_is_under_way():
+    asked, answering = [], asyncio.Event()
+
+    async def send(body):
+        await answering.wait()
+        return json.dumps(response()).encode()
+
+    async def list_models():
+        asked.append("models")
+        return b'{"models": []}'
+
+    guard = PhysicalSafetyGuard("synthetic-test-key", send=send, list_models=list_models)
+    checking = asyncio.create_task(guard.check(empty(), message("hola")))
+    await asyncio.sleep(0)
+    # The check holds the one connection: a press now must not queue a request behind it.
+    await guard.warm()
+    answering.set()
+    verdict = await checking
+    await guard.warm()
+
+    assert verdict is Verdict.ALLOW and asked == ["models"]

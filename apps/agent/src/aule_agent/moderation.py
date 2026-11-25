@@ -369,6 +369,18 @@ class Moderator:
         )
         return probe
 
+    async def warm(self) -> None:
+        """Opens a connection for the check that is coming, so it does not pay
+        for one: the probe's request, one word on the free endpoint. It never
+        counts as a check, says nothing in the log and never raises."""
+        try:
+            async with asyncio.timeout(INITIAL_TIMEOUT_SECONDS):
+                await self._client.moderations.create(model=MODEL, input=PROBE_TEXT)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            pass
+
     async def close(self) -> None:
         await self._client.close()
 

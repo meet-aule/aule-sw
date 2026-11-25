@@ -50,6 +50,10 @@ MAX_MODELS_BYTES = 64_000
 FIRST_TRY_SECONDS = 0.6
 SECOND_TRY_SECONDS = 1.0
 TIMEOUT_SECONDS = FIRST_TRY_SECONDS + SECOND_TRY_SECONDS
+# The session's client keeps one connection, which a warm-up holds while it
+# lasts: it gives up well inside a check's first try, so a check that comes
+# meanwhile waits for it at most this long.
+WARM_SECONDS = 0.3
 ALLOW_MAX_RISK = 0.10
 HELP_MIN_RISK = 0.25
 MAX_BYTES = 24_000
@@ -272,6 +276,8 @@ class PhysicalSafetyGuard:
         self._list_models = list_models or self._http_models
         self._client: aiohttp.ClientSession | None = None
         self._closed = False
+        # Checks under way, which a warm-up must not keep waiting.
+        self._checking = 0
         # A stopped turn is discarded from the conversation. Recent input is
         # kept here so a follow-up ("can I pick it up?") still has its referent.
         self._recent_inputs: deque[llm.ChatMessage] = deque(maxlen=MAX_HISTORY_ITEMS)
@@ -365,6 +371,22 @@ class PhysicalSafetyGuard:
         )
         return probe
 
+    async def warm(self) -> None:
+        """Opens the session's connection for the check that is coming: the
+        probe's request, the list of models, which sends nothing of the
+        conversation. None while a check is under way, and none longer than
+        ``WARM_SECONDS``: the check would wait for the one connection. It
+        says nothing in the log and never raises."""
+        if self._closed or self._checking:
+            return
+        try:
+            async with asyncio.timeout(WARM_SECONDS):
+                await self._list_models()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            pass
+
     async def _ask(self, body: bytes) -> bytes:
         """The provider's answer, asked a second time on a new connection when
         the first try got none. A refusal or a malformed answer is not retried."""
@@ -431,6 +453,7 @@ class PhysicalSafetyGuard:
     async def check(self, context: llm.ChatContext, message: llm.ChatMessage) -> Verdict:
         started = time.monotonic()
         verdict = Verdict.UNAVAILABLE
+        self._checking += 1
         try:
             if self._closed:
                 return verdict
@@ -447,6 +470,7 @@ class PhysicalSafetyGuard:
             # Deliberately not logged: the error may quote the request or the response.
             verdict = Verdict.UNAVAILABLE
         finally:
+            self._checking -= 1
             logger.info(
                 "physical safety verdict",
                 extra={

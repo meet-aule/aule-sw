@@ -764,3 +764,27 @@ async def test_a_released_button_waits_for_a_final_only_when_one_may_still_come(
 
     assert waited == [waits]
     assert heard.holds == 1
+
+
+async def test_a_press_gets_the_gates_connections_ready_without_waiting_for_them():
+    started, release = asyncio.Event(), asyncio.Event()
+
+    class Warming:
+        async def warm(self):
+            started.set()
+            await release.wait()
+
+    class Session:
+        def interrupt(self):
+            pass
+
+        def clear_user_turn(self):
+            pass
+
+    room = Room()
+    await worker.enable_push_to_talk(SimpleNamespace(room=room), Session(), gates=Warming())
+
+    async with asyncio.timeout(1):
+        assert await room.local_participant.rpcs["start_turn"](None) == "ok"
+        await started.wait()
+    release.set()

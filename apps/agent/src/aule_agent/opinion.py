@@ -111,5 +111,16 @@ class SecondOpinion:
         )
         return verdict
 
+    async def warm(self) -> None:
+        """Opens a connection for a reading that may come: the list of models,
+        which no model reads. It says nothing in the log and never raises."""
+        try:
+            async with asyncio.timeout(TIMEOUT_SECONDS):
+                await self._client.models.list(limit=1)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            pass
+
     async def close(self) -> None:
         await self._client.close()

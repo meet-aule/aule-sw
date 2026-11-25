@@ -324,6 +324,18 @@ def test_words_still_interim_at_the_release_are_waited_for_then_committed_as_the
     assert run.world.metrics["commit_ms_p90"] >= 800
 
 
+def test_every_press_readies_the_gates_with_their_probe_requests_only(sessions):
+    runs, _ = sessions
+    for run in runs.values():
+        presses = len(run.results)
+        warm_ups = run.world.warmups
+        # Each press: one word on moderation's free endpoint and two lists of models.
+        assert run.world.moderated.count(moderation.PROBE_TEXT) >= presses
+        assert warm_ups["typesafe"] >= presses and warm_ups["reader"] >= presses
+        # Nothing of the child went with them.
+        assert all(utterance != moderation.PROBE_TEXT for utterance in run.world.typesafe_asked)
+
+
 def test_no_log_line_carries_the_childs_words(sessions):
     _, lines = sessions
     assert lines

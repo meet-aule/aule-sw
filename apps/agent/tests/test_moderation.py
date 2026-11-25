@@ -8,6 +8,7 @@ import pytest
 
 from aule_agent.moderation import (
     MAX_CHARS,
+    MODEL,
     PROBE_TEXT,
     SELF_HARM_FAINT_BELOW,
     SELF_HARM_FAINT_FROM,
@@ -556,3 +557,26 @@ def test_a_status_says_whether_the_key_was_refused():
     assert probe_of(401) is probe_of(403) is Probe.KEY_REFUSED
     assert probe_of(422) is probe_of(500) is Probe.UNEXPECTED
     assert probe_of(None) is Probe.UNREACHABLE
+
+
+async def test_a_warm_up_reads_only_the_probe_word_and_is_not_the_first_check(monkeypatch):
+    monkeypatch.setattr("aule_agent.moderation.INITIAL_TIMEOUT_SECONDS", 0.5)
+    monkeypatch.setattr("aule_agent.moderation.TIMEOUT_SECONDS", 0.01)
+    guard, client = moderator(delay=0.05)
+
+    await guard.warm()
+
+    assert client.calls == [{"model": MODEL, "input": PROBE_TEXT}]
+    # The session's first check still gets the longer wait of a new connection.
+    assert (await guard.check("hello")).available
+
+
+@pytest.mark.parametrize("answer", [RuntimeError("down"), ValueError("malformed")])
+async def test_a_warm_up_that_fails_is_nothing_and_says_nothing(answer, caplog):
+    guard, client = moderator(answer)
+
+    with caplog.at_level("DEBUG", logger="aule.agent.moderation"):
+        await guard.warm()
+
+    assert len(client.calls) == 1 and caplog.records == []
+    assert not (await guard.check("hola")).available
