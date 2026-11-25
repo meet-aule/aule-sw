@@ -106,7 +106,8 @@ impl FromRequestParts<AppState> for Caller {
 }
 
 /// Someone on Aule's team: the operator's token, or a signed-in guardian whose
-/// address is one of the team's (the team's console signs in like a family).
+/// address is one of the team's (the team's console signs them in with codes
+/// of their own, `signin::team_start`).
 pub struct Staff {
     /// The team member's address; none for the operator's token.
     pub email: Option<String>,

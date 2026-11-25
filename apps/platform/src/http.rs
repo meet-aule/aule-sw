@@ -47,6 +47,9 @@ pub fn router(state: AppState) -> Router {
         // Guardians: sign-in, their account, their notices
         .route("/v1/auth/start", post(signin::start))
         .route("/v1/auth/verify", post(signin::verify))
+        // The team's console signs Aule's team in with codes of its own
+        .route("/v1/auth/team/start", post(signin::team_start))
+        .route("/v1/auth/team/verify", post(signin::team_verify))
         .route("/v1/auth/google", get(signin::google_client).post(signin::google))
         .route("/v1/auth/providers", get(signin::providers))
         .route("/v1/auth/github", post(signin::github))

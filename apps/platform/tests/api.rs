@@ -1525,6 +1525,93 @@ async fn sign_in_codes_are_limited(pool: PgPool) {
     assert_eq!(app.count("select count(*) from guardians").await, 0);
 }
 
+/// The team's console signs the team in with codes of its own, apart from a
+/// family's: asking for one leaves nothing a family's sign-in can read, their
+/// limits are counted apart, the session lasts 12 hours, and nothing makes an
+/// account.
+#[sqlx::test(migrator = "aule_platform::MIGRATOR")]
+async fn the_team_signs_in_with_codes_of_its_own(pool: PgPool) {
+    let app = app(pool);
+    let team_start = |email: &'static str| {
+        app.call(Method::POST, "/v1/auth/team/start", None, Some(json!({ "email": email })))
+    };
+    let team_verify = |email: &'static str, code: &str| {
+        app.call(Method::POST, "/v1/auth/team/verify", None, Some(json!({ "email": email, "code": code })))
+    };
+    let family_verify = |email: &'static str, code: &str| {
+        app.call(Method::POST, "/v1/auth/verify", None, Some(json!({ "email": email, "code": code })))
+    };
+    let mails = || app.mail.sent.lock().unwrap().clone();
+    let code_of = |mail: &(String, String, String)| mail.1[..6].to_string();
+
+    // A team address with no account yet is sent nothing, and nothing is kept.
+    assert_eq!(team_start("team@example.org").await.0, StatusCode::NO_CONTENT);
+    assert!(mails().is_empty());
+    assert_eq!(app.count("select count(*) from login_codes").await, 0);
+
+    app.sign_in("team@example.org", "Equipo").await;
+    app.sign_in("ana@example.org", "Ana").await;
+    let signed_up = mails().len();
+    // Anyone else gets the same answer and no mail; a malformed address is a 400.
+    for email in ["ana@example.org", "nobody@example.org"] {
+        assert_eq!(team_start(email).await.0, StatusCode::NO_CONTENT, "{email}");
+    }
+    assert_eq!(mails().len(), signed_up);
+    assert_eq!(team_start("nope").await.0, StatusCode::BAD_REQUEST);
+
+    // The team member gets the console's code, kept where no family's sign-in looks.
+    assert_eq!(team_start("Team@Example.org ").await.0, StatusCode::NO_CONTENT);
+    let mail = mails().last().unwrap().clone();
+    assert_eq!(mail.0, "team@example.org");
+    assert!(mail.1.contains("panel del equipo"), "{}", mail.1);
+    let code = code_of(&mail);
+    assert_eq!(app.count("select count(*) from login_codes where email = 'team@example.org'").await, 0);
+    assert_eq!(
+        family_verify("team@example.org", &code).await.0,
+        StatusCode::FORBIDDEN,
+        "not a family's code"
+    );
+    assert_eq!(team_verify("ana@example.org", &code).await.0, StatusCode::FORBIDDEN, "nor anyone else's");
+
+    // The right code opens a session of 12 hours that reaches the team's routes, once.
+    let (status, body) = team_verify("team@example.org", &code).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["expires_in_hours"], 12);
+    let token = body["token"].as_str().unwrap().to_string();
+    assert_eq!(app.call(Method::GET, "/v1/admin/families", Some(&token), None).await.0, StatusCode::OK);
+    let hours: f64 = sqlx::query_scalar(
+        "select extract(epoch from expires_at - now())::float8 / 3600 from guardian_sessions where token_hash = $1",
+    )
+    .bind(aule_platform::auth::token_hash(&token))
+    .fetch_one(&app.state.pool)
+    .await
+    .unwrap();
+    assert!((11.9..=12.0).contains(&hours), "{hours}");
+    assert_eq!(team_verify("team@example.org", &code).await.0, StatusCode::FORBIDDEN, "a code works once");
+    assert_eq!(app.count("select count(*) from guardians").await, 2, "no account was made");
+
+    // The team's codes have their own five an hour: a family's code still goes out after them.
+    let before = mails().len();
+    for _ in 0..6 {
+        assert_eq!(team_start("team@example.org").await.0, StatusCode::NO_CONTENT);
+    }
+    assert_eq!(mails().len(), before + 5);
+    let team_code = code_of(&mails()[before + 4]);
+    let (status, _) =
+        app.call(Method::POST, "/v1/auth/start", None, Some(json!({ "email": "team@example.org" }))).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    assert_eq!(mails().len(), before + 6, "the family's own code was sent");
+    let family_code = code_of(mails().last().unwrap());
+
+    // Five wrong tries burn the team's code, and leave the family's as it was.
+    let wrong = if team_code == "000000" { "111111" } else { "000000" };
+    for _ in 0..5 {
+        assert_eq!(team_verify("team@example.org", wrong).await.0, StatusCode::FORBIDDEN);
+    }
+    assert_eq!(team_verify("team@example.org", &team_code).await.0, StatusCode::FORBIDDEN);
+    assert_eq!(family_verify("team@example.org", &family_code).await.0, StatusCode::OK);
+}
+
 async fn claim(app: &App, token: &str, code: &str, child: Option<&str>) -> (StatusCode, Value) {
     app.call(Method::POST, "/v1/devices/claim", Some(token), Some(json!({ "code": code, "child_id": child })))
         .await

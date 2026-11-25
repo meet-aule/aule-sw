@@ -7,6 +7,11 @@
 //! it, and an address only gets a few codes an hour. A new address becomes a
 //! new family when its first code is confirmed, and keeps the link it came
 //! from when the page passes one on.
+//!
+//! The team's console signs Aule's team in with codes of its own
+//! (`team_start`, `team_verify`): kept apart from a family's, they leave
+//! nothing a family's sign-in can read, and the session they open lasts hours,
+//! not a family's days.
 
 use axum::Json;
 use axum::extract::State;
@@ -16,8 +21,8 @@ use rand::{Rng, RngExt};
 use sea_orm::ActiveValue::Set;
 use sea_orm::sea_query::{Expr, ExprTrait};
 use sea_orm::{
-    ColumnTrait, ConnectionTrait, DbBackend, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder,
-    QuerySelect, Statement, TransactionTrait,
+    ColumnTrait, ConnectionTrait, DatabaseTransaction, DbBackend, EntityTrait, PaginatorTrait, QueryFilter,
+    QueryOrder, QuerySelect, Statement, TransactionTrait,
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -29,6 +34,7 @@ use crate::auth::{Guardian, Input, bearer, token_hash};
 use crate::entity::{child, device, family, guardian, guardian_session, login_code, notice};
 use crate::error::{ApiError, ApiResult};
 use crate::google::{Identity, IdentityError};
+use crate::mail::Mailer;
 use crate::oauth::CodeProvider;
 use crate::state::AppState;
 
@@ -36,6 +42,8 @@ const CODE_MINUTES: i32 = 10;
 const MAX_ATTEMPTS: i32 = 5;
 const MAX_CODES_PER_HOUR: i32 = 5;
 const SESSION_DAYS: i32 = 30;
+/// A session the team's console opens lasts this long, as the console's own does.
+const TEAM_SESSION_HOURS: i32 = 12;
 const MAX_SOURCE_CHARS: usize = 24;
 
 pub fn normalized_email(email: &str) -> ApiResult<String> {
@@ -93,9 +101,26 @@ pub struct StartInput {
 pub async fn start(State(state): State<AppState>, Input(body): Input<StartInput>) -> ApiResult<StatusCode> {
     let email = normalized_email(&body.email)?;
     let mailer = state.mailer.as_ref().ok_or(ApiError::Unavailable("sign-in needs mail to be configured"))?;
+    let language = body.language.as_deref().unwrap_or("es");
+    send_code(&state, mailer.as_ref(), &email, &email, |code| texts(language, code)).await?;
+    // The same answer whether a code was sent, the limit was reached, or the
+    // address is new.
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Keeps a new code under `key` and mails it to `to`, unless `key` has had its
+/// codes for this hour: then nothing is sent, and the caller answers the same.
+/// The code's hash is tied to `key`.
+async fn send_code(
+    state: &AppState,
+    mailer: &dyn Mailer,
+    key: &str,
+    to: &str,
+    texts: impl FnOnce(&str) -> (String, String),
+) -> ApiResult<()> {
     let code = format!("{:06}", rand::rng().random_range(0..1_000_000));
 
-    // One statement decides whether this address may get another code now.
+    // One statement decides whether this key may get another code now.
     let allowed = state
         .db
         .query_one_raw(Statement::from_sql_and_values(
@@ -110,26 +135,47 @@ pub async fn start(State(state): State<AppState>, Input(body): Input<StartInput>
                                     then now() else login_codes.window_started_at end
          where login_codes.window_started_at < now() - interval '1 hour' or login_codes.sent_count < $4
          returning sent_count",
-            [
-                email.clone().into(),
-                code_hash(&email, &code).into(),
-                CODE_MINUTES.into(),
-                MAX_CODES_PER_HOUR.into(),
-            ],
+            [key.into(), code_hash(key, &code).into(), CODE_MINUTES.into(), MAX_CODES_PER_HOUR.into()],
         ))
         .await?;
 
     if allowed.is_some() {
-        let language = body.language.as_deref().unwrap_or("es");
-        let (subject, text) = texts(language, &code);
-        if let Err(error) = mailer.send(&email, &subject, &text).await {
+        let (subject, text) = texts(&code);
+        if let Err(error) = mailer.send(to, &subject, &text).await {
             tracing::error!(%error, "a sign-in code could not be sent");
             return Err(ApiError::Unavailable("the code could not be sent; try again later"));
         }
     }
-    // The same answer whether a code was sent, the limit was reached, or the
-    // address is new.
-    Ok(StatusCode::NO_CONTENT)
+    Ok(())
+}
+
+fn wrong_code() -> ApiError {
+    ApiError::Forbidden("that code is wrong or has expired")
+}
+
+/// Whether `code` is the one pending under `key`, read in `txn` with its row
+/// locked. A wrong one counts against the pending code, and the fifth burns it;
+/// the caller commits `txn` so that the count is kept.
+async fn right_code(txn: &DatabaseTransaction, key: &str, code: &str) -> ApiResult<bool> {
+    let pending = login_code::Entity::find_by_id(key.to_string())
+        .filter(Expr::col(login_code::Column::ExpiresAt).gt(Expr::current_timestamp()))
+        .lock_exclusive()
+        .one(txn)
+        .await?;
+    let Some(pending) = pending else { return Ok(false) };
+    if pending.attempts >= MAX_ATTEMPTS {
+        return Ok(false);
+    }
+    let given = code_hash(key, code.trim());
+    if bool::from(given.as_bytes().ct_eq(pending.code_hash.as_bytes())) {
+        return Ok(true);
+    }
+    login_code::Entity::update_many()
+        .col_expr(login_code::Column::Attempts, Expr::col(login_code::Column::Attempts).add(1))
+        .filter(login_code::Column::Email.eq(key))
+        .exec(txn)
+        .await?;
+    Ok(false)
 }
 
 #[derive(Deserialize)]
@@ -152,27 +198,11 @@ pub async fn verify(
     Input(body): Input<VerifyInput>,
 ) -> ApiResult<Json<Value>> {
     let email = normalized_email(&body.email)?;
-    let wrong = || ApiError::Forbidden("that code is wrong or has expired");
 
     let txn = state.db.begin().await?;
-    let pending = login_code::Entity::find_by_id(email.clone())
-        .filter(Expr::col(login_code::Column::ExpiresAt).gt(Expr::current_timestamp()))
-        .lock_exclusive()
-        .one(&txn)
-        .await?;
-    let Some(pending) = pending else { return Err(wrong()) };
-    if pending.attempts >= MAX_ATTEMPTS {
-        return Err(wrong());
-    }
-    let given = code_hash(&email, body.code.trim());
-    if !bool::from(given.as_bytes().ct_eq(pending.code_hash.as_bytes())) {
-        login_code::Entity::update_many()
-            .col_expr(login_code::Column::Attempts, Expr::col(login_code::Column::Attempts).add(1))
-            .filter(login_code::Column::Email.eq(&email))
-            .exec(&txn)
-            .await?;
+    if !right_code(&txn, &email, &body.code).await? {
         txn.commit().await?;
-        return Err(wrong());
+        return Err(wrong_code());
     }
 
     let account =
@@ -231,17 +261,7 @@ async fn enter(
         }
     };
 
-    let mut secret = [0u8; 32];
-    rand::rng().fill_bytes(&mut secret);
-    let token = hex::encode(secret);
-    db.execute_raw(Statement::from_sql_and_values(
-        DbBackend::Postgres,
-        "insert into guardian_sessions (token_hash, guardian_id, expires_at)
-         values ($1, $2, now() + make_interval(days => $3))",
-        [token_hash(&token).into(), guardian_id.into(), SESSION_DAYS.into()],
-    ))
-    .await?;
-
+    let token = open_session(db, guardian_id, SESSION_DAYS, 0).await?;
     Ok(json!({
         "token": token,
         "guardian_id": guardian_id,
@@ -249,6 +269,112 @@ async fn enter(
         "new_account": new_account,
         "expires_in_days": SESSION_DAYS,
     }))
+}
+
+/// A new session for a guardian, `days` and `hours` long: its token, of which
+/// only the hash is kept.
+async fn open_session(
+    db: &impl ConnectionTrait,
+    guardian_id: Uuid,
+    days: i32,
+    hours: i32,
+) -> ApiResult<String> {
+    let mut secret = [0u8; 32];
+    rand::rng().fill_bytes(&mut secret);
+    let token = hex::encode(secret);
+    db.execute_raw(Statement::from_sql_and_values(
+        DbBackend::Postgres,
+        "insert into guardian_sessions (token_hash, guardian_id, expires_at)
+         values ($1, $2, now() + make_interval(days => $3, hours => $4))",
+        [token_hash(&token).into(), guardian_id.into(), days.into(), hours.into()],
+    ))
+    .await?;
+    Ok(token)
+}
+
+/// The key a code for the team's console is kept under in `login_codes`. A
+/// family's key is its address, and an address never has a space
+/// (`normalized_email`), so the two never meet: a code the console asks for
+/// leaves nothing a family's sign-in reads, and has its own codes an hour.
+fn team_key(email: &str) -> String {
+    format!("team {email}")
+}
+
+fn team_texts(code: &str) -> (String, String) {
+    (
+        format!("{code} es tu código del panel del equipo de Aule"),
+        format!(
+            "Tu código para entrar al panel del equipo de Aule es {code}.\n\nVale por {CODE_MINUTES} minutos. Si no lo pediste, puedes ignorar este mensaje."
+        ),
+    )
+}
+
+#[derive(Deserialize)]
+pub struct TeamStartInput {
+    email: String,
+}
+
+/// A code for the team's console (`apps/admin`), mailed only to an address in
+/// `AULE_ADMIN_EMAILS` that has a guardian account. Every address gets the
+/// same 204; the console answers its visitor before it asks, and asks only for
+/// the team's addresses.
+pub async fn team_start(
+    State(state): State<AppState>,
+    Input(body): Input<TeamStartInput>,
+) -> ApiResult<StatusCode> {
+    let email = normalized_email(&body.email)?;
+    let mailer = state.mailer.as_ref().ok_or(ApiError::Unavailable("sign-in needs mail to be configured"))?;
+    if !state.config.admin_emails.contains(&email) {
+        // The console's list and this one differ until both are restarted.
+        tracing::warn!("a team code was asked for an address that is not on the team");
+        return Ok(StatusCode::NO_CONTENT);
+    }
+    let accounts =
+        guardian::Entity::find().filter(guardian::Column::Email.eq(&email)).count(&state.db).await?;
+    if accounts == 0 {
+        tracing::warn!("a team address has no guardian account, so no code was sent");
+        return Ok(StatusCode::NO_CONTENT);
+    }
+    send_code(&state, mailer.as_ref(), &team_key(&email), &email, team_texts).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Deserialize)]
+pub struct TeamVerifyInput {
+    email: String,
+    code: String,
+}
+
+/// A session for a team member who has the code `team_start` mailed. It lasts
+/// `TEAM_SESSION_HOURS`, and nothing here makes an account: anything else is
+/// the same 403.
+pub async fn team_verify(
+    State(state): State<AppState>,
+    Input(body): Input<TeamVerifyInput>,
+) -> ApiResult<Json<Value>> {
+    let email = normalized_email(&body.email)?;
+    if !state.config.admin_emails.contains(&email) {
+        return Err(wrong_code());
+    }
+    let key = team_key(&email);
+    let txn = state.db.begin().await?;
+    if !right_code(&txn, &key, &body.code).await? {
+        txn.commit().await?;
+        return Err(wrong_code());
+    }
+    let guardian_id: Option<Uuid> = guardian::Entity::find()
+        .filter(guardian::Column::Email.eq(&email))
+        .select_only()
+        .column(guardian::Column::Id)
+        .into_tuple()
+        .one(&txn)
+        .await?;
+    // A code goes only to an address with an account, which may have been erased since.
+    let Some(guardian_id) = guardian_id else { return Err(wrong_code()) };
+    let token = open_session(&txn, guardian_id, 0, TEAM_SESSION_HOURS).await?;
+    login_code::Entity::delete_by_id(key).exec(&txn).await?;
+    txn.commit().await?;
+    Ok(Json(json!({ "token": token, "expires_in_hours": TEAM_SESSION_HOURS })))
 }
 
 const NO_GOOGLE: ApiError = ApiError::Unavailable("sign-in with Google is not set up here");
@@ -513,6 +639,13 @@ mod tests {
         ] {
             assert!(normalized_email(bad).is_err(), "{bad}");
         }
+    }
+
+    #[test]
+    fn a_team_code_is_never_kept_under_an_address_a_family_can_sign_in_with() {
+        let key = team_key("ana@example.org");
+        assert!(normalized_email(&key).is_err(), "{key}");
+        assert_ne!(code_hash(&key, "123456"), code_hash("ana@example.org", "123456"));
     }
 
     #[test]
