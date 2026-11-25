@@ -8,6 +8,7 @@ Aule's voice tutor: a [LiveKit Agents](https://github.com/livekit/agents) worker
 |---|---|
 | `worker` | The LiveKit worker: one tutor session per room it is dispatched to, with a time limit |
 | `comparison` | Exact comparison of bounded integer, fraction and decimal literals for hints; no exercise state or network |
+| `answers` | What of a child's turn goes to the platform's exercise checker, and in what form; pure, no IO |
 | `tutor` | The tutor's instructions, and where the gates and the camera plug into a turn |
 | `prompts` | Canonical English tutor policy, optional capability rules and the final output-language rule; see the [prompt inventory](PROMPTS.md) |
 | `safety` | Who a session is for, and the two safety gates of [ARCHITECTURE.md](../../ARCHITECTURE.md) run together on every turn |
@@ -91,9 +92,76 @@ stays outside the text stream, and text from a step that calls tools remains
 suppressed. A blocked or unavailable output gate still releases only a fixed
 reply, never the unchecked paragraphs.
 
+## Checking answers
+
+While an exercise the tutor posed is open, the agent checks the child's answer
+to it in code, not only when the model remembers to: once the turn has passed
+every input gate, and before the model is asked. The model reads the result in
+the conversation as a `check_answer` call and its output, as if it had made the
+call itself. A turn the gates stop, a goodbye, a turn the session engine
+answers and the show-work button are never checked in code. With
+`AULE_EARLY_REPLY=1` no reply is asked early while an exercise is open, since
+a request made before the check could not hold it; a reply asked before an
+exercise opened (a pose of the reply before, still running) is dropped unheard
+once the turn is checked, and asked again with the check in it. With nothing
+open, early replies work as before. On the turns it checks, the check adds one
+round trip to the platform before the model is asked, part of `first_audio_ms`.
+
+The platform's reader of answers misreads some things today (a number said in
+words such as "treinta y uno", an article read as 1, a question that uses the
+exercise's numbers), so `answers` sends only two kinds of turn:
+
+- a plain request for help with the exercise ("no sé", "no entiendo", "I don't
+  understand", "dame una pista"), sent as the fixed "no sé" or "I don't know";
+- an answer written in digits, as the child wrote it, without the exercise when
+  they said it again.
+
+To the platform a "no sé" is a hint spent, or a probe failed with the learner
+model told, so a line is sent as one only when it says nothing else. "Ayuda",
+"no puedo" or "I can't" are not help phrases, "no se" before a verb ("no se
+ve", "no se escucha") is not "no sé", and a line with thanks, "sin ayuda", "por
+qué", or any word beyond the ones that go with a request for help ("Ayúdame,
+tengo miedo", "No sé, mi mamá dice que soy tonto", "I can't hear you") stays
+with the model. So does the whole turn after one the gates stopped, or after
+any other fixed line of the tutor's: "no sé" to "pide ayuda a un adulto" is
+not about the exercise.
+
+Everything else is left to the model, which is told to pass answers in digits:
+questions, numbers said in words, reasoning with the exercise's own numbers,
+negative numbers, answers to algebra. With speech recognition that writes
+numbers as words, a spoken answer is therefore checked by the model; a request
+for help is still checked in code. When a child brings an exercise with their
+answer before any is open, the answer is checked right after the tutor poses
+that exercise, if their words state it as posed.
+
+A right answer to a smaller step the tutor asked ("6" after "¿cuánto es 3 por
+2?" in 25 + 3 × 2) is not an answer to the exercise, and the platform would
+count it as a wrong try. A lone value of one of the exercise's steps is
+therefore left to the model, which is told to follow the checker only when the
+reply answers the computation posed. Only the steps of the usual method are
+known: a child who works with others (12 as the common bottom of 1/2 + 1/3)
+and says one alone is checked as giving a wrong answer, and so is a model that
+checks a step itself. So is a line about something else with one number in
+digits ("tengo 10 años"), as when the model passes it itself. The fix belongs to
+the platform's reader.
+
+The checker is called at most once per child turn and exercise: the model's own
+`check_answer` on a turn already checked gets the same answer back. A failure or
+a timeout (1.5 s) gives "Not checked: carry on by yourself." and is not retried.
+Each turn keeps its own check: a message typed while a spoken turn is checked
+loses neither. What goes to the platform is the child's own words, which it may
+record with the attempt, so it goes only after every gate let the turn through.
+The logs carry how the turn was read and how long the check took: never the
+words, nor the checker's answer.
+
+The policy's one rule on analogies ([prompts.py](src/aule_agent/prompts.py))
+keeps the exercise's operations, their order and each number in its role: when
+the exercise adds, everything in the story is put together, and nothing is
+bought, spent, eaten or given away. Worked examples use different numbers.
+
 ## Pedagogy regression experiment
 
-The [synthetic pedagogy evaluator](evals/pedagogy/README.md) runs the conversational tutor, tools and safety gates against fixed math scenarios, then compares one proposed instruction change on reserved cases. Paid calls require an explicit live run and share a persistent USD 20 ceiling. The report measures tutoring behavior; it does not establish learning gains in children or cover voice and IoT. CI runs only its offline budget and arithmetic tests.
+The [synthetic pedagogy evaluator](evals/pedagogy/README.md) runs the conversational tutor, tools and safety gates against fixed math scenarios, then compares one proposed instruction change on reserved cases. Paid calls require an explicit live run and share a persistent USD 20 ceiling. A second judge checks that the tutor's examples keep the exercise's meaning, and the report counts whether every turn that code reads as an answer in digits or a request for help was checked in code. The report measures tutoring behavior on scripted text turns; it does not establish learning gains in children or cover voice and IoT. CI runs only its offline tests.
 
 ## Intonation
 
