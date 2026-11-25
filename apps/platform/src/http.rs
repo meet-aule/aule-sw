@@ -33,6 +33,7 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/children/{child_id}/memories", get(child_memories))
         .route("/v1/children/{child_id}/memories/{memory_id}", delete(forget_memory))
         .route("/v1/children/{child_id}/reviews", get(child_reviews))
+        .route("/v1/children/{child_id}/sessions", get(child_sessions))
         .route("/v1/skills", put(put_skills).get(get_skills))
         .route("/v1/sessions", post(sessions::create_session))
         .route("/v1/sessions/{session_id}", get(sessions::status))
@@ -238,6 +239,86 @@ async fn child_reviews(
         })
         .collect();
     Ok(Json(json!({ "reviews": reviews })))
+}
+
+#[derive(Deserialize)]
+struct SessionsQuery {
+    #[serde(default)]
+    limit: Option<i64>,
+}
+
+/// The child's latest sessions, newest first, as facts a guardian can be shown:
+/// when, how long, what for, the skills by their catalog name, the exercises
+/// tried and got right, the breaks and how each ended. Never what was said: no
+/// topic or date typed for it, no review, no transcript, no count of turns or
+/// characters, and no id.
+async fn child_sessions(
+    caller: Caller,
+    State(state): State<AppState>,
+    Path(child_id): Path<Uuid>,
+    Query(params): Query<SessionsQuery>,
+) -> ApiResult<Json<Value>> {
+    child_for(&state.db, &caller, child_id).await?;
+    use sea_orm::{ConnectionTrait, DbBackend, DbErr, Statement};
+    let limit = params.limit.unwrap_or(3).clamp(1, 10);
+    let rows = state
+        .db
+        .query_all_raw(Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            "select s.started_at, s.end_reason, s.breaks,
+                    s.objective->>'kind' as kind, s.objective->>'subject' as subject,
+                    -- One the housekeeping closed hours later has no known length.
+                    case when s.ended_at < s.created_at + make_interval(hours => $3)
+                         then extract(epoch from (s.ended_at - s.started_at))::float8 end as seconds,
+                    -- The tutor's exercises are rows of session_exercises (their `tutor`
+                    -- attempts would count them twice); the engine's are its attempts.
+                    (select count(*) from session_exercises x
+                      where x.session_id = s.id and x.status in ('correct', 'failed'))
+                    + (select count(*) from attempts a
+                      where a.child_id = $1 and a.session_id = s.id and a.source = 'engine') as tried,
+                    (select count(*) from session_exercises x
+                      where x.session_id = s.id and x.status = 'correct')
+                    + (select count(*) from attempts a
+                      where a.child_id = $1 and a.session_id = s.id and a.source = 'engine'
+                        and a.correct) as right_ones,
+                    -- From any attempt of the session, the review's too, but only by
+                    -- catalog name: an id outside the catalog is left out.
+                    coalesce((select jsonb_agg(k.name order by k.first) from (
+                        select sk.name, min(src.at) as first
+                        from (select skill_id, created_at as at from session_exercises
+                               where session_id = s.id and skill_id is not null
+                              union all
+                              select skill_id, at from attempts where child_id = $1 and session_id = s.id) src
+                        join skills sk on sk.id = src.skill_id
+                        group by sk.name order by first limit 3) k), '[]'::jsonb) as skills
+             from sessions s
+             where s.child_id = $1 and s.audience = 'child' and s.status = 'ended'
+               and s.started_at is not null and s.ended_at is not null
+             order by s.started_at desc
+             limit $2",
+            [child_id.into(), limit.into(), crate::jobs::STALE_SESSION_HOURS.into()],
+        ))
+        .await?;
+    let sessions: Vec<Value> = rows
+        .iter()
+        .map(|row| {
+            let kind: Option<String> = row.try_get("", "kind")?;
+            let subject: Option<String> = row.try_get("", "subject")?;
+            Ok(json!({
+                "started_at": row.try_get::<chrono::DateTime<Utc>>("", "started_at")?,
+                "seconds": row.try_get::<Option<f64>>("", "seconds")?,
+                "end_reason": row.try_get::<Option<String>>("", "end_reason")?,
+                "breaks": row.try_get::<i32>("", "breaks")?,
+                "objective": kind.map(|kind| json!({ "kind": kind, "subject": subject })),
+                "exercises": {
+                    "tried": row.try_get::<i64>("", "tried")?,
+                    "right": row.try_get::<i64>("", "right_ones")?,
+                },
+                "skills": row.try_get::<Value>("", "skills")?,
+            }))
+        })
+        .collect::<Result<_, DbErr>>()?;
+    Ok(Json(json!({ "sessions": sessions })))
 }
 
 #[derive(Deserialize)]
