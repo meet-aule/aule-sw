@@ -58,9 +58,9 @@ Use shaded and unshaded, also when adapting a plan that names colours."""
 PACED = """Breaks are announced for you: if they are tired or ask to stop, say in one sentence \
 that you understand, without proposing a break or what to do in it yourself."""
 
-CHECKING = """Before you ask for a computation, call pose_exercise with the operation. While that \
-computation is open, for everything they reply, an "I don't know" or a doubt too, call \
-check_answer with their words and do what it tells you. With none open, do not use them."""
+CHECKING = """Before you ask for a computation, call pose_exercise with the operation. While it is \
+open, call check_answer with each answer, in digits, or "I don't know", unless already checked. \
+Follow its result only if they answered that computation, not a smaller step you asked."""
 
 RESPONSE_LANGUAGES = {"es": "Peruvian Spanish", "en": "English"}
 

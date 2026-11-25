@@ -25,6 +25,7 @@ from aule_agent.tutor import (
     MAX_TYPED_CHARS,
     UNCHECKED,
     UNCUT_WAIT_SECONDS,
+    OpenExercise,
     Persona,
     Tutor,
     VoiceAhead,
@@ -104,9 +105,12 @@ class ScriptedGates:
         self.decisions = list(decisions)
         self.heard_texts = []
         self.spoken_texts = []
+        # What happened, in order; a test may share it with the checker.
+        self.order = []
 
     async def heard(self, context, message):
         self.heard_texts.append(message.text_content)
+        self.order.append("heard")
         return self.decisions.pop(0)
 
     async def spoken(self, text):
@@ -139,8 +143,12 @@ class Session:
         return done()
 
     def generate_reply(self, *, user_input):
-        self.replies_to = [*getattr(self, "replies_to", []), user_input]
+        # A typed turn hands over its own message, the button its fixed words.
+        self.inputs = [*getattr(self, "inputs", []), user_input]
+        text = user_input.text_content if isinstance(user_input, llm.ChatMessage) else user_input
+        self.replies_to = [*getattr(self, "replies_to", []), text]
         self.order.append("reply")
+        return f"reply {len(self.replies_to)}"
 
     def say(self, text, *, add_to_chat_ctx, allow_interruptions):
         self.said.append((text, add_to_chat_ctx, allow_interruptions))
@@ -406,17 +414,30 @@ async def test_an_empty_typed_message_is_ignored_and_a_long_one_is_cut():
 
 
 class ScriptedChecker:
-    """Stands in for the platform's exercise checker."""
+    """Stands in for the platform's exercise checker. A pose it can check
+    opens a new exercise, unless it is the one open; an answer that closes
+    it leaves none open. ``judged`` may be an error to raise."""
 
-    def __init__(self, posed=None, judged=None):
+    def __init__(self, posed=None, judged=None, *, exercise=None, closes=False, order=None):
         self.posed, self.judged, self.calls = posed, judged, []
+        self.exercise, self.closes = exercise, closes
+        self.order = [] if order is None else order
 
     async def pose(self, expression, skill_id, form):
         self.calls.append(("pose", expression, skill_id, form))
+        self.order.append("pose")
+        if self.posed is not None and getattr(self.exercise, "expression", None) != expression:
+            number = self.exercise.id + 1 if self.exercise is not None else 1
+            self.exercise = OpenExercise(number, expression)
         return self.posed
 
     async def answer(self, said):
         self.calls.append(("answer", said))
+        self.order.append("answer")
+        if isinstance(self.judged, Exception):
+            raise self.judged
+        if self.closes:
+            self.exercise = None
         return self.judged
 
 

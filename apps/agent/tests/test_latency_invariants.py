@@ -917,7 +917,7 @@ EVALS = {
     ),
     "evals/pedagogy/cases.py": ("ce4d7bfc4f3fd6027eb298f6f3394996157ce5f4cc529f65d0b4264b1202a916"),
     "evals/pedagogy/evaluate.py": (
-        "2e8880662e1bd56f735ec3fc2b40841f546d5d744512fa710aae40b7c13f54db"
+        "0560ed15dfeb14411ed0bf91b3a56e031113edda65562691fcd0851805f4d1ea"
     ),
     "evals/pedagogy/report.py": (
         "9a4c88c3c27b82ca64b60eae543d222d34946262c8cb366e8032c163a97af366"

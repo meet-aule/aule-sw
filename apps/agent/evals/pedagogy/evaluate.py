@@ -79,6 +79,9 @@ class Checker:
         self.expression = None
         self.form = "any"
         self.events = []
+        # What the tutor reads as open before it checks in code; none here, so
+        # the model checks every answer itself, as before.
+        self.exercise = None
 
     def read(self, expression, said="", form="any"):
         out = subprocess.run(
@@ -257,6 +260,8 @@ async def run_case(budget, case, arm, extra, repetition, output):
                 event_start = len(checker.events)
                 gate_start = len(row["gate_events"])
                 turn = dict(student=utterance, assistant=[], tools=[], error=None)
+                # A new turn, as Tutor.typed starts one: no check of it yet.
+                tutor._starts_a_turn()
                 try:
                     async with asyncio.timeout(75):
                         # AgentSession.run bypasses the typed-input hook: call the
