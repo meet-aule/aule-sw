@@ -86,6 +86,8 @@ function showWays(account) {
     if (!google && !email) details.open = true;
     for (const link of details.querySelectorAll("[data-provider]")) link.hidden = !others.includes(link.dataset.provider);
   }
+  // Their own cookies are said where they are offered, not in the cookie notice.
+  for (const note of document.querySelectorAll(".ways-note")) note.hidden = !google && others.length === 0;
 }
 
 for (const button of document.querySelectorAll('[data-way="email"]')) {
@@ -418,14 +420,20 @@ $("erase").addEventListener("submit", async (event) => {
 
 // Shown until the person says they have read it. Remembered in this browser
 // only; where the browser keeps nothing, it is shown each time. While it
-// shows, the screens leave it room at the bottom.
+// shows, the screens leave it room at the bottom: from just above the
+// notice's top edge down, so a paper screen ends where the notice starts and
+// the footer after it starts behind the notice, never across its edge.
 const COOKIES_READ = "aule.cookies";
+// Above the notice's edge, so a control scrolled clear of it keeps its focus ring; under the footer's 24 px.
+const NOTICE_CLEAR_PX = 8;
 
 function noticeRoom() {
   const notice = $("cookies");
   // Not drawn on a student's screen: the room it needs back on paper is kept.
   if (!notice.hidden && notice.offsetHeight === 0) return;
-  const room = notice.hidden ? 0 : Math.round(notice.getBoundingClientRect().height) + 32;
+  // Its height and its own distance from the bottom edge: none for the phone's bar, the card's inset from 481 px.
+  const below = parseFloat(getComputedStyle(notice).bottom) || 0;
+  const room = notice.hidden ? 0 : Math.round(notice.getBoundingClientRect().height + below) + NOTICE_CLEAR_PX;
   document.documentElement.style.setProperty("--notice-room", `${room}px`);
 }
 
