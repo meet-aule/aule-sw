@@ -1291,7 +1291,7 @@ EVALS = {
     ),
     "evals/pedagogy/cases.py": ("5bff946b879ab883ccc7208fb8e1c6fa2422f16fd1e509d5eb020426c0a636c3"),
     "evals/pedagogy/evaluate.py": (
-        "ffe96ac9a7058cccb12df1da897704fc58516e72999d088a821861f1adfec1fa"
+        "6757b23c87a7cc0163c5f3d877e2bf0611acd48215d45ab9c139c2a193a3ea67"
     ),
     "evals/pedagogy/fixtures/examples-calibration.json": (
         "e7f3d772e42519ceb007cf35ff679cce034be6c7968560341609375483743014"
