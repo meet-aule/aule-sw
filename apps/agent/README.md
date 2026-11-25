@@ -50,6 +50,10 @@ publishes `session.ended.v1` for sessions with both a child and a device, and
 Browser sessions have no device, so they do not emit that device-session ending
 event; their lifecycle is still recorded by the platform.
 
+## Pedagogy regression experiment
+
+The [synthetic pedagogy evaluator](evals/pedagogy/README.md) runs the conversational tutor, tools and safety gates against fixed math scenarios, then compares one proposed instruction change on reserved cases. Paid calls require an explicit live run and share a persistent USD 20 ceiling. The report measures tutoring behavior; it does not establish learning gains in children or cover voice and IoT. CI runs only its offline budget and arithmetic tests.
+
 ## Intonation
 
 Speech-to-text loses the tune of what was said, so `prosody.measure` takes it from the audio: whether the voice went up, down or stayed level at the end of an utterance, by rule (YIN pitch tracking in numpy, a few milliseconds of CPU per second of audio). A pronunciation drill compares it with `prosody.expected_pattern` of the sentence ("Is it raining?" rises). It is a pure function that does not log, store or send audio, and it is not wired into the tutor yet. It was checked on macOS synthetic voices, native and Spanish-accented, reading short sentences; not yet on real children's voices.

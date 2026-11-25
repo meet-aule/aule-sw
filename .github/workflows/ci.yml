@@ -62,6 +62,8 @@ jobs:
           enable-cache: true
       - run: uv sync --locked
       - run: uv run pytest
+      - name: Pedagogy evaluation budget (offline)
+        run: uv run pytest evals/pedagogy/test_budget.py
 
   platform:
     name: Platform (Rust)
@@ -98,6 +100,9 @@ jobs:
           workspaces: apps/platform
       - run: cargo fmt --check
       - run: cargo test --locked
+      - name: Pedagogy arithmetic adapter (offline)
+        working-directory: .
+        run: cargo test --locked --manifest-path apps/agent/evals/pedagogy/checker/Cargo.toml
       - name: Restore a synthetic backup and reject invalid SQL
         working-directory: .
         run: bash infra/server/test-restore-check.sh
