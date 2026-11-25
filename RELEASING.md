@@ -16,7 +16,7 @@ the last release, which is why they follow Conventional Commits ([CONTRIBUTING.m
 
 `version.txt` is the version. These copy it:
 
-- `apps/playground/package.json`, `contracts/package.json` and `curriculum/package.json`;
+- `apps/admin/package.json`, `apps/playground/package.json`, `contracts/package.json` and `curriculum/package.json`;
 - `apps/platform/Cargo.toml`, `engine/Cargo.toml` (`[workspace.package]`) and their own entries in `apps/platform/Cargo.lock` and `engine/Cargo.lock`;
 - `apps/agent/pyproject.toml`, `apps/agent/src/aule_agent/_version.py` and the agent's own entry in `apps/agent/uv.lock`.
 

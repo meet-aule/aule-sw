@@ -2,6 +2,7 @@ packages:
   - contracts
   - curriculum
   - apps/playground
+  - apps/admin
 
 # A package version must be a week old before pnpm installs it, may not lose
 # the provenance its earlier versions had, and may not pull a dependency from

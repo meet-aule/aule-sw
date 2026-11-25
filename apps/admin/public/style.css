@@ -1,0 +1,297 @@
+/* The team's console: the panel's part of the playground's stylesheet
+   (apps/playground/public/style.css), on the same paper and ink, plus the
+   header's line and the sign-in form. Nothing here is fetched from anywhere else. */
+
+/* ---- Fonts: our own files, upright only ---------------------------------- */
+
+/* Titles: Source Serif 4. */
+@font-face {
+  font-family: "Source Serif 4";
+  font-style: normal;
+  font-weight: 200 900;
+  font-display: swap;
+  src: url("fonts/serif.woff2") format("woff2");
+}
+
+/* Everything else: Inter. */
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("fonts/sans.woff2") format("woff2");
+}
+
+/* ---- Tokens: the playground's paper ------------------------------------- */
+
+:root {
+  --bg: #f5f2ea;
+  --surface: #fbfaf6;
+  --ink: #141414;
+  --muted: #6b6b6b;
+  --line: #c9c3b4;
+  --danger: #8f1d14;
+  --focus: #9a5b2e;
+  --radius: 10px;
+  --serif: "Source Serif 4", "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, "Times New Roman", serif;
+  --sans: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  color-scheme: light;
+}
+
+/* ---- Base ---------------------------------------------------------------- */
+
+* {
+  box-sizing: border-box;
+}
+
+/* Elements with their own display value would otherwise ignore `hidden`. */
+[hidden] {
+  display: none !important;
+}
+
+html {
+  background: var(--bg);
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 400 16px/1.5 var(--sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
+p {
+  margin: 0;
+}
+
+/* Focus: a copper ring, 3 px. An outline, never a shadow, so forced colours keep it. */
+:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* The build, under the panel's title: small and faint, and left selectable, to be copied into a report. */
+.build {
+  font: 400 12px/16px var(--sans);
+  color: var(--muted);
+}
+
+/* An error in the panel's red; a plain note in ink. */
+.message {
+  color: var(--danger);
+  font: 400 14px/1.4 var(--sans);
+}
+
+.message[data-tone="info"] {
+  color: var(--ink);
+}
+
+/* ---- The team's panel: wide tables on plain paper ------------------------ */
+
+.admin {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 32px 16px 48px;
+}
+
+.admin h1,
+.admin h2 {
+  font: 500 28px/1.25 var(--serif);
+}
+
+.admin h2 {
+  font-size: 22px;
+}
+
+.admin header p {
+  color: var(--muted);
+}
+
+.admin a {
+  color: var(--ink);
+}
+
+.admin table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--surface);
+  font-size: 0.875rem;
+}
+
+.admin th,
+.admin td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+
+.admin th {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.admin .figures {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 12px 0 24px;
+}
+
+.admin .figure {
+  min-width: 140px;
+  padding: 12px 16px;
+  border: 1.5px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.admin .figure strong {
+  display: block;
+  font-size: 1.5rem;
+}
+
+.admin .scroll {
+  overflow-x: auto;
+}
+
+.admin input[type="search"] {
+  width: 100%;
+  max-width: 320px;
+  margin: 8px 0 12px;
+  padding: 8px 12px;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.admin td button {
+  min-height: 32px;
+  padding: 2px 10px;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  background: transparent;
+  font-size: 0.8125rem;
+}
+
+.admin td button.quiet {
+  border: 0;
+  text-decoration: underline;
+}
+
+.admin .message {
+  margin: 12px 0;
+}
+
+/* The pilot's numbers: a week's total in bold over its links, and what each column means. */
+.admin h3 {
+  margin: 24px 0 8px;
+  font: 600 16px/1.3 var(--sans);
+}
+
+.admin .lead {
+  max-width: 72ch;
+  margin: 8px 0 12px;
+  color: var(--muted);
+}
+
+.admin tr.week td {
+  font-weight: 600;
+}
+
+/* On a phone the pilot's tables scroll sideways rather than grow tall, and a link's code stays whole. */
+.admin table.pilot th,
+.admin table.pilot td,
+.admin td.code {
+  white-space: nowrap;
+}
+
+.admin .notes {
+  max-width: 72ch;
+  margin: 16px 0 32px;
+  padding-left: 20px;
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+.admin .notes li + li {
+  margin-top: 4px;
+}
+
+/* ---- The console's own: the header's line and the sign-in --------------- */
+
+/* Where «Volver a Aule» was: the way out, in the same faint line. */
+.admin .nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  color: var(--muted);
+}
+
+/* A button that reads as a link: «Salir», «Usar otro correo». */
+.admin button.link {
+  min-height: 24px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  text-decoration: underline;
+}
+
+.signin {
+  max-width: 480px;
+}
+
+.signin-form {
+  display: grid;
+  gap: 8px;
+  margin: 24px 0 12px;
+}
+
+.signin-form label {
+  font-weight: 600;
+}
+
+.signin-form input {
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.signin-form button[type="submit"] {
+  justify-self: start;
+  min-height: 44px;
+  padding: 8px 20px;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--ink);
+  color: var(--surface);
+  font-weight: 600;
+}
+
+.signin-form button.link {
+  justify-self: start;
+}
+
+.signin-form .message {
+  margin: 0 0 8px;
+}

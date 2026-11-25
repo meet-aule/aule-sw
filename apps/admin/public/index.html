@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <!-- The build this page comes from, written in by the server (src/build.ts). -->
+    <meta name="aule-version" content="{{version}}" />
+    <meta name="aule-commit" content="{{commit}}" />
+    <title>Aule · Panel del equipo</title>
+    <link rel="icon" href="icon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <main class="admin">
+      <header>
+        <h1>Panel del equipo</h1>
+        <nav class="nav" aria-label="Consola del equipo">
+          <button type="button" class="link" id="signout">Salir</button>
+        </nav>
+        <!-- Which builds of the console and of the platform answer (admin.js). -->
+        <p class="build" id="build" hidden></p>
+      </header>
+
+      <p id="message" class="message" role="alert" hidden></p>
+
+      <section id="overview" hidden aria-labelledby="overview-title">
+        <h2 id="overview-title">Últimos 14 días</h2>
+        <div id="figures" class="figures"></div>
+        <div class="scroll">
+          <table>
+            <thead>
+              <tr><th>Día</th><th>Sesiones</th><th>Alumnos</th><th>Minutos</th><th>Costo (USD)</th><th>Costo por hora</th></tr>
+            </thead>
+            <tbody id="days"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- The pilot's four numbers per week of sign-up and per link (admin.js, pilot.js). -->
+      <section id="pilot" hidden aria-labelledby="pilot-title">
+        <h2 id="pilot-title">Piloto: las cuatro cifras</h2>
+        <p class="lead">
+          Las familias por semana de registro y por el enlace con el que llegaron (<code>?src=</code>). Las semanas
+          van de lunes a domingo, <span id="pilot-zone">en hora de Perú</span>. No cuentan las familias del equipo.
+        </p>
+        <p class="message" id="pilot-message" hidden></p>
+        <!-- Two figures about the children of the weeks shown (pilot.js childFigures). -->
+        <div id="pilot-figures" class="figures"></div>
+        <div class="scroll">
+          <table class="pilot">
+            <thead>
+              <tr>
+                <th>Semana</th><th>Enlace</th><th>Familias</th><th>Empezaron</th><th>Volvieron</th>
+                <th>Activas en la 4.ª semana</th><th>Pagan</th>
+              </tr>
+            </thead>
+            <tbody id="weeks"></tbody>
+          </table>
+        </div>
+        <h3>Por enlace</h3>
+        <div class="scroll">
+          <table class="pilot">
+            <thead>
+              <tr>
+                <th>Enlace</th><th>Familias</th><th>Empezaron</th><th>Volvieron</th>
+                <th>Activas en la 4.ª semana</th><th>Pagan</th>
+              </tr>
+            </thead>
+            <tbody id="sources"></tbody>
+          </table>
+        </div>
+        <ul class="notes">
+          <li><b>Empezaron:</b> tuvieron una sesión de 10 minutos o más, de todas las familias de la fila.</li>
+          <li>
+            <b>Volvieron:</b> 3 sesiones o más en los 7 días desde su primera sesión, de las familias que ya terminaron
+            esos 7 días (y con ellos su prueba).
+          </li>
+          <li>
+            <b>Activas en la 4.ª semana:</b> con una sesión entre los días 21 y 27 desde su primera sesión, de las
+            familias que ya terminaron esa semana.
+          </li>
+          <li>
+            <b>Pagan:</b> de las familias que ya terminaron su prueba. Todavía no se puede pagar en la app: por ahora
+            cuenta las familias a las que el equipo les activó el plan («Regalar plan») después de terminar su prueba,
+            también si fue un regalo. Un plan activado durante la prueba, o quitado antes de un día, no cuenta.
+          </li>
+          <li>
+            Una sesión cuenta como para el plan: cuando el tutor la empieza, salvo que termine antes de dos minutos.
+            «—»: ninguna familia de la fila ha llegado tan lejos todavía.
+          </li>
+          <li>
+            <b>Niños que volvieron en 7 días:</b> con una segunda sesión en los 7 días desde su primera, de los niños
+            cuya primera sesión fue en estas semanas y hace 7 días o más; «hasta hoy» cuenta a todos, también a los
+            que aún están en esos 7 días.
+          </li>
+          <li>
+            <b>Turnos del niño por minuto:</b> la mediana, sesión por sesión, de los turnos del niño entre los minutos
+            de la sesión (con sus pausas), en las sesiones de estas semanas que cuentan y cuya duración se conoce. Solo
+            cifras: ni palabras ni nombres.
+          </li>
+        </ul>
+      </section>
+
+      <section id="families-section" hidden aria-labelledby="families-title">
+        <h2 id="families-title">Familias</h2>
+        <input id="filter" type="search" placeholder="Buscar por nombre, correo o enlace" aria-label="Buscar familias" />
+        <div class="scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Familia</th><th>Enlace</th><th>Correos</th><th>Alumnos</th><th>Plan</th><th>7 días</th><th>30 días</th>
+                <th>Minutos (30 días)</th><th>Última sesión</th><th></th>
+              </tr>
+            </thead>
+            <tbody id="families"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+    <script type="module" src="admin.js"></script>
+  </body>
+</html>
