@@ -438,6 +438,8 @@ async def entrypoint(ctx: JobContext) -> None:
 
     # How long the tutor takes to answer, and how sure the hearing is.
     timing = Timing()
+    if observer is not None:
+        timing.on_staged = observer.turn
     usage = Usage()
     voice = build_tts(settings, language)
     voice.on("metrics_collected", usage.spoke)

@@ -15,13 +15,19 @@ from posthog_wire import ENDPOINT, POSTHOG_ENV, SDK_KEYS, caught
 from test_latency_invariants import FAST, ORDINARY, SESSIONS, Spec, scripted
 
 from aule_agent import worker
-from aule_agent.observability import ALLOWED, Observability
+from aule_agent.observability import ALLOWED, GENERATION, TRACE, Observability
+from aule_agent.timing import STAGES
 
 SCRIPTS: dict[str, list[Spec]] = {
     # A turn answered in one step, then turns whose reply follows tools.
     "meanwhile": SESSIONS["meanwhile"],
     # A reply the output gate's second reader reads, and lets through.
     "reply_reader_yes": SESSIONS["reply_reader_yes"],
+    # A reply the output gate stops, which ends a sentence as replies do.
+    "reply_stopped_sentence": [
+        ORDINARY,
+        Spec(reply=f"Te voy a decir algo {TRIGGERS['violence']}."),
+    ],
     # Turns the input gates stop: moderation, its second reader, and the
     # physical-safety gate, for a hazard and for one it is unsure of.
     "redirect": SESSIONS["redirect"],
@@ -29,12 +35,15 @@ SCRIPTS: dict[str, list[Spec]] = {
     "second_reader_concern": SESSIONS["second_reader_concern"],
     "adult_help": [ORDINARY, Spec(extra=TRIGGERS["hazard"]), Spec(extra=TRIGGERS["hazard"])],
     "clarify": SESSIONS["clarify"],
+    # A turn the input gates stop, for which the model, asked early, begins a
+    # drawing.
+    "redirect_tool": SESSIONS["redirect_tool"],
     # Faint words the two second readers find ordinary: the first clear
     # answer settles it and stops the other.
     "faint_ordinary": [ORDINARY, Spec(extra=TRIGGERS["faint"])],
 }
 # The turns of those scripts the input gates stop.
-STOPPED_TURNS = 6
+STOPPED_TURNS = 7
 MODES = {"early_off": {}, "early_on": {"AULE_EARLY_REPLY": "1"}}
 
 
@@ -125,7 +134,9 @@ def by_turn(sent: Sent) -> tuple[list[dict[str, Any]], list[list[dict[str, Any]]
     turns: list[list[dict[str, Any]]] = [[] for _ in starts]
     for event in sent.events:
         index = sum(1 for start in starts if start <= at(event)) - 1
-        (before if index < 0 else turns[index]).append(event["properties"])
+        (before if index < 0 else turns[index]).append(
+            {"event": event["event"], **event["properties"]}
+        )
     return before, turns
 
 
@@ -194,7 +205,7 @@ def test_early_requests_are_told_apart_from_the_others(sent):
 def test_a_reading_of_the_tutors_reply_is_traced_with_its_turn(sent, mode):
     _, turns = by_turn(sent[(mode, "reply_reader_yes")])
     last = turns[-1]
-    (reading,) = [p for p in last if p["aule_component"] == "safety_review"]
+    (reading,) = [p for p in last if p.get("aule_component") == "safety_review"]
     assert reading["$ai_is_error"] is False and "aule_request" not in reading
     assert {p["$ai_trace_id"] for p in last} == {reading["$ai_trace_id"]}
 
@@ -230,3 +241,47 @@ def test_a_turn_the_input_gates_stop_sends_nothing_but_a_request_asked_early(sen
                 # Asked while the gates judged the turn: its request, and nothing else.
                 assert all(p.get("aule_request") == "early" for p in turn), (name, result.number)
     assert stopped == STOPPED_TURNS
+
+
+@pytest.mark.parametrize("mode", MODES)
+@pytest.mark.parametrize("name", SCRIPTS)
+def test_each_turn_the_model_answered_is_one_trace_event_with_its_turns_trace_id(sent, mode, name):
+    session = sent[(mode, name)]
+    before, turns = by_turn(session)
+    assert not [p for p in before if p["event"] == TRACE]
+    for turn, result in zip(turns, session.run.results, strict=True):
+        traced = [p for p in turn if p["event"] == TRACE]
+        if result.allowed is False:
+            # The input gates stopped it: no model in its stages, so no trace.
+            assert traced == [], (name, result.number)
+            continue
+        (staged,) = traced
+        # Every stage the session's timing reports for a push-to-talk turn,
+        # down to the tutor's first audio, and one of the model's at least.
+        stages = ("commit", "gates_in", "first_audio")
+        assert {f"aule_{stage}_ms" for stage in stages} <= set(staged)
+        assert {"aule_llm_ttft_ms", "aule_first_sentence_ms"} & set(staged)
+        assert set(staged) - {"event"} <= ALLOWED[TRACE]
+        assert staged["$ai_latency"] * 1000 == pytest.approx(staged["aule_first_audio_ms"], abs=1)
+        calls = [p for p in turn if p["event"] == GENERATION]
+        assert {p["$ai_trace_id"] for p in calls} <= {staged["$ai_trace_id"]}
+    assert len(STAGES) == len([key for key in ALLOWED[TRACE] if key.startswith("aule_")])
+
+
+def shape(turn: list[dict[str, Any]]) -> list[tuple[Any, ...]]:
+    """What a turn sends, without its ids and numbers."""
+    return [
+        (p["event"], p.get("aule_component"), p.get("aule_request"), tuple(sorted(p))) for p in turn
+    ]
+
+
+@pytest.mark.parametrize("mode", MODES)
+def test_a_reply_the_output_gate_stops_sends_what_one_it_lets_through_does(sent, mode):
+    session = sent[(mode, "reply_stopped_sentence")]
+    # The child heard the fixed line instead of the last reply.
+    assert [tuple(flag) for flag in session.run.world.flags] == [
+        ("moderation_output", "redirect", ["violence"])
+    ]
+    _, (answered, stopped) = by_turn(session)
+    assert shape(stopped) == shape(answered)
+    assert [p["event"] for p in stopped] == [GENERATION, TRACE]

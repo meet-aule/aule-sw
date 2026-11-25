@@ -26,6 +26,7 @@ from aule_agent.moderation import Finding
 from aule_agent.observability import (
     ALLOWED,
     GENERATION,
+    TRACE,
     TURN,
     Observability,
     metadata_only,
@@ -526,3 +527,87 @@ def test_the_allowlist_drops_any_other_event_and_one_without_a_trace_id() -> Non
     )
     assert kept is not None and set(kept["properties"]) <= ALLOWED[GENERATION]
     assert kept["properties"]["$ai_trace_id"] == trace and "PRIVATE" not in json.dumps(kept)
+
+
+async def test_a_staged_turn_is_one_trace_event_with_its_stages_in_whole_milliseconds(
+    wire,
+) -> None:
+    observer = production(wire)
+    turn = new_turn()
+    observer.llm_metrics(metrics())
+    stages = {
+        "commit": 0.0404,
+        # The last final transcript came before the release.
+        "stt_final": -0.12,
+        "gates_in": 0.3,
+        "llm_ttft": 0.25,
+        "first_audio": 1.234,
+        "words": 7.0,
+    }
+    observer.turn(turn, stages)
+    # A tool call that began before the model's first chunk was read: the
+    # line said while the tool works closed the turn without it.
+    observer.turn(None, {"first_sentence": 0.3, "first_audio": 0.9})
+    await observer.close()
+
+    generation, staged, untraced = wire.events
+    assert (staged["event"], untraced["event"]) == (TRACE, TRACE)
+    assert set(staged) == {"event", "uuid", "distinct_id", "timestamp", "options", "properties"}
+    assert staged["options"] == {"process_person_profile": False}
+    assert staged["properties"] == {
+        "$ai_trace_id": turn,
+        "$ai_span_name": "push_to_talk_turn",
+        "$ai_latency": 1.234,
+        "aule_commit_ms": 40,
+        "aule_stt_final_ms": -120,
+        "aule_gates_in_ms": 300,
+        "aule_llm_ttft_ms": 250,
+        "aule_first_audio_ms": 1234,
+        "$geoip_disable": True,
+    }
+    assert generation["properties"]["$ai_trace_id"] == turn
+    # A turn whose model calls drew no id gets one of its own.
+    assert UUID(untraced["properties"]["$ai_trace_id"]).version == 4
+    assert untraced["properties"]["$ai_trace_id"] != turn
+
+
+async def test_a_turn_the_tutors_model_did_not_answer_sends_no_trace(wire) -> None:
+    # The input gates stopped it, or the session engine answered it: what was
+    # heard was a fixed line or the engine's, and no model was asked. Its
+    # stages would say so.
+    observer = production(wire)
+    turn = new_turn()
+    stages = {"commit": 0.01, "stt_final": -0.1, "gates_in": 0.3, "tts_ttfb": 0.05}
+    observer.turn(turn, {**stages, "first_audio": 0.4})
+    observer.turn(None, {"first_audio": 0.4})
+    await observer.close()
+
+    assert wire.requests == []
+
+
+def test_the_trace_allowlist_keeps_whole_milliseconds_of_known_stages_only() -> None:
+    trace = str(uuid4())
+    kept = metadata_only(
+        {
+            "event": TRACE,
+            "properties": {
+                "$ai_trace_id": trace,
+                "$ai_latency": -1.0,
+                "$ai_model": "claude-sonnet-5-5",
+                "aule_gates_in_ms": 300.5,
+                "aule_first_audio_ms": 10**9,
+                "aule_commit_ms": True,
+                "aule_llm_ttft_ms": 800,
+                "aule_words_ms": 7,
+            },
+        }
+    )
+    assert kept is not None
+    assert kept["properties"] == {
+        "$ai_trace_id": trace,
+        "$ai_span_name": "push_to_talk_turn",
+        "aule_llm_ttft_ms": 800,
+        "$geoip_disable": True,
+        "$process_person_profile": False,
+    }
+    assert set(kept["properties"]) <= ALLOWED[TRACE]

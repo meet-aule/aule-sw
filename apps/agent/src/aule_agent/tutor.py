@@ -1124,8 +1124,11 @@ class Tutor(Agent):
         self, turn_ctx: llm.ChatContext, new_message: llm.ChatMessage
     ) -> None:
         # The turn's model calls, from the second reader of its words to the
-        # last step of its reply, share one random id (``observability``).
-        new_turn()
+        # last step of its reply, share one random id (``observability``),
+        # and so do the stages of the turn, if it is staged.
+        trace = new_turn()
+        if self._timing is not None:
+            self._timing.traced(trace)
         self._meanwhile_due = True
         self._drew = False
         # A spoken turn during a drill is the student's try (a typed one never comes here).

@@ -123,16 +123,23 @@ its end reports no usage and has no token counts at all: its cost is unknown,
 not zero. A request LiveKit retries is not a failed generation, and a failed one
 names the model. A reading stopped because its turn ended is a cancellation, not
 an error. Costs are estimates per request, not an invoice.
+Each push-to-talk turn the session times stage by stage (see above) and the
+tutor's model answered is also one `$ai_trace` event when the tutor's first
+audio starts, with what each stage took in whole milliseconds (`aule_commit_ms`
+to `aule_first_audio_ms`, the latter also as `$ai_latency`). A turn the model
+did not answer, such as one the input gates stop, sends none: its stages, with
+no model in them, would say so. Whether the turn's answer was checked is left
+for later.
 
-The events are pseudonymous. The model calls of one turn of the child (a
-push-to-talk turn, a typed message or work shown to the camera), each step of
-its reply and the second reader's reading of that reply, share one trace id
-(`$ai_trace_id`), drawn at random for that turn and kept nowhere else; a call
-outside a turn, such as the warm-up, gets one of its own. There is no session
-id and no person: one fixed `distinct_id`, no person profiles. No names, ages,
-account, room or platform ids, prompts, replies, tool arguments, images or error
-messages are sent. Each event still has its time, which Aule's own records of a
-session have too, and a session's requests grow by what each turn adds to the
+The events are pseudonymous. Each turn of the child (a push-to-talk turn, a
+typed message or work shown to the camera) draws a random trace id
+(`$ai_trace_id`), kept nowhere else, which each step of its reply, the second
+reader's reading of that reply and the turn's `$ai_trace` share; a call outside
+a turn, such as the warm-up, gets one of its own. There is no session id and no
+person: one fixed `distinct_id`, no person profiles. No names, ages, account,
+room or platform ids, prompts, replies, tool arguments, images or error messages
+are sent. Each event still has its time, which Aule's own records of a session
+have too, and a session's requests grow by what each turn adds to the
 conversation, so their times and token counts could put a session's turns back
 in order. PostHog is therefore declared as a provider: its DPA, the privacy
 policy and the international transfer to the EU in the ANPD registration.
@@ -141,17 +148,20 @@ No event carries what was said, but which events a turn has, and when, can
 still tell something about it, and the declaration says so:
 
 - A turn the input gates stop asks the tutor's model nothing, so it sends
-  nothing, like a turn the session engine answers or a goodbye: between the
-  events of the turns around it, it is a gap, as a pause would be. With
-  `AULE_EARLY_REPLY` (off) it sends the request asked early, which the stop
-  usually cuts off (`aule_cancelled`).
+  nothing, not even an `$ai_trace`, like a turn the session engine answers or
+  a goodbye: between the events of the turns around it, it is a gap, as a
+  pause would be. With `AULE_EARLY_REPLY` (off) it sends the request asked
+  early, which the stop usually cuts off (`aule_cancelled`) and which no
+  `$ai_trace` follows.
 - The second reader's readings of what the child said are not sent: that one
   happened, and how it went, would tell that moderation was unsure of a
-  child's words, and when.
+  child's words, and when. Their time is still part of the turn's
+  `aule_gates_in_ms`, so a slow input gate can hint at one.
 - A reading of one of the tutor's replies is sent with its turn: it tells that
   moderation was unsure of that reply, and its counts, its time and whether it
   failed can tell whether the gate then stopped the reply. A failed reading
-  always stops it.
+  always stops it. Without a reading, a reply the output gate stops sends what
+  one it lets through does, the same stages included.
 
 An allowlist (`observability.metadata_only`) runs on every event after the SDK
 has added its own properties (the system, the library, context tags, session
@@ -173,8 +183,10 @@ possible.
 The tests catch the production client's requests at the HTTP layer and check
 the host, the exact allowlist and that nothing of the SDK, a session or a person
 is sent (`tests/test_observability.py`); over whole sessions with early replies
-off and on, one trace id per turn, and nothing of a turn the input gates stop
-(but the request asked early) or of a reading of the child's words
+off and on, one trace id per turn, one `$ai_trace` per timed turn the model
+answered, the same stages for a reply the output gate stops as for one it lets
+through, and nothing of a turn the input gates stop (but the request asked
+early) or of a reading of the child's words
 (`tests/test_observability_session.py`); and the last events after the
 session's close (`tests/test_worker_join.py`). They do not show receipt by a
 live project.

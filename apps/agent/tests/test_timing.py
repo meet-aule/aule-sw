@@ -1,3 +1,5 @@
+import pytest
+
 from aule_agent.timing import LONGEST_REPLY_SECONDS, Timing
 
 
@@ -202,3 +204,52 @@ def test_a_final_that_comes_after_its_turn_was_committed_is_counted():
     timing.final_heard()
 
     assert timing.summary()["stt_finals_after_commit"] == 2
+
+
+def test_a_counted_staged_turn_is_told_with_its_trace_id_as_it_closes():
+    clock = Clock()
+    timing = Timing(clock)
+    told = []
+    timing.on_staged = lambda trace, stages: told.append((trace, stages))
+
+    # No staged turn is open: a typed message, or the microphone open.
+    timing.traced("trace-0")
+    timing.pressed()
+    timing.final_heard()
+    timing.released()
+    # An older turn's id, late, then the turn's own: the latest counts.
+    timing.traced("trace-older")
+    timing.traced("trace-1")
+    clock.now += 0.1
+    timing.committed()
+    timing.took("gates_in", 0.3, timing.turn)
+    clock.now += 1.0
+    timing.agent_state("speaking")
+
+    assert told == [
+        (
+            "trace-1",
+            pytest.approx({"commit": 0.1, "stt_final": 0.0, "gates_in": 0.3, "first_audio": 1.1}),
+        )
+    ]
+
+    # A tap that commits nothing, and a wait no reply takes, are not told.
+    timing.pressed()
+    timing.released()
+    timing.nothing_heard()
+    timing.agent_state("speaking")
+    timing.pressed()
+    timing.released()
+    timing.traced("trace-3")
+    timing.committed()
+    clock.now += LONGEST_REPLY_SECONDS + 1
+    timing.agent_state("speaking")
+    assert len(told) == 1
+
+    # A new release forgets the last turn's id.
+    timing.pressed()
+    timing.released()
+    timing.committed()
+    clock.now += 1.0
+    timing.agent_state("speaking")
+    assert [trace for trace, _ in told] == ["trace-1", None]

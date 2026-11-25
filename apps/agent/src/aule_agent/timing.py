@@ -13,6 +13,10 @@ reports after that first audio, or for an older turn, is not counted, and
 neither is a turn whose commit took no words or that waited longer than a
 reply can. A final transcript that comes after its turn was committed, before
 the next press, is counted: it came too late for that turn.
+
+Each staged turn that is counted is also told, as it closes, to ``on_staged``
+with the random trace id its model calls share (``traced``), for AI
+observability.
 """
 
 import statistics
@@ -73,6 +77,10 @@ class Timing:
         # committed, before the next press: too late for their turn.
         self._committed = False
         self._finals_after_commit = 0
+        # The trace id of the staged turn's model calls, and who is told what
+        # each counted staged turn took when it closes.
+        self._trace: str | None = None
+        self.on_staged: Callable[[str | None, dict[str, float]], None] | None = None
 
     def user_state(self, old: str, new: str) -> None:
         """The student started or stopped speaking."""
@@ -95,6 +103,8 @@ class Timing:
                 for stage, seconds in self._current.items():
                     self._stages[stage].append(seconds)
                 self._staged += 1
+                if self.on_staged is not None:
+                    self.on_staged(self._trace, dict(self._current))
         if self._stopped_at is None:
             return
         waited = self._clock() - self._stopped_at
@@ -131,6 +141,7 @@ class Timing:
         self._open = True
         self._released_at = self._clock()
         self._current = {}
+        self._trace = None
 
     def committed(self) -> None:
         """The turn is committed: what was heard of it is all it will have."""
@@ -146,6 +157,13 @@ class Timing:
         does not answer, so the staged turn closes untimed."""
         self._committed = True
         self._open = False
+
+    def traced(self, trace: str) -> None:
+        """The model calls of the staged turn open now share ``trace``, a
+        random id (``observability.new_turn``). The latest one counts: an
+        older turn's, late, is followed by its own."""
+        if self._open:
+            self._trace = trace
 
     def took(self, stage: str, seconds: float, turn: int) -> None:
         """One stage of ``turn`` took this long. The first report of a stage counts."""

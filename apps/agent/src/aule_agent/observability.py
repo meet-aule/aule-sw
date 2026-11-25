@@ -1,8 +1,9 @@
 """The tutor's model calls, and the safety second reader's readings of the
-tutor's replies, as PostHog AI events: counts, times, the model's name and a
-random id per turn. No words are sent, and no id of a person or a session,
-but which events a turn has, and when, can still tell something about it,
-such as that a safety gate stopped it (the agent's README says what).
+tutor's replies, as PostHog AI events, and the stages of each push-to-talk
+turn the model answered: counts, times, the model's name and a random id per
+turn. No words are sent, and no id of a person or a session, but which events
+a turn has, and when, can still tell something about it, such as that a
+safety gate stopped it (the agent's README says what).
 
 Nothing is sent unless POSTHOG_API_KEY and POSTHOG_HOST are both set, to a
 project token and PostHog's EU ingestion (``config``). The events are
@@ -16,8 +17,8 @@ properties, and drops all of those.
 The second reader's readings of what the child said are not sent: that one
 happened, and how it went, would tell that moderation was unsure of a
 child's words, and when. A turn the input gates stop asks the tutor's model
-nothing, so it sends nothing either, but for a request asked early
-(AULE_EARLY_REPLY).
+nothing, so it sends nothing either, not even its stages, but for a request
+asked early (AULE_EARLY_REPLY).
 
 Analytics never changes what the child hears or what a gate decides. Every
 callback here catches its own errors and logs only their type, nothing on the
@@ -36,6 +37,7 @@ from uuid import UUID, uuid4
 
 from .config import Settings
 from .providers import EARLY, WARMING
+from .timing import STAGES
 
 logger = logging.getLogger("aule.agent.observability")
 
@@ -46,6 +48,10 @@ logger = logging.getLogger("aule.agent.observability")
 TURN: contextvars.ContextVar[str | None] = contextvars.ContextVar("aule_turn", default=None)
 
 GENERATION = "$ai_generation"
+# One per staged push-to-talk turn the tutor's model answered, with what each
+# stage took (``timing``).
+TRACE = "$ai_trace"
+TURN_NAME = "push_to_talk_turn"
 DISTINCT_ID = "aule-agent"
 TOKENS = (
     "$ai_input_tokens",
@@ -60,6 +66,14 @@ COMPONENTS = ("tutor", "safety_review")
 # greeting is said, one asked while the input gates still judge the turn
 # (AULE_EARLY_REPLY), and the others.
 REQUESTS = ("warm_up", "early", "turn")
+STAGE_MS = tuple(f"aule_{stage}_ms" for stage in STAGES)
+# Longer than this a stage is no measurement (a reply waits at most 30 s).
+LONGEST_STAGE_MS = 600_000
+# The stages only the tutor's model reports: its first chunk, and its first
+# sentence or the start of a tool call. A tool call can start before the first
+# chunk is read, and the line said while the tool works then closes the turn
+# without it. A turn with neither stage got no reply from the model.
+MODEL_STAGES = ("llm_ttft", "first_sentence")
 # Every property an event may have when it leaves. PostHog moves the last one
 # to the event's options.
 ALLOWED = {
@@ -75,6 +89,16 @@ ALLOWED = {
             "$ai_error",
             "aule_component",
             "aule_request",
+            "$geoip_disable",
+            "$process_person_profile",
+        }
+    ),
+    TRACE: frozenset(
+        {
+            "$ai_trace_id",
+            "$ai_span_name",
+            "$ai_latency",
+            *STAGE_MS,
             "$geoip_disable",
             "$process_person_profile",
         }
@@ -130,27 +154,37 @@ def metadata_only(event: dict[str, Any]) -> dict[str, Any] | None:
         return None
     props: dict[str, Any] = {
         "$ai_trace_id": trace,
-        "$ai_provider": "anthropic",
-        "$ai_model": model_name(source.get("$ai_model")),
-        "$ai_cache_reporting_exclusive": True,
         "$geoip_disable": True,
         "$process_person_profile": False,
     }
-    for key in TOKENS:
-        if type(source.get(key)) is int and source[key] >= 0:
-            props[key] = source[key]
-    for key in TIMES:
-        if number(source.get(key)):
-            props[key] = source[key]
-    for key in FLAGS:
-        if type(source.get(key)) is bool:
-            props[key] = source[key]
-    if source.get("aule_component") in COMPONENTS:
-        props["aule_component"] = source["aule_component"]
-    if source.get("aule_request") in REQUESTS:
-        props["aule_request"] = source["aule_request"]
-    if props.get("$ai_is_error"):
-        props["$ai_error"] = "provider_error"
+    if name == TRACE:
+        props["$ai_span_name"] = TURN_NAME
+        if number(source.get("$ai_latency")):
+            props["$ai_latency"] = source["$ai_latency"]
+        for key in STAGE_MS:
+            value = source.get(key)
+            # Below zero too: the last final transcript can come before the release.
+            if type(value) is int and abs(value) <= LONGEST_STAGE_MS:
+                props[key] = value
+    else:
+        props["$ai_provider"] = "anthropic"
+        props["$ai_model"] = model_name(source.get("$ai_model"))
+        props["$ai_cache_reporting_exclusive"] = True
+        for key in TOKENS:
+            if type(source.get(key)) is int and source[key] >= 0:
+                props[key] = source[key]
+        for key in TIMES:
+            if number(source.get(key)):
+                props[key] = source[key]
+        for key in FLAGS:
+            if type(source.get(key)) is bool:
+                props[key] = source[key]
+        if source.get("aule_component") in COMPONENTS:
+            props["aule_component"] = source["aule_component"]
+        if source.get("aule_request") in REQUESTS:
+            props["aule_request"] = source["aule_request"]
+        if props.get("$ai_is_error"):
+            props["$ai_error"] = "provider_error"
     return {
         "event": name,
         "distinct_id": DISTINCT_ID,
@@ -230,9 +264,9 @@ class Observability:
             )
             return None
 
-    def _send(self, properties: dict[str, Any]) -> None:
+    def _send(self, properties: dict[str, Any], event: str = GENERATION) -> None:
         self._client.capture(
-            GENERATION,
+            event,
             distinct_id=DISTINCT_ID,
             properties=properties,
             options={"process_person_profile": False},
@@ -335,6 +369,26 @@ class Observability:
                     if type(value) is int and value >= 0:
                         props["$ai_" + name] = value
             self._send(props)
+        except Exception as error:
+            _dropped(error)
+
+    def turn(self, trace: str | None, stages: dict[str, float]) -> None:
+        """A staged push-to-talk turn closed at the tutor's first audio
+        (``Timing.on_staged``): what each of its stages took, in whole
+        milliseconds, under the trace id its model calls share. Only a turn
+        the tutor's model answered is sent: the stages of one it did not, as
+        when the input gates stop a turn, would say so. Whether its answer
+        was checked is left for later."""
+        if not any(stage in stages for stage in MODEL_STAGES):
+            return
+        try:
+            props: dict[str, Any] = {"$ai_trace_id": trace or str(uuid4())}
+            if number(stages.get("first_audio")):
+                props["$ai_latency"] = stages["first_audio"]
+            for stage, seconds in stages.items():
+                if stage in STAGES and type(seconds) in (int, float) and math.isfinite(seconds):
+                    props[f"aule_{stage}_ms"] = round(seconds * 1000)
+            self._send(props, TRACE)
         except Exception as error:
             _dropped(error)
 
