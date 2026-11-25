@@ -19,7 +19,7 @@ from livekit.agents.voice.generation import INSTRUCTIONS_MESSAGE_ID
 from . import comparison, drill, farewell, visuals
 from .greetings import greeting as written_greeting
 from .prompts import CHECKING, INSTRUCTIONS, PACED, SCREEN, response_language
-from .providers import REQUEST, Prompt
+from .providers import REQUEST, WARMING, Prompt
 from .replies import ADULT_HELP_SEQUENCE, ANSWERABLE, MEANWHILE, reply
 from .safety import Gates
 from .script import Engine, Line, Reply
@@ -103,6 +103,10 @@ EARLY_REPLY_SECONDS = 5.0
 
 # The longest typed message that is read. A spoken turn is rarely longer.
 MAX_TYPED_CHARS = 500
+
+# What the request that warms the prompt cache asks in place of a student's
+# words. The model writes nothing back (max_tokens 0).
+WARM_UP = "(warm-up)"
 
 DEFAULT_TUTOR_NAME = "Aule"
 PERSONAS = ("calido", "jugueton", "aventurero", "tranquilo")
@@ -529,6 +533,31 @@ class Tutor(Agent):
         self._context = with_notes(self._context, plan)
         self._base = self._prompt().system
         await self.update_instructions(self._instructions_now())
+
+    async def warm_the_model(self) -> None:
+        """Writes the prompt cache of the tools and the instructions while the
+        greeting is said, so the first reply reads them instead of waiting for
+        them to be written. One request that returns nothing, with no student's
+        words, laid out as a reply is: the same prefix, then the notes with the
+        output-language rule last. A failure only means the first reply writes
+        them itself."""
+        prompt = self._prompt()
+        chat = llm.ChatContext(
+            [
+                llm.ChatMessage(role="system", content=[prompt.text]),
+                llm.ChatMessage(role="user", content=[WARM_UP]),
+            ]
+        )
+        warming = WARMING.set(True)
+        request = REQUEST.set(prompt)
+        try:
+            async for _ in Agent.default.llm_node(self, chat, self.tools, ModelSettings()):
+                pass
+        except Exception as error:
+            logger.info("model not warmed", extra={"error": type(error).__name__})
+        finally:
+            REQUEST.reset(request)
+            WARMING.reset(warming)
 
     def _prompt(self) -> Prompt:
         """What the model is told now (``PROMPTS.md``): the rules, the

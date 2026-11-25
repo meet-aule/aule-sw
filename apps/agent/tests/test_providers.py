@@ -3,24 +3,29 @@ wrapper, with the Anthropic client stood in for (``fakes``). The stand-in
 refuses what the real API would answer 400 to and bills prompt-cache reads
 the way the API does. No network and no paid calls."""
 
+import asyncio
 import json
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import anthropic
 import pytest
 from fakes import CURRENT_WORLD, THOUGHT, Delays, World
-from livekit.agents import llm
+from livekit.agents import Agent, llm
 from livekit.agents.utils import is_given
 
 from aule_agent.config import Settings
+from aule_agent.prompts import response_language
 from aule_agent.providers import (
     REQUEST,
+    WARMING,
     Prompt,
     PromptLayout,
     build_llm,
     layout,
 )
-from aule_agent.tutor import Tutor
+from aule_agent.tutor import WARM_UP, Tutor
+from aule_agent.usage import Usage
 
 ENV = {
     "LIVEKIT_URL": "ws://127.0.0.1:7880",
@@ -388,3 +393,86 @@ def test_a_camera_frame_is_left_after_the_marker():
 
     text, frame = sent["messages"][0]["content"]
     assert "cache_control" in text and "cache_control" not in frame
+
+
+def plugin_node(model):
+    """LiveKit's default llm_node without a session: the real plugin's stream."""
+
+    async def node(agent, chat_ctx, tool_list, settings):
+        async with model.chat(chat_ctx=chat_ctx, tools=tool_list) as stream:
+            async for chunk in stream:
+                yield chunk
+
+    return node
+
+
+@pytest.mark.parametrize(
+    "given, env",
+    [(False, ENV), (True, None), (False, AFTER_HISTORY)],
+    ids=["own_client", "given_client", "after_history"],
+)
+async def test_the_warm_up_writes_the_cache_the_first_reply_reads(world, given, env):
+    model = (
+        build_llm(SimpleNamespace(llm_model="claude-sonnet-5-5"), client=world.model_client)
+        if given
+        else build_llm(Settings.from_env(env))
+    )
+    usage = Usage()
+    model.on("metrics_collected", usage.add)
+    tutor = Tutor(language="es", gates=Gates(), context=STUDENT, show=screen, checker=Checker())
+    with patch.object(Agent.default, "llm_node", side_effect=plugin_node(model)):
+        await tutor.warm_the_model()
+    # Its tokens are counted with the session's.
+    assert usage.calls == 1 and usage.cache_write_tokens == world.model_calls[0].cache_write
+    chat = llm.ChatContext()
+    chat.add_message(role="system", content=tutor.instructions)
+    chat.add_message(role="assistant", content="¡Hola! ¿Cómo te fue hoy?")
+    chat.add_message(role="user", content="bien")
+    await ask(model, chat, tutor._prompt(), tutor.tools)
+
+    warm, first = world.model_calls
+    sent, real = warm.kwargs, first.kwargs
+    assert world.api_errors == []
+    # Once, without streaming and without a word back.
+    assert sent["stream"] is False and sent["max_tokens"] == 0
+    # What a real call sends before the conversation, byte for byte.
+    for key in ("tools", "system", "thinking", "tool_choice"):
+        assert json.dumps(sent[key]) == json.dumps(real[key]), key
+    assert markers(sent) == [("system", 0), ("system", 1)]
+    # No student's words: a placeholder only. The notes, the output-language
+    # rule last, come after the prefix as a reply's do: ending the system
+    # prompt, or after the placeholder.
+    placeholder = {"role": "user", "content": [{"type": "text", "text": WARM_UP}]}
+    if env is AFTER_HISTORY:
+        notes = {"role": "system", "content": response_language("es")}
+        assert sent["messages"] == [placeholder, notes] and len(sent["system"]) == 2
+    else:
+        assert sent["messages"] == [placeholder]
+        assert sent["system"][-1] == {"type": "text", "text": response_language("es")}
+    # The first reply reads all of it from the cache.
+    assert first.cache_read >= warm.cache_write > 0
+
+
+async def test_a_warm_up_that_fails_is_nothing_and_a_cancelled_one_stops(world, caplog):
+    tutor = Tutor(language="es", gates=Gates())
+
+    async def broken(*_):
+        raise RuntimeError("down")
+        yield
+
+    async def endless(*_):
+        await asyncio.Event().wait()
+        yield
+
+    with caplog.at_level("INFO", logger="aule.agent.tutor"):
+        with patch.object(Agent.default, "llm_node", side_effect=broken):
+            await tutor.warm_the_model()
+    assert [record.message for record in caplog.records] == ["model not warmed"]
+    assert REQUEST.get() is None and not WARMING.get()
+
+    with patch.object(Agent.default, "llm_node", side_effect=endless):
+        task = asyncio.create_task(tutor.warm_the_model())
+        await asyncio.sleep(0.01)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task

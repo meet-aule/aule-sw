@@ -336,6 +336,18 @@ def test_every_press_readies_the_gates_with_their_probe_requests_only(sessions):
         assert all(utterance != moderation.PROBE_TEXT for utterance in run.world.typesafe_asked)
 
 
+def test_each_session_warms_the_prompt_cache_once_with_no_childs_words(sessions):
+    runs, _ = sessions
+    for name, run in runs.items():
+        warm, *calls = run.world.model_calls
+        assert warm.kwargs["stream"] is False and warm.kwargs["max_tokens"] == 0, name
+        assert CHILD_WORDS not in json.dumps(warm.kwargs, ensure_ascii=False)
+        assert all(call.kwargs["stream"] is True for call in calls)
+        if calls:
+            # The first reply reads what the warm-up wrote.
+            assert calls[0].cache_read >= warm.cache_write > 0, name
+
+
 def test_no_log_line_carries_the_childs_words(sessions):
     _, lines = sessions
     assert lines

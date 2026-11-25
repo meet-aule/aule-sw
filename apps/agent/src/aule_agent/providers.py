@@ -68,6 +68,8 @@ class Prompt:
 REQUEST: contextvars.ContextVar[Prompt | None] = contextvars.ContextVar(
     "aule_request", default=None
 )
+# Set while the tutor warms the prompt cache (``PromptLayout``).
+WARMING: contextvars.ContextVar[bool] = contextvars.ContextVar("aule_warming", default=False)
 
 
 def _plain(block: dict[str, Any]) -> dict[str, Any]:
@@ -174,10 +176,54 @@ class PromptLayout:
         return getattr(self._client, name)
 
     async def create(self, **request: Any) -> Any:
+        if WARMING.get():
+            return await self._warm(request)
         sent, self._previous = layout(
             request, REQUEST.get(), self._previous, system_messages=self._system_messages
         )
         return await self._client.messages.create(**sent)
+
+    async def _warm(self, request: dict[str, Any]) -> Any:
+        """Writes the cache up to the system blocks, and nothing else: the
+        request the plugin built, sent once without streaming and with
+        max_tokens 0, so the model writes no word (skill
+        shared/prompt-caching.md, "Pre-warming the cache"; streaming is
+        refused with max_tokens 0). Tools, system, thinking and tool_choice
+        are a real call's; the placeholder message is unmarked, and the
+        notes follow it when they go after the history, as a reply's do."""
+        sent, _ = layout(request, REQUEST.get(), system_messages=self._system_messages)
+        sent["messages"] = [
+            {"role": message["role"], "content": [_plain(block) for block in content]}
+            if isinstance(content := message["content"], list)
+            else message
+            for message in sent["messages"]
+        ]
+        sent["stream"] = False
+        sent["max_tokens"] = 0
+        return _Prefilled(await self._client.messages.create(**sent))
+
+
+class _Prefilled:
+    """The warm-up's answer as the plugin reads a stream: its usage only."""
+
+    def __init__(self, answer: Any) -> None:
+        from anthropic.types import RawMessageStartEvent
+
+        self._events = [RawMessageStartEvent(type="message_start", message=answer)]
+
+    async def __aenter__(self) -> "_Prefilled":
+        return self
+
+    async def __aexit__(self, *exc: object) -> None:
+        return None
+
+    def __aiter__(self) -> "_Prefilled":
+        return self
+
+    async def __anext__(self) -> Any:
+        if not self._events:
+            raise StopAsyncIteration
+        return self._events.pop(0)
 
 
 class _Messages:

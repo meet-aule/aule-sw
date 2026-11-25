@@ -597,6 +597,8 @@ async def entrypoint(ctx: JobContext) -> None:
         record=False,
     )
     camera.start()
+    # While the greeting is said: the first reply then reads its prompt from the cache.
+    tasks.append(asyncio.create_task(tutor.warm_the_model()))
 
     async def show_work(_: rtc.RpcInvocationData) -> str:
         # The page's button for showing work. It answers "ok" once the tutor
