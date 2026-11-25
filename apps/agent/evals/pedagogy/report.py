@@ -9,6 +9,8 @@ import statistics
 from collections import Counter, defaultdict
 from pathlib import Path
 
+import calibrate
+
 BAD = ("math_error", "endorsed_wrong", "premature_answer")
 GOOD = ("adapted", "useful_next_step")
 # How the tutor starts the call id of a check it made in code (tutor.CHECKED_IN_CODE).
@@ -101,12 +103,26 @@ def examples(row):
     return row.get("examples")
 
 
-def passes(row):
+def calibration(directory):
+    """How the examples judge's calibration stands in this folder: "passed",
+    "failed", "missing", or "stale" when it was made with another prompt,
+    schema or set of labelled turns. Its verdicts count only once it passed."""
+    path = directory / "calibration.json"
+    if not path.exists():
+        return "missing"
+    saved = json.loads(path.read_text())
+    if saved.get("hashes") != calibrate.hashes(calibrate.load()):
+        return "stale"
+    return "passed" if saved["gate"]["passed"] else "failed"
+
+
+def passes(row, calibrated):
     checked, judged = checks(row), examples(row)
     return bool(
         legacy(row)
         and checked is not None
         and checked["complete"]
+        and calibrated
         and judged is not None
         and judged["status"] == "ok"
         and not judged["changed"]
@@ -124,7 +140,7 @@ def judged_examples(rows, verdict):
     ]
 
 
-def metrics(rows):
+def metrics(rows, calibrated):
     judged = [r for r in rows if r.get("judge")]
     turns = [t for r in rows for t in r["turns"]]
     durations = sorted(t["seconds"] for t in turns)
@@ -134,7 +150,7 @@ def metrics(rows):
     return dict(
         sessions=len(rows),
         judged=len(judged),
-        passes=sum(passes(r) for r in rows),
+        passes=sum(passes(r, calibrated) for r in rows),
         legacy_passes=sum(legacy(r) for r in rows),
         checks_measured=len(checked),
         checks_complete=sum(c["complete"] for c in checked),
@@ -161,7 +177,7 @@ def metrics(rows):
     )
 
 
-def paired(rows):
+def paired(rows, calibrated):
     by_case = defaultdict(dict)
     for row in rows:
         by_case[(row["id"], row["repetition"])][row["arm"]] = row
@@ -170,7 +186,8 @@ def paired(rows):
     for (case, _rep), arms in by_case.items():
         if "baseline" not in arms or "candidate" not in arms:
             continue
-        baseline, candidate = passes(arms["baseline"]), passes(arms["candidate"])
+        baseline = passes(arms["baseline"], calibrated)
+        candidate = passes(arms["candidate"], calibrated)
         differences[case].append(int(candidate) - int(baseline))
         if baseline != candidate:
             discordant["improved" if candidate else "regressed"] += 1
@@ -202,6 +219,7 @@ def results(directory):
 
 def build(directory):
     rows = results(directory)
+    calibrated = calibration(directory)
     normal = [r for r in rows if r["arm"] in ("baseline", "candidate")]
     holdout = [r for r in normal if r["split"] == "holdout"]
     # The benchmark's sets first, as before; any other split or arm after them.
@@ -212,16 +230,18 @@ def build(directory):
     ]
     names += sorted({f"{r['split']}/{r['arm']}" for r in rows} - set(names))
     groups = {
-        name: metrics([r for r in rows if f"{r['split']}/{r['arm']}" == name])
+        name: metrics(
+            [r for r in rows if f"{r['split']}/{r['arm']}" == name], calibrated == "passed"
+        )
         for name in names
         if any(f"{r['split']}/{r['arm']}" == name for r in rows)
     }
-    paired_result = paired(holdout)
+    paired_result = paired(holdout, calibrated == "passed")
     baseline, candidate = groups.get("holdout/baseline", {}), groups.get("holdout/candidate", {})
     regressions = [k for k in BAD if candidate.get(k, 0) > baseline.get(k, 0)]
     evidence = []
     for r in rows:
-        if not passes(r):
+        if not passes(r, calibrated == "passed"):
             evidence.append(
                 dict(
                     id=r["id"],
@@ -261,6 +281,7 @@ def build(directory):
         improvement_supported_on_this_benchmark=improvement,
         deployment="none",
         learning_gain="not measured",
+        examples_calibration=calibrated,
         changed_examples=judged_examples(rows, "changes"),
         unclear_examples=judged_examples(rows, "unclear"),
         failures=evidence,
@@ -313,6 +334,10 @@ def render(report, directory):
         "turn that code reads as an answer in digits or a request for help was checked in code "
         "and answered by the checker. A session saved before these were measured is counted as "
         "not measured, never as passed.",
+        "",
+        f"Calibration of the examples judge in this folder: "
+        f"**{report['examples_calibration']}**. Its verdicts count only once it passed; "
+        "until then no session passes all criteria.",
         "",
         "## Answer checks",
         "",

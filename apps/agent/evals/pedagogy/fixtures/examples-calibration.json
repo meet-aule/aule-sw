@@ -1,0 +1,1571 @@
+{
+ "about": "Sessions of two earlier runs of the pedagogy evaluation, each turn as the examples judge reads it (meaning.visible), and hand-written sessions (synthetic: true) for failures those runs did not show. Every turn is labelled by hand: its examples change the meaning of what they stand for (changes), keep it (keeps), there is none (none), or the words allow both readings (ambiguous, not scored). must marks a turn the judge has to get right. Every student line is scripted: no child's words. It is development data: the judge's prompt was written with these runs at hand, so passing on it shows fit, not that the judge generalizes.",
+ "sessions": [
+  {
+   "id": "aule-pedagogy-20261125/math-003-baseline-0",
+   "run": "aule-pedagogy-20261125",
+   "file": "math-003-baseline-0.json",
+   "file_sha256": "ecff74f45c5fb9b19d6433a6835d5994cc338bf0efd294ea421a262a06ef55bb",
+   "exercise": "1/3 + 1/4",
+   "exact_answer": "7/12",
+   "language": "es",
+   "turns": [
+    {
+     "turn": 1,
+     "student": "Estoy haciendo 1/3 + 1/4. Me salió 2/7 porque sumé los números de arriba y los de abajo. ¿Está bien?",
+     "tutor": "A ver.\nGracias por contarme cómo lo pensaste, eso me ayuda mucho. Mira, un tercio es una parte de algo dividido en tres, y un cuarto es más pequeño porque se divide en cuatro. Si juntas un tercio y un cuarto, ¿crees que el resultado debería ser más o menos que un tercio?"
+    },
+    {
+     "turn": 2,
+     "student": "No entiendo. Explícamelo de otra manera, con algo más fácil.",
+     "tutor": "Claro, pensemos en una pizza. Imagina que te como un pedacito de pizza, y luego te doy otro pedacito más. ¿Tendrás más pizza que antes o menos que antes?"
+    },
+    {
+     "turn": 3,
+     "student": "Creo que la respuesta al ejercicio original es 7/12.",
+     "tutor": "¡Muy bien, sí es correcto! Lo que más me gusta es que cambiaste tu forma de pensarlo. Cuéntame, ¿cómo llegaste a siete doceavos?"
+    }
+   ],
+   "labels": [
+    {
+     "turn": 1,
+     "expect": "none",
+     "must": false,
+     "why": "says what a third and a quarter are and asks whether joining them is more than a third: the exercise itself, no example"
+    },
+    {
+     "turn": 2,
+     "expect": "changes",
+     "must": false,
+     "why": "one piece eaten and another given: a fraction addition becomes taking away and giving back"
+    },
+    {
+     "turn": 3,
+     "expect": "none",
+     "must": false,
+     "why": "confirms the answer and asks for the reasoning"
+    }
+   ]
+  },
+  {
+   "id": "aule-pedagogy-20261125/math-005-baseline-0",
+   "run": "aule-pedagogy-20261125",
+   "file": "math-005-baseline-0.json",
+   "file_sha256": "4e4b0db191760144a419bffe38b9609dc03d977f7bd7e7dcd79cb01268d6abc2",
+   "exercise": "3 + 3 * 2",
+   "exact_answer": "9",
+   "language": "es",
+   "turns": [
+    {
+     "turn": 1,
+     "student": "Estoy haciendo 3 + 3 * 2. Me salió 12 porque primero sumé y después multipliqué. ¿Está bien?",
+     "tutor": "A ver.\nGracias por contarme cómo lo pensaste, eso me ayuda mucho. Ese 12 todavía no es, y creo que el detalle está en el orden en que hiciste las operaciones. Cuando en una cuenta hay suma y multiplicación juntas, ¿recuerdas cuál se hace primero?"
+    },
+    {
+     "turn": 2,
+     "student": "No entiendo. Explícamelo de otra manera, con algo más fácil.",
+     "tutor": "Claro, imagina esto. Compras un cuaderno de tres soles, y además dos lapiceros que cuestan tres soles cada uno. ¿Cuánto cuestan solo los dos lapiceros?"
+    },
+    {
+     "turn": 3,
+     "student": "Creo que la respuesta al ejercicio original es 9.",
+     "tutor": "Sí, es nueve, muy bien. Cuéntame, ¿qué hiciste primero para llegar a ese número y por qué?"
+    }
+   ],
+   "labels": [
+    {
+     "turn": 1,
+     "expect": "none",
+     "must": false,
+     "why": "asks which operation goes first, with no example"
+    },
+    {
+     "turn": 2,
+     "expect": "keeps",
+     "must": true,
+     "why": "a notebook and two pens at 3 soles, asks the pens' cost: a total of prices, factors swapped"
+    },
+    {
+     "turn": 3,
+     "expect": "none",
+     "must": false,
+     "why": "confirms the answer and asks for the reasoning"
+    }
+   ]
+  },
+  {
+   "id": "aule-pedagogy-20261125/math-008-baseline-0",
+   "run": "aule-pedagogy-20261125",
+   "file": "math-008-baseline-0.json",
+   "file_sha256": "53b86d58101f65364abc283c8e14ed7c82066d12af707631bb59931950534482",
+   "exercise": "4 + 3 * 2",
+   "exact_answer": "10",
+   "language": "es",
+   "turns": [
+    {
+     "turn": 1,
+     "student": "Estoy haciendo 4 + 3 * 2. Me salió 14 porque primero sumé y después multipliqué. ¿Está bien?",
+     "tutor": "A ver.\nGracias por contarme cómo lo pensaste, eso me ayuda mucho. Ese orden de ir de izquierda a derecha no es el que se usa cuando hay suma y multiplicación juntas. Dime, ¿recuerdas cuál de las dos operaciones tiene prioridad y se resuelve primero?"
+    },
+    {
+     "turn": 2,
+     "student": "No entiendo. Explícamelo de otra manera, con algo más fácil.",
+     "tutor": "Claro, pensémoslo con caramelos. Tienes 4 caramelos en el bolsillo, y te dan 3 bolsitas con 2 caramelos cada una. ¿Cuántos caramelos te dan en total solo con las bolsitas?"
+    },
+    {
+     "turn": 3,
+     "student": "Solo dime la respuesta final, tengo prisa.",
+     "tutor": "Te entiendo, vamos rápido, pero la respuesta final te la vas a sacar tú en un minuto. Solo contesta esto: si te dan 3 bolsitas con 2 caramelos cada una, ¿cuántos caramelos son solo de las bolsitas?"
+    }
+   ],
+   "labels": [
+    {
+     "turn": 1,
+     "expect": "none",
+     "must": false,
+     "why": "asks which operation goes first, with no example"
+    },
+    {
+     "turn": 2,
+     "expect": "keeps",
+     "must": true,
+     "why": "4 candies and 3 bags of 2 candies given: the same exercise"
+    },
+    {
+     "turn": 3,
+     "expect": "keeps",
+     "must": false,
+     "why": "3 bags of 2 candies given, asks the bags' candies: the step 3 × 2, received"
+    }
+   ]
+  },
+  {
+   "id": "aule-pedagogy-20261125/math-011-baseline-0",
+   "run": "aule-pedagogy-20261125",
+   "file": "math-011-baseline-0.json",
+   "file_sha256": "e5c6f9829c300c1c06677879680bf6d4dd3ae7877075ca9b501f4b14768d02dc",
+   "exercise": "5 + 3 * 2",
+   "exact_answer": "11",
+   "language": "es",
+   "turns": [
+    {
+     "turn": 1,
+     "student": "Estoy haciendo 5 + 3 * 2. Me salió 16 porque primero sumé y después multipliqué. ¿Está bien?",
+     "tutor": "A ver.\nGracias por contarme cómo lo pensaste, eso ayuda mucho. Ese 16 no es el resultado, y el problema está en el orden en que hiciste las operaciones. Cuando en una cuenta hay suma y multiplicación juntas, ¿recuerdas cuál de las dos se hace primero?"
+    },
+    {
+     "turn": 2,
+     "student": "No entiendo. Explícamelo de otra manera, con algo más fácil.",
+     "tutor": "Imagínate que tienes cinco soles en el bolsillo. Luego compras tres caramelos y cada uno cuesta dos soles. Primero, ¿cuánto gastaste en total por los caramelos?"
+    },
+    {
+     "turn": 3,
+     "student": "Creo que la respuesta al ejercicio original es 11.",
+     "tutor": "¡Eso es, once es correcto! Cuéntame cómo llegaste a ese número, ¿qué hiciste primero y qué hiciste después?"
+    }
+   ],
+   "labels": [
+    {
+     "turn": 1,
+     "expect": "none",
+     "must": false,
+     "why": "asks which operation goes first, with no example"
+    },
+    {
+     "turn": 2,
+     "expect": "changes",
+     "must": false,
+     "why": "5 soles and 3 candies bought at 2 soles: spends from the money held: an addition becomes a purchase"
+    },
+    {
+     "turn": 3,
+     "expect": "none",
+     "must": false,
+     "why": "confirms the answer and asks for the reasoning"
+    }
+   ]
+  },
+  {
+   "id": "aule-pedagogy-20261125/math-014-baseline-0",
+   "run": "aule-pedagogy-20261125",
+   "file": "math-014-baseline-0.json",
+   "file_sha256": "ba07b20b8d0d0ccb3e91cb84c3b8952319cee312add6296619795f2b2a650b8c",
+   "exercise": "6 + 3 * 2",
+   "exact_answer": "12",
+   "language": "en",
+   "turns": [
+    {
+     "turn": 1,
+     "student": "I am working on 6 + 3 * 2. I got 18 because I added first and then multiplied. Is that right?",
+     "tutor": "Let's see.\nThanks for telling me how you did it, that helps a lot. Adding first and then multiplying gives eighteen, but that order isn't the one the problem asks for. When a problem has both a plus and a times, is there one of them that should go first? Think about what you've learned about the order of operations."
+    },
+    {
+     "turn": 2,
+     "student": "I don't understand. Explain it another way, with something easier.",
+     "tutor": "Sure, let's make it a story. You have six coins in your pocket. Then you get three bags, and each bag has two coins in it. How many coins are in the bags altogether?"
+    },
+    {
+     "turn": 3,
+     "student": "Just give me the final answer; I am in a hurry.",
+     "tutor": "I get that you're in a hurry, but I won't give you the answer. We're really close, and this will take you thirty seconds. Just the bags part of the story: three bags with two coins in each. How many coins is that?"
+    }
+   ],
+   "labels": [
+    {
+     "turn": 1,
+     "expect": "none",
+     "must": false,
+     "why": "asks which goes first, plus or times, with no example"
+    },
+    {
+     "turn": 2,
+     "expect": "keeps",
+     "must": true,
+     "why": "6 coins and 3 bags of 2 coins: the same exercise"
+    },
+    {
+     "turn": 3,
+     "expect": "keeps",
+     "must": false,
+     "why": "the bags of the coins story, 3 bags of 2 coins: the step 3 × 2, received"
+    }
+   ]
+  },
+  {
+   "id": "aule-pedagogy-20261125/math-017-baseline-0",
+   "run": "aule-pedagogy-20261125",
+   "file": "math-017-baseline-0.json",
+   "file_sha256": "b59358251a5ccd583706835ad5b0378ed122f8abfb283555ef7f1a8b544f75a8",
+   "exercise": "7 + 3 * 2",
+   "exact_answer": "13",
+   "language": "es",
+   "turns": [
+    {
+     "turn": 1,
+     "student": "Estoy haciendo 7 + 3 * 2. Me salió 20 porque primero sumé y después multipliqué. ¿Está bien?",
+     "tutor": "A ver.\nGracias por contarme cómo lo pensaste, eso ayuda mucho. Ese veinte no es el resultado correcto, y el problema está en qué operación se hace primero. Cuando una cuenta mezcla suma y multiplicación, ¿recuerdas cuál de las dos tiene prioridad?"
+    },
+    {
+     "turn": 2,
+     "student": "No entiendo. Explícamelo de otra manera, con algo más fácil.",
+     "tutor": "Claro, imagina que tienes siete soles en el bolsillo. Luego compras tres paquetes de galletas, y cada paquete trae dos galletas. Primero, ¿cuántas galletas te dan en total por esos tres paquetes?"
+    },
+    {
+     "turn": 3,
+     "student": "Creo que la respuesta al ejercicio original es 13.",
+     "tutor": "Sí, trece es correcto. Cuéntame cómo lo pensaste, ¿qué hiciste primero y por qué?"
+    }
+   ],
+   "labels": [
+    {
+     "turn": 1,
+     "expect": "none",
+     "must": false,
+     "why": "asks which operation goes first, with no example"
+    },
+    {
+     "turn": 2,
+     "expect": "changes",
+     "must": false,
+     "why": "7 soles and 3 packs of 2 biscuits: soles and biscuits cannot be added"
+    },
+    {
+     "turn": 3,
+     "expect": "none",
+     "must": false,
+     "why": "confirms the answer and asks for the reasoning"
+    }
+   ]
+  },
+  {
+   "id": "aule-pedagogy-20261125/math-024-baseline-0",
+   "run": "aule-pedagogy-20261125",
+   "file": "math-024-baseline-0.json",
+   "file_sha256": "6ef070186fd5d09d127a85759cde3a3ac10a42effc38ce142dcebbccf87541aa",
+   "exercise": "1/10 + 1/11",
+   "exact_answer": "21/110",
+   "language": "en",
+   "turns": [
+    {
+     "turn": 1,
+     "student": "I am working on 1/10 + 1/11. I got 2/21 because I added the tops and added the bottoms. Is that right?",
+     "tutor": "Let's see.\nThanks for telling me exactly how you did it, that helps a lot. Here's something to think about. One tenth is a pretty big piece, and one eleventh is a little smaller. Is two twenty-firsts bigger or smaller than just one tenth by itself? Think about a pizza cut into twenty-one slices, and take two of them."
+    },
+    {
+     "turn": 2,
+     "student": "I don't understand. Explain it another way, with something easier.",
+     "tutor": "Sure, let's make it easier. Picture a chocolate bar cut into two equal pieces, and you eat one half. Then your friend gives you another half. How much chocolate do you have now?"
+    },
+    {
+     "turn": 3,
+     "student": "Just give me the final answer; I am in a hurry.",
+     "tutor": "I hear you, and I know you're in a hurry, but I won't just hand it over, because you're closer than you think. Here's a quick way in. To add fractions, the pieces have to be the same size. Tenths and elevenths are different sizes, so we need a number that both ten and eleven fit into. Can you think of one?"
+    }
+   ],
+   "labels": [
+    {
+     "turn": 1,
+     "expect": "keeps",
+     "must": false,
+     "why": "a pizza in 21 slices, 2 of them taken: the student's 2/21, to compare with a tenth"
+    },
+    {
+     "turn": 2,
+     "expect": "changes",
+     "must": false,
+     "why": "half eaten, another half given, asks how much is had now: the eaten half is gone"
+    },
+    {
+     "turn": 3,
+     "expect": "none",
+     "must": false,
+     "why": "explains that tenths and elevenths need a common size, with no example"
+    }
+   ]
+  },
+  {
+   "id": "aule-pedagogy-20261125/math-026-candidate-0",
+   "run": "aule-pedagogy-20261125",
+   "file": "math-026-candidate-0.json",
+   "file_sha256": "717dcddc5d4142fb4f090a469a13eb3b00ecd9696aaf75af2aa1567295d86187",
+   "exercise": "10 + 3 * 2",
+   "exact_answer": "16",
+   "language": "es",
+   "turns": [
+    {
+     "turn": 1,
+     "student": "Estoy haciendo 10 + 3 * 2. Me salió 26 porque primero sumé y después multipliqué. ¿Está bien?",
+     "tutor": "A ver.\nPiénsalo con un caso de la vida real. Compras un cuaderno de diez soles y además tres lapiceros que cuestan dos soles cada uno. ¿Cuánto pagas por los lapiceros solos?"
+    },
+    {
+     "turn": 2,
+     "student": "No entiendo. Explícamelo de otra manera, con algo más fácil.",
+     "tutor": "No te preocupes, vamos más despacio. Imagina que tienes diez caramelos en tu mochila y tu mamá te da tres bolsitas con dos caramelos cada una. Primero, ¿cuántos caramelos hay en las tres bolsitas, sin contar los de tu mochila?"
+    },
+    {
+     "turn": 3,
+     "student": "Solo dime la respuesta final, tengo prisa.",
+     "tutor": "Te entiendo, y vamos rápido, pero la respuesta te la tienes que ganar tú, y estás muy cerca. Solo dime una cosa: tres bolsitas con dos caramelos cada una, ¿cuántos caramelos son en total?"
+    }
+   ],
+   "labels": [
+    {
+     "turn": 1,
+     "expect": "keeps",
+     "must": false,
+     "why": "a notebook and three pens at 2 soles, asks the pens' cost: a total of prices"
+    },
+    {
+     "turn": 2,
+     "expect": "keeps",
+     "must": false,
+     "why": "10 candies and 3 bags of 2 given by mother, asks the bags' candies: received, each number in its role"
+    },
+    {
+     "turn": 3,
+     "expect": "keeps",
+     "must": false,
+     "why": "3 bags of 2 candies, asks how many: the step 3 × 2"
+    }
+   ]
+  },
+  {
+   "id": "aule-pedagogy-20261125/math-035-baseline-0",
+   "run": "aule-pedagogy-20261125",
+   "file": "math-035-baseline-0.json",
+   "file_sha256": "b6254470c7f173b0f2126f8b081bd7c4ff1899842382ae9decd5b6ed9ea23913",
+   "exercise": "13 + 3 * 2",
+   "exact_answer": "19",
+   "language": "es",
+   "turns": [
+    {
+     "turn": 1,
+     "student": "Estoy haciendo 13 + 3 * 2. Me salió 32 porque primero sumé y después multipliqué. ¿Está bien?",
+     "tutor": "A ver.\nGracias por contarme cómo lo pensaste, así veo bien tu camino. Sumaste trece más tres y te dio dieciséis, y luego multiplicaste por dos. Dime, cuando hay una suma y una multiplicación juntas, ¿recuerdas cuál operación se resuelve primero?"
+    },
+    {
+     "turn": 2,
+     "student": "No entiendo. Explícamelo de otra manera, con algo más fácil.",
+     "tutor": "Claro, vamos con una historia. Tienes trece soles en el bolsillo y compras dos caramelos que cuestan tres soles cada uno. ¿Cuánto gastas en total en caramelos?"
+    },
+    {
+     "turn": 3,
+     "student": "Creo que la respuesta al ejercicio original es 19.",
+     "tutor": "¡Sí, diecinueve es correcto! Me alegra que lo hayas visto. Cuéntame, ¿cómo llegaste a ese número, qué hiciste primero?"
+    }
+   ],
+   "labels": [
+    {
+     "turn": 1,
+     "expect": "none",
+     "must": false,
+     "why": "repeats the student's sum and product, with no example"
+    },
+    {
+     "turn": 2,
+     "expect": "changes",
+     "must": false,
+     "why": "13 soles and 2 candies bought at 3 soles: spends from the money held: an addition becomes a purchase"
+    },
+    {
+     "turn": 3,
+     "expect": "none",
+     "must": false,
+     "why": "confirms the answer and asks for the reasoning"
+    }
+   ]
+  },
+  {
+   "id": "aule-pedagogy-20261125/math-042-baseline-1",
+   "run": "aule-pedagogy-20261125",
+   "file": "math-042-baseline-1.json",
+   "file_sha256": "ffeab7ea05ec3623424e2d99cdd41d4479a44474cf406648dec8c4b76db427fc",
+   "exercise": "1/16 + 1/17",
+   "exact_answer": "33/272",
+   "language": "es",
+   "turns": [
+    {
+     "turn": 1,
+     "student": "Estoy haciendo 1/16 + 1/17. Me salió 2/33 porque sumé los números de arriba y los de abajo. ¿Está bien?",
+     "tutor": "A ver.\nGracias por contarme cómo lo pensaste, eso me ayuda mucho. Mira, un dieciseisavo es una porción de algo cortado en dieciséis pedazos, y un diecisieteavo es una porción de algo cortado en diecisiete pedazos. Cuando los pedazos son de tamaños distintos, ¿crees que se pueden juntar y contar directamente como si fueran iguales?"
+    },
+    {
+     "turn": 2,
+     "student": "No entiendo. Explícamelo de otra manera, con algo más fácil.",
+     "tutor": "Claro, vamos con algo más fácil. Imagina que tienes media pizza y un cuarto de otra pizza. Si sumaras arriba y abajo como hiciste, te saldría dos sextos. Pero media pizza ya es más que dos sextos, que es lo mismo que un tercio. ¿Qué te parece, tiene sentido que juntar media pizza con algo más dé menos que media pizza?"
+    },
+    {
+     "turn": 3,
+     "student": "Solo dime la respuesta final, tengo prisa.",
+     "tutor": "Entiendo que tienes prisa, pero la respuesta no te la voy a dar, porque la idea es que tú la saques y sea tuya. Vamos rápido, un solo paso. Para sumar fracciones, primero los pedazos tienen que ser del mismo tamaño. ¿Qué número crees que podría servir de denominador para dieciséis y diecisiete a la vez?"
+    }
+   ],
+   "labels": [
+    {
+     "turn": 1,
+     "expect": "none",
+     "must": false,
+     "why": "says what sixteenths and seventeenths are and asks if unequal pieces can be counted together: no example"
+    },
+    {
+     "turn": 2,
+     "expect": "keeps",
+     "must": false,
+     "why": "half a pizza and a quarter of another: an addition with other numbers"
+    },
+    {
+     "turn": 3,
+     "expect": "none",
+     "must": false,
+     "why": "asks for a common bottom, with no example"
+    }
+   ]
+  },
+  {
+   "id": "aule-pedagogy-20261125/math-044-baseline-0",
+   "run": "aule-pedagogy-20261125",
+   "file": "math-044-baseline-0.json",
+   "file_sha256": "7fe7755157ef1d740458148da25a7115fa5a7ef0c271954426148e09f9468b68",
+   "exercise": "16 + 3 * 2",
+   "exact_answer": "22",
+   "language": "en",
+   "turns": [
+    {
+     "turn": 1,
+     "student": "I am working on 16 + 3 * 2. I got 38 because I added first and then multiplied. Is that right?",
+     "tutor": "Let's see.\nThanks for telling me how you did it, that helps a lot. Adding sixteen and three gives nineteen, and nineteen times two is thirty-eight, so your arithmetic is fine. The question is whether adding first is the right move. When a problem has both a plus and a times, do you remember which one mathematicians say to do first?"
+    },
+    {
+     "turn": 2,
+     "student": "I don't understand. Explain it another way, with something easier.",
+     "tutor": "Sure, let's make it a story. Imagine you have sixteen coins in your pocket. Then you buy three packs of stickers, and each pack costs two coins. How many coins do you spend on the stickers?"
+    },
+    {
+     "turn": 3,
+     "student": "Just give me the final answer; I am in a hurry.",
+     "tutor": "I hear you, you want to be done quickly. I won't hand you the answer, but we're one small step away. Just tell me this: three packs of stickers at two coins each, how many coins is that?"
+    }
+   ],
+   "labels": [
+    {
+     "turn": 1,
+     "expect": "none",
+     "must": false,
+     "why": "says the arithmetic is right and asks which goes first, with no example"
+    },
+    {
+     "turn": 2,
+     "expect": "changes",
+     "must": true,
+     "why": "16 coins and 3 packs bought at 2 coins: spends from the money held: an addition becomes a purchase"
+    },
+    {
+     "turn": 3,
+     "expect": "ambiguous",
+     "must": false,
+     "why": "3 packs at 2 coins each, how many coins: alone the step 3 × 2 as a cost, but it goes on with the story that spends the coins held"
+    }
+   ]
+  },
+  {
+   "id": "aule-pedagogy-20261125/math-056-candidate-0",
+   "run": "aule-pedagogy-20261125",
+   "file": "math-056-candidate-0.json",
+   "file_sha256": "87fe92324bc87308ae0d105c6b431a61394981f6f25ee49003f166f1b7d8e683",
+   "exercise": "20 + 3 * 2",
+   "exact_answer": "26",
+   "language": "es",
+   "turns": [
+    {
+     "turn": 1,
+     "student": "Estoy haciendo 20 + 3 * 2. Me salió 46 porque primero sumé y después multipliqué. ¿Está bien?",
+     "tutor": "A ver.\nPiensa en esto: tienes veinte soles en el bolsillo y compras dos caramelos de tres soles cada uno. ¿Cuánto gastas en los caramelos, y cuánto te queda?"
+    },
+    {
+     "turn": 2,
+     "student": "No entiendo. Explícamelo de otra manera, con algo más fácil.",
+     "tutor": "Un \"no entiendo\" no es un intento de respuesta, así que no necesito revisar nada. Vamos con algo más pequeño. Imagina que tienes 2 bolsas y en cada bolsa hay 3 manzanas, y además tienes 1 manzana suelta. Cuando cuentas todas las manzanas, ¿primero juntas las de las bolsas o primero sumas la manzana suelta?"
+    },
+    {
+     "turn": 3,
+     "student": "Solo dime la respuesta final, tengo prisa.",
+     "tutor": "Te entiendo, y si tienes prisa vamos rápido, pero la respuesta no te la voy a dar, porque la vas a sacar tú en un minuto. Solo dime esto: dos bolsas con tres manzanas cada una, ¿cuántas manzanas son?"
+    }
+   ],
+   "labels": [
+    {
+     "turn": 1,
+     "expect": "changes",
+     "must": true,
+     "why": "20 soles, candies bought, asks what is left: a subtraction"
+    },
+    {
+     "turn": 2,
+     "expect": "keeps",
+     "must": false,
+     "why": "2 bags of 3 apples and 1 loose apple, counted together: 1 + 2 × 3, the same operations"
+    },
+    {
+     "turn": 3,
+     "expect": "keeps",
+     "must": false,
+     "why": "2 bags of 3 apples, asks how many: the step 2 × 3"
+    }
+   ]
+  },
+  {
+   "id": "aule-pedagogy-20261125/math-071-baseline-0",
+   "run": "aule-pedagogy-20261125",
+   "file": "math-071-baseline-0.json",
+   "file_sha256": "b7dc08950d69563da470dafeda91c7525f7d55b7941bf4547ff2497e438e9d4c",
+   "exercise": "25 + 3 * 2",
+   "exact_answer": "31",
+   "language": "es",
+   "turns": [
+    {
+     "turn": 1,
+     "student": "Estoy haciendo 25 + 3 * 2. Me salió 56 porque primero sumé y después multipliqué. ¿Está bien?",
+     "tutor": "A ver.\nGracias por contarme cómo lo pensaste, eso me ayuda mucho. Sumaste primero y luego multiplicaste, pero ese orden no es el que se usa en matemática. Cuando una cuenta mezcla suma y multiplicación, ¿recuerdas cuál de las dos se hace primero?"
+    },
+    {
+     "turn": 2,
+     "student": "No entiendo. Explícamelo de otra manera, con algo más fácil.",
+     "tutor": "Mira, imagina que tienes 25 soles en el bolsillo. Tu mamá te da 3 billetes de 2 soles, o sea, tres veces dos soles. Primero, ¿cuántos soles te dieron en total esos 3 billetes de 2?"
+    },
+    {
+     "turn": 3,
+     "student": "Creo que la respuesta al ejercicio original es 31.",
+     "tutor": "¡Sí, es 31! Qué bien que lo sacaste con el ejemplo de los billetes. Cuéntame cómo lo pensaste, paso a paso."
+    }
+   ],
+   "labels": [
+    {
+     "turn": 1,
+     "expect": "none",
+     "must": false,
+     "why": "asks which operation goes first, with no example"
+    },
+    {
+     "turn": 2,
+     "expect": "keeps",
+     "must": true,
+     "why": "25 soles and 3 notes of 2 soles given: the same addition, each number in its role"
+    },
+    {
+     "turn": 3,
+     "expect": "none",
+     "must": false,
+     "why": "confirms the answer and names the notes example without giving another"
+    }
+   ]
+  },
+  {
+   "id": "aule-pedagogy-20261125/math-071-baseline-1",
+   "run": "aule-pedagogy-20261125",
+   "file": "math-071-baseline-1.json",
+   "file_sha256": "d44b34d94a1e3bd54f3d90f59a7546d6fd93a03ca86acc500e544128913674cd",
+   "exercise": "25 + 3 * 2",
+   "exact_answer": "31",
+   "language": "es",
+   "turns": [
+    {
+     "turn": 1,
+     "student": "Estoy haciendo 25 + 3 * 2. Me salió 56 porque primero sumé y después multipliqué. ¿Está bien?",
+     "tutor": "A ver.\nGracias por contarme cómo lo pensaste, eso ayuda mucho. Sumaste veinticinco más tres y te dio veintiocho, y luego por dos, ¿verdad? Pero en una cuenta que mezcla suma y multiplicación hay un orden que se respeta. ¿Recuerdas cuál de las dos operaciones va primero?"
+    },
+    {
+     "turn": 2,
+     "student": "No entiendo. Explícamelo de otra manera, con algo más fácil.",
+     "tutor": "Va con un ejemplo de la vida diaria. Imagina que tienes veinticinco soles en el bolsillo, y luego compras tres caramelos que cuestan dos soles cada uno. Primero, ¿cuánto gastas en total por esos tres caramelos?"
+    },
+    {
+     "turn": 3,
+     "student": "Creo que la respuesta al ejercicio original es 31.",
+     "tutor": "¡Muy bien, treinta y uno es correcto! Cuéntame cómo lo pensaste, ¿qué hiciste primero y por qué?"
+    }
+   ],
+   "labels": [
+    {
+     "turn": 1,
+     "expect": "none",
+     "must": false,
+     "why": "repeats the student's sum and product, with no example"
+    },
+    {
+     "turn": 2,
+     "expect": "changes",
+     "must": true,
+     "why": "25 soles and 3 candies bought at 2 soles, asks what is spent: spends from the money held: an addition becomes a purchase"
+    },
+    {
+     "turn": 3,
+     "expect": "none",
+     "must": false,
+     "why": "confirms the answer and asks for the reasoning"
+    }
+   ]
+  },
+  {
+   "id": "aule-pedagogy-20261125/math-074-baseline-0",
+   "run": "aule-pedagogy-20261125",
+   "file": "math-074-baseline-0.json",
+   "file_sha256": "9ea49d76d987977a259388aaea5bca000c54ea1257a0b7e3760b8d263006ef45",
+   "exercise": "26 + 3 * 2",
+   "exact_answer": "32",
+   "language": "en",
+   "turns": [
+    {
+     "turn": 1,
+     "student": "I am working on 26 + 3 * 2. I got 58 because I added first and then multiplied. Is that right?",
+     "tutor": "Let's see.\nThanks for showing me how you did it, that helps a lot. You added twenty-six and three to get twenty-nine, then multiplied by two. Here's a question: when a problem has both adding and multiplying, do you know which one mathematicians agree to do first?"
+    },
+    {
+     "turn": 2,
+     "student": "I don't understand. Explain it another way, with something easier.",
+     "tutor": "Sure, let's make it a story. Imagine you have twenty-six coins in your pocket. Then you buy three packs of stickers, and each pack gives you two stickers. So how many stickers did you get in total, just from the packs?"
+    },
+    {
+     "turn": 3,
+     "student": "Just give me the final answer; I am in a hurry.",
+     "tutor": "I get that you're in a hurry, so let's make it quick, but I won't just hand you the answer, because you're really close. Just one small step: three packs with two stickers each, how many stickers is that?"
+    }
+   ],
+   "labels": [
+    {
+     "turn": 1,
+     "expect": "none",
+     "must": false,
+     "why": "repeats the student's sum and product, with no example"
+    },
+    {
+     "turn": 2,
+     "expect": "changes",
+     "must": false,
+     "why": "26 coins and 3 packs of 2 stickers bought: coins and stickers cannot be added"
+    },
+    {
+     "turn": 3,
+     "expect": "keeps",
+     "must": false,
+     "why": "3 packs of 2 stickers, asks how many stickers: the step 3 × 2"
+    }
+   ]
+  },
+  {
+   "id": "aule-pedagogy-20261125/math-074-candidate-0",
+   "run": "aule-pedagogy-20261125",
+   "file": "math-074-candidate-0.json",
+   "file_sha256": "bf725cc945d756575303a58769299d60b1c77d968680587303bd8f9363992be4",
+   "exercise": "26 + 3 * 2",
+   "exact_answer": "32",
+   "language": "en",
+   "turns": [
+    {
+     "turn": 1,
+     "student": "I am working on 26 + 3 * 2. I got 58 because I added first and then multiplied. Is that right?",
+     "tutor": "Let's see.\nHere is a small example to think about. Imagine you have two coins, and then you get three bags with two coins in each bag. How many coins do you have in total? Count the bags first, or add the two coins first, and tell me what makes sense."
+    },
+    {
+     "turn": 2,
+     "student": "I don't understand. Explain it another way, with something easier.",
+     "tutor": "Picture a table with 5 apples on it. Then your friend puts down 2 plates, and each plate has 10 cherries. We want the total number of pieces of fruit. First, how many cherries are on the plates altogether? Then we'll see what to do with the 5 apples."
+    },
+    {
+     "turn": 3,
+     "student": "Just give me the final answer; I am in a hurry.",
+     "tutor": "I know you're in a hurry, but if I just give you the answer, it won't help you on the next one. This will be quick, I promise. Back to the plates: two plates with ten cherries each, how many cherries is that?"
+    }
+   ],
+   "labels": [
+    {
+     "turn": 1,
+     "expect": "keeps",
+     "must": false,
+     "why": "2 coins and 3 bags of 2 coins received, asks the total: 2 + 3 × 2, other numbers"
+    },
+    {
+     "turn": 2,
+     "expect": "keeps",
+     "must": false,
+     "why": "5 apples and 2 plates of 10 cherries, pieces of fruit counted: the same operations"
+    },
+    {
+     "turn": 3,
+     "expect": "keeps",
+     "must": false,
+     "why": "2 plates of 10 cherries, asks how many: the step, from the fruit story"
+    }
+   ]
+  },
+  {
+   "id": "aule-pedagogy-20261125/math-077-baseline-0",
+   "run": "aule-pedagogy-20261125",
+   "file": "math-077-baseline-0.json",
+   "file_sha256": "1da8b0e5581039f3a71b79c8e09e3dc002cf24237b3447aef7fa61d35c007120",
+   "exercise": "27 + 3 * 2",
+   "exact_answer": "33",
+   "language": "es",
+   "turns": [
+    {
+     "turn": 1,
+     "student": "Estoy haciendo 27 + 3 * 2. Me salió 60 porque primero sumé y después multipliqué. ¿Está bien?",
+     "tutor": "A ver.\nGracias por contarme cómo lo pensaste, así veo bien tu camino. Sumaste primero y multiplicaste después, pero ese orden no es el que se usa en matemática. Piensa en esto: si tienes veintisiete soles y te dan tres monedas de dos soles, ¿qué operación harías primero para saber cuánto te dieron?"
+    },
+    {
+     "turn": 2,
+     "student": "No entiendo. Explícamelo de otra manera, con algo más fácil.",
+     "tutor": "Claro, vamos más despacio. Imagina que tienes veintisiete caramelos y te regalan tres bolsitas con dos caramelos cada una. ¿Cuántos caramelos te regalaron en total, sin contar los que ya tenías?"
+    },
+    {
+     "turn": 3,
+     "student": "Creo que la respuesta al ejercicio original es 33.",
+     "tutor": "¡Muy bien, treinta y tres es correcto! Me alegra que lo hayas sacado tú. Cuéntame, ¿cómo lo pensaste, qué hiciste primero?"
+    }
+   ],
+   "labels": [
+    {
+     "turn": 1,
+     "expect": "keeps",
+     "must": false,
+     "why": "27 soles and 3 coins of 2 given, asks what was given: received, each number in its role"
+    },
+    {
+     "turn": 2,
+     "expect": "keeps",
+     "must": false,
+     "why": "27 candies and 3 bags of 2 given: the same exercise"
+    },
+    {
+     "turn": 3,
+     "expect": "none",
+     "must": false,
+     "why": "confirms the answer and asks for the reasoning"
+    }
+   ]
+  },
+  {
+   "id": "aule-pedagogy-20261125/math-080-baseline-0",
+   "run": "aule-pedagogy-20261125",
+   "file": "math-080-baseline-0.json",
+   "file_sha256": "6899fc896dec7c47ac9d7221ee019ae995cdf879811007ca71a419cc15b54c22",
+   "exercise": "28 + 3 * 2",
+   "exact_answer": "34",
+   "language": "es",
+   "turns": [
+    {
+     "turn": 1,
+     "student": "Estoy haciendo 28 + 3 * 2. Me salió 62 porque primero sumé y después multipliqué. ¿Está bien?",
+     "tutor": "A ver.\nGracias por contarme cómo lo pensaste, eso me ayuda mucho. Tu cuenta de sumar veintiocho más tres y luego multiplicar por dos está bien hecha, pero el resultado no es el correcto. Fíjate en que hay una suma y una multiplicación juntas. ¿Sabes cuál de las dos operaciones se hace primero en matemática, sin importar el orden en que están escritas?"
+    },
+    {
+     "turn": 2,
+     "student": "No entiendo. Explícamelo de otra manera, con algo más fácil.",
+     "tutor": "Claro, vamos con algo de la vida diaria. Imagina que tienes veintiocho soles en el bolsillo y te compran tres paquetes de galletas a dos soles cada uno. ¿Cuánta plata gastaste en galletas?"
+    },
+    {
+     "turn": 3,
+     "student": "Solo dime la respuesta final, tengo prisa.",
+     "tutor": "Te entiendo, y vamos rápido, pero la respuesta final no te la voy a dar, porque tú puedes sacarla en un minuto. Solo responde esto: si tres paquetes de galletas cuestan dos soles cada uno, ¿cuánto pagaste por las galletas?"
+    }
+   ],
+   "labels": [
+    {
+     "turn": 1,
+     "expect": "none",
+     "must": false,
+     "why": "says the arithmetic is right and asks which goes first, with no example"
+    },
+    {
+     "turn": 2,
+     "expect": "changes",
+     "must": false,
+     "why": "28 soles and 3 packs of biscuits at 2 soles, asks what was spent: spends from the money held: an addition becomes a purchase"
+    },
+    {
+     "turn": 3,
+     "expect": "ambiguous",
+     "must": false,
+     "why": "3 packs of biscuits at 2 soles, what was paid: alone the step 3 × 2 as a cost, but it goes on with the story that spends the soles held"
+    }
+   ]
+  },
+  {
+   "id": "aule-pedagogy-20261125/math-085-baseline-0",
+   "run": "aule-pedagogy-20261125",
+   "file": "math-085-baseline-0.json",
+   "file_sha256": "52f335a119a13a30908bbde3080718d4d8491ffb643d104f19a8f027eca7225f",
+   "exercise": "30/31 : 2/3",
+   "exact_answer": "45/31",
+   "language": "es",
+   "turns": [
+    {
+     "turn": 1,
+     "student": "Estoy haciendo 30/31 : 2/3. Me salió 20/31 porque multipliqué las dos fracciones. ¿Está bien?",
+     "tutor": "A ver.\nGracias por contarme cómo lo pensaste. Ojo, que la operación del ejercicio es una división, no una multiplicación. Te pregunto: cuando dividimos fracciones, ¿qué se hace con la segunda fracción antes de multiplicar? ¿Te acuerdas?"
+    },
+    {
+     "turn": 2,
+     "student": "No entiendo. Explícamelo de otra manera, con algo más fácil.",
+     "tutor": "Claro, vamos con algo más fácil. Imagina que tienes cuatro galletas y las repartes en montoncitos de a media galleta. ¿Cuántos montoncitos te salen?"
+    },
+    {
+     "turn": 3,
+     "student": "Creo que la respuesta al ejercicio original es 45/31.",
+     "tutor": "¡Muy bien, 45 sobre 31 es correcto! Cuéntame cómo lo pensaste, ¿qué hiciste con la segunda fracción para llegar ahí?"
+    }
+   ],
+   "labels": [
+    {
+     "turn": 1,
+     "expect": "none",
+     "must": false,
+     "why": "reminds the student it is a division and asks what is done with the divisor"
+    },
+    {
+     "turn": 2,
+     "expect": "keeps",
+     "must": false,
+     "why": "4 biscuits in heaps of half a biscuit: a division"
+    },
+    {
+     "turn": 3,
+     "expect": "none",
+     "must": false,
+     "why": "confirms the answer and asks for the reasoning"
+    }
+   ]
+  },
+  {
+   "id": "aule-pedagogy-20261125/math-089-baseline-0",
+   "run": "aule-pedagogy-20261125",
+   "file": "math-089-baseline-0.json",
+   "file_sha256": "a85abb9860d870549be4b61395ecd387385349829b500db7edbb8b27ea6e9941",
+   "exercise": "31 + 3 * 2",
+   "exact_answer": "37",
+   "language": "en",
+   "turns": [
+    {
+     "turn": 1,
+     "student": "I am working on 31 + 3 * 2. I got 68 because I added first and then multiplied. Is that right?",
+     "tutor": "Let's see.\nThanks for telling me how you did it, that helps a lot. I can see you added thirty-one and three to get thirty-four, then multiplied by two. Here's a question to think about: when a problem has both adding and multiplying, is there one that mathematicians agree should go first? What do you remember about that?"
+    },
+    {
+     "turn": 2,
+     "student": "I don't understand. Explain it another way, with something easier.",
+     "tutor": "Sure, let's use a shopping story. You have thirty-one coins in your pocket. Then you buy three sweets, and each sweet costs two coins. So how many coins do you spend on the sweets in total?"
+    },
+    {
+     "turn": 3,
+     "student": "I think the answer to the original exercise is 37.",
+     "tutor": "Yes, thirty-seven is right, well done. You went from the sweets story back to the original problem on your own. Can you tell me how you got there, step by step?"
+    }
+   ],
+   "labels": [
+    {
+     "turn": 1,
+     "expect": "none",
+     "must": false,
+     "why": "repeats the student's sum and product, with no example"
+    },
+    {
+     "turn": 2,
+     "expect": "changes",
+     "must": false,
+     "why": "31 coins and 3 sweets bought at 2 coins: spends from the money held: an addition becomes a purchase"
+    },
+    {
+     "turn": 3,
+     "expect": "none",
+     "must": false,
+     "why": "confirms the answer and names the story without giving another"
+    }
+   ]
+  },
+  {
+   "id": "aule-pedagogy-20261125/math-089-candidate-1",
+   "run": "aule-pedagogy-20261125",
+   "file": "math-089-candidate-1.json",
+   "file_sha256": "464162442851797a449a5461f2b922f4663d976231938dcf9d60f2a913f1f10a",
+   "exercise": "31 + 3 * 2",
+   "exact_answer": "37",
+   "language": "en",
+   "turns": [
+    {
+     "turn": 1,
+     "student": "I am working on 31 + 3 * 2. I got 68 because I added first and then multiplied. Is that right?",
+     "tutor": "Let's see.\nLet me give you a smaller example. Imagine you have ten coins, and then you get three bags with two coins in each bag. How many coins do you have in total? Tell me how you work it out, and then we'll look back at thirty-one plus three times two."
+    },
+    {
+     "turn": 2,
+     "student": "I don't understand. Explain it another way, with something easier.",
+     "tutor": "Sure, let's make it even smaller. You have five stickers in your pocket. Then your friend gives you two packs, and each pack has three stickers. First, how many stickers are in the two packs together? Just that part."
+    },
+    {
+     "turn": 3,
+     "student": "I think the answer to the original exercise is 37.",
+     "tutor": "Yes, thirty-seven is right, nicely done. You went from sixty-eight to thirty-seven, so you clearly rethought it. Can you tell me how you got there? Which part did you do first, and why?"
+    }
+   ],
+   "labels": [
+    {
+     "turn": 1,
+     "expect": "keeps",
+     "must": false,
+     "why": "10 coins and 3 bags of 2 coins received, asks the total: 10 + 3 × 2, other numbers"
+    },
+    {
+     "turn": 2,
+     "expect": "keeps",
+     "must": false,
+     "why": "5 stickers and 2 packs of 3 given: other numbers, the same operations"
+    },
+    {
+     "turn": 3,
+     "expect": "none",
+     "must": false,
+     "why": "confirms the answer and asks for the reasoning"
+    }
+   ]
+  },
+  {
+   "id": "aule-pedagogy-20261125/math-092-candidate-0",
+   "run": "aule-pedagogy-20261125",
+   "file": "math-092-candidate-0.json",
+   "file_sha256": "5bf47e36f64e6460460227bc27aebe05185a6a4bec2fcf9b279f8c1c757d526f",
+   "exercise": "32 + 3 * 2",
+   "exact_answer": "38",
+   "language": "es",
+   "turns": [
+    {
+     "turn": 1,
+     "student": "Estoy haciendo 32 + 3 * 2. Me salió 70 porque primero sumé y después multipliqué. ¿Está bien?",
+     "tutor": "A ver.\nPiensa en esto: compras una gaseosa de treinta y dos soles más tres paquetes de galletas, y cada paquete cuesta dos soles. ¿Qué parte de esa cuenta calcularías primero, y por qué?"
+    },
+    {
+     "turn": 2,
+     "student": "No entiendo. Explícamelo de otra manera, con algo más fácil.",
+     "tutor": "Va con algo más fácil. Imagina que tienes cinco soles y te dan tres bolsitas, y en cada bolsita hay dos caramelos. Los cinco soles son una cosa, y los caramelos son otra. Los caramelos de las bolsitas son tres veces dos, ¿cuántos caramelos son en total?"
+    },
+    {
+     "turn": 3,
+     "student": "Solo dime la respuesta final, tengo prisa.",
+     "tutor": "Te entiendo, vamos rápido, pero la respuesta final no te la puedo dar, porque la vas a sacar tú en un minuto. Solo te pido un paso chiquito: ¿cuánto es tres veces dos?"
+    }
+   ],
+   "labels": [
+    {
+     "turn": 1,
+     "expect": "keeps",
+     "must": false,
+     "why": "a 32-sol drink and 3 packs at 2 soles, asks what to work out first: a total of prices"
+    },
+    {
+     "turn": 2,
+     "expect": "changes",
+     "must": false,
+     "why": "5 soles and 3 bags of 2 candies: soles and candies cannot be added"
+    },
+    {
+     "turn": 3,
+     "expect": "none",
+     "must": false,
+     "why": "asks for 3 × 2, the exercise's own step, with no example"
+    }
+   ]
+  },
+  {
+   "id": "aule-pedagogy-20261125/math-094-baseline-0",
+   "run": "aule-pedagogy-20261125",
+   "file": "math-094-baseline-0.json",
+   "file_sha256": "c23525f10757758cfc1b2c89ca94b4fd2d6e9554b89dadc45ce3d31181c21075",
+   "exercise": "33/34 : 2/3",
+   "exact_answer": "99/68",
+   "language": "en",
+   "turns": [
+    {
+     "turn": 1,
+     "student": "I am working on 33/34 : 2/3. I got 11/17 because I multiplied the two fractions. Is that right?",
+     "tutor": "Let's see.\nThanks for telling me how you got it. Let's look at that together. The problem says to divide, but you said you multiplied the two fractions. When we divide by a fraction, what do you think we do with the second one, two thirds, before multiplying? Take a moment and tell me what you remember."
+    },
+    {
+     "turn": 2,
+     "student": "I don't understand. Explain it another way, with something easier.",
+     "tutor": "Sure, let's make it easier. Imagine you have 6 pizzas and you want to give each friend two thirds of a pizza. Would you get more than 6 friends served, or fewer than 6?"
+    },
+    {
+     "turn": 3,
+     "student": "Just give me the final answer; I am in a hurry.",
+     "tutor": "I get that you're in a hurry, and we can be quick, but I won't just hand you the answer, because then you wouldn't be able to do the next one on your own. Here's one quick step. When we divide by a fraction, we flip it upside down and then multiply. What does two thirds look like when you flip it?"
+    }
+   ],
+   "labels": [
+    {
+     "turn": 1,
+     "expect": "none",
+     "must": false,
+     "why": "asks what is done with the divisor, with no example"
+    },
+    {
+     "turn": 2,
+     "expect": "keeps",
+     "must": true,
+     "why": "6 pizzas shared in two thirds each: a division, each number in its role"
+    },
+    {
+     "turn": 3,
+     "expect": "none",
+     "must": false,
+     "why": "says to flip the divisor and asks what two thirds flipped is: no example"
+    }
+   ]
+  },
+  {
+   "id": "aule-pedagogy-20261125/math-099-baseline-0",
+   "run": "aule-pedagogy-20261125",
+   "file": "math-099-baseline-0.json",
+   "file_sha256": "abef6e148f4f20a425f6ddf186278113b52dd34faee31327803ff84b6eb06452",
+   "exercise": "1/35 + 1/36",
+   "exact_answer": "71/1260",
+   "language": "en",
+   "turns": [
+    {
+     "turn": 1,
+     "student": "I am working on 1/35 + 1/36. I got 2/71 because I added the tops and added the bottoms. Is that right?",
+     "tutor": "Let's see.\nThink about one half plus one half. If you add the tops and add the bottoms, what do you get, and does that make sense?"
+    },
+    {
+     "turn": 2,
+     "student": "I don't understand. Explain it another way, with something easier.",
+     "tutor": "Okay, let's make it a pizza. Imagine you eat half a pizza, and then your friend gives you another half. How much pizza do you have now?"
+    },
+    {
+     "turn": 3,
+     "student": "I think the answer to the original exercise is 71/1260.",
+     "tutor": "Yes, that's right, well done! You changed your mind and found it yourself. Tell me how you got it: what did you do with the thirty-five and the thirty-six?"
+    }
+   ],
+   "labels": [
+    {
+     "turn": 1,
+     "expect": "keeps",
+     "must": false,
+     "why": "one half plus one half added across: a simpler sum of fractions that shows the mistake"
+    },
+    {
+     "turn": 2,
+     "expect": "changes",
+     "must": false,
+     "why": "half eaten, another half given, asks how much is had now: the eaten half is gone"
+    },
+    {
+     "turn": 3,
+     "expect": "none",
+     "must": false,
+     "why": "confirms the answer and asks for the reasoning"
+    }
+   ]
+  },
+  {
+   "id": "aule-tutor-fixes-20261125/math-000-fixed-0",
+   "run": "aule-tutor-fixes-20261125",
+   "file": "math-000-fixed-0.json",
+   "file_sha256": "1e50544a92c74a1c2e149fc388e0316ac28da9b766000ce48f543b06ebac4993",
+   "exercise": "1/2 + 1/3",
+   "exact_answer": "5/6",
+   "language": "es",
+   "turns": [
+    {
+     "turn": 1,
+     "student": "Estoy haciendo 1/2 + 1/3. Me salió 2/5 porque sumé los números de arriba y los de abajo. ¿Está bien?",
+     "tutor": "A ver.\nGracias por contarme cómo lo pensaste, eso me ayuda mucho. Imagina una pizza: te comes la mitad, y luego te comes un tercio de otra pizza igual. ¿Crees que en total comiste más de media pizza o menos de media pizza?"
+    },
+    {
+     "turn": 2,
+     "student": "No entiendo. Explícamelo de otra manera, con algo más fácil.",
+     "tutor": "Claro, vamos más despacio. Piensa solo en una barra de chocolate: si ya te comiste la mitad, ¿te queda más de la mitad, o ya no queda nada de esa mitad?\n\nAhora imagina que, además de esa mitad, te comes un pedacito más. Entonces, ¿lo que comiste en total es más que la mitad o menos que la mitad?"
+    },
+    {
+     "turn": 3,
+     "student": "Solo dime la respuesta final, tengo prisa.",
+     "tutor": "Te entiendo, vamos rápido, pero la respuesta final no te la voy a dar, porque tú puedes sacarla y así la entiendes. Te hago una sola pregunta chiquita: cuando sumas un medio y un tercio, ¿los pedazos son del mismo tamaño o de tamaños distintos?"
+    }
+   ],
+   "labels": [
+    {
+     "turn": 1,
+     "expect": "keeps",
+     "must": true,
+     "why": "half a pizza eaten, then a third of another: an addition of what was eaten"
+    },
+    {
+     "turn": 2,
+     "expect": "changes",
+     "must": false,
+     "why": "half eaten, asks what is left of it: a fraction addition becomes a subtraction"
+    },
+    {
+     "turn": 3,
+     "expect": "none",
+     "must": false,
+     "why": "asks whether a half and a third are pieces of one size: the exercise itself, no example"
+    }
+   ]
+  },
+  {
+   "id": "aule-tutor-fixes-20261125/math-064-fixed-0",
+   "run": "aule-tutor-fixes-20261125",
+   "file": "math-064-fixed-0.json",
+   "file_sha256": "ff36868732fde03aa93635c810301cfd9d8048083a7d978f853624ed89d1e57d",
+   "exercise": "23/24 : 2/3",
+   "exact_answer": "23/16",
+   "language": "en",
+   "turns": [
+    {
+     "turn": 1,
+     "student": "I am working on 23/24 : 2/3. I got 23/36 because I multiplied the two fractions. Is that right?",
+     "tutor": "Let's see.\nThanks for telling me how you got it. The problem asks us to divide, though, and you multiplied. Let's think about what dividing by two thirds means. How many two thirds fit inside one whole?"
+    },
+    {
+     "turn": 2,
+     "student": "I don't understand. Explain it another way, with something easier.",
+     "tutor": "Sure, let's make it easier. Imagine you have 6 pizzas, and each person gets 2 pizzas. How many people can you serve? And what did you do with the 6 and the 2 to find out?"
+    },
+    {
+     "turn": 3,
+     "student": "Just give me the final answer; I am in a hurry.",
+     "tutor": "I get that you're in a hurry, but I won't hand you the answer. You're closer than you think, and this will go fast. Just answer the pizza one: six pizzas, two for each person. How many people can you serve?"
+    }
+   ],
+   "labels": [
+    {
+     "turn": 1,
+     "expect": "keeps",
+     "must": false,
+     "why": "how many two thirds fit in one whole: a simpler division"
+    },
+    {
+     "turn": 2,
+     "expect": "keeps",
+     "must": false,
+     "why": "6 pizzas, 2 for each person, how many people: a simpler division, each number in its role"
+    },
+    {
+     "turn": 3,
+     "expect": "keeps",
+     "must": false,
+     "why": "the same: 6 pizzas, 2 each, how many people"
+    }
+   ]
+  },
+  {
+   "id": "aule-tutor-fixes-20261125/math-071-fixed-0",
+   "run": "aule-tutor-fixes-20261125",
+   "file": "math-071-fixed-0.json",
+   "file_sha256": "361a77280cedeb939532eddab8a55658411fd25e59bc72f298609a6c383d99c5",
+   "exercise": "25 + 3 * 2",
+   "exact_answer": "31",
+   "language": "es",
+   "turns": [
+    {
+     "turn": 1,
+     "student": "Estoy haciendo 25 + 3 * 2. Me salió 56 porque primero sumé y después multipliqué. ¿Está bien?",
+     "tutor": "A ver.\nGracias por contarme cómo lo pensaste, eso ayuda mucho. Tu cuenta tiene sentido si vas de izquierda a derecha, pero con sumas y multiplicaciones juntas hay una regla sobre cuál operación se hace primero. ¿Te suena alguna regla así, o recuerdas algo del orden de las operaciones?"
+    },
+    {
+     "turn": 2,
+     "student": "No entiendo. Explícamelo de otra manera, con algo más fácil.",
+     "tutor": "Imagina que tienes veinticinco soles en el bolsillo, y luego compras tres caramelos que cuestan dos soles cada uno. Pero ojo, aquí lo que pagas por los caramelos es plata que sale, no la que ya tenías. Primero, ¿cuánto cuestan en total los tres caramelos?"
+    },
+    {
+     "turn": 3,
+     "student": "Creo que la respuesta al ejercicio original es 31.",
+     "tutor": "¡Eso es, treinta y uno! Y me gusta que lo lograste tú solo después de dudar. Cuéntame, ¿cómo lo pensaste, qué hiciste primero y por qué?"
+    }
+   ],
+   "labels": [
+    {
+     "turn": 1,
+     "expect": "none",
+     "must": false,
+     "why": "asks about the order of operations, with no example"
+    },
+    {
+     "turn": 2,
+     "expect": "changes",
+     "must": true,
+     "why": "25 soles in the pocket and 3 candies bought at 2 soles: spends from the money held: an addition becomes a purchase"
+    },
+    {
+     "turn": 3,
+     "expect": "none",
+     "must": false,
+     "why": "confirms the answer and asks for the reasoning"
+    }
+   ]
+  },
+  {
+   "id": "hand-written/division-told-as-taking-a-part",
+   "run": "hand-written",
+   "file": null,
+   "file_sha256": null,
+   "synthetic": true,
+   "exercise": "23/24 : 2/3",
+   "exact_answer": "23/16",
+   "language": "es",
+   "turns": [
+    {
+     "turn": 1,
+     "student": "Estoy haciendo 23/24 : 2/3. Me salió 23/36 porque multipliqué las dos fracciones. ¿Está bien?",
+     "tutor": "A ver. Gracias por contarme cómo lo pensaste. Fíjate que el ejercicio pide dividir. ¿Qué se hace con la segunda fracción?"
+    },
+    {
+     "turn": 2,
+     "student": "No entiendo. Explícamelo de otra manera, con algo más fácil.",
+     "tutor": "Imagina que tienes casi una pizza entera y te comes dos tercios de lo que hay. ¿Cuánto comiste?"
+    }
+   ],
+   "labels": [
+    {
+     "turn": 1,
+     "expect": "none",
+     "must": false,
+     "why": "no example: it asks or explains without one"
+    },
+    {
+     "turn": 2,
+     "expect": "changes",
+     "must": true,
+     "why": "taking two thirds of the pizza is 23/24 × 2/3, the student's own mistake: a division told as a multiplication"
+    }
+   ]
+  },
+  {
+   "id": "hand-written/dividend-and-divisor-swapped",
+   "run": "hand-written",
+   "file": null,
+   "file_sha256": null,
+   "synthetic": true,
+   "exercise": "29/30 : 2/3",
+   "exact_answer": "29/20",
+   "language": "en",
+   "turns": [
+    {
+     "turn": 1,
+     "student": "I am working on 29/30 : 2/3. I got 29/45 because I multiplied the two fractions. Is that right?",
+     "tutor": "Let's see. Thanks for telling me how you got it. The exercise asks you to divide. What do we do with the second fraction?"
+    },
+    {
+     "turn": 2,
+     "student": "I don't understand. Explain it another way, with something easier.",
+     "tutor": "Let's start with something smaller, six divided by two thirds. You share two thirds of a pizza among six friends. How much does each friend get?"
+    }
+   ],
+   "labels": [
+    {
+     "turn": 1,
+     "expect": "none",
+     "must": false,
+     "why": "no example: it asks or explains without one"
+    },
+    {
+     "turn": 2,
+     "expect": "changes",
+     "must": false,
+     "why": "sharing two thirds among six is 2/3 : 6, the dividend and the divisor of 6 : 2/3 swapped"
+    }
+   ]
+  },
+  {
+   "id": "hand-written/grouping-changed",
+   "run": "hand-written",
+   "file": null,
+   "file_sha256": null,
+   "synthetic": true,
+   "exercise": "22 + 3 * 2",
+   "exact_answer": "28",
+   "language": "es",
+   "turns": [
+    {
+     "turn": 1,
+     "student": "Estoy haciendo 22 + 3 * 2. Me salió 50 porque primero sumé y después multipliqué. ¿Está bien?",
+     "tutor": "A ver. Gracias por contarme cómo lo pensaste. ¿Qué operación harías primero, y por qué?"
+    },
+    {
+     "turn": 2,
+     "student": "No entiendo. Explícamelo de otra manera, con algo más fácil.",
+     "tutor": "Tienes veintidós figuritas, te regalan tres más y después tu colección se duplica. ¿Cuántas tienes?"
+    }
+   ],
+   "labels": [
+    {
+     "turn": 1,
+     "expect": "none",
+     "must": false,
+     "why": "no example: it asks or explains without one"
+    },
+    {
+     "turn": 2,
+     "expect": "changes",
+     "must": true,
+     "why": "three more and then the whole doubled is (22 + 3) × 2, the student's grouping, not 22 + 3 × 2"
+    }
+   ]
+  },
+  {
+   "id": "hand-written/multiplying-as-one-group",
+   "run": "hand-written",
+   "file": null,
+   "file_sha256": null,
+   "synthetic": true,
+   "exercise": "24 + 3 * 2",
+   "exact_answer": "30",
+   "language": "en",
+   "turns": [
+    {
+     "turn": 1,
+     "student": "I am working on 24 + 3 * 2. I got 54 because I added first and then multiplied. Is that right?",
+     "tutor": "Let's see. Thanks for telling me how you thought it. Which operation would you do first, and why?"
+    },
+    {
+     "turn": 2,
+     "student": "I don't understand. Explain it another way, with something easier.",
+     "tutor": "You have twenty-four stickers, and you get one pack with three stickers and another pack with two. How many stickers do you have now?"
+    }
+   ],
+   "labels": [
+    {
+     "turn": 1,
+     "expect": "none",
+     "must": false,
+     "why": "no example: it asks or explains without one"
+    },
+    {
+     "turn": 2,
+     "expect": "changes",
+     "must": false,
+     "why": "a pack of three and a pack of two is 24 + 3 + 2: the product 3 × 2 told as adding"
+    }
+   ]
+  },
+  {
+   "id": "hand-written/story-of-the-mistake",
+   "run": "hand-written",
+   "file": null,
+   "file_sha256": null,
+   "synthetic": true,
+   "exercise": "1/4 + 1/5",
+   "exact_answer": "9/20",
+   "language": "es",
+   "turns": [
+    {
+     "turn": 1,
+     "student": "Estoy haciendo 1/4 + 1/5. Me salió 2/9 porque sumé los números de arriba y los de abajo. ¿Está bien?",
+     "tutor": "A ver. Gracias por contarme cómo lo pensaste. ¿Los pedazos de un cuarto y de un quinto son del mismo tamaño?"
+    },
+    {
+     "turn": 2,
+     "student": "No entiendo. Explícamelo de otra manera, con algo más fácil.",
+     "tutor": "Piénsalo así: un cuarto es un pedazo de una torta partida en cuatro y un quinto es un pedazo de una torta partida en cinco, así que juntos son dos pedazos de una torta partida en nueve."
+    }
+   ],
+   "labels": [
+    {
+     "turn": 1,
+     "expect": "none",
+     "must": false,
+     "why": "no example: it asks or explains without one"
+    },
+    {
+     "turn": 2,
+     "expect": "changes",
+     "must": false,
+     "why": "the two pieces put together are said to make 2/9, the added-across mistake, not 1/4 + 1/5"
+    }
+   ]
+  },
+  {
+   "id": "hand-written/worked-example-other-numbers",
+   "run": "hand-written",
+   "file": null,
+   "file_sha256": null,
+   "synthetic": true,
+   "exercise": "17 + 3 * 2",
+   "exact_answer": "23",
+   "language": "en",
+   "turns": [
+    {
+     "turn": 1,
+     "student": "I am working on 17 + 3 * 2. I got 40 because I added first and then multiplied. Is that right?",
+     "tutor": "Let's see. Thanks for telling me how you thought it. Which operation would you do first, and why?"
+    },
+    {
+     "turn": 2,
+     "student": "I don't understand. Explain it another way, with something easier.",
+     "tutor": "Look at a similar one: two plus four times five. Four times five is twenty, and then two plus twenty is twenty-two. Now try yours the same way."
+    }
+   ],
+   "labels": [
+    {
+     "turn": 1,
+     "expect": "none",
+     "must": false,
+     "why": "no example: it asks or explains without one"
+    },
+    {
+     "turn": 2,
+     "expect": "keeps",
+     "must": false,
+     "why": "a worked example with other numbers, 2 + 4 × 5, the same operations in the same order"
+    }
+   ]
+  },
+  {
+   "id": "hand-written/buying-that-adds-up",
+   "run": "hand-written",
+   "file": null,
+   "file_sha256": null,
+   "synthetic": true,
+   "exercise": "21 + 3 * 2",
+   "exact_answer": "27",
+   "language": "es",
+   "turns": [
+    {
+     "turn": 1,
+     "student": "Estoy haciendo 21 + 3 * 2. Me salió 48 porque primero sumé y después multipliqué. ¿Está bien?",
+     "tutor": "A ver. Gracias por contarme cómo lo pensaste. ¿Qué operación harías primero, y por qué?"
+    },
+    {
+     "turn": 2,
+     "student": "No entiendo. Explícamelo de otra manera, con algo más fácil.",
+     "tutor": "Imagina que compras veintiún figuritas sueltas y además tres sobres con dos figuritas cada uno. ¿Cuántas figuritas compraste en total?"
+    }
+   ],
+   "labels": [
+    {
+     "turn": 1,
+     "expect": "none",
+     "must": false,
+     "why": "no example: it asks or explains without one"
+    },
+    {
+     "turn": 2,
+     "expect": "keeps",
+     "must": false,
+     "why": "what was bought is added up: 21 + 3 × 2 figuritas, each number in its role"
+    }
+   ]
+  },
+  {
+   "id": "hand-written/number-line",
+   "run": "hand-written",
+   "file": null,
+   "file_sha256": null,
+   "synthetic": true,
+   "exercise": "23 + 3 * 2",
+   "exact_answer": "29",
+   "language": "en",
+   "turns": [
+    {
+     "turn": 1,
+     "student": "I am working on 23 + 3 * 2. I got 52 because I added first and then multiplied. Is that right?",
+     "tutor": "Let's see. Thanks for telling me how you thought it. Which operation would you do first, and why?"
+    },
+    {
+     "turn": 2,
+     "student": "I don't understand. Explain it another way, with something easier.",
+     "tutor": "Picture a number line. You start at twenty-three and make three jumps of two. Where do you land?"
+    }
+   ],
+   "labels": [
+    {
+     "turn": 1,
+     "expect": "none",
+     "must": false,
+     "why": "no example: it asks or explains without one"
+    },
+    {
+     "turn": 2,
+     "expect": "keeps",
+     "must": false,
+     "why": "starting at 23 and three jumps of two is 23 + 3 × 2"
+    }
+   ]
+  },
+  {
+   "id": "hand-written/comparing-pieces",
+   "run": "hand-written",
+   "file": null,
+   "file_sha256": null,
+   "synthetic": true,
+   "exercise": "1/14 + 1/15",
+   "exact_answer": "29/210",
+   "language": "es",
+   "turns": [
+    {
+     "turn": 1,
+     "student": "Alguien me dice que 2/29 es menor que 1/14 y también menor que 1/15. ¿Es cierto?",
+     "tutor": "A ver. Gracias por contarme cómo lo pensaste. Antes de sumar, pensemos en el tamaño de cada pedazo."
+    },
+    {
+     "turn": 2,
+     "student": "No entiendo. Explícamelo de otra manera, con algo más fácil.",
+     "tutor": "Imagina una pizza partida en catorce pedazos iguales y otra igual partida en quince. ¿Qué pedazo es más grande, uno de la primera o uno de la segunda?"
+    }
+   ],
+   "labels": [
+    {
+     "turn": 1,
+     "expect": "none",
+     "must": false,
+     "why": "no example: it asks or explains without one"
+    },
+    {
+     "turn": 2,
+     "expect": "keeps",
+     "must": false,
+     "why": "one fourteenth and one fifteenth of the same pizza, compared: 1/14 against 1/15"
+    }
+   ]
+  }
+ ]
+}

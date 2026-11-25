@@ -9,7 +9,7 @@ import pytest
 import report
 from anthropic import AsyncAnthropic
 from budget import Budget, MeteredTransport
-from test_report import row, turn, write
+from test_report import calibrated, row, turn, write
 
 TURNS = [
     dict(
@@ -193,6 +193,7 @@ def test_the_report_fails_a_session_whose_example_changes_the_meaning_and_lists_
         row("not-measured", [turn()], examples=None),
     ]
     write(tmp_path, *rows)
+    calibrated(tmp_path)
 
     built = report.build(tmp_path)
     report.render(built, tmp_path)
