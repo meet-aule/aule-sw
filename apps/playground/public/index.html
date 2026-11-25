@@ -894,6 +894,10 @@
       <section class="screen" data-screen="session-end" data-surface="ink" hidden aria-labelledby="ended-title">
         <div class="ink-frame">
           <div class="ink-body">
+            <!-- Web-only, D37: the session's pixel cuy rests above the farewell. -->
+            <div class="ended-face face-box">
+              <wobnimo-mascot id="ended-face" character="mochi" state="idle" floor="0" aria-hidden="true"></wobnimo-mascot>
+            </div>
             <h2 class="ink-title" id="ended-title" tabindex="-1">La sesión terminó.</h2>
             <p class="ink-text" id="ended-text" role="status"></p>
           </div>

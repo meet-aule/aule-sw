@@ -1896,6 +1896,28 @@ h3[tabindex="-1"]:focus {
   place-items: center;
 }
 
+/* Web-only ending (D23, D37): the same cuy at rest, above the farewell. */
+.screen[data-screen="session-end"] .ink-body {
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.screen[data-screen="session-end"] .ink-text {
+  max-width: 36ch;
+}
+
+.ended-face {
+  display: none;
+  flex: none;
+  width: 160px;
+  height: 160px;
+}
+
+.ended-face.ready {
+  display: grid;
+}
+
 .face-box > wobnimo-mascot {
   width: 100%;
   height: 100%;

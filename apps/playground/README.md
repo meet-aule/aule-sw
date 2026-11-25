@@ -29,6 +29,8 @@ The words of these steps are in `public/first-steps.js`, in Spanish and English,
 
 ### What a family sees after a session
 
+The student's ending screen shows the same pixel-art cuy at rest above its title and explanation, with the return or reconnect controls below. It reuses the session's character and renderer, without loading another image or opening a room.
+
 Back on the home, each student's row says what their last three sessions were: the day and the minutes, the skills practised or what the session was for, how many exercises were practised (not how many were right: a child lands on the home too), the breaks, and an ending that was not the ordinary one («Hoy · 6 min Sumar hasta 20 · 3 ejercicios · 1 pausa»). Once the review has written a summary, «Ver resúmenes» under them opens Configurar at «Últimas sesiones», where the review's summaries are; the home is told how many there are, never their words. The lines come from `api/student/sessions`, which reads the platform's guardian-scoped `GET /v1/children/{id}/sessions` and keeps only those facts: never the transcript, anything said or typed, the topic written on A04 · Detalles or the review's words (`src/students.ts` `latestSessions`, `public/summaries.js`). On a first run the session says so to the child too: «Tu papá o mamá recibe un resumen de lo que hacemos.» FIGMA.md D28, D35.
 
 ### The cookie notice

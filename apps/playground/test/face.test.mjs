@@ -63,15 +63,16 @@ test("a face is drawn at about SPRITE pixels and enlarged a whole number of time
   assert.equal(pixelsFor(0, 2), null);
 });
 
-test("both faces are the mascot in a box, with the engine's jelly if the cuy cannot load", () => {
+test("the check, session and farewell faces share the cuy and its pixel rendering", () => {
   for (const [id, box] of [
     ["mascot", "mascot"],
     ["check-face", "check-face"],
+    ["ended-face", "ended-face"],
   ]) {
     const tag = new RegExp(`<div class="${box} face-box">\\s*<wobnimo-mascot id="${id}" character="mochi" state="\\w+" floor="0" aria-hidden="true"></wobnimo-mascot>\\s*</div>`);
     assert.match(html, tag, id);
   }
-  assert.match(app, /for \(const face of \[\$\("mascot"\), \$\("check-face"\)\]\) \{\s*face\.spec = cuy;\s*pixelate\(face\);\s*\}/);
+  assert.match(app, /for \(const face of \[\$\("mascot"\), \$\("check-face"\), \$\("ended-face"\)\]\) \{\s*face\.spec = cuy;\s*pixelate\(face\);\s*\}/);
   // The filter the style sheet names is in the page, and takes no room.
   assert.match(html, /<svg class="filters" width="0" height="0" aria-hidden="true" focusable="false">\s*<filter id="flat"/);
   assert.match(css, /\.face-box\.pixels > wobnimo-mascot \{[^}]*filter: url\(#flat\) drop-shadow\(var\(--line\) 0 0 var\(--device-ink\)\)/);
