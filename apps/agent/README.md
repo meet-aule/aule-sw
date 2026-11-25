@@ -106,6 +106,8 @@ uv run pytest
 uv run python -m aule_agent.worker dev
 ```
 
+`uv run python tests/latency_harness.py --turns 120 --mix free` (or `--mix engine`) measures how long the tutor takes to answer a push-to-talk turn, from the release of the button to the first frame of its answer. The real worker, session, tutor and gates run; every provider is a stand-in with delays drawn from `tests/fakes.py`, no paid service is called and no connection leaves the machine. It prints JSON, with counters that must stay at zero (audio before the input gates, a sentence heard that no gate approved, the child's words in a log). `--mode open-mic` drives sessions without the talk button, timed from the end of the child's speech; `--playout-speed 1 --gap 2,8` plays the tutor in real time and leaves the child time to think, so that idle connections close as they would; `--second-reader` sets how often moderation is unsure and the second reader reads a turn or a reply (5 % and 2 % by default). `tests/test_latency_invariants.py` runs the same kind of sessions faster and proves the safety invariants on them.
+
 `uv run python -m aule_agent.worker check` asks the gates' providers once, with the worker's settings, as a worker does when it starts, and exits 0 only when a child's session could start. It calls the real providers (the free moderation endpoint and TypeSafe's list of models) and joins no room. The agent's image has no `uv`: there it is `python -m aule_agent.worker check`.
 
 The contracts are read from `contracts/` at the repository root, or from `AULE_CONTRACTS_DIR` when the agent runs outside the repository (for example, in a container).
