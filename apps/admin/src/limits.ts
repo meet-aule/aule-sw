@@ -5,7 +5,9 @@
 // cannot lock the team out. Every counter applies to every address, the team's
 // or not, so reaching a limit tells nothing about an address. With the
 // platform's own limits (five console codes an hour per address, five tries a
-// code), a client gets at most 10 wrong codes a day for an address.
+// code), a client gets at most 10 wrong codes a day for an address. A passkey
+// sign-in carries no address, so only the counters per client apply to it,
+// and its failures are counted apart from wrong codes.
 
 import { createHash } from "node:crypto";
 import { isIPv4, isIPv6 } from "node:net";
@@ -120,7 +122,11 @@ export function take(...counts: Count[]): boolean {
 
 /** The sign-in's counters (README, «Sign-in»). */
 export type SignInLimits = {
-  /** Every sign-in request together: a breaker far above the team's own use, 600 a minute. */
+  /**
+   * Every sign-in request together: a breaker far above the team's own use,
+   * 600 a minute. A request counts here only with its client's own counters,
+   * so one past them adds nothing.
+   */
   all: Counter;
   /** Code requests: 3 an hour per address and client. */
   codes: Counter;
@@ -132,6 +138,14 @@ export type SignInLimits = {
   /** Wrong codes per client, whatever the address: 10 an hour and 20 a day. A success clears them. */
   clientWrongHour: Counter;
   clientWrongDay: Counter;
+  /** Passkey sign-ins started: 20 an hour per client. */
+  passkeyStarts: Counter;
+  /**
+   * Failed passkey sign-ins: 10 an hour per client. Apart from wrong codes: a
+   * signature cannot be guessed, so a passkey that keeps failing must not hold
+   * back the code, nor wrong codes a passkey. A success clears them.
+   */
+  passkeyFailures: Counter;
 };
 
 export function signInLimits(now: () => number = Date.now, maxKeys = 10_000): SignInLimits {
@@ -143,5 +157,7 @@ export function signInLimits(now: () => number = Date.now, maxKeys = 10_000): Si
     wrongDay: new Counter(10, DAY, now, maxKeys),
     clientWrongHour: new Counter(10, HOUR, now, maxKeys),
     clientWrongDay: new Counter(20, DAY, now, maxKeys),
+    passkeyStarts: new Counter(20, HOUR, now, maxKeys),
+    passkeyFailures: new Counter(10, HOUR, now, maxKeys),
   };
 }

@@ -56,6 +56,24 @@ export const CREATED_SENT = {
   clientExtensionResults: { credProps: { rk: true } },
 };
 export const PASSKEY_ID = "01a1f5f4-ede7-7028-a524-9d8e2f36b9f0";
+/** What the browser is asked for to sign in, as the platform sends it: the same for everyone. */
+export const GET_OPTIONS = { challenge: "YmFyYmF6", rpId: "admin.example.org", allowCredentials: [], userVerification: "required" };
+/** A passkey's answer to a sign-in, as its toJSON() writes it. */
+export const USED = {
+  id: "AQIDBA",
+  rawId: "AQIDBA",
+  type: "public-key",
+  authenticatorAttachment: "platform",
+  response: {
+    authenticatorData: "SZYN5YgOjGh0",
+    clientDataJSON: "eyJ0eXBlIjoid2ViYXV0aG4uZ2V0In0",
+    signature: "MEUCIQDx",
+    userHandle: "dXNlcmhhbmRsZQ",
+  },
+  clientExtensionResults: { other: true },
+};
+/** What the console sends on of it. */
+export const USED_SENT = { id: "AQIDBA", rawId: "AQIDBA", type: "public-key", response: USED.response, clientExtensionResults: {} };
 /** A passkey as the platform lists it. */
 export const PASSKEY = { id: PASSKEY_ID, label: "MacBook de Ana", created_at: "2026-11-25T15:00:00Z", last_used_at: null };
 
@@ -92,6 +110,8 @@ export class FakePlatform {
   passkeys: unknown[] = [];
   /** Whether the sign-in is too old for the platform to add a passkey (409), at the start or the finish. */
   staleSignIn = false;
+  /** Whose the passkey is, as a passkey sign-in's answer names them. */
+  passkeyOwner: unknown = TEAM;
   // Tokens the platform's Staff check refuses (403) although they are alive.
   readonly #notStaff = new Set<string>();
   // Answers given once, before any rule: "METHOD /path" → answer.
@@ -166,6 +186,18 @@ export class FakePlatform {
       const token = randomBytes(32).toString("hex");
       this.tokens.add(token);
       return { status: 200, body: { token, expires_in_hours: 12 } };
+    }
+    // A passkey sign-in: the ceremony this platform handed out, and the passkey of the team's member.
+    if (method === "POST" && path === "/v1/auth/team/passkey/options") {
+      return { status: 200, body: { ceremony: CEREMONY, options: { publicKey: GET_OPTIONS } } };
+    }
+    if (method === "POST" && path === "/v1/auth/team/passkey/verify") {
+      if (body?.ceremony !== CEREMONY || JSON.stringify(body.credential) !== JSON.stringify(USED_SENT) || !this.teamAtPlatform) {
+        return error(403, "forbidden", "that passkey could not be confirmed");
+      }
+      const token = randomBytes(32).toString("hex");
+      this.tokens.add(token);
+      return { status: 200, body: { token, expires_in_hours: 12, email: this.passkeyOwner } };
     }
     const token = authorization?.startsWith("Bearer ") ? authorization.slice(7) : "";
     if (!this.tokens.has(token)) return error(401, "unauthorized", "missing or wrong credentials");
