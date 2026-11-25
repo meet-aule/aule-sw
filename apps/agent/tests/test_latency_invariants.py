@@ -38,6 +38,7 @@ class Spec:
     tools: tuple[str, ...] = ()
     hold: float = 0.1
     speech: float = 0.4
+    final: bool = True
 
 
 def violence(text: str = "") -> str:
@@ -70,6 +71,9 @@ SESSIONS: dict[str, list[Spec]] = {
         Spec(reply=f"Cuenta {TRIGGERS['unsure_score']} {TRIGGERS['reader_slow']}"),
     ],
     "reply_reader_yes": [ORDINARY, Spec(reply=f"Cuenta las canicas {TRIGGERS['unsure_score']}.")],
+    # The hearing never finalizes the last words: the commit times out with
+    # an interim pending, and LiveKit warns with it in a field of the record.
+    "interim_only": [ORDINARY, Spec(final=False)],
     "meanwhile": [
         ORDINARY,
         Spec(tools=("check_answer", "pose_exercise"), reply="Muy bien, ahora prueba otra."),
@@ -120,7 +124,11 @@ def scripted(world: World, specs: list[Spec]) -> list[harness.Turn]:
             reply_after_tool=spec.reply,
         )
         kind = "tool" if spec.tools else "reply"
-        turns.append(harness.Turn(number, kind, words, spec.speech, spec.hold, *spec.tools[:1]))
+        turns.append(
+            harness.Turn(
+                number, kind, words, spec.speech, spec.hold, *spec.tools[:1], final=spec.final
+            )
+        )
     return turns
 
 

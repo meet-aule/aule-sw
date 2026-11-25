@@ -29,6 +29,7 @@ from . import visuals
 from ._version import __version__
 from .camera import Camera
 from .config import LANGUAGES, ConfigError, Settings, build_commit
+from .logs import keep_personal_fields_out
 from .pace import Pace
 from .platform import Platform, platform_session
 from .providers import build_llm, build_stt, build_tts
@@ -146,6 +147,9 @@ TURNS: dict[str, Any] = {
 
 
 def prewarm(proc: JobProcess) -> None:
+    # A job process has its logging set up by now: what a child says is kept
+    # out of it from the first record on.
+    keep_personal_fields_out()
     proc.userdata["vad"] = silero.VAD.load(
         min_speech_duration=SPEECH_MIN_SECONDS, activation_threshold=SPEECH_LIKELIHOOD
     )
@@ -172,7 +176,9 @@ _background: set[asyncio.Task[None]] = set()
 
 @server.once("worker_started")
 def announce() -> None:
-    # Once LiveKit has set up the logs, so the line is in them like any other.
+    # Once LiveKit has set up the logs, so the line is in them like any other,
+    # and so are the fields that would carry a child's words.
+    keep_personal_fields_out()
     logger.info("aule-agent %s (%s)", __version__, build_commit())
     task = asyncio.create_task(check_gates())
     _background.add(task)
@@ -315,6 +321,8 @@ async def admit(
 
 @server.rtc_session(agent_name=AGENT_NAME)
 async def entrypoint(ctx: JobContext) -> None:
+    # Again for a handler added since the process started.
+    keep_personal_fields_out()
     settings = Settings.from_env()
     audience = audience_of(ctx.job.metadata)
     language = language_of(ctx.job.metadata, settings.language)

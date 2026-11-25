@@ -20,6 +20,7 @@ Aule's voice tutor: a [LiveKit Agents](https://github.com/livekit/agents) worker
 | `providers` | Builds the speech and language models from the settings |
 | `platform` | Gets the student's profile and the supervisor's plan, reports turns and safety flags in the background, applies guidance |
 | `config` | Reads and checks the environment |
+| `logs` | Keeps the fields in which LiveKit logs what the user said out of the log |
 | `events` | Wraps what the agent reports in the shared [contracts](../../contracts/README.md) |
 
 ## Who it talks to
@@ -37,7 +38,7 @@ No session lets the room drive it. LiveKit's session host, on by default, would 
 
 Both fail closed. If a gate fails, is late or answers something the agent does not fully understand, the person hears a fixed reply and the unchecked text is never answered or spoken. The fixed replies depend on what happened: a redirection, support for self-harm or for a child's sexual safety, a request to get a nearby adult for a physical hazard, a request to rephrase when the physical-safety verdict is uncertain, or a plain "I can't answer safely right now".
 
-When a gate stops a turn the agent tells the platform which gate, what it did and the categories involved, from a fixed list, at most once per topic every five minutes. Logs and flags carry categories, verdicts and durations only: never what was said, a score, a request or response body, or a key.
+When a gate stops a turn the agent tells the platform which gate, what it did and the categories involved, from a fixed list, at most once per topic every five minutes. Logs and flags carry categories, verdicts and durations only: never what was said, a score, a request or response body, or a key. LiveKit itself writes what the user said in log fields named `lk.pii.*` (the interim transcript when a final one is late, the words of a turn it skips, a tool's arguments); the agent takes those fields off every record before it is written, in the worker process and in each job process (`logs`).
 
 Before real children use it:
 

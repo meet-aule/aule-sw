@@ -282,6 +282,8 @@ class Turn:
     tail_seconds: float = 0.4
     tail_vad: bool = True
     tail_final: float | None = None
+    # Whether the hearing finalizes what was said (a slow one sends only interims).
+    final: bool = True
 
 
 @dataclass
@@ -420,7 +422,8 @@ async def drive(world: World, turn: Turn) -> TurnResult:
     await _until(lambda: len(world.stt.streams) > streams, timeout=2.0)
     start = time.time() + TALK_AFTER_PRESS_SECONDS
     end = start + turn.speech
-    speaker.say(turn.words, start, end, final_delay=delays.final_after_speech.draw(rng))
+    final = delays.final_after_speech.draw(rng) if turn.final else None
+    speaker.say(turn.words, start, end, final_delay=final)
     released = end + turn.hold
     decided = len(world.decided)
     await _sleep_until(released)
@@ -462,7 +465,7 @@ async def talk(world: World, turn: Turn) -> TurnResult:
     played, shown, calls = len(world.played), len(world.shown), len(world.model_calls)
     start = time.time() + TALK_AFTER_PRESS_SECONDS
     end = start + turn.speech
-    final = delays.final_after_speech.draw(rng)
+    final = delays.final_after_speech.draw(rng) if turn.final else None
     decided = len(world.decided)
     speaker.say(turn.words, start, end, final_delay=final)
     await _sleep_until(end)
