@@ -1,21 +1,28 @@
-// Adding a child, as the Figma «Login-Aule» v8 draws it (P04 to P12): the
-// guardian's authorisation first, then an optional interview, the name the
-// tutor will use, and done. The answers are held in this page's memory only,
+// Adding a child, as the Figma «Login-Aule» v8 draws it, made shorter (D34):
+// the guardian's authorisation (P04), then the name the tutor will use and,
+// if the family wants, the grade, on one screen that also starts the first
+// session (P12 folded in). The answers are held in this page's memory only,
 // never in the browser's storage, and reach the server in one request when
 // the name is saved: the server creates the child and then records the
 // consents, in that order.
+//
+// The interview (P05 to P07) is offered on the home after the first session,
+// for a child the family already has, and saved to their profile.
 
 import { $, GRADES, call, say } from "./students.js";
 import { LIKES, interestsFrom, planLine } from "./steps.js";
 import { getAccount, go, landing, need, onAccount, onShow, setAccount } from "./screens.js";
+import { handOff } from "./home.js";
 
-// What the guardian has said so far; null until P04 is accepted.
+// What the guardian chose on P04; null until P04 is accepted.
 let held = null;
-// The child just made, for P12; null otherwise.
-let created = null;
+// The interview of a child the family has: { id, name, note, grade, picked, typed }; null otherwise.
+let interviewing = null;
+// Whether the plan has a session for the child just named, as p10-name last read it.
+let planOpen = true;
 
 need("consent", () => held !== null);
-need("created", () => created !== null);
+need("interview", () => interviewing !== null);
 
 // What is kept about the child is the parent's to choose: «Qué guardamos» shows
 // both choices before «Autorizo», and both start off (D5). Remembering between
@@ -23,13 +30,11 @@ need("created", () => created !== null);
 // protection rules (Ley 29733, DS 016-2024-JUS) consent is an affirmative act,
 // and a box ticked for them is not one.
 const DEFAULTS = { remembers: false, keepsTranscripts: false };
-// P12's line when the child can start a session now; the plan's own line otherwise.
-const P12_HELP = $("p12-help").textContent;
 
 /** Forgets every answer and empties the fields, as on signing out or going back to the family's students. */
 function drop() {
   held = null;
-  created = null;
+  interviewing = null;
   $("consent").checked = false;
   $("consent-ok").disabled = true;
   $("keep-memory").checked = DEFAULTS.remembers;
@@ -40,16 +45,15 @@ function drop() {
   $("likes-more").value = "";
   for (const input of document.querySelectorAll('#likes input[type="checkbox"]')) input.checked = false;
   $("child-name").value = "";
-  $("p12-title").textContent = "Listo.";
-  $("p12-help").textContent = P12_HELP;
-  delete $("done-start").dataset.student;
+  // No grade is chosen for the next child.
+  $("child-grade").selectedIndex = 0;
 }
 
 onAccount((account) => {
   if (account.signed_in !== true) drop();
 });
-// Back at the family's students, the onboarding is over: the next child starts
-// from empty fields, not from the last one's name and answers.
+// Back at the family's students, adding a child or an interview is over: the
+// next one starts from empty fields, not from the last one's answers.
 onShow("home", drop);
 
 // --- P04 Tu autorización (and P04 · Marcada 160:1994) ------------------------------
@@ -73,16 +77,12 @@ $("keep-toggle").addEventListener("click", () => {
   $("keep-toggle").setAttribute("aria-expanded", String(open));
 });
 
-// «Autorizo» and Enter work only with the box checked (Nota · P04).
+// «Autorizo» and Enter work only with the box checked (Nota · P04); the name comes next.
 $("consent-form").addEventListener("submit", (event) => {
   event.preventDefault();
   if (!$("consent").checked) return;
-  held = {
-    ...(held ?? { note: "", grade: null, picked: [], typed: "", interests: [] }),
-    remembers: $("keep-memory").checked,
-    keepsTranscripts: $("keep-transcripts").checked,
-  };
-  go("p05");
+  held = { remembers: $("keep-memory").checked, keepsTranscripts: $("keep-transcripts").checked };
+  go("p10-name");
 });
 
 // The choices in «Qué guardamos» are part of the answer even after it was given.
@@ -94,30 +94,112 @@ for (const id of ["keep-memory", "keep-transcripts"]) {
   });
 }
 
-// --- P05 Conozcamos a tu hijo ---------------------------------------------------------
+// --- In the place of P10 and P12 (web-only): the name, the grade, and the first session --
 
-$("interview-start").addEventListener("click", () => go("p06"));
-$("interview-later").addEventListener("click", () => go("p10-name"));
+// The interview's grades, then «Prefiero decirlo después»; the first option only asks.
+$("child-grade").append(
+  ...Object.entries(GRADES).map(([value, text]) => new Option(text, value)),
+  new Option("Prefiero decirlo después", "later"),
+);
 
-// --- P06 · expectativas (1 de 3): the note the tutor reads ----------------------------
-
-onShow("p06", () => {
-  $("expect").value = held?.note ?? "";
+// With a session left in the plan, «Empezar su primera sesión» and «Empezar más
+// tarde»; with none, «Guardar» alone and the plan's line, as P12 said it (D9).
+onShow("p10-name", () => {
+  const plan = planLine(getAccount().plan, document.documentElement.lang);
+  planOpen = plan.open;
+  for (const id of ["child-start", "child-later"]) $(id).disabled = false;
+  $("child-start").textContent = planOpen ? "Empezar su primera sesión" : "Guardar";
+  $("child-later").hidden = !planOpen;
+  $("child-plan").textContent = planOpen ? "" : plan.text;
+  $("child-plan").hidden = planOpen;
 });
 
-$("expect-form").addEventListener("submit", (event) => {
+function nameError(on) {
+  $("child-name").setAttribute("aria-invalid", String(on));
+  $("child-name-error").hidden = !on;
+  if (on) $("child-name").focus();
+}
+
+$("child-name").addEventListener("input", () => {
+  if ($("child-name").getAttribute("aria-invalid") === "true") nameError(false);
+});
+
+// Enter in the name does what the primary button does: «Empezar más tarde»
+// comes first in the form, and the browser would send the form as it.
+$("child-name").addEventListener("keydown", (event) => {
+  if (event.key !== "Enter" || event.isComposing) return;
   event.preventDefault();
-  held.note = $("expect").value.trim().slice(0, 200);
-  go("p06-grade");
+  if (!$("child-start").disabled) $("child-name-form").requestSubmit($("child-start"));
 });
 
-$("expect-skip").addEventListener("click", () => {
-  held.note = "";
-  $("expect").value = "";
-  go("p06-grade");
+$("child-name-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (!held) return;
+  const starting = event.submitter?.id === "child-start";
+  const name = $("child-name").value.trim();
+  if (!name) return nameError(true);
+  nameError(false);
+  say("");
+  // One press, one child: the buttons wait until the screen shows again, or the press fails.
+  for (const id of ["child-start", "child-later"]) $(id).disabled = true;
+  const grade = $("child-grade").value;
+  let made;
+  try {
+    made = await call("api/student", {
+      consent: true,
+      name,
+      // The grade as the interview saves it; «Prefiero decirlo después», or none chosen, is none.
+      grade: Object.hasOwn(GRADES, grade) ? grade : null,
+      language: "es",
+      interests: [],
+      tone: "calido",
+      note: "",
+      remembers: held.remembers,
+      keeps_transcripts: held.keepsTranscripts,
+    });
+  } catch (error) {
+    for (const id of ["child-start", "child-later"]) $(id).disabled = false;
+    if (error.message === "not_signed_in") {
+      const account = await call("api/account").catch(() => ({ signed_in: false }));
+      setAccount(account);
+      return go(landing() === "c01" ? "p13" : landing(), { replace: true, fresh: true, flow: "back", message: "Tu sesión se cerró. Vuelve a entrar." });
+    }
+    return say("No se pudo guardar. Inténtalo otra vez.");
+  }
+  held = null;
+  // The family's students as the server has them now, for the home and the session.
+  const account = await call("api/account").catch(() => null);
+  if (account?.signed_in) setAccount(account);
+  // The steps that made the child are over: Back does not make it again. With a
+  // session left, «Empezar su primera sesión» hands the browser to the child.
+  if (starting && planOpen && handOff(made.id)) return;
+  go("home", { replace: true, fresh: true, message: `Listo. Aule ya conoce a ${made.name}.`, tone: "info" });
 });
 
-// --- 2 de 3 (web-only): the grade, one tap ---------------------------------------------
+// --- The interview, from the home: P05, the grade, P06 and P07 (D34) ---------------------
+
+/** What the interview starts from: the student as the account has them, their likes split into P07's options and the rest. */
+function interviewOf(student) {
+  const interests = student.interests ?? [];
+  const picked = LIKES.filter((like) => interests.includes(like.toLowerCase()));
+  const typed = interests.filter((interest) => !picked.some((like) => like.toLowerCase() === interest)).join(", ");
+  return { id: student.id, name: student.name, note: student.note ?? "", grade: student.grade ?? null, picked, typed };
+}
+
+// «Cuéntale a Aule sobre {nombre}», on the home (home.js row).
+document.addEventListener("click", (event) => {
+  const link = event.target.closest?.("[data-interview]");
+  if (!link) return;
+  const student = (getAccount().students ?? []).find((one) => one.id === link.dataset.interview);
+  if (!student) return;
+  interviewing = interviewOf(student);
+  go("p05");
+});
+
+$("interview-start").addEventListener("click", () => go("p06-grade"));
+$("interview-later").addEventListener("click", () => go("home"));
+
+// --- 1 de 3 (web-only): the grade, one tap; the one answer the next session uses ---------
 
 $("grade-options").replaceChildren(
   ...Object.entries(GRADES).map(([value, text]) => {
@@ -128,23 +210,37 @@ $("grade-options").replaceChildren(
     button.textContent = text;
     button.setAttribute("aria-pressed", "false");
     button.addEventListener("click", () => {
-      held.grade = value;
-      go("p07");
+      interviewing.grade = value;
+      go("p06");
     });
     return button;
   }),
 );
 
+// The grade the family chose on the name screen shows chosen.
 onShow("p06-grade", () => {
   for (const button of $("grade-options").children) {
-    button.setAttribute("aria-pressed", String(button.dataset.grade === held?.grade));
+    button.setAttribute("aria-pressed", String(button.dataset.grade === interviewing?.grade));
   }
 });
 
-$("grade-skip").addEventListener("click", () => {
-  held.grade = null;
+// Skipping leaves the grade as it was.
+$("grade-skip").addEventListener("click", () => go("p06"));
+
+// --- P06 · expectativas (2 de 3): the note the tutor reads ----------------------------
+
+onShow("p06", () => {
+  $("expect").value = interviewing?.note ?? "";
+});
+
+$("expect-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  interviewing.note = $("expect").value.trim().slice(0, 200);
   go("p07");
 });
+
+// Skipping leaves the note as it was.
+$("expect-skip").addEventListener("click", () => go("p07"));
 
 // --- P07 · gustos (3 de 3): what the tutor builds its examples from ----------------------
 
@@ -166,87 +262,51 @@ $("likes").append(
 
 onShow("p07", () => {
   for (const input of document.querySelectorAll('#likes input[type="checkbox"]')) {
-    input.checked = held?.picked.includes(input.value) ?? false;
+    input.checked = interviewing?.picked.includes(input.value) ?? false;
   }
-  $("likes-more").value = held?.typed ?? "";
+  $("likes-more").value = interviewing?.typed ?? "";
 });
 
-$("likes-form").addEventListener("submit", (event) => {
+$("likes-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const picked = [...document.querySelectorAll('#likes input[type="checkbox"]:checked')].map((input) => input.value);
   const typed = $("likes-more").value;
   const liked = interestsFrom(picked, typed);
   if (liked.error === "too_many") return say("Elige hasta diez cosas que le gusten.");
   if (liked.error === "too_long") return say("Cada gusto puede tener hasta 40 letras.");
-  Object.assign(held, { picked, typed, interests: liked.interests });
-  go("p10-name");
+  Object.assign(interviewing, { picked, typed });
+  await saveInterview(liked.interests);
 });
 
-// --- In the place of P10 (web-only): the name the tutor uses; the child is made here ------
-
-function nameError(on) {
-  $("child-name").setAttribute("aria-invalid", String(on));
-  $("child-name-error").hidden = !on;
-  if (on) $("child-name").focus();
-}
-
-$("child-name").addEventListener("input", () => {
-  if ($("child-name").getAttribute("aria-invalid") === "true") nameError(false);
-});
-
-$("child-name-form").addEventListener("submit", async (event) => {
-  event.preventDefault();
-  const name = $("child-name").value.trim();
-  if (!name) return nameError(true);
-  nameError(false);
+/**
+ * Saves the interview to the student's profile: their note, grade and likes.
+ * Everything else is sent as the platform has it now, read first, the
+ * consents above all: a flag left out would be read as a «no» (src/students.ts
+ * profileFrom).
+ */
+async function saveInterview(interests) {
+  const { id, name, note, grade } = interviewing;
   say("");
-  // One press, one child.
-  $("child-save").disabled = true;
-  let made;
   try {
-    made = await call("api/student", {
-      consent: true,
-      name,
-      grade: held.grade,
-      language: "es",
-      interests: held.interests,
-      tone: "calido",
-      note: held.note,
-      remembers: held.remembers,
-      keeps_transcripts: held.keepsTranscripts,
+    const student = await call("api/student/read", { student_id: id });
+    await call("api/student/save", {
+      student_id: id,
+      name: student.name,
+      grade,
+      language: student.language,
+      interests,
+      tone: student.tone,
+      note,
+      ...(student.subjects ? { subjects: student.subjects } : {}),
+      remembers: student.remembers,
+      keeps_transcripts: student.keepsTranscripts,
+      relationship: student.relationship,
     });
-  } catch (error) {
-    $("child-save").disabled = false;
-    if (error.message === "not_signed_in") {
-      const account = await call("api/account").catch(() => ({ signed_in: false }));
-      setAccount(account);
-      return go(landing() === "c01" ? "p13" : landing(), { replace: true, fresh: true, flow: "back", message: "Tu sesión se cerró. Vuelve a entrar." });
-    }
+  } catch {
     return say("No se pudo guardar. Inténtalo otra vez.");
   }
-  $("child-save").disabled = false;
-  held = null;
-  created = { id: made.id, name: made.name };
-  // The family's students as the server has them now, for the home and the session.
+  // The home reads the account again as it shows; this only spares it a stale moment.
   const account = await call("api/account").catch(() => null);
   if (account?.signed_in) setAccount(account);
-  // The steps that made the child are over: Back does not make it again.
-  go("p12", { replace: true, fresh: true });
-});
-
-// --- P12 Listo -------------------------------------------------------------------------
-
-onShow("p12", () => {
-  if (!created) return;
-  $("p12-title").textContent = `Listo. Aule ya conoce a ${created.name}`;
-  // home.js starts the session for this child.
-  $("done-start").dataset.student = created.id;
-  // With no session left in the plan, finishing is the one thing to do, and
-  // the line under the title says why, as the home does.
-  const plan = planLine(getAccount().plan, document.documentElement.lang);
-  $("done-start").hidden = !plan.open;
-  $("done-finish").className = plan.open ? "link" : "primary";
-  $("p12-help").textContent = plan.open ? P12_HELP : plan.text;
-});
-
-$("done-finish").addEventListener("click", () => go("home"));
+  go("home", { message: `Gracias. Aule ya sabe más de ${name}.`, tone: "info" });
+}
