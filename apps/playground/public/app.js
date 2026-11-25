@@ -1,15 +1,16 @@
 // The playground page: lets the person check their microphone, on this device
 // only, and their camera (A05 Antes de empezar), asks the server for a room
 // token, joins the room, and shows what the tutor is doing (A15 La sesión
-// empezó, or A16 Hola, soy Aule on a first run, then the session).
+// empezó, or A16 Hola, soy Aule on a first run): Aule's face on a stage, which
+// a drawing or the camera takes while it shows (D30, D31).
 
 import { firstRun, purposeAsked, sessionRequest } from "./home.js";
-import { back, current, go, need, onAccount, onHide, onShow } from "./screens.js";
+import { back, current, getAccount, go, need, onAccount, onHide, onShow } from "./screens.js";
 import { TOPIC as VISUAL_TOPIC, renderVisual } from "./visuals.js";
 import { endedMessage, languageOf, recoveryMessage } from "./session-messages.js";
 import { COACH_HOLD_MS, HINTS_MS, VOICE, WINDOW_MS, cameraProblem, heard, isTap, levelOf, micProblem, words } from "./first-steps.js";
 
-const { Room, RoomEvent, Track, ParticipantKind, DisconnectReason } = LivekitClient;
+const { Room, RoomEvent, Track, ParticipantKind, DisconnectReason, createLocalVideoTrack } = LivekitClient;
 
 const TRANSCRIPTION_TOPIC = "lk.transcription";
 const AGENT_STATE = "lk.agent.state";
@@ -22,6 +23,11 @@ const SHOW_WORK = "aule.show_work";
 // The picture is taken from the first frame after the request; the camera
 // stays on a moment longer so the student sees what was shown.
 const SHOWN_MS = 1500;
+// How long the camera waits for «Listo» once «Mostrar mi tarea» turned it on.
+const AIM_MS = 30_000;
+// The camera is for showing work: the one facing the table when there are
+// two, and sharp enough to read handwriting.
+const CAMERA = { facingMode: "environment", resolution: { width: 1280, height: 720 } };
 // How long the microphone stays open after the button is let go, so the last
 // syllable is not cut.
 const TALK_TAIL_MS = 200;
@@ -32,16 +38,10 @@ const TUTOR_WAIT_MS = 15_000;
 const ENDING_WAIT_MS = 8000;
 const CLOSING_NOTE_MS = 300;
 
-// The tutor's tile; Aule not arriving is said in the session's language (session-messages.js).
-const STATE_TEXT = {
-  waiting: "Esperando a Aule…",
-  initializing: "Aule se está preparando…",
-  listening: "Te escucho",
-  thinking: "Pensando…",
-  speaking: "Hablando",
-  left: "Aule salió de la sesión.",
-  reconnecting: "Se perdió la conexión. Reconectando…",
-};
+// The tutor's states that the line under Aule's face has words for, in the
+// student's language (first-steps.js state_*); Aule not arriving is said in
+// session-messages.js's.
+const STATE_KEYS = ["waiting", "initializing", "listening", "thinking", "speaking", "left", "reconnecting"];
 
 // Ways a session ends that nobody asked for.
 const LOST = new Set([
@@ -92,6 +92,14 @@ let tutorIdentity = null;
 // The tutor takes a picture when asked, so the camera is off between pictures.
 let photos = false;
 let showing = false;
+// «Mostrar mi tarea» turned the camera on and the child is pointing it (D31):
+// a track of this device only until «Listo» publishes it; «Cancelar», or AIM_MS
+// with nothing, turns it off.
+let aiming = false;
+let aimTimer = 0;
+let aimTrack = null;
+// The camera «Listo» published, or is publishing, and the room it went to, until it is taken back.
+let sent = null;
 // True once the tutor is in the session and has said how turns work. Until
 // then the microphone stays closed: nobody is listening yet, and the page does
 // not know whether it should be open at all.
@@ -315,7 +323,15 @@ customElements.whenDefined("wobnimo-mascot").then(() => {
   $("mic-check").classList.add("has-mascot");
 });
 
-function setTutorState(state) {
+/**
+ * Aule's face and the one line under it, for the tutor's state; with no state,
+ * the one it has again, for a hold that started or ended. With held turns the
+ * line says «Tu turno» until the button is held, then «Te escucho» until Aule
+ * has the turn (the tail after letting go and end_turn included: until then
+ * it is not the child's turn again); with an open microphone, «Te escucho».
+ * Each is written only when it changes, so the status is said once.
+ */
+function setTutorState(state = $("tutor").dataset.state) {
   $("tutor").dataset.state = state;
   const line = $("tutor-state");
   if (state === "missing") {
@@ -325,14 +341,27 @@ function setTutorState(state) {
     write(line, recoveryText("tutor_missing_short"));
   } else {
     line.removeAttribute("aria-live");
-    write(line, STATE_TEXT[state] ?? state, "es");
+    const key = state === "listening" && manualTurns && !talking && !closingTurn ? "your_turn" : STATE_KEYS.includes(state) ? state : "waiting";
+    const language = sessionLanguage();
+    const text = words(`state_${key}`, language);
+    if (line.textContent !== text || line.lang !== language) write(line, text, language);
   }
-  $("mascot").setAttribute("state", MASCOT_STATE[state] ?? "idle");
+  const face = MASCOT_STATE[state] ?? "idle";
+  if ($("mascot").getAttribute("state") !== face) $("mascot").setAttribute("state", face);
 }
 
 // The icon a compact toggle (Botón/Compacto 191:1396) shows beside its label,
 // crossed when it is off, as on A05; one without an icon says it in words only.
 const TOGGLE_ICONS = { Cámara: "videocam" };
+
+/** An icon of Íconos · Aparato 190:995, in the colour of the control it is in. */
+function iconOf(name) {
+  const icon = document.createElement("span");
+  icon.className = "icon";
+  icon.dataset.icon = name;
+  icon.setAttribute("aria-hidden", "true");
+  return icon;
+}
 
 function setToggle(button, label, on) {
   button.setAttribute("aria-pressed", String(on));
@@ -344,11 +373,7 @@ function setToggle(button, label, on) {
     button.textContent = words;
     return;
   }
-  const icon = document.createElement("span");
-  icon.className = "icon";
-  icon.dataset.icon = on ? base : CROSSED[base];
-  icon.setAttribute("aria-hidden", "true");
-  button.replaceChildren(icon, words);
+  button.replaceChildren(iconOf(on ? base : CROSSED[base]), words);
 }
 
 // A round control (Botón/Micrófono 193:709): black with its icon when on,
@@ -455,7 +480,6 @@ function stopSteps() {
   cardShown = "";
   $("route").hidden = true;
   $("card").hidden = true;
-  document.querySelector(".work").classList.remove("with-card");
 }
 
 function followSteps(id) {
@@ -504,7 +528,6 @@ async function showStep(id, given) {
   if (shown === cardShown) return;
   cardShown = shown;
   $("card").hidden = !card;
-  document.querySelector(".work").classList.toggle("with-card", Boolean(card));
   if (!card) return;
   $("card-title").textContent = card.title ?? "";
   $("card-statement").textContent = card.statement ?? "";
@@ -515,9 +538,10 @@ async function showStep(id, given) {
   $("answer-text").value = "";
   $("explanation-text").value = "";
   // A new exercise brings its own drawing, or an empty board: the drawing of
-  // the one before does not stay next to it.
+  // the one before does not stay next to it, and the stage shows Aule again.
   $("board").hidden = true;
   boardShows = null;
+  showStage();
   if (card.visual?.kind === "exercise") lastExercise = card.visual;
   if (card.visual && (card.visual.kind !== "exercise" || inkMode)) {
     try {
@@ -568,15 +592,22 @@ function item(text) {
   return element;
 }
 
-// The tutor describes what to show; the page draws it.
-// The ink screen shows what the device would: the drawing, or else the
-// exercise in hand, which the card shows in words and the board skips. So the
-// last exercise is kept, and the screen says so when there is nothing yet. It
-// starts on: it is how a family sees what the device would show.
-let inkMode = true;
+// The tutor describes what to show; the page draws it on the stage, where it
+// stays until the next drawing, a new exercise or the end of the session, as
+// on the device's panel.
+// «Modo tinta», the team's device simulator (D32), shows what the device would:
+// the drawing, or else the exercise in hand, which the card shows in words and
+// the board skips. So the last exercise is kept. It is on for the team and off,
+// and never shown, for families (join).
+let inkMode = false;
 let lastExercise = null;
-// What the board shows: a drawing's kind, "waiting", or null when empty.
+// What the board shows: a drawing's kind, or null when empty.
 let boardShows = null;
+
+/** What the stage shows (D30): the camera while it is on, else a drawing, else Aule's face. */
+function showStage() {
+  $("stage").dataset.shows = !$("camera-view").hidden ? "camera" : !$("board").hidden ? "drawing" : "face";
+}
 
 function draw(visual) {
   $("board").innerHTML = renderVisual(visual);
@@ -586,17 +617,13 @@ function draw(visual) {
   $("board").classList.remove("redraw");
   void $("board").offsetWidth;
   $("board").classList.add("redraw");
+  showStage();
 }
 
+// The team's ink screen, on an empty board: the exercise in hand, when there is one.
 function showInk() {
-  if (boardShows && boardShows !== "waiting") return;
-  if (lastExercise) return draw(lastExercise);
-  const waiting = document.createElement("p");
-  waiting.className = "ink-waiting";
-  waiting.textContent = "Aquí aparece lo que mostraría la pantalla de tinta: los dibujos de Aule y el ejercicio del momento.";
-  $("board").replaceChildren(waiting);
-  $("board").hidden = false;
-  boardShows = "waiting";
+  if (boardShows) return;
+  if (lastExercise) draw(lastExercise);
 }
 
 async function onVisual(reader) {
@@ -634,6 +661,8 @@ function watchTutor(participant) {
   tutorReady = ready;
   talking = false;
   showTalk();
+  // «Mostrar mi tarea» shows once the tutor is ready to look.
+  if (room) showCamera();
   syncMicrophone();
 }
 
@@ -679,10 +708,11 @@ function syncMicrophone() {
 const touchOnly = matchMedia("(pointer: coarse)").matches && !matchMedia("(pointer: fine)").matches;
 
 // Without the talk button the switch is the microphone's mute; with it, the
-// talk button is the only microphone button.
+// talk button is the only microphone button. The switch waits for the tutor to
+// be ready: nothing is heard before.
 function showTalk() {
   $("talk").hidden = !manualTurns;
-  $("mic-group").hidden = manualTurns;
+  $("mic-group").hidden = manualTurns || !tutorReady;
   // On a phone the button then stays at the bottom of the screen (style.css).
   document.querySelector("main").classList.toggle("push-to-talk", manualTurns);
   $("talk").disabled = !wanted.mic || !tutorReady || connectionLost || closingTurn;
@@ -690,6 +720,8 @@ function showTalk() {
   // The label has a span of its own: the level bar sits next to it, in the
   // button. In the student's language, like the coach above it.
   writeWords($("talk-label"), !wanted.mic ? "talk_off" : talking ? "talk_listening" : touchOnly ? "talk_hold" : "talk_hold_key");
+  // The line under Aule's face follows the hold: «Tu turno», then «Te escucho».
+  setTutorState();
   showCoach();
 }
 
@@ -711,7 +743,8 @@ let coachTimer = 0;
 let taps = 0;
 
 function showCoach() {
-  const key = manualTurns && tutorReady && wanted.mic ? (coachHint ?? (coaching ? "coach" : "")) : "";
+  // While the child aims the camera the coach waits: on a small phone its shelf would cover «Listo».
+  const key = manualTurns && tutorReady && wanted.mic && !aiming ? (coachHint ?? (coaching ? "coach" : "")) : "";
   const line = $("talk-coach");
   const text = words(key, sessionLanguage());
   if (line.textContent !== text) write(line, text);
@@ -842,17 +875,28 @@ async function stopTalking(method = "end_turn") {
   }
 }
 
+/**
+ * The camera on the stage while it is on: the one the child is pointing, which
+ * nobody else sees until «Listo», or the camera a tutor that takes no pictures
+ * watches. «Mostrar mi tarea» shows once the tutor is ready; while the child
+ * aims, «Listo» and «Cancelar» take its place.
+ */
 function showCamera() {
   const publication = room.localParticipant.getTrackPublication(Track.Source.Camera);
-  const on = Boolean(publication?.track) && !publication.isMuted;
-  if (on) publication.track.attach($("camera"));
-  $("camera").hidden = !on;
-  $("camera-off").hidden = on;
-  if (photos) writeWords($("camera-off"), "camera_note");
-  else write($("camera-off"), "Cámara apagada", "es");
+  // A camera that was stopped is off, even while its publication is still being taken back.
+  const on = Boolean(publication?.track) && !publication.isMuted && publication.track.mediaStreamTrack?.readyState !== "ended";
+  const shown = aimTrack ?? (on ? publication.track : null);
+  if (shown) shown.attach($("camera"));
+  $("camera-view").hidden = !shown;
+  showStage();
+  $("cam").hidden = !tutorReady || aiming;
   if (photos) {
-    $("cam").setAttribute("aria-pressed", String(showing));
-    writeWords($("cam"), showing ? "showing_work" : "show_work");
+    // An action, not a switch: it opens the camera, with its icon.
+    $("cam").removeAttribute("aria-pressed");
+    $("cam").removeAttribute("lang");
+    const label = document.createElement("span");
+    writeWords(label, "show_work");
+    $("cam").replaceChildren(iconOf("videocam"), label);
     $("cam").disabled = showing;
   } else {
     // Nothing is filmed for a room the tutor has not reached.
@@ -923,28 +967,126 @@ function showIntro() {
   }
 }
 
-// One picture of the work: the camera goes on, the tutor is told to look, and
-// the camera goes off again. This may be the first time the browser is asked
-// for the camera: what it says is said as such (first-steps.js cameraProblem).
-async function showWork() {
-  if (showing || !room || !tutorIdentity) return;
-  showing = true;
+// «Mostrar mi tarea» in two steps (D31). First the camera turns on and the stage
+// shows what it sees, on this device only: the child points it at their work.
+// This may be the first time the browser is asked for the camera, and it is the
+// only time in the two steps: «Listo» publishes this same track, since a phone
+// that holds the camera may refuse a second ask. What the browser says is said
+// as such (first-steps.js cameraProblem).
+async function aimCamera() {
+  if (showing || aiming || !room || !tutorIdentity) return;
+  const aimed = room;
+  aiming = true;
   showMessage("");
-  let trouble = "camera_unseen";
+  let track;
   try {
-    await room.localParticipant.setCameraEnabled(true).catch((error) => {
-      trouble = cameraProblem(error?.name);
+    track = await createLocalVideoTrack(CAMERA);
+  } catch (error) {
+    aiming = false;
+    const language = sessionLanguage();
+    showPassingMessage(words(cameraProblem(error?.name), language), language);
+    if (room) showCamera();
+    return;
+  }
+  // The session ended while the browser asked: the camera goes off at once.
+  if (room !== aimed || !aiming) {
+    track.stop();
+    return;
+  }
+  aimTrack = track;
+  writeWords($("camera-aim"), "camera_aim");
+  writeWords($("cam-send"), "camera_send");
+  writeWords($("cam-cancel"), "camera_cancel");
+  $("cam-send").hidden = false;
+  $("cam-cancel").hidden = false;
+  showCamera();
+  // The coach waits while the child aims (showCoach): its shelf leaves «Listo» in sight.
+  showCoach();
+  // The keyboard's place is the line that says what to do, right before «Listo» in
+  // the order: not «Listo» itself, where Space, the talk key, would send a picture.
+  // «Listo» is scrolled into sight, clear of the fixed talk button's shelf.
+  $("camera-aim").focus({ preventScroll: true });
+  $("cam-send").scrollIntoView({ block: "nearest" });
+  aimTimer = setTimeout(() => stopAiming(), AIM_MS);
+}
+
+// Where the keyboard goes once the camera is off: the talk button, which Space
+// holds, or with an open microphone «Mostrar mi tarea»; the title when neither
+// can take it now. Never «Listo» or «Cancelar», which are gone.
+function focusTalk() {
+  const to = [manualTurns ? $("talk") : null, $("cam")].find((one) => one && !one.hidden && !one.disabled);
+  (to ?? $("session-title")).focus({ preventScroll: true });
+}
+
+/**
+ * Turns off the camera the child was pointing: never published after
+ * «Cancelar» or the wait, and taken back after «Listo»'s picture, also one
+ * still on its way to the room (livekit-client's unpublishTrack waits for the
+ * publish it is part of). The keyboard's place, if it was on the camera's row
+ * (or lost as «Listo» went dashed), goes back to talking (focusTalk).
+ */
+async function stopAiming() {
+  clearTimeout(aimTimer);
+  aiming = false;
+  const placed = [document.body, $("camera-aim"), $("cam-send"), $("cam-cancel")].includes(document.activeElement);
+  const track = aimTrack;
+  aimTrack = null;
+  if (room) {
+    showCamera();
+    showCoach();
+    if (placed) focusTalk();
+  }
+  writeWords($("camera-aim"), "");
+  hideKeepingFocus($("cam-send"), $("session-title"));
+  hideKeepingFocus($("cam-cancel"), $("session-title"));
+  if (track) {
+    if (sent?.track === track) {
+      const taken = sent.room;
+      sent = null;
+      await taken.localParticipant.unpublishTrack(track).catch(() => undefined);
+    }
+    track.stop();
+    track.detach($("camera"));
+  }
+  if (room) showCamera();
+}
+
+// «Listo»: the camera the child pointed is published, and the tutor is asked at
+// once to look, as one tap did before: it takes the first frame that arrives
+// after the request (apps/agent camera.py). The camera stays on a moment so the
+// child sees what was shown, then goes off.
+async function showWork() {
+  if (!aiming || showing || !aimTrack || !room || !tutorIdentity) return;
+  const sending = room;
+  const track = aimTrack;
+  showing = true;
+  // The wait is over once the picture is on its way, and the picture is not taken
+  // back: neither «Listo» nor «Cancelar» can be pressed while it goes.
+  clearTimeout(aimTimer);
+  $("cam-send").disabled = true;
+  $("cam-cancel").disabled = true;
+  writeWords($("camera-aim"), "showing_work");
+  showMessage("");
+  try {
+    sent = { track, room: sending };
+    // A publish that fails left nothing in the room to take back.
+    await sending.localParticipant.publishTrack(track, { source: Track.Source.Camera }).catch((error) => {
+      sent = null;
       throw error;
     });
-    showCamera();
+    // The camera went off while it was being published (the session ended): the
+    // tutor is not asked to look at it.
+    if (!aiming || aimTrack !== track || room !== sending) return;
     // The default timeout on purpose: the tutor waits up to two seconds for a
     // frame, and a shorter limit here would cut that wait.
-    const seen = await room.localParticipant.performRpc({
+    const seen = await sending.localParticipant.performRpc({
       destinationIdentity: tutorIdentity,
       method: "show_work",
       payload: "",
     });
     if (seen !== "ok") throw new Error("no frame");
+    // The session ended while the tutor looked: its conversation went with it.
+    if (room !== sending) return;
     // The tutor hears a fixed line for this; the page writes the same one.
     const line = item("");
     writeWords(line, "shown_work");
@@ -955,11 +1097,12 @@ async function showWork() {
     await new Promise((resolve) => setTimeout(resolve, SHOWN_MS));
   } catch {
     const language = sessionLanguage();
-    showPassingMessage(words(trouble, language), language);
+    if (room === sending) showPassingMessage(words("camera_unseen", language), language);
   } finally {
     showing = false;
-    await room?.localParticipant.setCameraEnabled(false).catch(() => undefined);
-    if (room) showCamera();
+    $("cam-send").disabled = false;
+    $("cam-cancel").disabled = false;
+    await stopAiming();
   }
 }
 
@@ -973,6 +1116,13 @@ async function join(session, { resumed = false } = {}) {
   // A session carried on after a reload has had its first turns already.
   firstSession = !resumed && firstRun();
   coaching = firstSession;
+  // «Modo tinta» is the team's device simulator: on for the team, and never
+  // shown to a family (D32).
+  const team = getAccount().team === true;
+  inkMode = team;
+  $("device").hidden = !team;
+  $("board").classList.toggle("device", team);
+  setToggle($("device"), "Modo tinta", team);
   room = new Room({
     adaptiveStream: true,
     dynacast: true,
@@ -984,9 +1134,7 @@ async function join(session, { resumed = false } = {}) {
       autoGainControl: true,
       voiceIsolation: true,
     },
-    // The camera is for showing work: the one facing the table when there are
-    // two, and sharp enough to read handwriting.
-    videoCaptureDefaults: { facingMode: "environment", resolution: { width: 1280, height: 720 } },
+    videoCaptureDefaults: CAMERA,
   });
 
   const connectedRoom = room;
@@ -1432,6 +1580,20 @@ function teardown({ quiet = false } = {}) {
   tutorLate = false;
   photos = false;
   showing = false;
+  // A camera the child was pointing goes off with the session, and one «Listo»
+  // published goes with the room.
+  clearTimeout(aimTimer);
+  aiming = false;
+  aimTrack?.stop();
+  aimTrack?.detach($("camera"));
+  aimTrack = null;
+  sent = null;
+  $("camera-view").hidden = true;
+  $("cam-send").hidden = true;
+  $("cam-send").disabled = false;
+  $("cam-cancel").hidden = true;
+  $("cam-cancel").disabled = false;
+  writeWords($("camera-aim"), "");
   tutorReady = false;
   manualTurns = false;
   talking = false;
@@ -1443,6 +1605,7 @@ function teardown({ quiet = false } = {}) {
   $("board").hidden = true;
   boardShows = null;
   lastExercise = null;
+  showStage();
   forgetWords();
   sessionId = null;
   return true;
@@ -1693,13 +1856,20 @@ $("talk").addEventListener("pointercancel", () => stopTalking("cancel_turn"));
 $("talk").addEventListener("contextmenu", (event) => event.preventDefault());
 
 // The space bar is the button too, except while typing or on another control.
-const typing = (target) => ["INPUT", "SELECT", "TEXTAREA", "BUTTON"].includes(target?.tagName);
+// On the talk button it holds it; on «Mostrar mi tarea», «Listo» and «Cancelar»
+// it still talks, and never opens the camera or sends a picture (Enter presses
+// them): a child who talks with it presses it wherever the focus happens to be.
+const SPACE_TALKS = ["talk", "cam", "cam-send", "cam-cancel"];
+const typing = (target) => ["INPUT", "SELECT", "TEXTAREA", "BUTTON"].includes(target?.tagName) && !SPACE_TALKS.includes(target.id);
+const spaceTalks = (event) => event.code === "Space" && manualTurns && current() === "session" && !typing(event.target);
 document.addEventListener("keydown", (event) => {
-  if (event.code !== "Space" || event.repeat || !manualTurns || current() !== "session" || typing(event.target)) return;
+  if (!spaceTalks(event)) return;
+  // Held down, the key repeats: none of it scrolls the page or presses the button under it.
   event.preventDefault();
-  startTalking();
+  if (!event.repeat) startTalking();
 });
 document.addEventListener("keyup", (event) => {
+  if (spaceTalks(event)) event.preventDefault();
   if (event.code === "Space" && talking) stopTalking();
 });
 // A turn nobody is holding any more is dropped, not sent.
@@ -1710,17 +1880,22 @@ $("device").addEventListener("click", () => {
   $("board").classList.toggle("device", inkMode);
   setToggle($("device"), "Modo tinta", inkMode);
   if (inkMode) return showInk();
-  // Back to the page's own board: no waiting note, and no exercise next to its card.
-  if (boardShows === "waiting" || (boardShows === "exercise" && !$("card").hidden)) {
+  // Back to the page's own board: no exercise next to its card.
+  if (boardShows === "exercise" && !$("card").hidden) {
     $("board").replaceChildren();
     $("board").hidden = true;
     boardShows = null;
+    showStage();
   }
 });
 
-// «Mostrar mi tarea»; with a tutor that takes no pictures, the camera on and off.
+// «Mostrar mi tarea» turns the camera on for the child to point it; «Listo»
+// sends one picture, «Cancelar» turns it off. With a tutor that takes no
+// pictures, the button turns the camera on and off.
+$("cam-send").addEventListener("click", () => showWork());
+$("cam-cancel").addEventListener("click", () => stopAiming());
 $("cam").addEventListener("click", async () => {
-  if (photos) return showWork();
+  if (photos) return aimCamera();
   const turning = room;
   if (!turning) return;
   try {

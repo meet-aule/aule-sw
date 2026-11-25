@@ -780,7 +780,7 @@
       </section>
 
       <!-- Figma: A15 La sesión empieza · Aparato 190:1069 / · Silenciado 194:509 -->
-      <section class="screen" data-screen="session" data-surface="ink" id="stage" hidden aria-labelledby="session-title">
+      <section class="screen" data-screen="session" data-surface="ink" hidden aria-labelledby="session-title">
         <!-- Figma: A16 Hola, soy Aule 477:190 (Vigente · Onboarding · v1), first run: the title and the line under it
              while Aule arrives, in the student's language; A16's second line waits for a summary the parents receive.
              The line is a status, never hidden, only empty: it is also where Aule not arriving is said, once. -->
@@ -792,12 +792,42 @@
         <button type="button" class="compact session-retry" id="retry-session" hidden>Intentar otra vez</button>
         <!-- A session the engine runs says where it is: done, now, to come. -->
         <ol id="route" class="route" hidden aria-label="Etapas de la sesión"></ol>
-        <!-- Left: what the student works on. The camera on their notebook and the board. -->
+        <!-- Left: Aule on its stage, what can be done under it, and the exercise in hand. -->
         <div class="work">
-          <div class="tile">
-            <video id="camera" autoplay muted playsinline></video>
-            <span class="tile-label">Tú</span>
-            <p id="camera-off" class="tile-empty" hidden>Cámara apagada</p>
+          <!-- Figma: web-only state of the session: the stage, Aule's face or what Aule draws with the face in a corner,
+               or the camera while the child shows their work (D30, D31). -->
+          <div class="stage" id="stage" data-shows="face">
+            <div class="tutor" id="tutor" data-state="waiting">
+              <!-- Aule's face, drawn in this browser. The dot stays where it cannot be drawn. -->
+              <wobnimo-mascot id="mascot" class="mascot" character="mochi" state="sleeping" aria-hidden="true"></wobnimo-mascot>
+              <div class="orb" aria-hidden="true"></div>
+              <p id="tutor-state" class="tile-state" role="status">Esperando a Aule…</p>
+            </div>
+            <figure id="board" class="board" hidden aria-live="polite"></figure>
+            <!-- What the camera sees while the child aims at their work. It stays on this device until «Listo». -->
+            <div class="camera-view" id="camera-view" hidden>
+              <video id="camera" autoplay muted playsinline></video>
+            </div>
+          </div>
+          <div class="session-actions">
+            <!-- Figma: Botón/Compacto 191:1396 with Ícono/videocam 191:1407, once the tutor is ready; with a tutor
+                 that takes no pictures it is the camera's toggle, crossed when off (videocam_off 191:1410). -->
+            <button type="button" class="compact" id="cam" hidden><span class="icon" data-icon="videocam" aria-hidden="true"></span>Mostrar mi tarea</button>
+            <!-- While the camera is on: what to do (a status, never hidden, only empty), Botón/Negro 190:834
+                 «Listo», which sends one picture, and the device link 195:513 «Cancelar». -->
+            <p class="camera-aim" id="camera-aim" role="status" tabindex="-1"></p>
+            <button type="button" class="ink-button send" id="cam-send" hidden>Listo</button>
+            <button type="button" class="ink-link" id="cam-cancel" hidden>Cancelar</button>
+            <!-- For Aule's team only: the drawing as the device's panel would show it (D32). -->
+            <button type="button" class="compact" id="device" aria-pressed="false" hidden>Modo tinta apagado</button>
+            <!-- Figma: Botón/Micrófono 193:709; A15 · Silenciado 194:509 when the microphone is off. With an open
+                 microphone only, once the tutor is ready: nothing is heard before. -->
+            <div class="mic-group" id="mic-group" hidden>
+              <button type="button" class="round-toggle round-64" id="mic" aria-pressed="true" aria-label="Micrófono" aria-describedby="mic-text">
+                <span class="icon" data-icon="mic" aria-hidden="true"></span>
+              </button>
+              <p class="round-text" id="mic-text" data-on="Tu micrófono está encendido." data-off="Tu micrófono está apagado.">Tu micrófono está encendido.</p>
+            </div>
           </div>
           <!-- The exercise in hand, with room to answer in writing. -->
           <section id="card" class="card" hidden aria-live="polite">
@@ -817,37 +847,11 @@
               <p class="note">También puedes decirlo en voz alta, o resolverlo en tu cuaderno y mostrárselo a Aule.</p>
             </form>
           </section>
-          <figure id="board" class="board device" hidden aria-live="polite"></figure>
-          <!-- Until something is drawn, the board is a quiet empty sheet. -->
-          <p class="board-empty">Aquí verás lo que Aule te muestre.</p>
-          <div class="controls">
-            <!-- Figma: Botón/Micrófono 193:709; A15 · Silenciado 194:509 when the microphone is off -->
-            <div class="mic-group" id="mic-group">
-              <button type="button" class="round-toggle round-64" id="mic" aria-pressed="true" aria-label="Micrófono" aria-describedby="mic-text">
-                <span class="icon" data-icon="mic" aria-hidden="true"></span>
-              </button>
-              <p class="round-text" id="mic-text" data-on="Tu micrófono está encendido." data-off="Tu micrófono está apagado.">Tu micrófono está encendido.</p>
-            </div>
-            <!-- Figma: Botón/Compacto 191:1396; off, the camera's icon is crossed (Ícono/videocam 191:1407, videocam_off 191:1410) -->
-            <button type="button" class="compact" id="cam" aria-pressed="true"><span class="icon" data-icon="videocam" aria-hidden="true"></span>Cámara</button>
-            <button type="button" class="compact" id="device" aria-pressed="true">Modo tinta</button>
-            <!-- Shown once the tutor is in. -->
-            <span id="clock" class="clock" aria-label="Tiempo que queda" hidden></span>
-            <button type="button" class="compact" id="end">Terminar</button>
-          </div>
         </div>
 
-        <!-- Right: the session. The tutor and the conversation with it. -->
+        <!-- Right: the talk. The device does not listen all the time: a turn lasts while its button is held. -->
         <div class="talking">
-          <div class="tile tutor" id="tutor" data-state="waiting">
-            <!-- Aule's face, drawn in this browser. The dot stays where it cannot be drawn. -->
-            <wobnimo-mascot id="mascot" class="mascot" character="mochi" state="sleeping" aria-hidden="true"></wobnimo-mascot>
-            <div class="orb" aria-hidden="true"></div>
-            <span class="tile-label">Aule</span>
-            <p id="tutor-state" class="tile-state" role="status">Esperando a Aule…</p>
-          </div>
-          <!-- The device does not listen all the time: a turn lasts while its button is held.
-               Figma: web-only state of the talk button: the coach line above it on a first run, and a hint
+          <!-- Figma: web-only state of the talk button: the coach line above it on a first run, and a hint
                after a tap; inside it, while it is held, a bar with the level of the microphone, measured in
                this browser. -->
           <p id="talk-coach" class="talk-coach" role="status"></p>
@@ -857,6 +861,15 @@
             <input id="typed" type="text" maxlength="500" aria-label="Mensaje para Aule" placeholder="O escríbele a Aule…" />
             <button type="submit" class="compact">Enviar</button>
           </form>
+        </div>
+
+        <!-- Last in the page's order, first in the bar: a Tab never reaches «Terminar» before the talk button,
+             where Space would end the session instead of holding to talk. The grid draws it on the title's row. -->
+        <div class="session-bar-end">
+          <!-- Shown once the tutor is in. -->
+          <span id="clock" class="clock" aria-label="Tiempo que queda" hidden></span>
+          <!-- Figma: Botón/Compacto 191:1396, 44 px in the bar -->
+          <button type="button" class="compact session-end" id="end">Terminar</button>
         </div>
       </section>
 
