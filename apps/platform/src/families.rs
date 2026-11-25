@@ -137,9 +137,15 @@ fn tutor_note(value: &str) -> ApiResult<String> {
     Ok(note)
 }
 
+/// A child's age, from the year they were born: this year's birthday counts
+/// as had.
+pub fn age(birth_year: Option<i32>, now: DateTime<Utc>) -> Option<i32> {
+    birth_year.map(|year| now.year() - year)
+}
+
 impl Child {
     pub fn age(&self, now: DateTime<Utc>) -> Option<i32> {
-        self.birth_year.map(|year| now.year() - year)
+        age(self.birth_year, now)
     }
 
     /// What the supervisor may know: no name, no ids.

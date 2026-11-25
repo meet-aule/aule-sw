@@ -28,7 +28,7 @@ pub struct Config {
     /// Without one, the emailed code is the only way in.
     pub google_client_id: Option<String>,
     /// The addresses of Aule's team: signed in like a family, they also reach
-    /// the admin routes.
+    /// the team's routes, which the team's console calls.
     pub admin_emails: Vec<String>,
     /// Temporarily allow free sessions without plan quotas or trial expiry.
     pub free_access: bool,

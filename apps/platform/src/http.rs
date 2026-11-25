@@ -55,12 +55,16 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/auth/signout", post(signin::sign_out))
         .route("/v1/me", get(signin::me).put(signin::update_me).delete(signin::erase_family))
         .route("/v1/me/plan", get(crate::plans::mine))
-        // Aule's team: the families and their plans
+        // Aule's team: the families, their plans, and who is in a session now
         .route("/v1/admin/families", get(crate::plans::families))
+        .route("/v1/admin/families/{family_id}", get(crate::team::family))
         .route(
             "/v1/admin/families/{family_id}/grant",
             post(crate::plans::grant).delete(crate::plans::ungrant),
         )
+        .route("/v1/admin/families/{family_id}/sessions", get(crate::team::family_sessions))
+        .route("/v1/admin/families/{family_id}/notices", get(crate::team::family_notices))
+        .route("/v1/admin/sessions/open", get(crate::team::open_sessions))
         .route("/v1/notices", get(notices::list))
         .route("/v1/notices/{notice_id}/read", post(notices::mark_read))
         .route("/v1/push/tokens", put(push::register).delete(push::unregister))
@@ -85,7 +89,7 @@ pub fn router(state: AppState) -> Router {
 }
 
 /// Whether the platform can answer, and which build it is. It listens on
-/// loopback only; the playground shows the build to the team.
+/// loopback only; the team's console shows the build to the team.
 async fn health(State(state): State<AppState>) -> ApiResult<Json<Value>> {
     state.db.ping().await?;
     Ok(Json(json!({

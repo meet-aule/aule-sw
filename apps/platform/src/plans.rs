@@ -227,7 +227,7 @@ pub async fn admit(state: &AppState, family_id: Uuid) -> ApiResult<()> {
 }
 
 /// The signed-in family's plan and what is left of it, and whether the person
-/// is on Aule's team (the page then shows the way to the admin panel).
+/// is on Aule's team (the page then shows the way to the team's console).
 pub async fn mine(guardian: Guardian, State(state): State<AppState>) -> ApiResult<Json<Value>> {
     let standing = standing(&state, guardian.family_id, Utc::now()).await?;
     let email: Option<String> = guardian::Entity::find_by_id(guardian.id)
