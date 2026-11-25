@@ -149,8 +149,9 @@ class TurnCheck:
     ``kind`` is how code read the turn against the exercise open once it
     passed the gates (see ``answers``); None when none was open. ``told`` is
     what the checker said, None while nobody asked it. ``by`` says who asked
-    it: "code" after the gates, "model" with its own call, and "reused" for
-    each later call of the model that got the same answer back.
+    it: "code" after the gates, "pose" right after the exercise the turn
+    brought was posed, "model" with its own call, and "reused" for each
+    later call of the model that got the same answer back.
     """
 
     kind: answers.Kind | None = None
@@ -976,6 +977,10 @@ class Tutor(Agent):
         self._checker = checker
         # The student's turn now. Before the first nothing was stopped.
         self._turn = _Turn(passed=True)
+        # The open exercise the tutor stepped off with a pose the checker did not
+        # take (not arithmetic it can check, or a call that failed): the tutor
+        # asks something else, and the exercise stays open behind it.
+        self._posed_elsewhere: int | None = None
         self._fixed_lines = frozenset(reply(key, language) for key in _NOT_THE_WORK)
 
         @function_tool(raw_schema=comparison.SCHEMA)
@@ -1006,14 +1011,18 @@ class Tutor(Agent):
                 if not isinstance(expression, str) or not expression.strip():
                     return UNCHECKED
                 async with self._checking:
-                    return (
-                        await checker.pose(
-                            expression,
-                            skill_id if isinstance(skill_id, str) else None,
-                            form if isinstance(form, str) else None,
-                        )
-                        or UNCHECKED
+                    before = checker.exercise
+                    told = await checker.pose(
+                        expression,
+                        skill_id if isinstance(skill_id, str) else None,
+                        form if isinstance(form, str) else None,
                     )
+                    # Not taken, the tutor asks something else now, and the
+                    # exercise before stays open behind it until it is posed again.
+                    self._posed_elsewhere = (
+                        before.id if told is None and before is not None else None
+                    )
+                    return await self._checked_after_a_pose(checker, before, told or UNCHECKED)
 
             @function_tool(raw_schema=CHECK_ANSWER)
             async def check_answer(raw_arguments: dict[str, object]) -> str:
@@ -1210,13 +1219,18 @@ class Tutor(Agent):
     def _asked_something_else(self, exercise: OpenExercise) -> bool:
         """Whether what the tutor asked last is not ``exercise``, though it
         stays open: a worked example with other numbers comes first, as the
-        platform asked, until the exercise is posed again; or what the tutor
-        said and showed since the student's last message names numbers other
-        than the exercise's own and its steps' (``answers.names_other_numbers``).
-        The student's reply answers that, and is left to the model, whose own
-        check still works."""
-        return exercise.aside or answers.names_other_numbers(
-            self._said_since_the_student(), exercise.expression, self._language
+        platform asked, or a pose of something else was not taken, both until
+        the exercise is posed again; or what the tutor said and showed since
+        the student's last message names numbers other than the exercise's
+        own and its steps' (``answers.names_other_numbers``). The student's
+        reply answers that, and is left to the model, whose own check still
+        works."""
+        return (
+            exercise.aside
+            or exercise.id == self._posed_elsewhere
+            or answers.names_other_numbers(
+                self._said_since_the_student(), exercise.expression, self._language
+            )
         )
 
     def _said_since_the_student(self) -> str:
@@ -1252,6 +1266,32 @@ class Tutor(Agent):
             kind = done.kind if done is not None else None
             turn.check = TurnCheck(kind=kind, exercise=open_now, told=told, by=("model",))
             return told
+
+    async def _checked_after_a_pose(
+        self, checker: Checker, before: OpenExercise | None, told: str
+    ) -> str:
+        """What the model reads after posing an exercise. When the student's
+        turn this reply answers brought that exercise with their answer
+        ("Estoy haciendo 25 + 3 × 2. Me salió 56"), nothing was open to check
+        it against after the gates: it is checked now, against the exercise
+        just opened. Only when their words say it again as posed, or an answer
+        to the exercise before, or "tengo 10 años", would be taken for an
+        answer to it. Called with the checker's lock held."""
+        posed, turn = checker.exercise, self._turn_answered()
+        if (
+            posed is None
+            or (before is not None and posed.id == before.id)
+            or (turn.check is not None and turn.check.told is not None)
+        ):
+            return told
+        reading = answers.to_check(turn.words, posed.expression, self._language)
+        if not reading.restated or reading.said is None:
+            return told
+        answer = await self._told(checker, reading.said)
+        turn.check = TurnCheck(kind=reading.kind, exercise=posed.id, told=answer, by=("pose",))
+        # The kind only: never the words, nor what the checker said.
+        logger.info("answer checked after a pose", extra={"kind": reading.kind})
+        return f"{told} Their answer in this turn, checked: {answer}"
 
     async def _told(self, checker: Checker, said: str) -> str:
         """What the checker says of ``said``; UNCHECKED when it could not tell.
