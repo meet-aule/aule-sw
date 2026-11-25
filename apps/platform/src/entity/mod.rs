@@ -32,6 +32,7 @@ pub mod session_review;
 pub mod session_turn;
 pub mod skill;
 pub mod subscription;
+pub mod team_passkey;
 
 /// Every entity, in one schema: what the migrations must create.
 pub fn schema() -> sea_orm::SchemaBuilder {
@@ -66,4 +67,5 @@ pub fn schema() -> sea_orm::SchemaBuilder {
         .register(session_model_usage::Entity)
         .register(session_engine_input::Entity)
         .register(subscription::Entity)
+        .register(team_passkey::Entity)
 }

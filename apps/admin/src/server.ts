@@ -12,7 +12,7 @@ import { dirname, join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 
-import { FAMILY_READ, READS, WRITE, apiRoutes } from "./api.ts";
+import { FAMILY_READ, PASSKEY_WRITE, READS, WRITE, apiRoutes } from "./api.ts";
 import { type AssetSource, cacheFor, keptUntilEdited, loadAssets, stillFresh } from "./assets.ts";
 import { VERSION, stamps } from "./build.ts";
 import { ConfigError, isLoopback, readSettings, type Settings } from "./config.ts";
@@ -37,10 +37,14 @@ const STATIC: Record<string, AssetSource> = {
   "/live": { file: new URL("live.html", publicDir), type: HTML },
   "/families": { file: new URL("families.html", publicDir), type: HTML },
   "/family": { file: new URL("family.html", publicDir), type: HTML },
+  "/passkeys": { file: new URL("passkeys.html", publicDir), type: HTML },
   "/admin.js": { file: new URL("admin.js", publicDir), type: SCRIPT },
   "/live.js": { file: new URL("live.js", publicDir), type: SCRIPT },
   "/families.js": { file: new URL("families.js", publicDir), type: SCRIPT },
   "/family.js": { file: new URL("family.js", publicDir), type: SCRIPT },
+  "/passkeys.js": { file: new URL("passkeys.js", publicDir), type: SCRIPT },
+  // A passkey's JSON, written by hand where a password manager's credential cannot write it.
+  "/credential.js": { file: new URL("credential.js", publicDir), type: SCRIPT },
   // What the pages share: the API, the header's «Salir», and the words for the platform's codes.
   "/common.js": { file: new URL("common.js", publicDir), type: SCRIPT },
   "/labels.js": { file: new URL("labels.js", publicDir), type: SCRIPT },
@@ -53,11 +57,25 @@ const STATIC: Record<string, AssetSource> = {
   "/fonts/sans.woff2": { file: font("@fontsource-variable/inter", "inter-latin-wght-normal.woff2"), type: "font/woff2" },
 };
 // The pages' own scripts: their imports of each other get the fingerprinted addresses.
-const OWN_SCRIPTS = new Set(["/admin.js", "/live.js", "/families.js", "/family.js", "/common.js", "/labels.js", "/pilot.js", "/signin.js"]);
+const OWN_SCRIPTS = new Set([
+  "/admin.js",
+  "/live.js",
+  "/families.js",
+  "/family.js",
+  "/passkeys.js",
+  "/credential.js",
+  "/common.js",
+  "/labels.js",
+  "/pilot.js",
+  "/signin.js",
+]);
 
-const SIGN_IN = new Set(["/api/signin/start", "/api/signin/verify", "/api/signout"]);
+const SIGN_IN = new Set(["/api/signin/start", "/api/signin/verify", "/api/signin/passkey/start", "/api/signin/passkey/finish", "/api/signout"]);
 // A write is a small JSON object: an address and a code, or a grant's days and note.
 const MAX_BODY_BYTES = 4_096;
+// Or a passkey the browser made, which carries its id up to three times.
+const MAX_PASSKEY_BODY_BYTES = 16_384;
+const CARRY_A_PASSKEY = new Set(["/api/passkeys/create", "/api/signin/passkey/finish"]);
 const ROBOTS = "User-agent: *\nDisallow: /\n";
 
 /**
@@ -170,6 +188,7 @@ export function createConsole(settings: Settings, options: Options = {}): TeamCo
     limits: signInLimits(now, options.limitKeys),
     floorMs: options.verifyFloorMs ?? 500,
     reply,
+    revoke,
   });
   const api = apiRoutes({ platform, sessions, commit: settings.commit, reply });
 
@@ -180,10 +199,11 @@ export function createConsole(settings: Settings, options: Options = {}): TeamCo
 
   /**
    * The rules every write follows, before anything else is read: it comes from
-   * the console's own pages, and it is a small JSON object. Null when the
-   * request was refused (and answered).
+   * the console's own pages, and it is a small JSON object, of at most 16 KB
+   * where it carries a passkey and 4 KB anywhere else. Null when the request
+   * was refused (and answered).
    */
-  async function writeBody(request: IncomingMessage, response: ServerResponse): Promise<Record<string, unknown> | null> {
+  async function writeBody(request: IncomingMessage, response: ServerResponse, path: string): Promise<Record<string, unknown> | null> {
     const site = request.headers["sec-fetch-site"];
     if (request.headers.origin !== settings.publicUrl || (site !== undefined && site !== "same-origin")) {
       reply(response, 403, { error: "wrong_origin" });
@@ -194,7 +214,7 @@ export function createConsole(settings: Settings, options: Options = {}): TeamCo
       return null;
     }
     try {
-      return await readJson(request, MAX_BODY_BYTES);
+      return await readJson(request, CARRY_A_PASSKEY.has(path) ? MAX_PASSKEY_BODY_BYTES : MAX_BODY_BYTES);
     } catch {
       reply(response, 400, { error: "bad_request" });
       return null;
@@ -218,11 +238,13 @@ export function createConsole(settings: Settings, options: Options = {}): TeamCo
 
     if (SIGN_IN.has(path)) {
       if (method !== "POST") return notAllowed(response, "POST");
-      const body = await writeBody(request, response);
+      const body = await writeBody(request, response, path);
       if (!body) return;
       const client = clientOf(request, settings.edgeSecret);
       if (path === "/api/signin/start") return signIn.start(response, body, client);
       if (path === "/api/signin/verify") return signIn.verify(request, response, body, client);
+      if (path === "/api/signin/passkey/start") return signIn.passkeyStart(response, client);
+      if (path === "/api/signin/passkey/finish") return signIn.passkeyFinish(request, response, body, client);
       return signIn.signOut(request, response);
     }
     if (READS.has(path) || FAMILY_READ.test(path)) {
@@ -234,11 +256,20 @@ export function createConsole(settings: Settings, options: Options = {}): TeamCo
     const write = WRITE.exec(path);
     if (write) {
       if (method !== "POST") return notAllowed(response, "POST");
-      const body = await writeBody(request, response);
+      const body = await writeBody(request, response, path);
       if (!body) return;
       const token = sessions.tokenFor(request);
       if (!token) return reply(response, 401, { error: "signed_out" });
       return api.write(write[1]!, write[2]!, request, response, token, body);
+    }
+    const passkey = PASSKEY_WRITE.exec(path);
+    if (passkey) {
+      if (method !== "POST") return notAllowed(response, "POST");
+      const body = await writeBody(request, response, path);
+      if (!body) return;
+      const token = sessions.tokenFor(request);
+      if (!token) return reply(response, 401, { error: "signed_out" });
+      return api.passkeyWrite(passkey, request, response, token, body);
     }
 
     const asset = (await assets.get()).get(path);

@@ -10,6 +10,9 @@ const EVENTS = [
   "code_not_sent",
   "signed_in",
   "signed_out",
+  "passkey_created",
+  "passkey_deleted",
+  "passkey_off_team",
   "session_ended",
   "revoke_failed",
   "platform_error",
@@ -19,7 +22,9 @@ const EVENTS = [
 export type LogEvent = (typeof EVENTS)[number];
 
 // Something that went wrong, for the error stream; the rest is ordinary use.
-const PROBLEMS: ReadonlySet<LogEvent> = new Set(["code_not_sent", "revoke_failed", "platform_error", "request_failed"]);
+// A passkey of someone off this console's team means the platform's list
+// still has them: it needs a restart.
+const PROBLEMS: ReadonlySet<LogEvent> = new Set(["code_not_sent", "passkey_off_team", "revoke_failed", "platform_error", "request_failed"]);
 
 export function log(event: LogEvent, fields: Readonly<Record<string, number | boolean>> = {}): void {
   const line = [`aule-admin: ${event}`];
