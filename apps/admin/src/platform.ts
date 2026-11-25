@@ -1,10 +1,11 @@
 // The platform, as the console asks it. The sign-in calls go to the
-// platform's routes for the team's own codes (/v1/auth/team/*) and carry no
-// Authorization header, as the platform needs none for them; every other call
-// carries the signed-in team member's own token, which never leaves this
-// process. The platform's Staff check decides each of them.
+// platform's routes for the team's own codes and passkeys (/v1/auth/team/*)
+// and carry no Authorization header, as the platform needs none for them;
+// every other call carries the signed-in team member's own token, which never
+// leaves this process. The platform's Staff check decides each of them.
 
 import { userAgent } from "./build.ts";
+import { type Started, startedCeremony } from "./passkeys.ts";
 
 /**
  * The platform said no, or did not answer (status 0). Its message and code are
@@ -36,6 +37,10 @@ export type Platform = {
   sendCode(email: string): Promise<void>;
   /** Trades that code for a platform session of 12 hours; the platform never makes an account for it. */
   verifyCode(email: string, code: string): Promise<string>;
+  /** A passkey sign-in's ceremony and the browser's options: the same for everyone, as no address is given. */
+  passkeyOptions(): Promise<Started>;
+  /** Trades a passkey's answer to that ceremony for a platform session of 12 hours, as a code does. */
+  passkeySignIn(ceremony: string, credential: Record<string, unknown>): Promise<string>;
   /** Ends that one platform session; the person's others, the playground's included, stay. */
   signOut(token: string): Promise<void>;
   /** Which build the platform runs, from its health probe; nulls where it does not say. */
@@ -43,6 +48,13 @@ export type Platform = {
   /** A call on the team member's behalf. */
   teamCall(token: string, method: "GET" | "POST" | "DELETE", path: string, body?: unknown): Promise<unknown>;
 };
+
+/** The session token a sign-in answered with, or a failure: anything else is no session. */
+function session(answer: unknown): string {
+  const token = (answer as { token?: unknown } | null)?.token;
+  if (typeof token !== "string" || !TOKEN.test(token)) throw new PlatformError("the platform sent no session", 502);
+  return token;
+}
 
 export function createPlatform(baseUrl: string, commit: string, timeoutMs = 10_000): Platform {
   async function call(method: string, path: string, token: string | null, body?: unknown, wait = timeoutMs): Promise<unknown> {
@@ -78,11 +90,15 @@ export function createPlatform(baseUrl: string, commit: string, timeoutMs = 10_0
       await call("POST", "/v1/auth/team/start", null, { email });
     },
     async verifyCode(email, code) {
-      const answer = (await call("POST", "/v1/auth/team/verify", null, { email, code })) as { token?: unknown };
-      if (typeof answer?.token !== "string" || !TOKEN.test(answer.token)) {
-        throw new PlatformError("the platform sent no session", 502);
-      }
-      return answer.token;
+      return session(await call("POST", "/v1/auth/team/verify", null, { email, code }));
+    },
+    async passkeyOptions() {
+      const started = startedCeremony(await call("POST", "/v1/auth/team/passkey/options", null));
+      if (!started) throw new PlatformError("the platform sent no ceremony", 502);
+      return started;
+    },
+    async passkeySignIn(ceremony, credential) {
+      return session(await call("POST", "/v1/auth/team/passkey/verify", null, { ceremony, credential }));
     },
     async signOut(token) {
       await call("POST", "/v1/auth/signout", token, undefined, 5_000);

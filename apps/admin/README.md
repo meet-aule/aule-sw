@@ -30,6 +30,8 @@ decides each call.
 | GET, HEAD | `/robots.txt` | nothing | Disallows everything |
 | POST | `/api/signin/start` | the write rules | `{email}`: a code by mail, for a team address only. Always `202 {"sent":true}` |
 | POST | `/api/signin/verify` | the write rules | `{email, code}`: `200 {"signed_in":true}` and the cookie, or `403 {"error":"wrong_code"}` |
+| POST | `/api/signin/passkey/start` | the write rules | The platform's `POST /v1/auth/team/passkey/options`: `200 {publicKey}` for the browser's picker, the same for everyone, and the ceremony in its own cookie |
+| POST | `/api/signin/passkey/finish` | the write rules, 16 KB | `{credential}`: the platform's `POST /v1/auth/team/passkey/verify`, with the ceremony from its cookie. `200 {"signed_in":true}` and the cookie, or `403 {"error":"passkey_failed"}`; the ceremony's cookie is cleared whatever the answer |
 | POST | `/api/signout` | the write rules | Ends the session, with or without one: `200 {"signed_in":false}` |
 | GET | `/api/build` | a session | `{admin: {version, commit}, platform: {version, commit}}` |
 | GET | `/api/metrics/daily` | a session | The platform's `GET /v1/metrics/daily?days=14` |
@@ -155,7 +157,7 @@ secrets of the shared env file never reach the process.
 |---|---|---|
 | `ADMIN_HOST` | `127.0.0.1` | Where it listens. With `compose.yaml` it comes from the shell's `AULE_ADMIN_HOST`; the server's wrapper sets `0.0.0.0` for the Worker |
 | `ADMIN_PORT` | `8092` | |
-| `ADMIN_PUBLIC_URL` | `https://admin.meetaule.com` | The console's origin: the one `Origin` a write may carry. `http://localhost:<port>` or `http://127.0.0.1:<port>` to work locally |
+| `ADMIN_PUBLIC_URL` | `https://admin.meetaule.com` | The console's origin: the one `Origin` a write may carry. `http://localhost:<port>` or `http://127.0.0.1:<port>` to work locally. It must equal the platform's `AULE_ADMIN_PASSKEY_ORIGIN`, the one origin a passkey is accepted from (for passkeys, `localhost`, never `127.0.0.1`) |
 | `ADMIN_EDGE_SECRET` | none | What the console's Worker adds to every request (`X-Edge-Secret`, its own secret `EDGE_SECRET`): at least 32 characters, such as `openssl rand -hex 32`. Set, every request without it gets the same 404, except `/healthz` from this machine, and the client address the Worker passes on (`X-Client-IP`) counts for the sign-in's limits. Required when `ADMIN_HOST` is not loopback. With `compose.yaml` it comes from the console's own env file (`infra/server/README.md`) |
 | `AULE_PLATFORM_URL` | required | Where the platform answers, as in `.env.example` |
 | `AULE_ADMIN_EMAILS` | required | The team's addresses, read as the platform reads them. A change needs a restart of both |
@@ -191,6 +193,10 @@ image never hands it one (`test/image.test.ts`).
   - 5 wrong codes an hour and 10 a day per address and client, and 10 an hour
     and 20 a day per client, which a success clears; each try counts before the
     platform is asked, so tries sent together cannot all get through;
+  - 20 passkey sign-ins started an hour per client;
+  - a failed passkey sign-in counts with the client's wrong codes (10 an hour
+    and 20 a day, whichever way the tries came), counted before the platform is
+    asked; a success clears them;
   - 600 sign-in requests a minute in all, a breaker far above the team's use.
 
   So a stranger's requests and wrong codes hold back only that stranger: the
@@ -200,6 +206,20 @@ image never hands it one (`test/image.test.ts`).
   longest ago, rather than refuse everyone new. With the platform's own limits
   (five team codes an hour per address, five tries a code), one client gets at
   most 10 tries a day at a team address.
+- **Or a passkey.** Where the browser has the WebAuthn JSON methods, the page
+  offers «Entrar con passkey» above the address. No address is typed: the
+  console asks the platform for a ceremony, the same for everyone, keeps its
+  handle in its own cookie (`__Host-aule_admin_passkey`, 5 minutes,
+  `HttpOnly; Secure; SameSite=Strict`), the browser's own picker shows the
+  passkeys the person has for the console, and its answer goes to the platform,
+  built again (`src/passkeys.ts`). The platform checks it (`apps/platform`,
+  «Aule's team») and opens the same 12-hour session a code does. Every failure,
+  the platform's refusal, a missing or used ceremony and a platform that fails
+  alike, is `403 passkey_failed`, no sooner than 500 ms after the body was read.
+  A member creates passkeys on «Passkeys»; the code keeps working beside them.
+- **Removing someone from the team** takes the platform restarted with them
+  off its `AULE_ADMIN_EMAILS`, not only the console: a passkey sign-in has no
+  address for the console's list to check, so the platform's list decides.
 - **The cookie** is `__Host-aule_admin`: 32 random bytes, host-only,
   `Path=/; Max-Age=43200; HttpOnly; Secure; SameSite=Strict`. The platform token
   it stands for stays in the console's memory; it is never sent to the browser,
@@ -250,17 +270,20 @@ machine (the container's check and the watch) answers without it.
 compared with `Host`, which behind the Worker names the server),
 `Sec-Fetch-Site: same-origin` when the browser sends it, `Content-Type:
 application/json`, and a JSON object of at most 4 KB, or 16 KB where it carries
-a passkey the browser made or used (`/api/passkeys/create`).
+a passkey the browser made or used (`/api/passkeys/create`,
+`/api/signin/passkey/finish`).
 
 **The log** has one fixed event per line, with numbers and yes-or-no fields
 only: never an address, a code, a token, a cookie, a body, a request's address,
 a client's address or the platform's words. A passkey made or deleted is
-`passkey_created` or `passkey_deleted`, with nothing of it.
+`passkey_created` or `passkey_deleted`, and a sign-in by passkey is
+`signed_in` with `passkey=true`, with nothing of the passkey.
 
 ## Running it locally
 
 With a platform on `http://127.0.0.1:8091` that can send mail, and your address
-in its `AULE_ADMIN_EMAILS`:
+in its `AULE_ADMIN_EMAILS` (and, for passkeys, `AULE_ADMIN_PASSKEY_RP_ID=localhost`
+and `AULE_ADMIN_PASSKEY_ORIGIN=http://localhost:8092` in its settings):
 
 ```sh
 pnpm install --frozen-lockfile
@@ -295,4 +318,5 @@ its id checked, every section drawn as text, and its lists a page at a time
 (`test/family.test.mjs`); and «Passkeys», with a stand-in for the browser's
 WebAuthn: its list as text, «Crear passkey» from the name to the passkey sent
 back, what each failure says, a browser that cannot, and «Borrar»
-(`test/passkeys.test.mjs`).
+(`test/passkeys.test.mjs`); and the sign-in page's «Entrar con passkey»
+(`test/signin-page.test.mjs`).

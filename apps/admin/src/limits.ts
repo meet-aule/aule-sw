@@ -5,7 +5,8 @@
 // cannot lock the team out. Every counter applies to every address, the team's
 // or not, so reaching a limit tells nothing about an address. With the
 // platform's own limits (five console codes an hour per address, five tries a
-// code), a client gets at most 10 wrong codes a day for an address.
+// code), a client gets at most 10 wrong codes a day for an address. A passkey
+// sign-in carries no address, so only the counters per client apply to it.
 
 import { createHash } from "node:crypto";
 import { isIPv4, isIPv6 } from "node:net";
@@ -129,9 +130,14 @@ export type SignInLimits = {
   /** Wrong codes per address and client: 5 an hour and 10 a day. A success clears them. */
   wrongHour: Counter;
   wrongDay: Counter;
-  /** Wrong codes per client, whatever the address: 10 an hour and 20 a day. A success clears them. */
+  /**
+   * Wrong codes per client, whatever the address: 10 an hour and 20 a day.
+   * A failed passkey sign-in counts here too. A success clears them.
+   */
   clientWrongHour: Counter;
   clientWrongDay: Counter;
+  /** Passkey sign-ins started: 20 an hour per client. */
+  passkeyStarts: Counter;
 };
 
 export function signInLimits(now: () => number = Date.now, maxKeys = 10_000): SignInLimits {
@@ -143,5 +149,6 @@ export function signInLimits(now: () => number = Date.now, maxKeys = 10_000): Si
     wrongDay: new Counter(10, DAY, now, maxKeys),
     clientWrongHour: new Counter(10, HOUR, now, maxKeys),
     clientWrongDay: new Counter(20, DAY, now, maxKeys),
+    passkeyStarts: new Counter(20, HOUR, now, maxKeys),
   };
 }

@@ -415,3 +415,25 @@ p {
 .signin-form .message {
   margin: 0 0 8px;
 }
+
+/* «Entrar con passkey», above the address, as the sign-in's own button. */
+.signin-passkey {
+  display: grid;
+  gap: 12px;
+  margin: 24px 0 0;
+}
+
+.signin-passkey button {
+  justify-self: start;
+  min-height: 44px;
+  padding: 8px 20px;
+  border: 1.5px solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--ink);
+  color: var(--surface);
+  font-weight: 600;
+}
+
+.signin-passkey .or {
+  color: var(--muted);
+}

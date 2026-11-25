@@ -67,12 +67,12 @@ const OWN_SCRIPTS = new Set([
   "/signin.js",
 ]);
 
-const SIGN_IN = new Set(["/api/signin/start", "/api/signin/verify", "/api/signout"]);
+const SIGN_IN = new Set(["/api/signin/start", "/api/signin/verify", "/api/signin/passkey/start", "/api/signin/passkey/finish", "/api/signout"]);
 // A write is a small JSON object: an address and a code, or a grant's days and note.
 const MAX_BODY_BYTES = 4_096;
 // Or a passkey the browser made, which carries its id up to three times.
 const MAX_PASSKEY_BODY_BYTES = 16_384;
-const CARRY_A_PASSKEY = new Set(["/api/passkeys/create"]);
+const CARRY_A_PASSKEY = new Set(["/api/passkeys/create", "/api/signin/passkey/finish"]);
 const ROBOTS = "User-agent: *\nDisallow: /\n";
 
 /**
@@ -239,6 +239,8 @@ export function createConsole(settings: Settings, options: Options = {}): TeamCo
       const client = clientOf(request, settings.edgeSecret);
       if (path === "/api/signin/start") return signIn.start(response, body, client);
       if (path === "/api/signin/verify") return signIn.verify(request, response, body, client);
+      if (path === "/api/signin/passkey/start") return signIn.passkeyStart(response, client);
+      if (path === "/api/signin/passkey/finish") return signIn.passkeyFinish(request, response, body, client);
       return signIn.signOut(request, response);
     }
     if (READS.has(path) || FAMILY_READ.test(path)) {

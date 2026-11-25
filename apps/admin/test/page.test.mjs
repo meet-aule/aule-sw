@@ -241,3 +241,18 @@ test("only «Passkeys» makes a passkey, with the browser's own dialog and nothi
     assert.ok(scripts["passkeys.js"].includes(words), words);
   }
 });
+
+test("only the sign-in signs in with a passkey, with the browser's own picker, and says so in the panel's words", () => {
+  for (const [name, text] of Object.entries(scripts)) {
+    const gets = [...text.matchAll(/navigator\.credentials\.get\(/g)].length;
+    assert.equal(gets, name === "signin.js" ? 1 : 0, name);
+  }
+  assert.match(scripts["signin.js"], /navigator\.credentials\.get\(\{ publicKey: PublicKeyCredential\.parseRequestOptionsFromJSON\(publicKey\) \}\)/);
+  assert.match(scripts["signin.js"], /if \(finished\.status === 200\) return location\.replace\("\/"\);/);
+  // What it sends: the credential as the browser wrote it, and nothing else.
+  assert.match(scripts["signin.js"], /post\("\/api\/signin\/passkey\/finish", \{ credential: credential\.toJSON\(\) \}\)/);
+  assert.match(pages["signin.html"], /<div id="passkey-box" class="signin-passkey" hidden>\s*<button type="button" id="passkey">Entrar con passkey<\/button>/);
+  for (const words of ["No pudimos confirmar esa passkey. Entra con tu correo.", "No se completó la passkey. Inténtalo otra vez o entra con tu correo."]) {
+    assert.ok(scripts["signin.js"].includes(words), words);
+  }
+});

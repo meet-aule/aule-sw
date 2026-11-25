@@ -6,15 +6,21 @@ import { connect } from "node:net";
 import { after, test } from "node:test";
 
 import {
+  CEREMONY,
+  CEREMONY_COOKIE,
+  CLEARED_CEREMONY,
   CODE,
   EDGE_SECRET,
   FakePlatform,
+  GET_OPTIONS,
   HOUR,
   MINUTE,
   NO_ACCOUNT,
   PUBLIC_URL,
   STRANGER,
   TEAM,
+  USED,
+  USED_SENT,
   WRONG_CODE,
   clock,
   cookieFrom,
@@ -399,5 +405,204 @@ test("the log holds no address, no code, no token, no cookie and no client", asy
   for (const line of lines) {
     assert.match(line, /^aule-admin: [a-z_]+( [a-z_]+=(true|false|-?[\d.]+))*$/, line);
     for (const secret of SECRETS) assert.doesNotMatch(line, secret, line);
+  }
+});
+
+// «Entrar con passkey»: the platform's ceremony in a cookie of its own, the
+// browser's answer built again, the same refusal for everything, and the
+// client's own limits.
+const passkeyStart = (base: string, headers?: Record<string, string>) => write(base, "/api/signin/passkey/start", {}, { headers });
+const passkeyFinish = (base: string, cookie?: string, headers?: Record<string, string>, credential: unknown = USED) =>
+  write(base, "/api/signin/passkey/finish", { credential }, { ...(cookie ? { cookie } : {}), headers });
+/** The ceremony's cookie, as the browser sends it back. */
+const CEREMONY_SENT = `__Host-aule_admin_passkey=${CEREMONY}`;
+/** An answer the platform refuses: another signature. */
+const FORGED = { ...USED, response: { ...USED.response, signature: "MEUCIQDy" } };
+
+test("«Entrar con passkey» starts with the platform's ceremony in its own cookie, and only the options for the page", async () => {
+  const { base, close } = await startConsole(platform);
+  try {
+    platform.heard.length = 0;
+    const response = await passkeyStart(base);
+    assert.equal(response.status, 200);
+    assert.equal(await response.text(), JSON.stringify({ publicKey: GET_OPTIONS }));
+    assert.deepEqual(response.headers.getSetCookie(), [CEREMONY_COOKIE]);
+    assert.match(CEREMONY_COOKIE, /^__Host-aule_admin_passkey=[0-9a-f]{64}; Path=\/; Max-Age=300; HttpOnly; Secure; SameSite=Strict$/);
+    // The platform's route for the team's passkeys, with no token and nothing from the request.
+    assert.deepEqual(
+      platform.heard.map((heard) => [heard.method, heard.path, heard.headers.authorization, heard.body]),
+      [["POST", "/v1/auth/team/passkey/options", undefined, null]],
+    );
+    // An answer of another shape, or a failing platform, sets no cookie.
+    for (const answer of [
+      { status: 200, body: { ceremony: "x", options: { publicKey: GET_OPTIONS } } },
+      { status: 200, body: { ceremony: CEREMONY, options: {} } },
+      { status: 503, body: { error: { code: "unavailable", message: "passkeys are not set up here" } } },
+      { status: 404 },
+    ]) {
+      platform.once("POST /v1/auth/team/passkey/options", answer);
+      const failed = await passkeyStart(base);
+      assert.deepEqual([failed.status, await failed.json()], [502, { error: "platform" }], JSON.stringify(answer));
+      assert.deepEqual(failed.headers.getSetCookie(), []);
+    }
+  } finally {
+    close();
+  }
+});
+
+test("a passkey signs in: the platform hears its ceremony and the credential built again, and the session is the console's own", async () => {
+  const { base, close, server } = await startConsole(platform);
+  try {
+    platform.tokens.clear();
+    const first = cookieFrom(await verify(base, TEAM, CODE));
+    const [earlier] = platform.tokens;
+    platform.heard.length = 0;
+    const response = await passkeyFinish(base, `${first}; ${CEREMONY_SENT}`);
+    assert.equal(response.status, 200);
+    assert.equal(await response.text(), JSON.stringify({ signed_in: true }));
+    // The session's cookie first, then the ceremony's, cleared.
+    const cookies = response.headers.getSetCookie();
+    assert.equal(cookies.length, 2);
+    assert.match(cookies[0]!, /^__Host-aule_admin=[A-Za-z0-9_-]{43}; Path=\/; Max-Age=43200; HttpOnly; Secure; SameSite=Strict$/);
+    assert.equal(cookies[1], CLEARED_CEREMONY);
+    assert.deepEqual(
+      platform.heard.filter((heard) => heard.path !== "/v1/auth/signout").map((heard) => [heard.path, heard.headers.authorization, heard.body]),
+      [["/v1/auth/team/passkey/verify", undefined, { ceremony: CEREMONY, credential: USED_SENT }]],
+    );
+    // The browser's earlier session ends, and the new one reaches the data.
+    await server.sessions.settled();
+    assert.deepEqual(platform.signedOut(), [earlier]);
+    assert.equal(server.sessions.size, 1);
+    assert.equal((await fetch(`${base}/api/families`, { headers: { Cookie: cookieFrom(response) } })).status, 200);
+    const token = [...platform.tokens].at(-1)!;
+    assert.ok(!cookies.join().includes(token), "the platform's token stays in the console");
+  } finally {
+    close();
+  }
+});
+
+test("a passkey's answer with no ceremony, or one the console cannot read, never reaches the platform", async () => {
+  const { base, close } = await startConsole(platform, { verifyFloorMs: 200 });
+  try {
+    platform.heard.length = 0;
+    const began = performance.now();
+    const response = await passkeyFinish(base);
+    assert.deepEqual([response.status, await response.json()], [403, { error: "passkey_failed" }]);
+    assert.ok(performance.now() - began >= 190, "not before the floor");
+    assert.deepEqual(response.headers.getSetCookie(), [CLEARED_CEREMONY]);
+    const other = await passkeyFinish(base, `__Host-aule_admin_passkey=${CEREMONY.toUpperCase()}`);
+    assert.deepEqual([other.status, await other.json()], [403, { error: "passkey_failed" }], "a ceremony of another shape");
+    for (const credential of [
+      null,
+      "x",
+      {},
+      { ...USED, rawId: "AQIDBQ" },
+      { ...USED, type: "password" },
+      { ...USED, response: { ...USED.response, userHandle: undefined } },
+      { ...USED, response: { ...USED.response, userHandle: null } },
+      { ...USED, response: { ...USED.response, signature: "MEU+CIQ=" } },
+      { ...USED, response: { ...USED.response, signature: "a".repeat(1_025) } },
+    ]) {
+      const bad = await passkeyFinish(base, CEREMONY_SENT, undefined, credential);
+      assert.deepEqual([bad.status, await bad.json()], [400, { error: "bad_request" }], JSON.stringify(credential));
+      assert.deepEqual(bad.headers.getSetCookie(), [CLEARED_CEREMONY]);
+    }
+    assert.equal(platform.heard.length, 0);
+  } finally {
+    close();
+  }
+});
+
+test("a passkey the platform refuses, someone off its team and a platform that fails all get the same 403, never before the floor", async () => {
+  const { base, close, server } = await startConsole(platform, { verifyFloorMs: 200, platformTimeoutMs: 300 });
+  try {
+    const refused = await passkeyFinish(base, CEREMONY_SENT, undefined, FORGED);
+    platform.teamAtPlatform = false;
+    const offTeam = await passkeyFinish(base, CEREMONY_SENT);
+    platform.teamAtPlatform = true;
+    platform.once("POST /v1/auth/team/passkey/verify", { status: 500, body: { error: { code: "internal", message: "internal error" } } });
+    const failing = await passkeyFinish(base, CEREMONY_SENT);
+    platform.once("POST /v1/auth/team/passkey/verify", { status: 200, body: { token: "not a token" } });
+    const odd = await passkeyFinish(base, CEREMONY_SENT);
+    platform.once("POST /v1/auth/team/passkey/verify", { status: 200, body: { token: "a".repeat(64) }, waitMs: 1_000 });
+    const silent = await passkeyFinish(base, CEREMONY_SENT);
+    const otherCeremony = await passkeyFinish(base, `__Host-aule_admin_passkey=${"f".repeat(64)}`);
+    assert.equal(refused.status, 403);
+    for (const response of [offTeam, failing, odd, silent, otherCeremony]) {
+      assert.equal(response.status, refused.status);
+      assert.deepEqual(headersOf(response), headersOf(refused));
+      assert.equal(await response.text(), JSON.stringify({ error: "passkey_failed" }));
+    }
+    assert.equal(server.sessions.size, 0);
+    const began = performance.now();
+    assert.equal((await passkeyFinish(base, CEREMONY_SENT)).status, 200);
+    assert.ok(performance.now() - began >= 190, "a success waits for the floor too");
+  } finally {
+    platform.teamAtPlatform = true;
+    close();
+  }
+});
+
+test("20 passkey sign-ins started an hour per client, and failed ones counted with the client's wrong codes", async () => {
+  const time = clock();
+  const { base, close } = await behindWorker({ now: time.now });
+  try {
+    for (let request = 0; request < 20; request += 1) assert.equal(await statusOf(passkeyStart(base, A)), 200);
+    assert.deepEqual(await answer(await passkeyStart(base, A)), [429, { error: "too_many" }]);
+    assert.equal(await statusOf(passkeyStart(base, B)), 200, "another client's are its own");
+    time.pass(HOUR);
+    assert.equal(await statusOf(passkeyStart(base, A)), 200, "the window moves on");
+
+    // A client's ten failures an hour, by a code or a passkey.
+    for (let attempt = 0; attempt < 5; attempt += 1) assert.equal(await statusOf(verify(base, STRANGER, WRONG_CODE, undefined, A)), 403);
+    for (let attempt = 0; attempt < 5; attempt += 1) assert.equal(await statusOf(passkeyFinish(base, CEREMONY_SENT, A, FORGED)), 403);
+    assert.deepEqual(await answer(await passkeyFinish(base, CEREMONY_SENT, A)), [429, { error: "too_many" }], "even a good one");
+    assert.equal(await statusOf(verify(base, TEAM, CODE, undefined, A)), 429, "and a code");
+    assert.equal(await statusOf(passkeyFinish(base, CEREMONY_SENT, B)), 200, "a stranger's tries lock nobody else out");
+
+    // A success takes the client's tries back.
+    const C = fromWorker("203.0.113.30");
+    for (let attempt = 0; attempt < 9; attempt += 1) assert.equal(await statusOf(passkeyFinish(base, CEREMONY_SENT, C, FORGED)), 403);
+    assert.equal(await statusOf(passkeyFinish(base, CEREMONY_SENT, C)), 200);
+    for (let attempt = 0; attempt < 10; attempt += 1) assert.equal(await statusOf(passkeyFinish(base, CEREMONY_SENT, C, FORGED)), 403);
+    assert.equal(await statusOf(passkeyFinish(base, CEREMONY_SENT, C)), 429);
+  } finally {
+    close();
+  }
+});
+
+test("passkey sign-ins sent together count before the platform is asked: no more than 10 failures reach it", async () => {
+  const { base, close } = await behindWorker();
+  try {
+    platform.heard.length = 0;
+    const statuses = await Promise.all(Array.from({ length: 30 }, () => statusOf(passkeyFinish(base, CEREMONY_SENT, A, FORGED))));
+    assert.equal(statuses.filter((status) => status === 403).length, 10);
+    assert.equal(statuses.filter((status) => status === 429).length, 20);
+    assert.equal(platform.to("/v1/auth/team/passkey/verify").length, 10);
+  } finally {
+    close();
+  }
+});
+
+test("the log says a passkey signed in, and holds no ceremony, credential or name", async () => {
+  const lines = await logged(async () => {
+    const { base, close, server } = await behindWorker();
+    try {
+      await passkeyStart(base, A);
+      await passkeyFinish(base, CEREMONY_SENT, A, FORGED);
+      platform.once("POST /v1/auth/team/passkey/verify", { status: 500, body: { error: { code: "internal", message: `${TEAM} ${CEREMONY}` } } });
+      await passkeyFinish(base, CEREMONY_SENT, A);
+      await passkeyFinish(base, CEREMONY_SENT, A);
+      await server.sessions.settled();
+    } finally {
+      close();
+    }
+  });
+  for (const event of ["signed_in sessions=1 passkey=true", "platform_error status=500"]) {
+    assert.ok(lines.some((line) => line.includes(event)), event);
+  }
+  for (const line of lines) {
+    assert.match(line, /^aule-admin: [a-z_]+( [a-z_]+=(true|false|-?[\d.]+))*$/, line);
+    for (const secret of [...SECRETS, /AQIDBA/, /dXNlcmhhbmRsZQ/, /MEUCIQ/, /publicKey|ceremony/]) assert.doesNotMatch(line, secret, line);
   }
 });

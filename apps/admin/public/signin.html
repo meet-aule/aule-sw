@@ -18,6 +18,12 @@
         <p class="lead">Entra con tu correo del equipo de Aule. Te enviamos un código.</p>
       </header>
 
+      <!-- With a passkey: no address, the browser's own picker. Shown only where the browser can (signin.js). -->
+      <div id="passkey-box" class="signin-passkey" hidden>
+        <button type="button" id="passkey">Entrar con passkey</button>
+        <p class="or">O entra con un código por correo:</p>
+      </div>
+
       <!-- Step one: the address. Every address gets the same answer (signin.js). -->
       <form id="email-form" class="signin-form" novalidate>
         <label for="email">Correo</label>
