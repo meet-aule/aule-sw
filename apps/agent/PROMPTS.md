@@ -42,6 +42,12 @@ in order, are:
    hints, and the engine owns its exercise and grading.
 7. One final output-language rule, on creation and after every update.
 
+An answer the student gives to an open exercise is checked in code once their
+turn has passed every input gate. The check is not a block of the prompt: it
+joins the conversation after the student's message as the model's own
+`check_answer` call and its output, so the language rule stays the last
+instruction.
+
 The engine's [platform adapter](../platform/src/engine/mod.rs) separates its
 state/statement as JSON data from its English rules. Its fixed spoken lines are
 not model instructions and remain localized. Tone preferences do not gain
@@ -64,7 +70,10 @@ LiveKit Anthropic plugin and Anthropic SDK with an intercepted HTTP transport.
 Sixteen language/screen/checker/break combinations each make five requests:
 initial, guidance, late plan, replaced guidance plus engine restrictions, and
 cleared engine restrictions. It checks the complete outgoing system text, final
-language block, optional tools and preservation/removal of the right rules.
+language block, optional tools and preservation/removal of the right rules. In
+both languages it also checks that a check made in code reaches the provider as
+an assistant `tool_use` and a user `tool_result` after the student's message,
+with the system text unchanged.
 [test_prompt_prefix.py](tests/test_prompt_prefix.py) repeats those sessions with the
 changing blocks in either place and checks that the tools, the rules and the
 student's part are sent byte for byte the same while every update arrives with the
