@@ -687,6 +687,40 @@ async def test_the_talk_button_times_each_turn_from_its_end_turn(transcript, the
     ]
 
 
+async def test_a_press_during_a_line_that_may_not_be_cut_still_starts_the_hold():
+    # A gate's reply is said with allow_interruptions=False, and LiveKit's
+    # interrupt raises then. The press must still clear and start the hold:
+    # an error here made the page drop the child's whole turn.
+    happened = []
+
+    class Session:
+        user_state = "listening"
+
+        def interrupt(self):
+            happened.append("interrupt")
+            raise RuntimeError("This generation handle does not allow interruptions")
+
+        def clear_user_turn(self):
+            happened.append("clear")
+
+        async def commit_user_turn(self, *, transcript_timeout):
+            happened.append("commit")
+            return "ciento ochenta"
+
+    class Hearing:
+        words_in_flight = False
+
+        def hold_started(self):
+            happened.append("hold")
+
+    room = Room()
+    await worker.enable_push_to_talk(SimpleNamespace(room=room), Session(), None, Hearing())
+    assert await room.local_participant.rpcs["start_turn"](None) == "ok"
+    await room.local_participant.rpcs["end_turn"](None)
+
+    assert happened == ["interrupt", "clear", "hold", "commit"]
+
+
 async def test_a_tap_that_commits_no_words_times_nothing_said_after_it():
     clock = [0.0]
 
