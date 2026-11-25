@@ -1,7 +1,8 @@
 """The Workers' settings, read as wrangler reads them: no line per request in
 Cloudflare's logs, and no traces. LiveKit's address carries a room token, and a
-sign-in's way back carries its code. And the code each one deploys takes the
-analytics cookies out the same way."""
+sign-in's way back carries its code. The code each one deploys takes the
+analytics cookies out the same way, and the team's console is reached only at
+its own address."""
 
 import json
 import unittest
@@ -53,7 +54,15 @@ class EdgeLogsTests(unittest.TestCase):
 
     def test_no_worker_logs_a_line_per_request_or_traces_one(self) -> None:
         names = sorted(path.name for path in HERE.glob("wrangler.*.jsonc"))
-        self.assertEqual(names, ["wrangler.livekit.jsonc", "wrangler.ota.jsonc", "wrangler.playground.jsonc"])
+        self.assertEqual(
+            names,
+            [
+                "wrangler.admin.jsonc",
+                "wrangler.livekit.jsonc",
+                "wrangler.ota.jsonc",
+                "wrangler.playground.jsonc",
+            ],
+        )
         for name in names:
             with self.subTest(name):
                 observability = config(name)["observability"]
@@ -79,6 +88,33 @@ class EdgeCookiesTests(unittest.TestCase):
                 functions.add(source[start : source.index("\n}\n", start)])
                 self.assertGreaterEqual(source.count("stripAnalyticsCookies("), 2)
         self.assertEqual(len(functions), 1)
+
+
+class AdminRoutingTests(unittest.TestCase):
+    def test_the_console_has_its_own_address_and_no_other(self) -> None:
+        admin = config("wrangler.admin.jsonc")
+        self.assertEqual(admin["main"], "src/admin.js")
+        # No workers.dev name and no preview address: nothing else reaches it.
+        self.assertIs(admin["workers_dev"], False)
+        self.assertIs(admin["preview_urls"], False)
+        self.assertEqual(
+            admin["routes"], [{"pattern": "admin.meetaule.com", "custom_domain": True}]
+        )
+
+    def test_the_console_worker_forwards_every_address_and_follows_no_redirect(self) -> None:
+        source = (HERE / "src" / "admin.js").read_text()
+        self.assertNotIn("Response.redirect", source)
+        self.assertIn('redirect: "manual"', source)
+        self.assertIn("env.ORIGIN_URL", source)
+
+    def test_the_console_worker_proves_itself_and_names_the_client_only_over_https(self) -> None:
+        # apps/playground/test/edge.test.mjs runs these; this keeps them in the
+        # file wrangler deploys.
+        source = (HERE / "src" / "admin.js").read_text()
+        self.assertIn('url.protocol !== "https:"', source)
+        self.assertIn('headers.set("X-Edge-Secret", env.EDGE_SECRET)', source)
+        self.assertIn('request.headers.get("cf-connecting-ip")', source)
+        self.assertIn('headers.delete("X-Client-IP")', source)
 
 
 class OtaRoutingTests(unittest.TestCase):
