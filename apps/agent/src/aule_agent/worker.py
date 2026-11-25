@@ -32,7 +32,7 @@ from .camera import Camera
 from .config import LANGUAGES, ConfigError, Settings, build_commit
 from .logs import keep_personal_fields_out
 from .observability import Observability
-from .pace import Pace
+from .pace import Pace, says_tired
 from .platform import Platform, platform_session
 from .providers import build_llm, build_stt, build_tts
 from .reconnect import ReconnectGrace
@@ -536,8 +536,10 @@ async def entrypoint(ctx: JobContext) -> None:
 
     @session.on("conversation_item_added")
     def back_from_a_break(event) -> None:
+        # Only a turn the gates let through is added. Its words are read for
+        # tiredness, which makes the next break a calm one, and not kept.
         if getattr(event.item, "type", None) == "message" and event.item.role == "user":
-            pace.student_spoke()
+            pace.student_spoke(tired=says_tired(event.item.text_content or ""))
 
     if platform:
 

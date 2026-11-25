@@ -537,9 +537,11 @@ async def run_session(
     *,
     mode: str = "push-to-talk",
     gap: tuple[float, float] = (0.3, 0.8),
+    until: Callable[[], bool] | None = None,
 ) -> SessionRun:
     """One whole session through the worker's entrypoint, then its end. The
-    child waits ``gap`` seconds (at random within it) after each answer."""
+    child waits ``gap`` seconds (at random within it) after each answer, and
+    the session ends once ``until`` holds, or ten seconds after the last turn."""
     token = CURRENT_WORLD.set(world)
     job = Job(world)
     results: list[TurnResult] = []
@@ -554,6 +556,8 @@ async def run_session(
         for turn in turns:
             results.append(await take(world, turn))
             await asyncio.sleep(world.rng.uniform(*gap))
+        if until is not None:
+            await _until(until, timeout=10.0)
     finally:
         for cleanup in job.cleanups:
             await cleanup()

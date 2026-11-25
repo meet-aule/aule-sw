@@ -864,15 +864,17 @@ VERDICTS = {
         ],
     ),
     # Changed on purpose: the lines said when the tutor's model fails
-    # ("hold_on", "tutor_unavailable"). No gate's verdict changed.
+    # ("hold_on", "tutor_unavailable") and the calm breaks for a tired student
+    # (RESTS, pinned as BREAKS is). No gate's verdict changed.
     "replies": (
-        "77c1d4fa9ca369058d8540bd69e4178df7dd98f138d5a87c90c62f399580deb4",
+        "46642b931116c868d742a2537d910e000c93491d37c353c0f9750a1a2037c1f0",
         lambda: [
             replies.REPLIES,
             replies.ADULT_HELP_SEQUENCE,
             sorted(replies.ANSWERABLE),
             replies.BREAKS,
             replies.MEANWHILE,
+            replies.RESTS,
         ],
     ),
     "safety": (

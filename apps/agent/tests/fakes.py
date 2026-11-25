@@ -1305,6 +1305,11 @@ class FakePlatform:
         # input read from the cache today about what production measured.
         self.guidance_every = 2
         self.late_plan_at = 3
+        # Words of a child's turn after which a break is due, as the platform
+        # finds after its supervisor read tiredness or a block of work ended:
+        # it offers one with every report until it hears that one was taken.
+        self.break_after: str | None = None
+        self._break_due = False
 
     async def send(
         self, method: str, path: str, body: dict[str, Any] | None, timeout: float
@@ -1327,6 +1332,13 @@ class FakePlatform:
             world.reported_turns.extend(body["turns"])
             self._reports += 1
             answer = {}
+            if self.break_after is not None and any(
+                turn["role"] == "child" and self.break_after in turn["content"]
+                for turn in body["turns"]
+            ):
+                self._break_due = True
+            if self._break_due and not body.get("breaks_taken"):
+                answer["pause"] = "offer"
             if self._reports == self.late_plan_at:
                 answer["plan"] = "Plan tardío: practicar con barras de fracciones."
             if self.guidance_every and self._reports % self.guidance_every == 0:

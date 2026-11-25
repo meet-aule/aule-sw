@@ -172,6 +172,22 @@ REPLIES: dict[str, dict[str, str]] = {
         "en": "Sorry, something isn't working for me and I can't carry on right now. Let's try "
         "again later. See you soon!",
     },
+    # A calm break, for a student who said they are tired: asked, never
+    # ordered, so they may say no and carry on. Nothing says whether the
+    # student is a boy or a girl.
+    "rest_water": {
+        "es": "¿Te parece si descansamos un ratito? Si quieres, toma un poco de agua y respira "
+        "despacio, sin apuro. Cuando quieras seguir, me avisas.",
+        "en": "How about a little rest? If you like, have some water and breathe slowly, no "
+        "rush. Tell me when you want to carry on.",
+    },
+    "rest_stretch": {
+        "es": "¿Quieres hacer una pausa tranquila? Si te provoca, estira los brazos despacio "
+        "hacia arriba, como un gato que despierta, y respira hondo. Cuando quieras seguir, me "
+        "avisas.",
+        "en": "Would you like a quiet break? If you feel like it, stretch your arms up slowly, "
+        "like a cat waking up, and take a deep breath. Tell me when you want to carry on.",
+    },
 }
 
 # Consecutive physical hazards get the full reply first and then alternate two
@@ -185,8 +201,12 @@ ADULT_HELP_SEQUENCE = ("adult_help", "adult_help_again", "adult_help_wait")
 ANSWERABLE = frozenset({*ADULT_HELP_SEQUENCE, "clarify"})
 
 # One activity per break, in turn: one that wakes up, then one that calms. They
-# are the four the session engine proposes, shortened to be heard.
+# are the four the session engine proposes, shortened to be heard. A student
+# who said they are tired gets a calm one instead (``RESTS``).
 BREAKS = ("break_stars", "break_balloon", "break_mirror", "break_cat")
+
+# The calm breaks, in turn, for a student who said they are tired.
+RESTS = ("rest_water", "rest_stretch")
 
 # What is said while a tool works, in turn.
 MEANWHILE = ("meanwhile_see", "meanwhile_look", "meanwhile_moment")
