@@ -104,9 +104,9 @@ test("the page's own modules import each other without a cycle, as the plan draw
   assert.deepEqual(graph["first-steps.js"], ["session-messages.js"]);
   // The home's lines about a student's sessions are pure words and arithmetic.
   assert.deepEqual(graph["summaries.js"], []);
-  for (const name of ["signin.js", "onboarding.js"]) {
-    assert.deepEqual([...graph[name]].sort(), ["screens.js", "steps.js", "students.js"], name);
-  }
+  assert.deepEqual([...graph["signin.js"]].sort(), ["screens.js", "steps.js", "students.js"]);
+  // The name screen hands the browser to the child as the home does (home.js handOff).
+  assert.deepEqual([...graph["onboarding.js"]].sort(), ["home.js", "screens.js", "steps.js", "students.js"]);
   assert.deepEqual([...graph["home.js"]].sort(), ["first-steps.js", "screens.js", "steps.js", "students.js", "summaries.js"]);
   assert.deepEqual([...graph["app.js"]].sort(), ["first-steps.js", "home.js", "screens.js", "session-messages.js", "visuals.js"]);
   // And none, followed through, comes back to itself.
@@ -664,8 +664,10 @@ test("a02 hands the browser to the child: first-steps.js's words in the child's 
     assert.ok(shown.includes(`writeWords($("${id}"), "${key}", language`), id);
   }
   assert.match(bodyOf(home, "writeWords"), /element\.lang = language;/);
-  // P12's button opens it; «Sí, soy yo» is a first run, «No soy yo» opens Configurar.
-  assert.match(blocks(home, '$("done-start").addEventListener("click"')[0], /go\("a02"\)/);
+  // The name screen's «Empezar su primera sesión» opens it, in the place of the steps that made the
+  // child; «Sí, soy yo» is a first run, «No soy yo» opens Configurar.
+  assert.doesNotMatch(home + html, /done-start/);
+  assert.match(bodyOf(home, "handOff"), /handoff = id;\s*if \(!handoffStudent\(\)\) return false;\s*go\("a02", \{ replace: true, fresh: true \}\);/);
   assert.match(blocks(home, '$("a02-yes").addEventListener("click"')[0], /confirmed = true;\s*study\(student\.id\);/);
   assert.match(blocks(home, '$("a02-no").addEventListener("click"')[0], /edit\(student, true\)/);
   // First run is page memory: what a02 confirmed, or a trial that has not started; the home and signing out forget it.
@@ -780,6 +782,91 @@ test("A16's second line shows on a first run, now that the home says what each s
   assert.match(line, /class="session-intro"/);
   assert.doesNotMatch(line, /role=|aria-live/, "not live: the line above is");
   assert.ok(html.indexOf('id="session-intro"') < html.indexOf('id="session-parent"'));
+});
+
+test("consent leads to the name, which starts the first session: P12 is folded in, and the grade is the one thing asked with it (D34)", () => {
+  const onboarding = scripts["onboarding.js"];
+  // «Autorizo» goes to the name; the interview's answers are no longer held from P04.
+  const [consent] = blocks(onboarding, '$("consent-form").addEventListener("submit"');
+  assert.match(consent, /held = \{ remembers: \$\("keep-memory"\)\.checked, keepsTranscripts: \$\("keep-transcripts"\)\.checked \};\s*go\("p10-name"\);/);
+  assert.doesNotMatch(html, /data-screen="p12"|id="p12-/);
+  // Two ways out of the name: the first session (handed to the child) only from «Empezar su
+  // primera sesión», and only while the plan has a session; else the home says the child is made.
+  const name = html.slice(html.indexOf('data-screen="p10-name"'), html.indexOf('data-screen="p13"'));
+  assert.match(name, /<button type="submit" class="link" id="child-later">Empezar más tarde<\/button>\s*<button type="submit" class="primary" id="child-start">Empezar su primera sesión<\/button>/);
+  const [submit] = blocks(onboarding, '$("child-name-form").addEventListener("submit"');
+  assert.match(submit, /const starting = event\.submitter\?\.id === "child-start";/);
+  assert.match(submit, /if \(starting && planOpen && handOff\(made\.id\)\) return;\s*go\("home", \{ replace: true, fresh: true, message: `Listo\. Aule ya conoce a \$\{made\.name\}\.`, tone: "info" \}\);/);
+  assert.equal((onboarding.match(/\bhandOff\(/g) ?? []).length, 1, "and nowhere else");
+  // One press, one child: the buttons stay disabled once the child is made, until the screen shows again.
+  assert.match(submit, /\} catch \(error\) \{\s*for \(const id of \["child-start", "child-later"\]\) \$\(id\)\.disabled = false;/);
+  assert.doesNotMatch(submit, /finally/);
+  assert.match(blocks(onboarding, 'onShow("p10-name"')[0], /for \(const id of \["child-start", "child-later"\]\) \$\(id\)\.disabled = false;/);
+  // Enter in the name is the primary button, not the link that comes first in the form.
+  const [enter] = blocks(onboarding, '$("child-name").addEventListener("keydown"');
+  assert.match(enter, /if \(!\$\("child-start"\)\.disabled\) \$\("child-name-form"\)\.requestSubmit\(\$\("child-start"\)\);/);
+  // With no session left: «Guardar» alone, and the plan's line.
+  const shown = blocks(onboarding, 'onShow("p10-name"')[0];
+  assert.match(shown, /\$\("child-start"\)\.textContent = planOpen \? "Empezar su primera sesión" : "Guardar";/);
+  assert.match(shown, /\$\("child-later"\)\.hidden = !planOpen;/);
+  assert.match(shown, /\$\("child-plan"\)\.hidden = planOpen;/);
+  // The grade (A2): optional, the interview's grades and «Prefiero decirlo después», none chosen at
+  // first and none for the next child; sent as the interview sends it, and nothing else of the interview.
+  assert.match(name, /<select id="child-grade">\s*<option value="" disabled selected>Elige su grado<\/option>\s*<\/select>/);
+  assert.match(name, /¿En qué grado está\? <span class="optional">opcional<\/span>/);
+  assert.match(onboarding, /\.\.\.Object\.entries\(GRADES\)\.map\(\(\[value, text\]\) => new Option\(text, value\)\),\s*new Option\("Prefiero decirlo después", "later"\),/);
+  assert.match(bodyOf(onboarding, "drop"), /\$\("child-grade"\)\.selectedIndex = 0;/);
+  assert.match(submit, /grade: Object\.hasOwn\(GRADES, grade\) \? grade : null,/);
+  assert.match(submit, /interests: \[\],\s*tone: "calido",\s*note: "",/);
+  // Asked only after consent: the name screen needs it.
+  assert.ok(html.indexOf('data-screen="p04"') < html.indexOf('data-screen="p10-name"'));
+});
+
+test("a new family writes its name on P02, which is sent with the code; a family coming back is not asked", () => {
+  const field = html.match(/<div class="field" id="email-name-field"[^>]*>/)?.[0] ?? "";
+  assert.match(field, /\bhidden\b/, "hidden in the markup");
+  assert.match(html, /<input id="email-name-new" type="text" autocomplete="name" maxlength="120"/);
+  assert.match(html, /<p class="field-error" id="email-name-new-error" role="alert" hidden>Escribe tu nombre para crear tu cuenta\.<\/p>/);
+  const signin = scripts["signin.js"];
+  assert.match(blocks(signin, 'onShow("p02"')[0], /\$\("email-name-field"\)\.hidden = flowNow\(\) !== "new";/);
+  assert.match(scripts["screens.js"], /export function flowNow\(\) \{\s*return flow;\s*\}/);
+  const verify = bodyOf(signin, "verify");
+  assert.match(verify, /const named = name \|\| newName;/);
+  assert.match(verify, /\.\.\.\(named \? \{ name: named \} : \{\}\)/);
+  // In page memory only, and forgotten with the address.
+  assert.match(bodyOf(signin, "forgetAddress"), /newName = "";/);
+  assert.match(bodyOf(signin, "forgetAddress"), /\$\("email-name-new"\)\.value = "";/);
+  // p03-name stays for a family coming back with a new address.
+  assert.match(verify, /if \(failure === "name_needed"\) return go\("p03-name"\);/);
+});
+
+test("the interview is offered on the home after the first session, and its save keeps the consents as they were", () => {
+  const home = scripts["home.js"];
+  const row = bodyOf(home, "row");
+  assert.match(row, /if \(!student\.interests\?\.length && !student\.note\) \{/);
+  assert.match(row, /interview\.dataset\.interview = student\.id;/);
+  assert.match(row, /interview\.textContent = `Cuéntale a Aule sobre \$\{student\.name\}`;/);
+  // A whole target, 44 px tall, as every paper control is (D21).
+  assert.match(css.match(/\n\.student-interview \{([^}]*)\}/)?.[1] ?? "", /min-height: 44px;/);
+  const onboarding = scripts["onboarding.js"];
+  assert.match(onboarding, /need\("interview", \(\) => interviewing !== null\);/);
+  assert.match(onboarding, /\$\("interview-later"\)\.addEventListener\("click", \(\) => go\("home"\)\);/);
+  assert.match(onboarding, /\$\("interview-start"\)\.addEventListener\("click", \(\) => go\("p06-grade"\)\);/);
+  // The grade the family gave shows chosen, and skipping a question keeps its answer.
+  assert.match(blocks(onboarding, 'onShow("p06-grade"')[0], /button\.dataset\.grade === interviewing\?\.grade/);
+  assert.match(onboarding, /\$\("grade-skip"\)\.addEventListener\("click", \(\) => go\("p06"\)\);/);
+  // Read first, then saved with the consents and the relationship as read: profileFrom reads a missing flag as «no».
+  const save = bodyOf(onboarding, "saveInterview");
+  assert.ok(save.indexOf('call("api/student/read"') < save.indexOf('call("api/student/save"'));
+  for (const kept of ["remembers: student.remembers,", "keeps_transcripts: student.keepsTranscripts,", "relationship: student.relationship,", "language: student.language,", "tone: student.tone,"]) {
+    assert.ok(save.includes(kept), kept);
+  }
+  assert.match(save, /\.\.\.\(student\.subjects \? \{ subjects: student\.subjects \} : \{\}\)/);
+  assert.match(save, /return say\("No se pudo guardar\. Inténtalo otra vez\."\);/);
+  assert.match(save, /go\("home", \{ message: `Gracias\. Aule ya sabe más de \$\{name\}\.`, tone: "info" \}\);/);
+  // The interview's grade comes first, as its first question.
+  const order = ["p05", "p06-grade", "p06", "p07"].map((id) => html.indexOf(`data-screen="${id}"`));
+  assert.deepEqual([...order].sort((a, b) => a - b), order);
 });
 
 test("each new state of the first steps names where it comes from in the Figma, or says it is web-only", () => {

@@ -24,7 +24,7 @@ let detailsOf = "";
 // asking again what a session that already has its purpose is for. Starting
 // another from there has no purpose yet, so A04 asks it then (purposeAsked).
 let resumable = null;
-// The student P12 hands the browser over to (a02), by id; null otherwise.
+// The student the name screen hands the browser over to (a02), by id; null otherwise.
 let handoff = null;
 // Whether a child said «Sí, soy yo» on a02 in this visit. Page memory only.
 let confirmed = false;
@@ -119,6 +119,16 @@ function row(student, open) {
   summaries.addEventListener("click", () => edit(student, false, "past"));
   item.dataset.student = student.id;
   item.append(start, configure, sessions, summaries);
+  // The interview the onboarding no longer asks (D34), while the family has told
+  // Aule nothing of what the child likes or needs; onboarding.js runs it.
+  if (!student.interests?.length && !student.note) {
+    const interview = document.createElement("button");
+    interview.type = "button";
+    interview.className = "link student-interview";
+    interview.dataset.interview = student.id;
+    interview.textContent = `Cuéntale a Aule sobre ${student.name}`;
+    item.append(interview);
+  }
   return item;
 }
 
@@ -247,14 +257,21 @@ function study(id) {
 
 // --- a02 ¿Eres tú? (A02 410:629, adapted): the hand-off --------------------------------
 //
-// P12's «Empezar su primera sesión» hands the parent's browser over to the
-// child just made. On the device the child confirms the profile on A02 while
-// the parent's P11 waits; on the web both are here, so one screen does it.
+// The name screen's «Empezar su primera sesión» hands the parent's browser over
+// to the child just made. On the device the child confirms the profile on A02
+// while the parent's P11 waits; on the web both are here, so one screen does it.
 
-$("done-start").addEventListener("click", () => {
-  handoff = $("done-start").dataset.student ?? null;
-  if (handoffStudent()) go("a02");
-});
+/**
+ * Hands the browser over to the student `id` (a02), in the place of the steps
+ * that made them, so Back does not make them again; false when the family's
+ * account does not have them (yet), and nothing happens.
+ */
+export function handOff(id) {
+  handoff = id;
+  if (!handoffStudent()) return false;
+  go("a02", { replace: true, fresh: true });
+  return true;
+}
 
 /** first-steps.js's words for a student, marked with the language they are in (WCAG 3.1.2). */
 function writeWords(element, key, language, values) {
