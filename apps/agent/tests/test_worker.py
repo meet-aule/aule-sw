@@ -136,7 +136,7 @@ def with_gates(monkeypatch, *, moderation=None, physical=None):
     monkeypatch.setattr(
         worker,
         "build_gates",
-        lambda settings, report=None: Gates(
+        lambda settings, report=None, observer=None: Gates(
             moderation=moderation, physical_safety=physical, report=report
         ),
     )
@@ -324,7 +324,7 @@ async def test_the_platforms_age_reaches_the_physical_safety_gate_and_the_name_n
         moderation=Moderator("sk-synthetic", client=client),
         physical_safety=PhysicalSafetyGuard("ts-synthetic", send=send, list_models=list_models),
     )
-    monkeypatch.setattr(worker, "build_gates", lambda settings, report=None: gates)
+    monkeypatch.setattr(worker, "build_gates", lambda settings, report=None, observer=None: gates)
     start = {
         "instructions": "The student's name is Liam.",
         "student_name": "Liam",
@@ -555,7 +555,7 @@ async def test_an_admitted_session_starts_with_no_way_around_the_gates(monkeypat
     for name, value in ENV.items():
         monkeypatch.setenv(name, value)
 
-    async def admit(ctx, settings, who, language, platform):
+    async def admit(ctx, settings, who, language, platform, observer=None):
         assert (who, language, platform) == (audience, "es", None)
         return Gates(), ""
 

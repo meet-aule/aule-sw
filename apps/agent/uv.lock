@@ -191,6 +191,39 @@ wheels = [
 ]
 
 [[package]]
+name = "aule-agent"
+version = "0.0.1"
+source = { editable = "." }
+dependencies = [
+    { name = "aiohttp" },
+    { name = "jsonschema", extra = ["format"] },
+    { name = "livekit-agents", extra = ["anthropic", "assemblyai", "cartesia", "deepgram", "elevenlabs", "inworld", "openai", "silero"] },
+    { name = "posthog" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "ruff" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "aiohttp", specifier = ">=3.10" },
+    { name = "jsonschema", extras = ["format"], specifier = ">=4.23" },
+    { name = "livekit-agents", extras = ["anthropic", "assemblyai", "cartesia", "deepgram", "elevenlabs", "inworld", "openai", "silero"], specifier = "~=1.8.12" },
+    { name = "posthog", specifier = "==8.0.1" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=8.3" },
+    { name = "pytest-asyncio", specifier = ">=0.24" },
+    { name = "ruff", specifier = ">=0.8" },
+]
+
+[[package]]
 name = "av"
 version = "19.0.2"
 source = { registry = "https://pypi.org/simple" }
@@ -214,37 +247,6 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/7e/3a/183b4f96a604a8544180e256d16f9a6c0534d6b7db22dc22fb0842aa96fc/av-19.0.2-cp314-cp314t-musllinux_1_2_x86_64.whl", hash = "sha256:8596fad2017d380708de35ddf9d34f808b8488c912cdc3f361691d866d9dc32d", size = 39475989, upload-time = "2026-10-21T03:45:20.658Z" },
     { url = "https://files.pythonhosted.org/packages/22/6e/84b65c58171a6d75a5d129a9cf856ca730843f8c476f08033e7f9d4a1af6/av-19.0.2-cp314-cp314t-win_amd64.whl", hash = "sha256:9db27c2248112a8eed3edd3ca83cf4405f52a402cda2eb1956035e646e6b99c6", size = 29064804, upload-time = "2026-10-21T03:45:24.24Z" },
     { url = "https://files.pythonhosted.org/packages/60/4e/d96cc9fff457069c52754f63151a0340cb4886330d58e09061f203696b60/av-19.0.2-cp314-cp314t-win_arm64.whl", hash = "sha256:0e425d631510ca21e47c58f3837a9dceae0453c24e926408c8a12b95239cbbd6", size = 21916888, upload-time = "2026-10-21T03:45:27.298Z" },
-]
-
-[[package]]
-name = "aule-agent"
-version = "0.0.1"
-source = { editable = "." }
-dependencies = [
-    { name = "aiohttp" },
-    { name = "jsonschema", extra = ["format"] },
-    { name = "livekit-agents", extra = ["anthropic", "assemblyai", "cartesia", "deepgram", "elevenlabs", "inworld", "openai", "silero"] },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "pytest" },
-    { name = "pytest-asyncio" },
-    { name = "ruff" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "aiohttp", specifier = ">=3.10" },
-    { name = "jsonschema", extras = ["format"], specifier = ">=4.23" },
-    { name = "livekit-agents", extras = ["anthropic", "assemblyai", "cartesia", "deepgram", "elevenlabs", "inworld", "openai", "silero"], specifier = "~=1.8.12" },
-]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "pytest", specifier = ">=8.3" },
-    { name = "pytest-asyncio", specifier = ">=0.24" },
-    { name = "ruff", specifier = ">=0.8" },
 ]
 
 [[package]]
@@ -404,6 +406,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/d8/53/6f443c9a4a8358a93a6792e2acffb9d9d5cb0a5cfd8802644b7b1c9a02e4/colorama-0.4.6.tar.gz", hash = "sha256:08695f5cb7ed6e0531a20572697297273c47b8cae5a63ffc6d6ed5c201be6e44", size = 27697, upload-time = "2022-10-25T02:36:22.414Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/d1/d6/3965ed04c63042e047cb6a3e6ed1a63a35087b6a609aa3a15ed8ac56c221/colorama-0.4.6-py2.py3-none-any.whl", hash = "sha256:4f1d9991f5acc0ca119f9d443620b77f9d6b33703e51011c16baf57afb285fc6", size = 25335, upload-time = "2022-10-25T02:36:20.889Z" },
+]
+
+[[package]]
+name = "distro"
+version = "1.9.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/fc/f8/98eea607f65de6527f8a2e8885fc8015d3e6f5775df186e443e0964a11c3/distro-1.9.0.tar.gz", hash = "sha256:2fa77c6fd8940f116ee1d6b94a2f90b13b5ea8d019b98bc8bafdcabcdd9bdbed", size = 60722, upload-time = "2023-12-24T09:54:32.31Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/12/b3/231ffd4ab1fc9d679809f356cebee130ac7daa00d6d6f3206dd4fd137e9e/distro-1.9.0-py3-none-any.whl", hash = "sha256:7bffd925d65168f85027d8da9af6bddab658135b840670a223589bc0c8ef02b2", size = 20277, upload-time = "2023-12-24T09:54:30.421Z" },
 ]
 
 [[package]]
@@ -1397,6 +1408,20 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/bf/db/7fc19e6f2dc92a966727031389fc2e08b558f0f25eb7403c1119ad4713cd/pluggy-1.7.0.tar.gz", hash = "sha256:d1eaa46ebb595891b860ab086b4d09c8588af65ebd4361b8e8f4bb8920b90ba8", size = 123304, upload-time = "2026-10-15T09:50:58.343Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/40/9e/2b38731e0fc536806f16490e1a12d7f0dc2a1235aa8cc07bcc75416a7daa/pluggy-1.7.0-py3-none-any.whl", hash = "sha256:7dd7b0d8832ba3cb632c306926ded123429211b83641b35dc5c41ad2d34f9bec", size = 27082, upload-time = "2026-10-15T09:50:56.808Z" },
+]
+
+[[package]]
+name = "posthog"
+version = "8.0.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "distro" },
+    { name = "requests" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/54/f3/fba1fd9fa7a609dcf55593945373a1c883270883ed9c15f98adf0ad11702/posthog-8.0.1.tar.gz", hash = "sha256:66d8b58992900109958495c31500125b98c46c1809bc451e3baeec89e02e3dcb", size = 1038752, upload-time = "2026-11-17T20:09:11.838Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/67/3a/ca1e4944dc854e3f526bd77a6209433cd01ad4e6ef5633115b857ecff46a/posthog-8.0.1-py3-none-any.whl", hash = "sha256:7672cf055bafc87cf73d457a2fab15cef4b36ff0a1030812fe7ae0c9c536f429", size = 1191005, upload-time = "2026-11-17T20:09:09.662Z" },
 ]
 
 [[package]]

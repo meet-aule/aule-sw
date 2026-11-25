@@ -101,6 +101,109 @@ Speech-to-text loses the tune of what was said, so `prosody.measure` takes it fr
 
 ## Settings
 
+### AI observability
+
+Off unless `POSTHOG_API_KEY`, a PostHog project token (`phc_…`), and
+`POSTHOG_HOST`, PostHog's EU ingestion (`https://eu.i.posthog.com`, where Aule's
+project is), are both set: nothing is sent until then. A value that cannot be
+used, such as another host or a personal (`phx_`) key, turns it off with one line
+in the worker's log at start, which names the variable and never its value; the
+worker runs as before. No token is built into the image or the browser.
+
+Each request of the tutor's model (LiveKit's metrics), and each reading of one
+of the tutor's replies by the safety second reader, is a PostHog
+`$ai_generation` event with the model's name, token counts, latency and time to
+the first token, whether it failed (`$ai_error` is only ever `provider_error`)
+or was cut off (`aule_cancelled`), the component (`aule_component`: `tutor` or
+`safety_review`) and, for the tutor, which request it was (`aule_request`:
+`warm_up`, `early` for one asked while the input gates judged the turn, or
+`turn`). LiveKit's prompt counts include the cache; they are sent in Anthropic's
+exclusive convention so that PostHog can price them. A request cut off before
+its end reports no usage and has no token counts at all: its cost is unknown,
+not zero. A request LiveKit retries is not a failed generation, and a failed one
+names the model. A reading stopped because its turn ended is a cancellation, not
+an error. Costs are estimates per request, not an invoice.
+Each push-to-talk turn the session times stage by stage (see above) and the
+tutor's model answered is also one `$ai_trace` event when the tutor's first
+audio starts, with what each stage took in whole milliseconds (`aule_commit_ms`
+to `aule_first_audio_ms`, the latter also as `$ai_latency`). A turn the model
+did not answer, such as one the input gates stop, sends none: its stages, with
+no model in them, would say so. Whether the turn's answer was checked is left
+for later.
+
+The events are pseudonymous. Each turn of the child (a push-to-talk turn, a
+typed message or work shown to the camera) draws a random trace id
+(`$ai_trace_id`), kept nowhere else, which each step of its reply, the second
+reader's reading of that reply and the turn's `$ai_trace` share; a call outside
+a turn, such as the warm-up, gets one of its own. There is no session id and no
+person: one fixed `distinct_id`, no person profiles. No names, ages, account,
+room or platform ids, prompts, replies, tool arguments, images or error messages
+are sent. Each event still has its time, which Aule's own records of a session
+have too, and a session's requests grow by what each turn adds to the
+conversation, so their times and token counts could put a session's turns back
+in order. PostHog is therefore declared as a provider: its DPA, the privacy
+policy and the international transfer to the EU in the ANPD registration.
+
+No event carries what was said, but which events a turn has, and when, can
+still tell something about it, and the declaration says so:
+
+- A turn the input gates stop asks the tutor's model nothing, so it sends
+  nothing, not even an `$ai_trace`, like a turn the session engine answers or
+  a goodbye: between the events of the turns around it, it is a gap, as a
+  pause would be. With `AULE_EARLY_REPLY` (off) it sends the request asked
+  early, which the stop usually cuts off (`aule_cancelled`) and which no
+  `$ai_trace` follows.
+- The second reader's readings of what the child said are not sent: that one
+  happened, and how it went, would tell that moderation was unsure of a
+  child's words, and when. Their time is still part of the turn's
+  `aule_gates_in_ms`, so a slow input gate can hint at one.
+- A reading of one of the tutor's replies is sent with its turn: it tells that
+  moderation was unsure of that reply, and its counts, its time and whether it
+  failed can tell whether the gate then stopped the reply. A failed reading
+  always stops it. Without a reading, a reply the output gate stops sends what
+  one it lets through does, the same stages included.
+
+An allowlist (`observability.metadata_only`) runs on every event after the SDK
+has added its own properties (the system, the library, context tags, session
+ids) and keeps only the keys above. Privacy mode is on; GeoIP, exception
+autocapture and feature flags are off. The client keeps at most 100 events and
+sends them with a one-second timeout and no retries. Every callback catches its
+own errors and logs their type only, so analytics never changes a reply or a
+gate's decision, and nothing on the voice loop waits for the network: the SDK's
+system details are worked out once when the job's process starts (`prewarm`),
+and a flush runs in a thread of its own with a deadline. A session's last
+events are sent after its own close, which reports the requests it stops,
+waiting at most a few seconds.
+
+This covers the Python tutor and the second reader's readings of its replies
+only: not the Rust supervisor, embeddings, moderation, TypeSafe or the speech
+services. There are no tool spans, and no content-based PostHog evaluation is
+possible.
+
+The tests catch the production client's requests at the HTTP layer and check
+the host, the exact allowlist and that nothing of the SDK, a session or a person
+is sent (`tests/test_observability.py`); over whole sessions with early replies
+off and on, one trace id per turn, one `$ai_trace` per timed turn the model
+answered, the same stages for a reply the output gate stops as for one it lets
+through, and nothing of a turn the input gates stop (but the request asked
+early) or of a reading of the child's words
+(`tests/test_observability_session.py`); and the last events after the
+session's close (`tests/test_worker_join.py`). They do not show receipt by a
+live project.
+
+Before turning it on: in the PostHog project, discard client IP data and keep
+PostHog AI data processing off; sign PostHog's DPA, and add this use to the
+privacy policy and the ANPD registration, with what the events can tell
+(above). Then run a synthetic operator session and check, in PostHog's AI
+observability, `aule_component=tutor` events with the model, cache counts and
+latency, and no content.
+
+References: [manual capture](https://posthog.com/docs/ai-observability/installation/manual-capture),
+[privacy mode](https://posthog.com/docs/ai-observability/privacy-mode)
+and the [Python SDK](https://posthog.com/docs/libraries/python).
+
+### Environment
+
 Environment variables; `.env.example` at the repository root lists them all.
 
 | Variable | Meaning |
@@ -112,6 +215,7 @@ Environment variables; `.env.example` at the repository root lists them all.
 | `ASSEMBLYAI_API_KEY`, `DEEPGRAM_API_KEY`, `CARTESIA_API_KEY`, `ELEVEN_API_KEY`, `INWORLD_API_KEY`, `OPENAI_API_KEY` | Only for the providers chosen above |
 | `OPENAI_API_KEY` | Also turns on the content-moderation gate, whichever speech providers are chosen |
 | `TYPESAFE_API_KEY` | Turns on the physical-safety gate |
+| `POSTHOG_API_KEY`, `POSTHOG_HOST` | Optional AI observability: a PostHog project token (`phc_…`) and `https://eu.i.posthog.com`, both or neither |
 | `AULE_TTS_VOICE` | Optional voice id |
 | `AULE_LLM_MODEL` | Default `claude-sonnet-5-5` |
 | `AULE_LANGUAGE` | `es` (default) or `en`; a session can ask for the other |

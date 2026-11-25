@@ -8,6 +8,7 @@ dependencies = [
     "aiohttp>=3.10",
     "jsonschema[format]>=4.23",
     "livekit-agents[anthropic,assemblyai,cartesia,deepgram,elevenlabs,inworld,openai,silero]~=1.8.12",
+    "posthog==8.0.1",
 ]
 
 [dependency-groups]

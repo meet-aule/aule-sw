@@ -5,6 +5,7 @@ The worker only joins rooms that ask for it by name (explicit dispatch).
 """
 
 import asyncio
+import contextlib
 import json
 import logging
 import os
@@ -25,11 +26,12 @@ from livekit.agents import (
 )
 from livekit.plugins import silero
 
-from . import visuals
+from . import observability, visuals
 from ._version import __version__
 from .camera import Camera
 from .config import LANGUAGES, ConfigError, Settings, build_commit
 from .logs import keep_personal_fields_out
+from .observability import Observability
 from .pace import Pace
 from .platform import Platform, platform_session
 from .providers import build_llm, build_stt, build_tts
@@ -91,6 +93,10 @@ async def someone_joined(ctx: JobContext) -> bool:
 # How long a released talk button waits for the last final transcript, when
 # one may still be on its way.
 COMMIT_TRANSCRIPT_TIMEOUT_SECONDS = 0.8
+# How long the last AI observability events of a session wait for its close,
+# which runs beside the job's other shutdown callbacks and reports the
+# requests it stops.
+LAST_EVENTS_SECONDS = 3.0
 
 
 class Hearing(Protocol):
@@ -224,6 +230,10 @@ def prewarm(proc: JobProcess) -> None:
     # the process waits for a session, not while a student waits for hello.
     from livekit.plugins import anthropic  # noqa: F401
 
+    # So is AI observability's client, when it is on.
+    with contextlib.suppress(ConfigError):
+        observability.prewarm(Settings.from_env())
+
 
 # A session takes a warm process and a new one takes seconds to start, so the
 # number kept warm is how many students can join at the same moment without
@@ -327,6 +337,7 @@ async def admit(
     audience: Audience,
     language: str,
     platform: Platform | None,
+    observer: Observability | None = None,
 ) -> tuple[Gates, str] | None:
     """The session's gates and what the platform says the tutor should know,
     or None when the session ends before it starts.
@@ -335,7 +346,7 @@ async def admit(
     ``safety``); without them the child is told, and the platform too. An
     operator's runs the gates that are configured.
     """
-    gates = build_gates(settings, report=platform.flag if platform else None)
+    gates = build_gates(settings, report=platform.flag if platform else None, observer=observer)
     if not gates.may_start(audience):
         logger.warning("session refused: the safety gates are not configured")
         await gates.close()
@@ -391,6 +402,9 @@ async def entrypoint(ctx: JobContext) -> None:
     # Again for a handler added since the process started.
     keep_personal_fields_out()
     settings = Settings.from_env()
+    observer = Observability.configured(settings)
+    if observer is not None:
+        ctx.add_shutdown_callback(observer.close)
     audience = audience_of(ctx.job.metadata)
     language = language_of(ctx.job.metadata, settings.language)
 
@@ -399,7 +413,7 @@ async def entrypoint(ctx: JobContext) -> None:
     linked = platform_session(ctx.job.metadata)
     platform = Platform(linked) if linked else None
 
-    admitted = await admit(ctx, settings, audience, language, platform)
+    admitted = await admit(ctx, settings, audience, language, platform, observer=observer)
     if admitted is None:
         return
     gates, context = admitted
@@ -424,6 +438,8 @@ async def entrypoint(ctx: JobContext) -> None:
 
     # How long the tutor takes to answer, and how sure the hearing is.
     timing = Timing()
+    if observer is not None:
+        timing.on_staged = observer.turn
     usage = Usage()
     voice = build_tts(settings, language)
     voice.on("metrics_collected", usage.spoke)
@@ -452,6 +468,9 @@ async def entrypoint(ctx: JobContext) -> None:
     )
     model = build_llm(settings)
     model.on("metrics_collected", usage.add)
+    if observer is not None:
+        model.on("metrics_collected", observer.llm_metrics)
+        model.on("error", observer.llm_error)
     hearing = build_stt(settings, language)
     hearing.on("metrics_collected", usage.heard)
     session = AgentSession(
@@ -551,10 +570,13 @@ async def entrypoint(ctx: JobContext) -> None:
     reconnect = ReconnectGrace(ctx.room, session) if audience == "child" else None
     provider_failed = False
 
+    session_closed = asyncio.Event()
+
     @session.on("close")
     def closed(event: CloseEvent) -> None:
         nonlocal provider_failed
         provider_failed = event.error is not None
+        session_closed.set()
 
     async def cleanup() -> None:
         if reconnect:
@@ -593,7 +615,21 @@ async def entrypoint(ctx: JobContext) -> None:
             }
             await platform.end({**usage.summary(), **timing.summary(), **measures})
 
-    ctx.add_shutdown_callback(cleanup)
+    async def cleanup_then_last_events() -> None:
+        try:
+            await cleanup()
+        finally:
+            if observer is not None:
+                # The session's own close runs beside this one, and the
+                # requests it stops (a reply, a second reading) are reported
+                # as they end: the last events go once it is done, or after a
+                # while.
+                with contextlib.suppress(TimeoutError):
+                    async with asyncio.timeout(LAST_EVENTS_SECONDS):
+                        await session_closed.wait()
+                await observer.close()
+
+    ctx.add_shutdown_callback(cleanup_then_last_events)
 
     await session.start(
         agent=tutor,
@@ -658,6 +694,9 @@ def main() -> None:
                 "OPENAI_API_KEY and TYPESAFE_API_KEY are not both set: "
                 "only operator sessions will be accepted"
             )
+        if settings.posthog_problem:
+            # Optional: the worker runs without it.
+            logger.warning("AI observability is off: %s", settings.posthog_problem)
         if command == "check":
             # The start-up check alone, without joining LiveKit: it exits 0
             # only when a child's session could start now.

@@ -2,7 +2,8 @@
 
 A worker with a missing key would accept a session and then fail in front of
 the user, so ``Settings.from_env`` reports every problem at once and the worker
-refuses to start.
+refuses to start. AI observability is the exception: it is optional, so a
+value that cannot be used turns it off and says why (``posthog_problem``).
 """
 
 import os
@@ -31,6 +32,11 @@ PHYSICAL_SAFETY_KEY = "TYPESAFE_API_KEY"
 LIVEKIT_KEYS = ("LIVEKIT_URL", "LIVEKIT_API_KEY", "LIVEKIT_API_SECRET")
 
 LANGUAGES = ("es", "en")
+
+# AI observability (``observability``) sends to PostHog's EU ingestion, where
+# Aule's project is, with the project's token, which can only send events.
+POSTHOG_HOST = "https://eu.i.posthog.com"
+POSTHOG_TOKEN = re.compile(r"phc_[A-Za-z0-9]{20,100}")
 
 
 class ConfigError(ValueError):
@@ -78,6 +84,12 @@ class Settings:
     # Kept out of the repr so a logged Settings never shows a key.
     openai_api_key: str | None = field(default=None, repr=False)
     typesafe_api_key: str | None = field(default=None, repr=False)
+    # Both set, or neither: AI observability is on only with both.
+    posthog_api_key: str | None = field(default=None, repr=False)
+    posthog_host: str | None = None
+    # Why AI observability is off although a POSTHOG_ variable is set. It
+    # names the variable and never shows its value.
+    posthog_problem: str | None = None
 
     @property
     def gates_complete(self) -> bool:
@@ -135,6 +147,10 @@ class Settings:
         voice_ahead = get("AULE_VOICE_AHEAD").lower() in ("1", "true", "yes", "on")
         jev_first_reading = get("AULE_JEV_FIRST_READING").lower() in ("1", "true", "yes", "on")
 
+        posthog_key, posthog_host, posthog_problem = _posthog(
+            get("POSTHOG_API_KEY"), get("POSTHOG_HOST")
+        )
+
         if problems:
             raise ConfigError("; ".join(problems))
 
@@ -154,4 +170,19 @@ class Settings:
             jev_first_reading=jev_first_reading,
             openai_api_key=get(MODERATION_KEY) or None,
             typesafe_api_key=get(PHYSICAL_SAFETY_KEY) or None,
+            posthog_api_key=posthog_key,
+            posthog_host=posthog_host,
+            posthog_problem=posthog_problem,
         )
+
+
+def _posthog(key: str, host: str) -> tuple[str | None, str | None, str | None]:
+    """The token and the host AI observability sends with, or why it is off.
+    Off without a word when neither is set."""
+    if not key and not host:
+        return None, None, None
+    if not POSTHOG_TOKEN.fullmatch(key):
+        return None, None, "POSTHOG_API_KEY must be a PostHog project token (phc_...)"
+    if host.rstrip("/") != POSTHOG_HOST:
+        return None, None, f"POSTHOG_HOST must be {POSTHOG_HOST}"
+    return key, POSTHOG_HOST, None
