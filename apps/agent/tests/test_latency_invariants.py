@@ -917,10 +917,13 @@ EVALS = {
     ),
     "evals/pedagogy/cases.py": ("5bff946b879ab883ccc7208fb8e1c6fa2422f16fd1e509d5eb020426c0a636c3"),
     "evals/pedagogy/evaluate.py": (
-        "c43cdfa2866028c64154aec75ba7dd88ef547ca4129fbddfd3f319a8193fb7ff"
+        "ffe96ac9a7058cccb12df1da897704fc58516e72999d088a821861f1adfec1fa"
+    ),
+    "evals/pedagogy/meaning.py": (
+        "d3dceb368d194bf9d11bfa45ea36598e6f9935f0c36e2349984ca638b86ca9a1"
     ),
     "evals/pedagogy/report.py": (
-        "ad825afaafd537a0d1796f01f52a2e2873a665b62f2a04402fb63b26f4ac1759"
+        "0d58cb808801ca88e3cc60bad47a7f01ef9e2b8250f5d26af5b37a3e4bbe1a73"
     ),
     "evals/pedagogy/test_budget.py": (
         "f2a9c61ea8785de0f7c6849806e299d5d8b9e37c3fd6f580cadddd7e120b3904"

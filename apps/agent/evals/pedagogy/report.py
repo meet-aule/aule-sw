@@ -95,9 +95,33 @@ def checked_twice(turn):
     return len(exercises) != len(set(exercises))
 
 
+def examples(row):
+    """The examples judge's verdict on the session (``meaning``), or None for a
+    session from before it: that is not measured, never passed."""
+    return row.get("examples")
+
+
 def passes(row):
-    checked = checks(row)
-    return bool(legacy(row) and checked is not None and checked["complete"])
+    checked, judged = checks(row), examples(row)
+    return bool(
+        legacy(row)
+        and checked is not None
+        and checked["complete"]
+        and judged is not None
+        and judged["status"] == "ok"
+        and not judged["changed"]
+    )
+
+
+def judged_examples(rows, verdict):
+    """Every example given this verdict, where it was said and why."""
+    return [
+        dict(id=r["id"], arm=r["arm"], repetition=r["repetition"], **example)
+        for r in rows
+        if (examples(r) or {}).get("status") == "ok"
+        for example in examples(r)["examples"]
+        if example["verdict"] == verdict
+    ]
 
 
 def metrics(rows):
@@ -106,6 +130,7 @@ def metrics(rows):
     durations = sorted(t["seconds"] for t in turns)
     tools = [t for t in turns if any(e["tool"] == "check_answer" for e in t["tools"])]
     checked = [c for c in (checks(r) for r in rows) if c is not None]
+    measured = [examples(r) for r in rows if examples(r) is not None]
     return dict(
         sessions=len(rows),
         judged=len(judged),
@@ -114,6 +139,13 @@ def metrics(rows):
         checks_measured=len(checked),
         checks_complete=sum(c["complete"] for c in checked),
         **{key: sum(c[key] for c in checked) for key in CHECK_FIGURES},
+        examples_measured=len(measured),
+        examples_judge_failures=sum(e["status"] != "ok" for e in measured),
+        sessions_with_changed_examples=sum(e["status"] == "ok" and e["changed"] for e in measured),
+        changed_examples=sum(
+            x["verdict"] == "changes" for e in measured for x in e.get("examples", [])
+        ),
+        unclear_examples=sum(e.get("unclear", 0) for e in measured),
         sessions_with_errors=sum(bool(r["errors"]) for r in rows),
         conversation_failures=sum(
             not r["turns"] or any(t["error"] for t in r["turns"]) for r in rows
@@ -198,6 +230,7 @@ def build(directory):
                     errors=r["errors"],
                     judge=r.get("judge"),
                     checks=checks(r),
+                    examples=examples(r),
                     turns=r["turns"],
                 )
             )
@@ -228,8 +261,22 @@ def build(directory):
         improvement_supported_on_this_benchmark=improvement,
         deployment="none",
         learning_gain="not measured",
+        changed_examples=judged_examples(rows, "changes"),
+        unclear_examples=judged_examples(rows, "unclear"),
         failures=evidence,
     )
+
+
+def example_lines(found):
+    if not found:
+        return ["None."]
+    return [
+        f"- {x['id']} / {x['arm']} / run {x['repetition']}, turn {x['turn']}: "
+        f"«{x['quote']}» — stands for `{x['stands_for']}`, its question computes "
+        f"`{x['story_expression']}`, the whole story `{x.get('whole_story', '?')}`. "
+        f"{x['reason']}"
+        for x in found
+    ]
 
 
 def measured(count, of):
@@ -243,21 +290,29 @@ def render(report, directory):
         "This evaluates observable conversational tutoring behavior, not whether children learn.",
         "",
         "| Set / arm | Sessions | All criteria pass | First judge's criteria pass | Math flags | "
-        "Wrong praise | Answer leaks | Adapted | Checks complete | Errors |",
-        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+        "Wrong praise | Answer leaks | Adapted | Changed examples | Checks complete | Errors |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for name, m in report["groups"].items():
+        changed = (
+            f"{m['sessions_with_changed_examples']} ({m['examples_judge_failures']} failed)"
+            if m["examples_measured"]
+            else "not measured"
+        )
         lines.append(
             f"| {name} | {m['sessions']} | {m['passes']} | {m['legacy_passes']} | "
             f"{m['math_error']} | {m['endorsed_wrong']} | {m['premature_answer']} | "
-            f"{m['adapted']} | {measured(m['checks_complete'], m['checks_measured'])} | "
+            f"{m['adapted']} | {changed} | "
+            f"{measured(m['checks_complete'], m['checks_measured'])} | "
             f"{m['sessions_with_errors']} |"
         )
     lines += [
         "",
-        "A session passes all criteria only when the first judge's criteria pass and its answers "
-        "were checked as required; a session saved before answers were checked in code is "
-        "counted as not measured, never as passed.",
+        "A session passes all criteria only when the first judge's criteria pass, the examples "
+        "judge answered and found no example that changes the exercise's meaning, and every "
+        "turn that code reads as an answer in digits or a request for help was checked in code "
+        "and answered by the checker. A session saved before these were measured is counted as "
+        "not measured, never as passed.",
         "",
         "## Answer checks",
         "",
@@ -311,6 +366,9 @@ def render(report, directory):
         "- A Haiku judge scores Sonnet replies. Same-family bias remains; its labels are automated "
         "flags, not verified educational outcomes. Calibration controls and quoted "
         "evidence are retained.",
+        "- A second Haiku judge lists the tutor's examples and stories and whether each keeps "
+        "the meaning of what it stands for; its quotes must be found in the turn it names. "
+        "Unclear verdicts are listed for review and do not fail a session.",
         "- Repeated runs are clustered by case for the bootstrap interval. There is no claim of "
         "population-level statistical generalization.",
         "- Numeric answer mentions are only screening signals: Spanish parsing can count articles "
@@ -330,6 +388,14 @@ def render(report, directory):
         "and [TypeSafe "
         "pricing](https://help.typesafe.ai/articles/5187202169-how-much-does-jev-cost).",
         "",
+        "## Examples that change the meaning",
+        "",
+        *example_lines(report["changed_examples"]),
+        "",
+        "## For review (unclear)",
+        "",
+        *example_lines(report["unclear_examples"]),
+        "",
         "## Flagged sessions",
         "",
     ]
@@ -340,6 +406,7 @@ def render(report, directory):
             f"Errors: `{json.dumps(failure['errors'])}`.",
             json.dumps(failure["judge"], ensure_ascii=False),
             f"Checks: `{json.dumps(failure['checks'])}`.",
+            f"Examples: `{json.dumps(failure['examples'], ensure_ascii=False)}`.",
             "",
         ]
     markdown = "\n".join(lines) + "\n"
@@ -350,7 +417,8 @@ def render(report, directory):
             f"<article><h2>{html.escape(name)}</h2><b>{m['passes']}/{m['sessions']}</b> "
             f"sessions passed all criteria<p>{m['math_error']} math flags · "
             f"{m['premature_answer']} answer leaks · {m['sessions_with_errors']} "
-            f"errors · checks complete "
+            f"errors · {m['sessions_with_changed_examples']} with an example that changes "
+            f"the meaning · checks complete "
             f"{measured(m['checks_complete'], m['checks_measured'])}</p></article>"
         )
     (directory / "report.html").write_text(

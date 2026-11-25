@@ -3,6 +3,8 @@ import json
 import report
 
 JUDGED = {key: False for key in report.BAD} | {key: True for key in report.GOOD}
+# The examples judge found no example in the session.
+NO_EXAMPLE = dict(model="claude-haiku-5-5", status="ok", examples=[], changed=False, unclear=0)
 
 
 def turn(open_before=True, kind="answer", by=("code",), code=True, calls=(7,), allowed=True):
@@ -21,16 +23,11 @@ def turn(open_before=True, kind="answer", by=("code",), code=True, calls=(7,), a
     )
 
 
-def row(name, turns, split="regression", arm="replay", judge=JUDGED, errors=()):
-    return dict(
-        id=name,
-        arm=arm,
-        repetition=0,
-        split=split,
-        turns=turns,
-        errors=list(errors),
-        judge=judge,
-    )
+def row(name, turns, split="regression", arm="replay", judge=JUDGED, examples=NO_EXAMPLE):
+    saved = dict(id=name, arm=arm, repetition=0, split=split, turns=turns, errors=[], judge=judge)
+    if examples is not None:
+        saved["examples"] = examples
+    return saved
 
 
 def write(directory, *rows):
@@ -130,8 +127,13 @@ def test_a_turn_with_no_record_leaves_its_session_measured_and_incomplete(tmp_pa
 
 
 def test_a_session_saved_before_the_checks_is_not_measured_and_not_passed(tmp_path):
-    old = row("math-071", [{k: v for k, v in turn().items() if k != "check"}] * 3)
-    old["split"], old["arm"] = "holdout", "fixed"
+    old = row(
+        "math-071",
+        [{k: v for k, v in turn().items() if k != "check"}] * 3,
+        split="holdout",
+        arm="fixed",
+        examples=None,
+    )
     write(tmp_path, old)
 
     built = report.build(tmp_path)
@@ -139,7 +141,9 @@ def test_a_session_saved_before_the_checks_is_not_measured_and_not_passed(tmp_pa
 
     group = built["groups"]["holdout/fixed"]
     assert (group["legacy_passes"], group["passes"], group["checks_measured"]) == (1, 0, 0)
+    assert group["examples_measured"] == 0
     markdown = (tmp_path / "report.md").read_text()
     assert "| holdout/fixed | not measured |" in markdown
+    assert "| 1 | not measured | not measured | 0 |" in markdown
     assert "not measured" in (tmp_path / "report.html").read_text()
     assert built["learning_gain"] == "not measured" and built["deployment"] == "none"
