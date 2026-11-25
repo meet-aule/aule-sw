@@ -5,6 +5,7 @@
 
 use std::collections::BTreeMap;
 
+use aws_lc_rs::rand::SystemRandom;
 use aws_lc_rs::signature::{ECDSA_P256_SHA256_ASN1_SIGNING, EcdsaKeyPair, KeyPair};
 use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD as B64;
@@ -33,6 +34,9 @@ pub struct Authenticator {
     /// Where the browser says the ceremony ran, and the RP id it hashes.
     pub origin: String,
     pub rp_id: String,
+    /// What the browser says of a frame it ran in: `crossOrigin` and `topOrigin`.
+    pub cross_origin: bool,
+    pub top_origin: Option<String>,
     /// What the browser says of `credProps.rk` at registration, if anything.
     pub discoverable: Option<bool>,
 }
@@ -61,6 +65,8 @@ impl Authenticator {
             flags,
             origin: "http://localhost:8092".into(),
             rp_id: "localhost".into(),
+            cross_origin: false,
+            top_origin: None,
             discoverable: Some(true),
         }
     }
@@ -102,13 +108,16 @@ impl Authenticator {
     }
 
     fn client_data(&self, kind: &str, options: &Value) -> String {
-        json!({
+        let mut data = json!({
             "type": kind,
             "challenge": options["publicKey"]["challenge"],
             "origin": self.origin,
-            "crossOrigin": false,
-        })
-        .to_string()
+            "crossOrigin": self.cross_origin,
+        });
+        if let Some(top) = &self.top_origin {
+            data["topOrigin"] = json!(top);
+        }
+        data.to_string()
     }
 
     /// `navigator.credentials.create()` with the platform's options, then
@@ -141,6 +150,30 @@ impl Authenticator {
                 "publicKeyAlgorithm": -7,
             },
             "clientExtensionResults": extensions,
+        })
+    }
+
+    /// `navigator.credentials.get()` with the platform's options, then
+    /// `credential.toJSON()`.
+    pub fn get(&mut self, options: &Value) -> Value {
+        self.tick();
+        let client_data = self.client_data("webauthn.get", options);
+        let data = self.data(false);
+        let mut signed = data.clone();
+        signed.extend_from_slice(&Sha256::digest(client_data.as_bytes()));
+        let signature = self.key.sign(&SystemRandom::new(), &signed).expect("a signature");
+        json!({
+            "id": self.id(),
+            "rawId": self.id(),
+            "type": "public-key",
+            "authenticatorAttachment": "platform",
+            "response": {
+                "clientDataJSON": B64.encode(client_data.as_bytes()),
+                "authenticatorData": B64.encode(&data),
+                "signature": B64.encode(signature.as_ref()),
+                "userHandle": B64.encode(&self.user_handle),
+            },
+            "clientExtensionResults": {},
         })
     }
 }
