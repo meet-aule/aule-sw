@@ -53,7 +53,7 @@ class EdgeLogsTests(unittest.TestCase):
 
     def test_no_worker_logs_a_line_per_request_or_traces_one(self) -> None:
         names = sorted(path.name for path in HERE.glob("wrangler.*.jsonc"))
-        self.assertEqual(names, ["wrangler.livekit.jsonc", "wrangler.playground.jsonc"])
+        self.assertEqual(names, ["wrangler.livekit.jsonc", "wrangler.ota.jsonc", "wrangler.playground.jsonc"])
         for name in names:
             with self.subTest(name):
                 observability = config(name)["observability"]
@@ -70,6 +70,8 @@ class EdgeCookiesTests(unittest.TestCase):
         definition = "\nfunction stripAnalyticsCookies(headers) {\n"
         functions = set()
         for path in sorted(HERE.glob("wrangler.*.jsonc")):
+            if path.name == "wrangler.ota.jsonc":
+                continue  # OTA never forwards incoming headers at all.
             with self.subTest(path.name):
                 source = (HERE / config(path.name)["main"]).read_text()
                 self.assertIn(definition, source)
@@ -77,6 +79,14 @@ class EdgeCookiesTests(unittest.TestCase):
                 functions.add(source[start : source.index("\n}\n", start)])
                 self.assertGreaterEqual(source.count("stripAnalyticsCookies("), 2)
         self.assertEqual(len(functions), 1)
+
+
+class OtaRoutingTests(unittest.TestCase):
+    def test_all_assets_pass_the_route_allowlist_and_have_no_preview(self) -> None:
+        ota = config("wrangler.ota.jsonc")
+        self.assertIs(ota["assets"]["run_worker_first"], True)
+        self.assertIs(ota["workers_dev"], False)
+        self.assertIs(ota["preview_urls"], False)
 
 
 if __name__ == "__main__":
