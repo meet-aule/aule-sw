@@ -69,6 +69,36 @@ is open (`select count(*) from sessions where status <> 'ended'` is 0): the
 console's «En vivo» page says so in one line, «Ninguna sesión abierta: se puede
 desplegar.».
 
+**Taking someone off the team.** The team is `AULE_ADMIN_EMAILS` in
+`/etc/aule/aule.env`, which the console and the platform each read when they
+start. Take the address out, then restart the console alone, with sessions
+open:
+
+```sh
+sudo -u aule-admin bash -c 'umask 002; /etc/aule/aule-compose.sh up -d --no-deps admin'
+```
+
+That alone shuts them out at once: the console sends them no code, refuses
+their passkeys even while the platform still counts them as the team (it
+checks the address the platform names), and its restart signs the whole team
+out, ending every platform session it held. Restart the platform and its
+worker at the next moment with no session open, so that the platform's own list
+and its Staff check agree; `--no-deps`, since postgres reads the same file and
+would otherwise be recreated:
+
+```sh
+sudo -u aule-admin bash -c 'umask 002; /etc/aule/aule-compose.sh up -d --no-deps --no-build platform worker'
+```
+
+Their passkeys stay stored and open nothing. To delete them, and every session
+they opened, at any time:
+
+```sh
+docker exec -i aule-sw-postgres-1 sh -c 'psql -At -U "$POSTGRES_USER" -d "$POSTGRES_DB"' <<'SQL'
+delete from team_passkeys where guardian_id = (select id from guardians where email = '<address>');
+SQL
+```
+
 The first deploy goes in this order:
 
 1. this `aule-compose.sh` into `/etc/aule/`, the previous copy kept;

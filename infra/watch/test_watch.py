@@ -66,7 +66,9 @@ elif command == "date":
         instant = datetime.datetime.fromtimestamp(stamp, zone)
         print(instant.strftime(args[-1][1:] if args[-1].startswith("+") else "%a, %d %b %Y %H:%M:%S %z"))
 elif command == "docker":
-    if "psql" in args:
+    if "-c" in args and "python" in args:
+        print(settings.get("model", "ok"))
+    elif "psql" in args:
         if settings.get("reports") == "unavailable":
             sys.exit(1)
         print(settings.get("reports", "0"))
@@ -192,6 +194,23 @@ class WatchTests(unittest.TestCase):
                 self.assertIn("informes", harness.state.read_text())
                 self.assertEqual(len(harness.deliveries()), 1)
                 harness.settings["reports"] = "0"
+                self.assertEqual(harness.run().returncode, 0)
+                self.assertEqual(harness.state.read_text().strip(), "")
+                self.assertEqual(len(harness.deliveries()), 2)
+
+    def test_the_tutor_model_out_of_credit_or_key_alerts_and_recovers(self) -> None:
+        for outcome, words in (("credit", "sin crédito"), ("key", "rechazó la clave"), ("error", "no respondió")):
+            with (
+                self.subTest(outcome=outcome),
+                tempfile.TemporaryDirectory() as directory,
+            ):
+                harness = WatchHarness(Path(directory), "aule-watch.sh")
+                harness.settings["model"] = outcome
+                self.assertEqual(harness.run().returncode, 0)
+                self.assertIn("modelo del tutor", harness.state.read_text())
+                [mail] = harness.deliveries()
+                self.assertIn(words, mail["body"])
+                harness.settings["model"] = "ok"
                 self.assertEqual(harness.run().returncode, 0)
                 self.assertEqual(harness.state.read_text().strip(), "")
                 self.assertEqual(len(harness.deliveries()), 2)
@@ -343,7 +362,7 @@ class WatchTests(unittest.TestCase):
                 self.assertNotIn("synthetic-key", message["body"])
                 if watch == "aule-watch.sh":
                     self.assertIn("La página local respondió", message["body"])
-                    self.assertIn("14/15", message["body"])
+                    self.assertIn("15/16", message["body"])
                 else:
                     self.assertIn("3/4", message["body"])
                 # A different diagnostic does not restart the incident or spam mail.

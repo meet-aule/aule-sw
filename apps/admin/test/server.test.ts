@@ -86,7 +86,20 @@ test("robots are told to stay out of everything", async () => {
 });
 
 test("an unknown path is a 404 and a known one asked the wrong way a 405, never a redirect", async () => {
-  for (const path of ["/admin", "/signin/", "/index.html", "/family.html", "/families/", "/api", "/api/admin/families", "/api/families/x/y", "/fonts/sans-italic.woff2", "/../etc/passwd"]) {
+  for (const path of [
+    "/admin",
+    "/signin/",
+    "/index.html",
+    "/family.html",
+    "/families/",
+    "/passkeys.html",
+    "/api",
+    "/api/admin/families",
+    "/api/families/x/y",
+    "/api/passkeys/x",
+    "/fonts/sans-italic.woff2",
+    "/../etc/passwd",
+  ]) {
     const response = await ask(path, { headers: { Accept: "text/html" } });
     assert.equal(response.status, 404, path);
     assert.deepEqual(await response.json(), { error: "not_found" }, path);
@@ -97,10 +110,17 @@ test("an unknown path is a 404 and a known one asked the wrong way a 405, never 
     ["DELETE", "/api/families", "GET"],
     ["HEAD", "/api/build", "GET"],
     ["GET", "/api/signin/start", "POST"],
+    ["GET", "/api/signin/passkey/start", "POST"],
+    ["GET", "/api/signin/passkey/finish", "POST"],
     ["GET", "/api/signout", "POST"],
     ["GET", `/api/families/${"0".repeat(8)}-0000-0000-0000-${"0".repeat(12)}/grant`, "POST"],
     ["POST", `/api/families/${"0".repeat(8)}-0000-0000-0000-${"0".repeat(12)}/sessions`, "GET"],
     ["DELETE", "/api/sessions/open", "GET"],
+    ["POST", "/api/passkeys", "GET"],
+    ["GET", "/api/passkeys/options", "POST"],
+    ["GET", "/api/passkeys/create", "POST"],
+    ["DELETE", `/api/passkeys/${"0".repeat(8)}-0000-0000-0000-${"0".repeat(12)}/delete`, "POST"],
+    ["POST", "/passkeys", "GET, HEAD"],
     ["POST", "/families", "GET, HEAD"],
     ["POST", "/healthz", "GET, HEAD"],
   ]) {
@@ -131,6 +151,34 @@ test("a HEAD carries no body", async () => {
   }
 });
 
+test("a passkey the browser made may take 16 KB, and every other write still 4 KB", async () => {
+  // Past the body's rules, a request with no session is a 401: the body was taken.
+  const sized = async (path: string, bytes: number) => {
+    const response = await write(base, path, { label: "Mac", credential: { id: "a".repeat(bytes) } });
+    answers.push(response);
+    await response.arrayBuffer();
+    return response.status;
+  };
+  assert.equal(await sized("/api/passkeys/create", 10_000), 401);
+  assert.equal(await sized("/api/passkeys/create", 16_384), 400);
+  // A passkey's answer at the sign-in, every field as long as the console takes it (about 12 KB):
+  // past the body's rules, it is refused for want of a ceremony. Longer, the body is refused.
+  const longest = { id: "a".repeat(1_368), rawId: "a".repeat(1_368), type: "public-key" };
+  const response = { authenticatorData: "a".repeat(4_096), clientDataJSON: "a".repeat(4_096), signature: "a".repeat(1_024), userHandle: "a".repeat(88) };
+  const signing = async (credential: unknown) => {
+    const answered = await write(base, "/api/signin/passkey/finish", { credential });
+    answers.push(answered);
+    return [answered.status, await answered.json()];
+  };
+  assert.deepEqual(await signing({ ...longest, response }), [403, { error: "passkey_failed" }]);
+  assert.deepEqual(await signing({ ...longest, response, padding: "a".repeat(5_000) }), [400, { error: "bad_request" }]);
+  assert.equal(await sized("/api/signin/passkey/start", 4_096), 400);
+  for (const path of ["/api/passkeys/options", `/api/passkeys/${"0".repeat(8)}-0000-0000-0000-${"0".repeat(12)}/delete`, "/api/families/x/grant"]) {
+    assert.equal(await sized(path, 4_096), 400, path);
+    assert.equal(await sized(path, 3_000), 401, path);
+  }
+});
+
 test("a body over 4 KB is refused before anything reads it", async () => {
   const big = await write(base, "/api/signin/start", { email: `${"a".repeat(4_100)}@example.org` });
   answers.push(big);
@@ -148,6 +196,8 @@ test("a handler that throws is a 500 that keeps its words, and the next request 
   const failing: Platform = {
     sendCode: async () => {},
     verifyCode: async () => "a".repeat(64),
+    passkeyOptions: async () => ({ ceremony: "a".repeat(64), publicKey: {} }),
+    passkeySignIn: async () => ({ token: "a".repeat(64), email: "team@example.org" }),
     signOut: async () => {},
     build: async () => {
       throw new TypeError("a bug, with a detail that must stay here");

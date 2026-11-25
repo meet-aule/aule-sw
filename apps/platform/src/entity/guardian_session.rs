@@ -11,8 +11,13 @@ pub struct Model {
     pub guardian_id: Uuid,
     pub created_at: DateTimeUtc,
     pub expires_at: DateTimeUtc,
+    /// The team passkey that signed this session in, if one did: deleting the
+    /// passkey ends the sessions it opened. None for a code's or a provider's.
+    pub passkey_id: Option<Uuid>,
     #[sea_orm(belongs_to, from = "guardian_id", to = "id", on_delete = "Cascade")]
     pub guardian: BelongsTo<super::guardian::Entity>,
+    #[sea_orm(belongs_to, from = "passkey_id", to = "id", on_delete = "Cascade")]
+    pub passkey: BelongsTo<Option<super::team_passkey::Entity>>,
 }
 
 impl ActiveModelBehavior for ActiveModel {}

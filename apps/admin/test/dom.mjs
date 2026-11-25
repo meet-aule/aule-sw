@@ -94,13 +94,55 @@ export async function settle() {
 let runs = 0;
 
 /**
+ * Stands in for the browser's WebAuthn: `PublicKeyCredential` with its JSON
+ * methods and `signalUnknownCredential`, and `navigator.credentials`, whose
+ * `create` and `get` are the test's own. Null is a browser without them.
+ * Returns what the page asked of them, in order: `[what, options]`, with
+ * "signal" for a passkey the page asked the browser to forget.
+ */
+function webauthn(credentials) {
+  const asked = [];
+  if (credentials === null) {
+    delete globalThis.PublicKeyCredential;
+  } else {
+    globalThis.PublicKeyCredential = class PublicKeyCredential {
+      static parseCreationOptionsFromJSON(json) {
+        return { parsed: json };
+      }
+      static parseRequestOptionsFromJSON(json) {
+        return { parsed: json };
+      }
+      static async signalUnknownCredential(options) {
+        asked.push(["signal", options]);
+      }
+      toJSON() {
+        return {};
+      }
+    };
+  }
+  const ask = (what) => async (options) => {
+    asked.push([what, options]);
+    return credentials[what](options);
+  };
+  // Node's own navigator has a getter only, so it is replaced, not assigned.
+  const browser = credentials === null ? {} : { credentials: { create: ask("create"), get: ask("get") } };
+  Object.defineProperty(globalThis, "navigator", { value: browser, configurable: true, writable: true });
+  return asked;
+}
+
+/**
  * Runs a page's script against a fake document made from its HTML. `answer`
  * gives what the API answers to each request: `{status, body}`, or a promise
- * of it to answer late. Returns the document and what the script did: what
- * it asked, where it sent the browser, the address it wrote, its timers and
- * what its dialogs asked.
+ * of it to answer late. `credentials` is the browser's WebAuthn (`webauthn`),
+ * left as Node has it when it is not given. Returns the document and what the
+ * script did: what it asked, where it sent the browser, the address it wrote,
+ * its timers, what its dialogs asked and what it asked of WebAuthn.
  */
-export async function open(page, script, { search = "", answer = () => ({ status: 200, body: {} }), prompts = [], confirms = [] } = {}) {
+export async function open(
+  page,
+  script,
+  { search = "", answer = () => ({ status: 200, body: {} }), prompts = [], confirms = [], credentials } = {},
+) {
   const html = await readFile(new URL(page, pub), "utf8");
   const byId = new Map();
   for (const [, tag, attributes] of html.matchAll(/<([a-z][a-z0-9]*)(\s[^>]*)>/g)) {
@@ -153,8 +195,9 @@ export async function open(page, script, { search = "", answer = () => ({ status
   globalThis.clearInterval = (id) => {
     if (timers[id - 1]) timers[id - 1].cleared = true;
   };
+  const passkeys = credentials === undefined ? [] : webauthn(credentials);
   // A query of its own makes each run a new instance of the page's module.
   await import(`${new URL(script, pub)}?run=${++runs}`);
   await settle();
-  return { document, $: (id) => byId.get(id), asked, moves, addresses, timers, dialogs };
+  return { document, $: (id) => byId.get(id), asked, moves, addresses, timers, dialogs, passkeys };
 }

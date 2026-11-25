@@ -4,9 +4,9 @@
 // the playground cannot be pasted into the console, and the console's length
 // and limits hold. A restart signs the team out.
 //
-// The platform's session underneath lasts its own 30 days: it cannot issue a
-// shorter one. The console ends it whenever its own session ends: on sign-out,
-// expiry, eviction and SIGTERM.
+// The platform's session underneath lasts 12 hours too, not a family's 30
+// days: the platform's team sign-in opens it so. The console also ends it
+// whenever its own session ends: on sign-out, expiry, eviction and SIGTERM.
 
 import { createHash, randomBytes } from "node:crypto";
 import type { IncomingMessage } from "node:http";
@@ -29,16 +29,33 @@ export const sessionCookie = (id: string) =>
   `${COOKIE}=${id}; Path=/; Max-Age=${LIFETIME_MS / 1000}; HttpOnly; Secure; SameSite=Strict`;
 export const clearedCookie = `${COOKIE}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Strict`;
 
-/** The session id a request's cookie carries, when it is one the console could have made. */
-export function sessionId(request: IncomingMessage): string | null {
+/**
+ * The cookie that ties a passkey ceremony to this browser: the handle of the
+ * platform's ceremony, 32 random bytes in hex, for the 5 minutes the platform
+ * keeps it. It is never in a JSON body, so a page's script cannot read it.
+ */
+export const CEREMONY = "__Host-aule_admin_passkey";
+/** A ceremony's handle, as the platform makes them. */
+export const CEREMONY_HANDLE = /^[0-9a-f]{64}$/;
+export const ceremonyCookie = (handle: string) => `${CEREMONY}=${handle}; Path=/; Max-Age=300; HttpOnly; Secure; SameSite=Strict`;
+export const clearedCeremonyCookie = `${CEREMONY}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Strict`;
+
+/** The value of the cookie named exactly `name`, when it has the shape it must have. */
+function cookie(request: IncomingMessage, name: string, shape: RegExp): string | null {
   for (const part of (request.headers.cookie ?? "").split(";")) {
     const at = part.indexOf("=");
-    if (at === -1 || part.slice(0, at).trim() !== COOKIE) continue;
+    if (at === -1 || part.slice(0, at).trim() !== name) continue;
     const value = part.slice(at + 1).trim();
-    if (ID.test(value)) return value;
+    if (shape.test(value)) return value;
   }
   return null;
 }
+
+/** The session id a request's cookie carries, when it is one the console could have made. */
+export const sessionId = (request: IncomingMessage): string | null => cookie(request, COOKIE, ID);
+
+/** The passkey ceremony a request's cookie carries, when it is one the platform could have made. */
+export const ceremonyOf = (request: IncomingMessage): string | null => cookie(request, CEREMONY, CEREMONY_HANDLE);
 
 // The map is keyed by the id's hash, so not even the id is kept as it is.
 const keyOf = (id: string) => createHash("sha256").update(id).digest("hex");

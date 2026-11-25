@@ -53,6 +53,39 @@ reports_ok() {
   CHECK_DETAIL="$overdue trabajos atrasados o sin reintentos"
   [ "$overdue" = 0 ]
 }
+# The tutor's model provider, asked once with the agent's own key: one token
+# out, about a millionth of a dollar. A lack of credit or a refused key is then
+# known before a family's session meets it (on 2026-11-25 the credit ran out
+# mid-session and the tutor went silent). Only the outcome is read, and an
+# answer that is neither is asked once more before it counts.
+MODEL_PROBE='
+import anthropic
+try:
+    anthropic.Anthropic(max_retries=0, timeout=20).messages.create(
+        model="claude-haiku-5-5", max_tokens=1, extra_body={"thinking": {"type": "disabled"}},
+        messages=[{"role": "user", "content": "ok"}])
+    print("ok")
+except anthropic.BadRequestError as error:
+    print("credit" if "credit balance" in str(error).lower() else "error")
+except (anthropic.AuthenticationError, anthropic.PermissionDeniedError):
+    print("key")
+except Exception:
+    print("error")
+'
+model_ok() {
+  local outcome try
+  for try in 1 2; do
+    outcome=$(docker exec aule-sw-agent-1 python -c "$MODEL_PROBE" 2>/dev/null)
+    case "$outcome" in
+      ok) return 0 ;;
+      credit) CHECK_DETAIL="Anthropic: la organización se quedó sin crédito"; return 1 ;;
+      key) CHECK_DETAIL="Anthropic: rechazó la clave del tutor"; return 1 ;;
+    esac
+    [ "$try" = 1 ] && sleep 5
+  done
+  CHECK_DETAIL="Anthropic no respondió a una pregunta mínima"
+  return 1
+}
 disk_ok() {
   local used
   CHECK_DETAIL="no se pudo medir el disco"
@@ -105,7 +138,7 @@ now=$(date +%s)
 when=$(date -u '+%Y-%m-%d %H:%M UTC')
 
 if [ "${1:-}" = "--test" ]; then
-  mail "Aule: prueba de alertas" "Las alertas de $host están activas ($when). Revisan cada 5 minutos: plataforma, página, consola del equipo, tutor, LiveKit, base de datos, worker, embeddings, página pública, consola pública, tienda, disco y respaldo cada 6 horas. Si algo falla llega un correo, y otro cuando vuelve a funcionar."
+  mail "Aule: prueba de alertas" "Las alertas de $host están activas ($when). Revisan cada 5 minutos: plataforma, página, consola del equipo, tutor, modelo del tutor (crédito y clave), LiveKit, base de datos, worker, embeddings, página pública, consola pública, tienda, disco y respaldo cada 6 horas. Si algo falla llega un correo, y otro cuando vuelve a funcionar."
   exit $?
 fi
 
@@ -114,6 +147,7 @@ check "página de sesión" http http://127.0.0.1:8090/session/healthz
 check "consola del equipo" http http://127.0.0.1:8092/healthz
 check "consola pública (admin.meetaule.com)" http https://admin.meetaule.com/healthz
 check "tutor (agente de voz)" http http://127.0.0.1:8081/
+check "modelo del tutor (Anthropic: crédito o clave)" model_ok
 check "LiveKit (audio)" http http://127.0.0.1:7880/
 check "base de datos" healthy aule-sw-postgres-1
 check "worker (informes y avisos)" running aule-sw-worker-1

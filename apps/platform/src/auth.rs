@@ -135,6 +135,62 @@ impl FromRequestParts<AppState> for Staff {
     }
 }
 
+/// A team member acting on their own account, with a session the team's
+/// sign-in opened: never the operator's token, nor a family-length session,
+/// even a team member's own from the playground. The passkey routes take it.
+pub struct TeamMember {
+    pub guardian_id: Uuid,
+    pub email: String,
+    /// The session's token hash, which a passkey being added is bound to.
+    pub token_hash: String,
+    /// Whether the session was opened in the last
+    /// `passkeys::RECENT_SIGN_IN_MINUTES`, by the database's clock.
+    pub recent: bool,
+}
+
+impl FromRequestParts<AppState> for TeamMember {
+    type Rejection = ApiError;
+
+    async fn from_request_parts(parts: &mut Parts, state: &AppState) -> Result<Self, Self::Rejection> {
+        const NOT_TEAM: ApiError = ApiError::Forbidden("this route is for Aule's team");
+        let token = bearer(parts)?;
+        if same_token(token, &state.config.admin_token) {
+            return Err(NOT_TEAM);
+        }
+        use sea_orm::ConnectionTrait;
+        let hash = token_hash(token);
+        // Only the team's sign-in opens a session of TEAM_SESSION_HOURS; a
+        // family's lasts days.
+        let found = state
+            .db
+            .query_one_raw(sea_orm::Statement::from_sql_and_values(
+                sea_orm::DbBackend::Postgres,
+                "select g.id, g.email::text as email,
+                        s.expires_at - s.created_at <= make_interval(hours => $2) as team_session,
+                        s.created_at > now() - make_interval(mins => $3) as recent
+                 from guardian_sessions s join guardians g on g.id = s.guardian_id
+                 where s.token_hash = $1 and s.expires_at > now()",
+                [
+                    hash.clone().into(),
+                    crate::signin::TEAM_SESSION_HOURS.into(),
+                    crate::passkeys::RECENT_SIGN_IN_MINUTES.into(),
+                ],
+            ))
+            .await?;
+        let Some(found) = found else { return Err(ApiError::Unauthorized) };
+        let email: String = found.try_get("", "email")?;
+        if !found.try_get::<bool>("", "team_session")? || !state.config.admin_emails.contains(&email) {
+            return Err(NOT_TEAM);
+        }
+        Ok(Self {
+            guardian_id: found.try_get("", "id")?,
+            email,
+            token_hash: hash,
+            recent: found.try_get("", "recent")?,
+        })
+    }
+}
+
 /// A signed-in guardian, for the routes that only make sense for one.
 pub struct Guardian {
     pub id: Uuid,

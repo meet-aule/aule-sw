@@ -44,6 +44,13 @@ pub struct AppState {
     /// The engines of the sessions the session engine runs. Each can be
     /// rebuilt from the database, so losing this loses nothing.
     pub engines: crate::engine::Engines,
+    /// The team console's relying party, for its passkeys. None only if the
+    /// library refused the settings config.rs accepted (logged): passkeys
+    /// then answer 503, and the emailed code still works.
+    pub webauthn: Option<Arc<webauthn_rs::Webauthn>>,
+    /// Passkey ceremonies in progress, each for a few minutes and one use.
+    /// Losing them costs a press of the button again.
+    pub passkey_ceremonies: Arc<Mutex<crate::passkeys::Ceremonies>>,
 }
 
 impl AppState {
@@ -100,6 +107,12 @@ impl AppState {
                 .ok()
                 .map(|apple| Arc::new(apple) as Arc<dyn CodeProvider>)
         });
+        let webauthn = crate::passkeys::relying_party(&config.admin_passkeys)
+            .inspect_err(
+                |error| tracing::error!(%error, "passkeys are off: the relying party could not be made"),
+            )
+            .ok()
+            .map(Arc::new);
         Self {
             db,
             pool,
@@ -116,6 +129,8 @@ impl AppState {
             watching: Arc::default(),
             claim_attempts: Arc::default(),
             engines: Arc::default(),
+            webauthn,
+            passkey_ceremonies: Arc::default(),
         }
     }
 }

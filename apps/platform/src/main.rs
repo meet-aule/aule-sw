@@ -50,12 +50,9 @@ async fn load_curriculum(db: &sea_orm::DatabaseConnection) {
 
 #[tokio::main]
 async fn main() {
-    tracing_subscriber::fmt()
-        .json()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
-        )
-        .init();
+    // webauthn-rs says no more than warnings, whatever RUST_LOG asks (lib.rs).
+    use tracing_subscriber::util::SubscriberInitExt;
+    aule_platform::log_subscriber(std::env::var("RUST_LOG").ok().as_deref(), std::io::stdout).init();
 
     let command = std::env::args().nth(1).unwrap_or_else(|| "serve".to_string());
     if command == "version" || command == "--version" {

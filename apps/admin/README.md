@@ -5,8 +5,9 @@ costs, the pilot's numbers, every family with its plan and the link it came
 from, found by address or name and filtered by link and plan, a page per family
 with its sessions, a plan granted for free, and who is in a session now, with
 one line that says whether a deploy can go. It is its own app, apart from the children's
-[playground](../playground/README.md), with its own sign-in. A child's
-conversation, text or audio, appears nowhere in it.
+[playground](../playground/README.md), with its own sign-in, and each team
+member's passkeys for it. A child's conversation, text or audio, appears
+nowhere in it.
 
 A Node server with no framework and no build step, as the playground: Node runs
 the TypeScript in `src/` as it is, and `public/` holds the pages. It has no
@@ -22,12 +23,15 @@ decides each call.
 | GET, HEAD | `/live` | nothing | «En vivo»: who is in a session now, and whether a deploy can go |
 | GET, HEAD | `/families` | nothing | «Familias»: the families, with search and filters |
 | GET, HEAD | `/family?id=<uuid>` | nothing | One family's page |
+| GET, HEAD | `/passkeys` | nothing | «Passkeys»: the team member's own, to create and delete |
 | GET, HEAD | `/signin` | nothing | The sign-in page |
-| GET, HEAD | `/style.css`, `/admin.js`, `/live.js`, `/families.js`, `/family.js`, `/common.js`, `/labels.js`, `/pilot.js`, `/signin.js`, `/icon.svg`, `/fonts/serif.woff2`, `/fonts/sans.woff2` | nothing | The pages' files, fingerprinted (`src/assets.ts`, a copy of the playground's) |
+| GET, HEAD | `/style.css`, `/admin.js`, `/live.js`, `/families.js`, `/family.js`, `/passkeys.js`, `/credential.js`, `/common.js`, `/labels.js`, `/pilot.js`, `/signin.js`, `/icon.svg`, `/fonts/serif.woff2`, `/fonts/sans.woff2` | nothing | The pages' files, fingerprinted (`src/assets.ts`, a copy of the playground's) |
 | GET, HEAD | `/healthz` | nothing | `{"ok":true,"version":"0.0.1","commit":"abc123456789"}` |
 | GET, HEAD | `/robots.txt` | nothing | Disallows everything |
 | POST | `/api/signin/start` | the write rules | `{email}`: a code by mail, for a team address only. Always `202 {"sent":true}` |
 | POST | `/api/signin/verify` | the write rules | `{email, code}`: `200 {"signed_in":true}` and the cookie, or `403 {"error":"wrong_code"}` |
+| POST | `/api/signin/passkey/start` | the write rules | The platform's `POST /v1/auth/team/passkey/options`: `200 {publicKey}` for the browser's picker, the same for everyone, and the ceremony in its own cookie |
+| POST | `/api/signin/passkey/finish` | the write rules, 16 KB | `{credential}`: the platform's `POST /v1/auth/team/passkey/verify`, with the ceremony from its cookie. `200 {"signed_in":true}` and the cookie, or `403 {"error":"passkey_failed"}`; the ceremony's cookie is cleared whatever the answer |
 | POST | `/api/signout` | the write rules | Ends the session, with or without one: `200 {"signed_in":false}` |
 | GET | `/api/build` | a session | `{admin: {version, commit}, platform: {version, commit}}` |
 | GET | `/api/metrics/daily` | a session | The platform's `GET /v1/metrics/daily?days=14` |
@@ -38,6 +42,10 @@ decides each call.
 | GET | `/api/sessions/open` | a session | The platform's `GET /v1/admin/sessions/open` |
 | POST | `/api/families/{id}/grant` | a session, the write rules | `{days, note?}`: the platform's `POST /v1/admin/families/{id}/grant` |
 | POST | `/api/families/{id}/ungrant` | a session, the write rules | The platform's `DELETE /v1/admin/families/{id}/grant` |
+| GET | `/api/passkeys` | a session | The platform's `GET /v1/admin/passkeys`: the member's own, by name and dates |
+| POST | `/api/passkeys/options` | a session, the write rules | The platform's `POST /v1/admin/passkeys/options`: `200 {publicKey}` for the browser, and the ceremony in its own cookie. `409 {"error":"sign_in_again"}` when the sign-in is more than 15 minutes old; the session stays |
+| POST | `/api/passkeys/create` | a session, the write rules, 16 KB | `{label, credential}`: the platform's `POST /v1/admin/passkeys`, with the ceremony from its cookie. `201 {id, label, created_at, last_used_at}`, or `409 {"error":"sign_in_again"}` when the sign-in grew too old meanwhile; the cookie is cleared whatever the answer |
+| POST | `/api/passkeys/{id}/delete` | a session, the write rules | The platform's `DELETE /v1/admin/passkeys/{id}`: `200 {}`, or `404` for one that is not the member's |
 
 Pages hold no data and are served to anyone who comes through the console's
 Worker; their scripts ask the API. Any
@@ -111,6 +119,46 @@ and asks nothing; a family the platform no longer has is told so too. What a
 child said, a session's review and a notice's words are not there: the platform
 does not send them.
 
+## Passkeys
+
+`/passkeys` lists the signed-in team member's own passkeys: the name they gave
+it, when it was made and when it was last used, with «Borrar» on each, which
+asks first and names the passkey in one short line. «Crear passkey» takes a
+name (1 to 60 characters, one line), then asks the console for the options,
+opens the browser's own dialog (fingerprint, face or PIN), and sends the
+passkey back. The page uses the browser's own WebAuthn JSON methods
+(`PublicKeyCredential.parseCreationOptionsFromJSON` and the credential's
+`toJSON`): no library and no change to the CSP. Some password managers hand
+the page a credential whose `toJSON` fails; `public/credential.js` then writes
+the same fields by hand, and a credential it cannot read either is told as the
+password manager's failure. A browser without the parser is told it cannot,
+and the page offers nothing else. At 10 passkeys, the most there can be, the
+button is off.
+
+- **The platform decides.** It checks every passkey with webauthn-rs and keeps
+  only its public half (`apps/platform`, «Aule's team»), and mails the member
+  about every passkey added. Adding one needs a sign-in from the last 15
+  minutes, when it starts and when it is kept: an older session is told to
+  sign in again, and stays. The page says so before anyone tries. Deleting one
+  needs a session only, and ends the sessions that passkey opened.
+- **A passkey the console did not keep.** Once the browser has made one, a
+  refusal leaves it on the device, where it would open nothing. The page then
+  asks the browser to forget it (`PublicKeyCredential.signalUnknownCredential`,
+  where the browser has it), says to delete it there, and lists the passkeys
+  again; after a failure that may have kept it, it only says to look.
+- **The ceremony stays out of the page.** The platform's handle for it travels
+  in its own cookie, `__Host-aule_admin_passkey`
+  (`Path=/; Max-Age=300; HttpOnly; Secure; SameSite=Strict`), never in a body
+  a script can read, and is cleared once it is used.
+- **Nothing is passed on as it came.** The console builds the browser's
+  credential again from the fields the platform reads (`src/passkeys.ts`),
+  each checked for its shape and length, and checks the name as the platform
+  does.
+- **Deleting a passkey here does not delete it from the device.** The dialog
+  says to delete it there too, from the device or the password manager, and
+  that the sessions it opened end: this one included, if it came in with
+  that passkey, and the page then goes to the sign-in.
+
 ## Settings
 
 The image starts Node with these names and nothing else (`env -i` in the
@@ -121,7 +169,7 @@ secrets of the shared env file never reach the process.
 |---|---|---|
 | `ADMIN_HOST` | `127.0.0.1` | Where it listens. With `compose.yaml` it comes from the shell's `AULE_ADMIN_HOST`; the server's wrapper sets `0.0.0.0` for the Worker |
 | `ADMIN_PORT` | `8092` | |
-| `ADMIN_PUBLIC_URL` | `https://admin.meetaule.com` | The console's origin: the one `Origin` a write may carry. `http://localhost:<port>` or `http://127.0.0.1:<port>` to work locally |
+| `ADMIN_PUBLIC_URL` | `https://admin.meetaule.com` | The console's origin: the one `Origin` a write may carry. `http://localhost:<port>` or `http://127.0.0.1:<port>` to work locally. It must equal the platform's `AULE_ADMIN_PASSKEY_ORIGIN`, the one origin a passkey is accepted from (for passkeys, `localhost`, never `127.0.0.1`) |
 | `ADMIN_EDGE_SECRET` | none | What the console's Worker adds to every request (`X-Edge-Secret`, its own secret `EDGE_SECRET`): at least 32 characters, such as `openssl rand -hex 32`. Set, every request without it gets the same 404, except `/healthz` from this machine, and the client address the Worker passes on (`X-Client-IP`) counts for the sign-in's limits. Required when `ADMIN_HOST` is not loopback. With `compose.yaml` it comes from the console's own env file (`infra/server/README.md`) |
 | `AULE_PLATFORM_URL` | required | Where the platform answers, as in `.env.example` |
 | `AULE_ADMIN_EMAILS` | required | The team's addresses, read as the platform reads them. A change needs a restart of both |
@@ -157,15 +205,48 @@ image never hands it one (`test/image.test.ts`).
   - 5 wrong codes an hour and 10 a day per address and client, and 10 an hour
     and 20 a day per client, which a success clears; each try counts before the
     platform is asked, so tries sent together cannot all get through;
-  - 600 sign-in requests a minute in all, a breaker far above the team's use.
+  - 20 passkey sign-ins started an hour per client;
+  - 10 failed passkey sign-ins an hour per client, counted before the platform
+    is asked and cleared by a success. They are counted apart from wrong codes:
+    a signature cannot be guessed, so a passkey a browser keeps offering after
+    it was deleted never holds back the code, nor wrong codes a passkey;
+  - 600 sign-in requests a minute in all, a breaker far above the team's use. A
+    request counts there only once its body is read and only with its client's
+    own counters, so a malformed one, or one past its client's limits, adds
+    nothing to it.
 
   So a stranger's requests and wrong codes hold back only that stranger: the
-  team member, on another connection, still gets in. Every limit applies to
-  every address alike, so reaching one tells nothing. Each counter keeps at most
+  team member, on another connection, still gets in. Only many clients at once
+  can trip the breaker, and then a Cloudflare rate-limiting rule on
+  `admin.meetaule.com/api/signin/*` is the answer. Every limit applies to every
+  address alike, so reaching one tells nothing. Each counter keeps at most
   10,000 keys (addresses by their hash); when full it forgets the one heard from
   longest ago, rather than refuse everyone new. With the platform's own limits
   (five team codes an hour per address, five tries a code), one client gets at
   most 10 tries a day at a team address.
+- **Or a passkey.** Where the browser has the WebAuthn JSON methods, the page
+  offers «Entrar con passkey» above the address. No address is typed: the
+  console asks the platform for a ceremony, the same for everyone, keeps its
+  handle in its own cookie (`__Host-aule_admin_passkey`, 5 minutes,
+  `HttpOnly; Secure; SameSite=Strict`), the browser's own picker shows the
+  passkeys the person has for the console, and its answer goes to the platform,
+  built again (`src/passkeys.ts`; where a password manager's credential cannot
+  write its own JSON, `public/credential.js` writes it). The platform checks it
+  (`apps/platform`, «Aule's team»), opens the same 12-hour session a code does
+  and names whose passkey it was; the console then checks that address against
+  its own team list too. Every failure, the platform's refusal, someone off
+  either list, a missing or used ceremony and a platform that fails alike, is
+  `403 passkey_failed`, no sooner than 500 ms after the body was read; for
+  someone off the console's list, the session the platform opened is ended at
+  once and the log says `passkey_off_team`. A member creates passkeys on
+  «Passkeys»; the code keeps working beside them. The page says so, and words a
+  failure for what can be done: a cancel or no passkey here, a browser that
+  will not, a password manager that could not.
+- **Removing someone from the team** takes either list: off this console's
+  `AULE_ADMIN_EMAILS`, they get no code and their passkeys open nothing here,
+  and the console's restart signs everyone out; the platform's list, read at
+  its start, then catches up at its next restart (`infra/server/README.md`,
+  «Taking someone off the team»).
 - **The cookie** is `__Host-aule_admin`: 32 random bytes, host-only,
   `Path=/; Max-Age=43200; HttpOnly; Secure; SameSite=Strict`. The platform token
   it stands for stays in the console's memory; it is never sent to the browser,
@@ -215,16 +296,22 @@ machine (the container's check and the watch) answers without it.
 **Writes** (every POST) need `Origin` equal to `ADMIN_PUBLIC_URL` (never
 compared with `Host`, which behind the Worker names the server),
 `Sec-Fetch-Site: same-origin` when the browser sends it, `Content-Type:
-application/json`, and a JSON object of at most 4 KB.
+application/json`, and a JSON object of at most 4 KB, or 16 KB where it carries
+a passkey the browser made or used (`/api/passkeys/create`,
+`/api/signin/passkey/finish`).
 
 **The log** has one fixed event per line, with numbers and yes-or-no fields
 only: never an address, a code, a token, a cookie, a body, a request's address,
-a client's address or the platform's words.
+a client's address or the platform's words. A passkey made or deleted is
+`passkey_created` or `passkey_deleted`, a sign-in by passkey is `signed_in`
+with `passkey=true`, and a passkey of someone off this console's list is
+`passkey_off_team`, with nothing of the passkey.
 
 ## Running it locally
 
 With a platform on `http://127.0.0.1:8091` that can send mail, and your address
-in its `AULE_ADMIN_EMAILS`:
+in its `AULE_ADMIN_EMAILS` (and, for passkeys, `AULE_ADMIN_PASSKEY_RP_ID=localhost`
+and `AULE_ADMIN_PASSKEY_ORIGIN=http://localhost:8092` in its settings):
 
 ```sh
 pnpm install --frozen-lockfile
@@ -250,10 +337,15 @@ sign-in's neutral answers and its limits per client (a burst sent together, a
 slow body, IPv6 by its /64), the sessions and their revocation (SIGTERM
 included), the logs, the
 pages' rules, `pilot.js`'s arithmetic (`test/pilot.test.mjs`, moved with it) and
-`labels.js`'s words (`test/labels.test.mjs`). The pages' scripts also run in a
+`labels.js`'s words (`test/labels.test.mjs`), and a passkey's JSON written by
+hand (`test/credential.test.mjs`). The pages' scripts also run in a
 fake document (`test/dom.mjs`) that cannot read HTML from a string: «En vivo»'s
 line, its table, what it draws as text, and how it asks again
 (`test/live.test.mjs`); «Familias»'s filters from the address, its rows and
 links, its pages and its grants (`test/families.test.mjs`); and a family's page,
 its id checked, every section drawn as text, and its lists a page at a time
-(`test/family.test.mjs`).
+(`test/family.test.mjs`); and «Passkeys», with a stand-in for the browser's
+WebAuthn: its list as text, «Crear passkey» from the name to the passkey sent
+back, what each failure says, a browser that cannot, and «Borrar»
+(`test/passkeys.test.mjs`); and the sign-in page's «Entrar con passkey»
+(`test/signin-page.test.mjs`).

@@ -139,6 +139,10 @@ jobs:
         with:
           persist-credentials: false
       - run: docker build --file apps/${{ matrix.app }}/Dockerfile --build-arg AULE_COMMIT=${{ github.sha }} --tag aule-${{ matrix.app }}:ci .
+      # The platform's binary starts in its image: a library it links (OpenSSL,
+      # for the team's passkeys) missing at run time fails here, not on the server.
+      - if: matrix.app == 'platform'
+        run: docker run --rm aule-platform:ci version
 
   version:
     name: Version and changelog

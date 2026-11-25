@@ -4,6 +4,8 @@
 use std::collections::HashMap;
 use std::net::SocketAddr;
 
+use webauthn_rs::prelude::Url;
+
 #[derive(Clone, Debug)]
 pub struct Config {
     pub database_url: String,
@@ -31,6 +33,9 @@ pub struct Config {
     /// team's routes, which the team's console calls, and only they get the
     /// console's codes (`signin::team_start`).
     pub admin_emails: Vec<String>,
+    /// The team's console as a WebAuthn relying party: its passkeys are made
+    /// for this RP id and accepted only from this origin (`passkeys`).
+    pub admin_passkeys: AdminPasskeys,
     /// Temporarily allow free sessions without plan quotas or trial expiry.
     pub free_access: bool,
     /// GitHub's OAuth app, Meta's app and Apple's Services ID for sign-in.
@@ -42,6 +47,17 @@ pub struct Config {
     pub timezone_offset_minutes: i32,
     /// The commit the image was built from (see [`commit`]).
     pub commit: String,
+}
+
+#[derive(Clone, Debug)]
+pub struct AdminPasskeys {
+    /// What the passkeys are made for: the console's host, or a domain it is
+    /// under. Changing it strands every passkey made before.
+    pub rp_id: String,
+    /// The one origin a ceremony is accepted from, like
+    /// `https://admin.meetaule.com`: the console's own ADMIN_PUBLIC_URL, with
+    /// no other subdomain or port.
+    pub origin: String,
 }
 
 #[derive(Clone, Debug)]
@@ -117,6 +133,26 @@ pub fn commit(env: &HashMap<String, String>) -> String {
         .filter(|value| value.bytes().all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f')))
         .unwrap_or("unknown")
         .to_string()
+}
+
+/// The console's origin as a passkey's is checked: `https://<host>[:<port>]`,
+/// or `http://localhost:<port>` to work locally, with no path. The console's
+/// own ADMIN_PUBLIC_URL takes the same, and 127.0.0.1 besides, which is no
+/// relying party: WebAuthn takes no IP address as an RP id.
+fn passkey_origin(text: &str) -> Option<Url> {
+    let port = |port: &str| (1..=5).contains(&port.len()) && port.bytes().all(|byte| byte.is_ascii_digit());
+    let valid = if let Some(rest) = text.strip_prefix("https://") {
+        let (host, at) = rest.split_once(':').map_or((rest, None), |(host, at)| (host, Some(at)));
+        !host.is_empty()
+            && host
+                .bytes()
+                .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || b".-".contains(&byte))
+            && at.is_none_or(port)
+    } else {
+        text.strip_prefix("http://localhost:").is_some_and(port)
+    };
+    // A port past 65535 is still refused here.
+    valid.then(|| Url::parse(text).ok()).flatten()
 }
 
 impl Config {
@@ -282,6 +318,27 @@ impl Config {
             problems.push("AULE_ADMIN_EMAILS must be email addresses separated by commas".into());
         }
 
+        // The production console's, unless told otherwise, so the server's
+        // settings need nothing new.
+        let rp_id = get("AULE_ADMIN_PASSKEY_RP_ID").unwrap_or("admin.meetaule.com").to_string();
+        let origin = get("AULE_ADMIN_PASSKEY_ORIGIN").unwrap_or("https://admin.meetaule.com");
+        let origin = origin.trim_end_matches('/').to_string();
+        match passkey_origin(&origin) {
+            // The library's own rule: the origin's host, or a domain it is
+            // under. An IP address has no domain, so it is never one.
+            Some(url) if webauthn_rs::WebauthnBuilder::new(&rp_id, &url).is_err() => problems.push(
+                "AULE_ADMIN_PASSKEY_RP_ID must be the host of AULE_ADMIN_PASSKEY_ORIGIN, or a domain it is under"
+                    .into(),
+            ),
+            Some(_) => {}
+            None => problems.push(
+                "AULE_ADMIN_PASSKEY_ORIGIN must be the console's https:// origin, like \
+                 https://admin.meetaule.com, or http://localhost:<port> to work locally"
+                    .into(),
+            ),
+        }
+        let admin_passkeys = AdminPasskeys { rp_id, origin };
+
         let mut app = |id: &str, secret: &str| match (get(id), get(secret)) {
             (Some(client_id), Some(client_secret)) => {
                 Some(OAuthApp { client_id: client_id.to_string(), client_secret: client_secret.to_string() })
@@ -346,6 +403,7 @@ impl Config {
             fcm_service_account: get("AULE_FCM_SERVICE_ACCOUNT").map(str::to_string),
             google_client_id,
             admin_emails,
+            admin_passkeys,
             free_access,
             github,
             meta,
@@ -417,6 +475,54 @@ mod tests {
             crate::version_line("0123456789ab"),
             format!("aule-platform {} (0123456789ab)", crate::VERSION)
         );
+    }
+
+    #[test]
+    fn the_consoles_passkeys_are_for_its_own_origin() {
+        let passkeys =
+            |env: &HashMap<String, String>| Config::from_map(env).map(|config| config.admin_passkeys);
+        // Production's, unless told otherwise.
+        let default = passkeys(&complete()).unwrap();
+        assert_eq!(
+            (default.rp_id.as_str(), default.origin.as_str()),
+            ("admin.meetaule.com", "https://admin.meetaule.com")
+        );
+
+        let mut env = complete();
+        let mut set = |rp_id: &str, origin: &str| {
+            env.insert("AULE_ADMIN_PASSKEY_RP_ID".into(), rp_id.into());
+            env.insert("AULE_ADMIN_PASSKEY_ORIGIN".into(), origin.into());
+            passkeys(&env)
+        };
+        // To work locally; and a domain the console's host is under.
+        let local = set("localhost", "http://localhost:8092/").unwrap();
+        assert_eq!((local.rp_id.as_str(), local.origin.as_str()), ("localhost", "http://localhost:8092"));
+        assert!(set("meetaule.com", "https://admin.meetaule.com").is_ok());
+        assert!(set("admin.example.org", "https://admin.example.org:8443").is_ok());
+
+        for (rp_id, origin, setting) in [
+            // An RP id that is not the origin's host, nor a domain it is under.
+            ("admin.meetaule.com", "https://playground.meetaule.com", "AULE_ADMIN_PASSKEY_RP_ID must be"),
+            ("eetaule.com", "https://admin.meetaule.com", "AULE_ADMIN_PASSKEY_RP_ID must be"),
+            ("evil.example", "https://admin.meetaule.com", "AULE_ADMIN_PASSKEY_RP_ID must be"),
+            ("Admin.MeetAule.com", "https://admin.meetaule.com", "AULE_ADMIN_PASSKEY_RP_ID must be"),
+            // No IP address is an RP id.
+            ("127.0.0.1", "https://127.0.0.1", "AULE_ADMIN_PASSKEY_RP_ID must be"),
+            ("127.0.0.1", "http://127.0.0.1:8092", "AULE_ADMIN_PASSKEY_ORIGIN must be"),
+            // http:// only to this machine, and only with its port.
+            ("admin.meetaule.com", "http://admin.meetaule.com", "AULE_ADMIN_PASSKEY_ORIGIN must be"),
+            ("localhost", "http://localhost", "AULE_ADMIN_PASSKEY_ORIGIN must be"),
+            // An origin, not a page: no path, query or user.
+            ("admin.meetaule.com", "https://admin.meetaule.com/panel", "AULE_ADMIN_PASSKEY_ORIGIN must be"),
+            ("admin.meetaule.com", "https://admin.meetaule.com?x=1", "AULE_ADMIN_PASSKEY_ORIGIN must be"),
+            ("admin.meetaule.com", "https://ana@admin.meetaule.com", "AULE_ADMIN_PASSKEY_ORIGIN must be"),
+            ("admin.meetaule.com", "https://admin.meetaule.com:99999", "AULE_ADMIN_PASSKEY_ORIGIN must be"),
+            ("admin.meetaule.com", "https://admin.meetaule.com:", "AULE_ADMIN_PASSKEY_ORIGIN must be"),
+            ("admin.meetaule.com", "admin.meetaule.com", "AULE_ADMIN_PASSKEY_ORIGIN must be"),
+        ] {
+            let message = set(rp_id, origin).unwrap_err().to_string();
+            assert!(message.contains(setting), "{rp_id} {origin}: {message}");
+        }
     }
 
     #[test]
