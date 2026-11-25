@@ -9,3 +9,5 @@ __pycache__/
 !.env.example
 .DS_Store
 target/
+infra/edge/.ota-assets/
+infra/edge/.wrangler/

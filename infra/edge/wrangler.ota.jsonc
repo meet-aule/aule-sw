@@ -1,0 +1,14 @@
+{
+  "name": "aule-ota",
+  "main": "src/ota.js",
+  "compatibility_date": "2025-11-01",
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [{ "pattern": "ota.meetaule.com", "custom_domain": true }],
+  "assets": {
+    "directory": "./.ota-assets",
+    "binding": "ASSETS",
+    "run_worker_first": true
+  },
+  "observability": { "enabled": true, "logs": { "invocation_logs": false } }
+}
