@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import logging
 
 import aiohttp
 import pytest
@@ -335,6 +336,17 @@ async def test_a_cancelled_check_propagates_and_keeps_its_context(guard, provide
     ]
 
 
+def logged(record: logging.LogRecord) -> str:
+    """What the code put in the record: its message and extra fields.
+
+    The record's own bookkeeping (timestamps, thread and process ids) is left
+    out, because a digit sequence there can match by chance.
+    """
+    standard = logging.LogRecord("", 0, "", 0, "", (), None).__dict__
+    ours = {key: value for key, value in record.__dict__.items() if key not in standard}
+    return f"{record.getMessage()} {ours}"
+
+
 async def test_logs_carry_the_verdict_and_never_the_text_or_the_key(guard, provider, caplog):
     provider.payload = response(0.99)
 
@@ -344,8 +356,8 @@ async def test_logs_carry_the_verdict_and_never_the_text_or_the_key(guard, provi
     (record,) = caplog.records
     assert record.verdict == "adult_help"
     assert isinstance(record.duration_ms, int)
-    logged = str(record.__dict__)
-    assert "secret" not in logged and "synthetic-test-key" not in logged and "0.99" not in logged
+    said = logged(record)
+    assert "secret" not in said and "synthetic-test-key" not in said and "0.99" not in said
 
 
 @pytest.mark.parametrize(
