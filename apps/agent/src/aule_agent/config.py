@@ -71,6 +71,10 @@ class Settings:
     # gate judges the reply. Nothing of it is heard before the gate approves
     # it; the voice's provider gets the sentence before the gate decides.
     voice_ahead: bool = False
+    # Whether TypeSafe's Jev reads a child's unsure words first and only a clear
+    # "ordinary" from it is taken, the small model reading the rest as before
+    # (opinion.py). Jev already reads every turn for the physical-safety gate.
+    jev_first_reading: bool = False
     # Kept out of the repr so a logged Settings never shows a key.
     openai_api_key: str | None = field(default=None, repr=False)
     typesafe_api_key: str | None = field(default=None, repr=False)
@@ -129,6 +133,7 @@ class Settings:
         notes_after_history = get("AULE_NOTES_AFTER_HISTORY").lower() in ("1", "true", "yes", "on")
         early_reply = get("AULE_EARLY_REPLY").lower() in ("1", "true", "yes", "on")
         voice_ahead = get("AULE_VOICE_AHEAD").lower() in ("1", "true", "yes", "on")
+        jev_first_reading = get("AULE_JEV_FIRST_READING").lower() in ("1", "true", "yes", "on")
 
         if problems:
             raise ConfigError("; ".join(problems))
@@ -146,6 +151,7 @@ class Settings:
             notes_after_history=notes_after_history,
             early_reply=early_reply,
             voice_ahead=voice_ahead,
+            jev_first_reading=jev_first_reading,
             openai_api_key=get(MODERATION_KEY) or None,
             typesafe_api_key=get(PHYSICAL_SAFETY_KEY) or None,
         )

@@ -902,8 +902,10 @@ EVALS = {
     "evals/physical-safety/turn-recovery-cases.json": (
         "6070be2aab180108994d948a82e24df588975ed009e2424af9908a666341f91f"
     ),
+    # Changed on purpose: AULE_JEV_FIRST_READING=1 also evaluates Jev's first
+    # reading; without it the evaluation runs as before.
     "evals/second-reading/evaluate.py": (
-        "c3772c93094f57598e237f19e36ac006f854adf7d476d6c8e59b36d1d408de7d"
+        "978563b9cef8789b4cea18ff9df214f2b42f20881dc24d2a332ec8316e373178"
     ),
     "evals/second-reading/cases.json": (
         "d14f404557888ee2c7aa4140fab7acc8eae18bd6c1222be871376c975299e415"

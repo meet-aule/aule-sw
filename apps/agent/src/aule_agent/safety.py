@@ -32,7 +32,7 @@ from .moderation import (
     classify_heard,
     classify_spoken,
 )
-from .opinion import SecondOpinion
+from .opinion import JevReading, SecondOpinion
 from .physical_safety import PhysicalSafetyGuard, Verdict, combine_input_decisions
 
 logger = logging.getLogger("aule.agent.safety")
@@ -365,8 +365,18 @@ def build_gates(
         report=report,
         # Only what the tutor is about to say gets a second reader, and only
         # where there is a moderation gate to be unsure.
-        second_opinion=SecondOpinion() if second_opinion and settings.openai_api_key else None,
+        second_opinion=(
+            _second_opinion(settings) if second_opinion and settings.openai_api_key else None
+        ),
     )
+
+
+def _second_opinion(settings: Settings) -> SecondOpinion:
+    """The second reader, with Jev's first reading of a child's words when it
+    is turned on (AULE_JEV_FIRST_READING) and its key is there."""
+    if settings.jev_first_reading and settings.typesafe_api_key:
+        return SecondOpinion(jev=JevReading(settings.typesafe_api_key))
+    return SecondOpinion()
 
 
 # Why a gate does not answer, in words for whoever reads the log.

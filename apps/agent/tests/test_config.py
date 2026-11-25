@@ -89,6 +89,20 @@ def test_push_to_talk_is_off_unless_turned_on():
     assert Settings.from_env({**COMPLETE, "AULE_PUSH_TO_TALK": "no"}).push_to_talk is False
 
 
+async def test_jev_reads_first_only_when_turned_on_and_the_gates_get_it_then(monkeypatch):
+    from aule_agent.safety import build_gates
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+    keyed = {**COMPLETE, "OPENAI_API_KEY": "sk-test", "TYPESAFE_API_KEY": "ts-test"}
+    assert Settings.from_env(keyed).jev_first_reading is False
+    off = build_gates(Settings.from_env(keyed))
+    on = build_gates(Settings.from_env({**keyed, "AULE_JEV_FIRST_READING": "on"}))
+    assert off._second_opinion._jev is None
+    assert on._second_opinion._jev is not None
+    await off.close()
+    await on.close()
+
+
 def test_the_notes_stay_in_the_system_prompt_unless_moved_after_the_history():
     assert Settings.from_env(COMPLETE).notes_after_history is False
     assert Settings.from_env({**COMPLETE, "AULE_NOTES_AFTER_HISTORY": "1"}).notes_after_history
