@@ -2,7 +2,7 @@
 // numbers, every family with its plan and the link it came from, and a plan
 // granted for free. The platform decides who is on the team.
 
-import { byWeek, bySource, outOf, share, weekLabel, zoneLabel } from "./pilot.js";
+import { byWeek, bySource, childFigures, outOf, share, weekLabel, zoneLabel } from "./pilot.js";
 
 const $ = (id) => document.getElementById(id);
 const PLANS = { trial: "Prueba", paid: "Pagado", granted: "Regalado", none: "Sin plan", team: "Equipo", free: "Gratis ilimitado" };
@@ -93,6 +93,8 @@ function pilotCells(line) {
 function showPilot(weekly) {
   const cohorts = weekly.cohorts ?? [];
   $("pilot-zone").textContent = zoneLabel(weekly.timezone_offset_minutes);
+  // The children back within a week, and how much a child talks in a session.
+  $("pilot-figures").replaceChildren(...childFigures(weekly).map(([label, value]) => figure(label, value)));
   $("weeks").replaceChildren(
     ...byWeek(cohorts).flatMap((week) => {
       // A week whose families all came the same way names it on its own line.

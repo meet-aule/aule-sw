@@ -1,6 +1,7 @@
-// The pilot's four numbers as the team's panel shows them. The platform counts
-// them per week of sign-up and link (GET /v1/metrics/weekly); these add them
-// up per week and per link. Pure functions: the tests import them as they are.
+// The pilot's numbers as the team's panel shows them. The platform counts the
+// four per week of sign-up and link (GET /v1/metrics/weekly); these add them
+// up per week and per link, and say its two figures about the children. Pure
+// functions: the tests import them as they are.
 
 /**
  * What each line of the platform's answer counts, all of them families. A
@@ -79,6 +80,34 @@ export function share(count, of) {
  */
 export function outOf(count, of) {
   return of > 0 ? `${count} de ${of} (${percent(count, of)})` : "—";
+}
+
+const whole = (value) => (Number.isInteger(value) && value >= 0 ? value : 0);
+
+/**
+ * The pilot's two figures about the children, from the platform's weekly
+ * answer (`children` and `talk`), each as [label, value]: the children back
+ * within seven days of their first session, out of those whose seven days are
+ * over, with all of them so far beside it; and the median of a child's turns
+ * per minute in a session, with Peru's decimal comma and how many sessions it
+ * is of. A dash while there is nothing to say yet.
+ */
+export function childFigures(weekly) {
+  const children = weekly?.children ?? {};
+  const talk = weekly?.talk ?? {};
+  const median = talk.median_child_turns_per_minute;
+  const known = typeof median === "number" && Number.isFinite(median) && median >= 0;
+  const sessions = whole(talk.sessions);
+  return [
+    [
+      `niños que volvieron en 7 días (hasta hoy: ${whole(children.back_so_far)} de ${whole(children.with_a_session)})`,
+      outOf(whole(children.back_in_week1), whole(children.week1_over)),
+    ],
+    [
+      known ? `turnos del niño por minuto (mediana), en ${sessions} ${sessions === 1 ? "sesión" : "sesiones"}` : "turnos del niño por minuto (mediana)",
+      known ? median.toFixed(1).replace(".", ",") : "—",
+    ],
+  ];
 }
 
 /** Where the platform's weeks start and end: Peru's time, or the offset it was set to. */

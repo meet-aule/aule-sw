@@ -58,7 +58,11 @@ The team's panel is at `<base path>/admin`. `/admin`, `/admin/` and a trailing
 slash on the panel redirect to that address; its data still requires a team
 sign-in. Besides the daily numbers and the families, with the link each came
 from, it shows the pilot's four numbers per week of sign-up and per link, from
-the platform's `GET /v1/metrics/weekly`; `public/pilot.js` adds them up. An
+the platform's `GET /v1/metrics/weekly`, and two figures about the children of
+those weeks: how many came back within seven days of their first session (of
+those whose seven days are over, with all of them so far beside it), and the
+median of a child's turns per minute in a session; `public/pilot.js` adds them
+up and says them. An
 unknown page opened by a browser returns to the start page. Unknown API routes,
 files and write requests keep their error responses. These redirects are not
 cached and do not accept a destination from the request.
