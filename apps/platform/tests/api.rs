@@ -2098,10 +2098,12 @@ async fn the_team_reads_the_pilots_four_numbers_by_week_of_sign_up_and_link(pool
     )
     .await
     .unwrap();
-    // Beto had five minutes and a slip of one, and a plan given during his trial is no payment.
+    // Beto had five minutes and a slip of one, with three turns of his child in it, and a
+    // plan given during his trial is no payment.
     let child = app.child_of(&beto).await;
     app.past_session(&child, "29 days", 5).await;
-    app.past_session(&child, "28 days", 1).await;
+    let slip = app.past_session(&child, "28 days", 1).await;
+    set("update sessions set child_turns = 3 where id = $1::uuid", &slip).await.unwrap();
     set(
         "insert into subscriptions (id, family_id, plan, starts_at, ends_at, granted_by)
          values (gen_random_uuid(), $1::uuid, 'granted', now() - interval '25 days', now() + interval '5 days', 'team')",
@@ -2116,6 +2118,28 @@ async fn the_team_reads_the_pilots_four_numbers_by_week_of_sign_up_and_link(pool
         .await
         .unwrap();
     app.past_session(&app.child_of(&dani).await, "22 days", 12).await;
+    // Dani has two more children, which leaves her family's numbers as they are. One
+    // came back on day 3, with six turns in six minutes and then two in four; the
+    // other came back only on day 8.
+    let child = app.child_of(&dani).await;
+    for (ago, minutes, turns) in [("8 days", 6, 6), ("5 days", 4, 2)] {
+        let session = app.past_session(&child, ago, minutes).await;
+        sqlx::query("update sessions set child_turns = $2 where id = $1::uuid")
+            .bind(session)
+            .bind(turns)
+            .execute(&app.state.pool)
+            .await
+            .unwrap();
+    }
+    let child = app.child_of(&dani).await;
+    app.past_session(&child, "14 days", 10).await;
+    app.past_session(&child, "6 days", 10).await;
+    // On its day 3 the team tried the tutor with that child's profile: it is not the
+    // child coming back, nor the child talking.
+    let session = app.past_session(&child, "11 days", 5).await;
+    set("update sessions set audience = 'operator', child_turns = 50 where id = $1::uuid", &session)
+        .await
+        .unwrap();
     // This week: Caro, with no link, whose only session was left open and closed by
     // the housekeeping hours later; and from another link Eli, with no session yet,
     // and Gabi, with three in her first hours, whose first week is not over.
@@ -2134,9 +2158,12 @@ async fn the_team_reads_the_pilots_four_numbers_by_week_of_sign_up_and_link(pool
     assert_eq!(app.count("select count(*) from sessions where status <> 'ended'").await, 0);
     google("ok:eli@example.org:Eli", json!("pucp")).await;
     let child = app.child_of(&google("ok:gabi@example.org:Gabi", json!("pucp")).await).await;
-    for ago in ["3 hours", "2 hours", "1 hour"] {
+    for ago in ["3 hours", "2 hours"] {
         app.past_session(&child, ago, 15).await;
     }
+    // In the last, her child took thirty turns.
+    let session = app.past_session(&child, "1 hour", 15).await;
+    set("update sessions set child_turns = 30 where id = $1::uuid", &session).await.unwrap();
     // Two families that signed up either side of midnight from Sunday to Monday in
     // Lima (05:00 in UTC), a week or two ago: each in its own week.
     let lima_today = (chrono::Utc::now() - chrono::Duration::hours(5)).date_naive();
@@ -2156,11 +2183,12 @@ async fn the_team_reads_the_pilots_four_numbers_by_week_of_sign_up_and_link(pool
             .await
             .unwrap();
     }
-    // The team's own family, with a long session, is not counted.
+    // The team's own family, with a long session full of talk, is not counted.
     let team = app.sign_in("team@example.org", "Team").await;
     let (_, me) = app.call(Method::GET, "/v1/me", Some(&team), None).await;
     let child = app.child_of(me["family_id"].as_str().unwrap()).await;
-    app.past_session(&child, "1 hour", 45).await;
+    let session = app.past_session(&child, "1 hour", 45).await;
+    set("update sessions set child_turns = 90 where id = $1::uuid", &session).await.unwrap();
 
     let (status, _) = app.call(Method::GET, "/v1/metrics/weekly", None, None).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
@@ -2215,12 +2243,101 @@ async fn the_team_reads_the_pilots_four_numbers_by_week_of_sign_up_and_link(pool
     for cohort in cohorts {
         assert_eq!(chrono::Datelike::weekday(&week(cohort)), chrono::Weekday::Mon, "a week starts on Monday");
     }
+    // Children rather than families: seven had their first session in these weeks, and
+    // five have their first week over. Ana's child and Dani's second came back within
+    // it, and Gabi's while hers runs; Beto's slip and a return on day 8 do not count.
+    assert_eq!(
+        weekly["children"],
+        json!({ "with_a_session": 7, "week1_over": 5, "back_in_week1": 2, "back_so_far": 3 }),
+        "{weekly}"
+    );
+    // Six turns in six minutes, two in four and thirty in fifteen: a median of 1, where
+    // the mean would be 1.2. Beto's slip does not count, as for the plan: its three
+    // turns in a minute would make it 1.5. The others have no count of turns, no length
+    // the housekeeping could know, or are the team's.
+    assert_eq!(weekly["talk"], json!({ "median_child_turns_per_minute": 1.0, "sessions": 3 }), "{weekly}");
 
     // Fewer weeks leave the older ones out; and only numbers and the links' codes go out.
+    // (The children's numbers follow the same weeks: the next test places sessions either
+    // side of a Monday's midnight, since these, hours or days old, fall in this week or
+    // the last depending on the day the test runs.)
     let (_, recent) = app.call(Method::GET, "/v1/metrics/weekly?weeks=1", Some(&team), None).await;
     assert_eq!(recent["cohorts"].as_array().unwrap().len(), 2, "{recent}");
     let text = weekly.to_string();
     assert!(!text.contains("example.org") && !text.contains("Ana") && !text.contains("Mateo"));
+}
+
+#[sqlx::test(migrator = "aule_platform::MIGRATOR")]
+async fn the_childrens_numbers_count_the_same_weeks_as_the_families(pool: PgPool) {
+    let app = app(pool);
+    let team = app.sign_in("team@example.org", "Team").await;
+    // Last Monday's midnight in Lima (05:00 in UTC), where the older of two weeks starts.
+    let lima_today = (chrono::Utc::now() - chrono::Duration::hours(5)).date_naive();
+    let monday = lima_today
+        - chrono::Duration::days(chrono::Datelike::weekday(&lima_today).num_days_from_monday().into())
+        - chrono::Duration::days(7);
+    let midnight = monday.and_hms_opt(5, 0, 0).unwrap().and_utc();
+    // Two families either side of it. Lía's signed up on the Sunday, and her child's first
+    // session began at half past eleven, with thirty turns in ten minutes; Noa's signed up
+    // on the Monday, and her child's began half an hour after midnight, with ten turns in
+    // eight minutes.
+    for (credential, at, minutes, turns) in [
+        ("ok:lia@example.org:Lía", midnight - chrono::Duration::minutes(30), 10, 30),
+        ("ok:noa@example.org:Noa", midnight + chrono::Duration::minutes(30), 8, 10),
+    ] {
+        let body = json!({ "credential": credential });
+        let (status, account) = app.call(Method::POST, "/v1/auth/google", None, Some(body)).await;
+        assert_eq!(status, StatusCode::OK, "{account}");
+        let family = account["family_id"].as_str().unwrap().to_string();
+        sqlx::query("update families set created_at = $2 where id = $1::uuid")
+            .bind(&family)
+            .bind(at - chrono::Duration::minutes(10))
+            .execute(&app.state.pool)
+            .await
+            .unwrap();
+        let child = app.child_of(&family).await;
+        sqlx::query(
+            "insert into sessions (id, child_id, audience, room, language, status, agent_token_hash,
+                                   created_at, started_at, ended_at, child_turns)
+             values (gen_random_uuid(), $1::uuid, 'child', gen_random_uuid()::text, 'es', 'ended',
+                     gen_random_uuid()::text, $2, $2, $2 + make_interval(mins => $3), $4)",
+        )
+        .bind(&child)
+        .bind(at)
+        .bind(minutes)
+        .bind(turns)
+        .execute(&app.state.pool)
+        .await
+        .unwrap();
+    }
+
+    let (app, token) = (&app, team.as_str());
+    let read = |weeks: i32| async move {
+        let path = format!("/v1/metrics/weekly?weeks={weeks}");
+        let (status, weekly) = app.call(Method::GET, &path, Some(token), None).await;
+        assert_eq!(status, StatusCode::OK, "{weekly}");
+        weekly
+    };
+    let cohort_weeks = |weekly: &Value| {
+        weekly["cohorts"].as_array().unwrap().iter().map(|cohort| cohort["week"].clone()).collect::<Vec<_>>()
+    };
+    // Two weeks start at that midnight, for the children as for the families: Noa's only,
+    // whose 1.25 turns a minute read 1.3, to one decimal.
+    let two = read(2).await;
+    assert_eq!(cohort_weeks(&two), [json!(monday.to_string())], "{two}");
+    assert_eq!(two["children"]["with_a_session"], 1, "{two}");
+    assert_eq!(two["talk"], json!({ "median_child_turns_per_minute": 1.3, "sessions": 1 }), "{two}");
+    // Three take in Lía's week too: 1.25 and 3 turns a minute, a median of 2.125.
+    let three = read(3).await;
+    let before = monday - chrono::Duration::days(7);
+    assert_eq!(cohort_weeks(&three), [json!(monday.to_string()), json!(before.to_string())], "{three}");
+    assert_eq!(three["children"]["with_a_session"], 2, "{three}");
+    assert_eq!(three["talk"], json!({ "median_child_turns_per_minute": 2.1, "sessions": 2 }), "{three}");
+    // This week alone has neither.
+    let one = read(1).await;
+    assert_eq!(cohort_weeks(&one), Vec::<Value>::new(), "{one}");
+    assert_eq!(one["children"]["with_a_session"], 0, "{one}");
+    assert_eq!(one["talk"], json!({ "median_child_turns_per_minute": null, "sessions": 0 }), "{one}");
 }
 
 #[sqlx::test(migrator = "aule_platform::MIGRATOR")]
