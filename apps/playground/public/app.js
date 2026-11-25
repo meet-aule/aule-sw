@@ -978,12 +978,13 @@ function tutorMissing() {
 }
 
 /**
- * The session's title and the line under it: A15's «La sesión empezó.», or on
- * a first run A16's «Hola, soy Aule» and «Soy tu tutor. Soy una inteligencia
- * artificial.», in the student's language. While Aule does not arrive, A15's
- * title and the line that says so (a web-only state): A16's words wait for
- * Aule. The line is a status, never hidden, only empty, so that Aule not
- * arriving is said once, and politely.
+ * The session's title and the lines under it: A15's «La sesión empezó.», or on
+ * a first run A16's «Hola, soy Aule», «Soy tu tutor. Soy una inteligencia
+ * artificial.» and «Tu papá o mamá recibe un resumen de lo que hacemos.», all
+ * in the student's language. While Aule does not arrive, «Aule no pudo llegar»
+ * and «No es tu culpa.» (a web-only state): A16's words wait for Aule. The
+ * first line is a status, never hidden, only empty, so that Aule not arriving
+ * is said once, and politely; the second is not one.
  */
 function showIntro() {
   if (tutorLate) {
@@ -997,6 +998,8 @@ function showIntro() {
     write($("session-title"), recoveryText("started"));
     write($("session-intro"), "", "es");
   }
+  // True for every family: the home shows a summary of each session (D35).
+  writeWords($("session-parent"), firstSession && !tutorLate ? "intro_parent" : "");
 }
 
 // «Mostrar mi tarea» in two steps (D31). First the camera turns on and the stage

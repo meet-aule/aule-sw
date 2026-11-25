@@ -9,6 +9,7 @@ import { $, SUBJECTS, call, clearEditor, describe, editingStudent, openEditor } 
 import { DATED, KINDS, OWN_SUBJECT, REVIEW, defaultSubject, kindKey, objectiveFor, planLine } from "./steps.js";
 import { back, current, getAccount, go, landing, need, onAccount, onShow, setAccount } from "./screens.js";
 import { languageOf, words } from "./first-steps.js";
+import { homeWords, sessionLine } from "./summaries.js";
 
 // The student a session is for, and what for: undefined until a tile is
 // chosen, "" when it is left to Aule, else the kind.
@@ -101,8 +102,58 @@ function row(student, open) {
   configure.textContent = "Configurar";
   configure.setAttribute("aria-label", `Configurar a ${student.name}`);
   configure.addEventListener("click", () => edit(student));
-  item.append(start, configure);
+  // Their latest sessions, as facts, once they are read (drawSessions), and under
+  // them the way to the summaries the review wrote, in Configurar, once it has
+  // written one (D35).
+  const language = document.documentElement.lang;
+  const sessions = document.createElement("ul");
+  sessions.className = "student-sessions";
+  sessions.setAttribute("aria-label", homeWords("list", language, { name: student.name }));
+  sessions.hidden = true;
+  const summaries = document.createElement("button");
+  summaries.type = "button";
+  summaries.className = "link student-summaries";
+  summaries.textContent = homeWords("see_summaries", language);
+  summaries.setAttribute("aria-label", homeWords("see_summaries_of", language, { name: student.name }));
+  summaries.hidden = true;
+  summaries.addEventListener("click", () => edit(student, false, "past"));
+  item.dataset.student = student.id;
+  item.append(start, configure, sessions, summaries);
   return item;
+}
+
+/**
+ * Each student's latest sessions under their row (D35): when, how long, what
+ * for, the exercises, the breaks and an unusual ending, never what was said;
+ * and «Ver resúmenes» once the review has a summary for Configurar to show
+ * (right after a session it has none yet). They are asked for together, and
+ * drawn while the home still shows that row; a read that fails leaves the row
+ * as it is.
+ */
+function drawSessions() {
+  const language = document.documentElement.lang;
+  for (const item of $("student-list").children) {
+    call("api/student/sessions", { student_id: item.dataset.student }).then(
+      (answer) => {
+        if (current() !== "home" || !item.isConnected) return;
+        const lines = (answer.sessions ?? []).map((facts) => {
+          const { when, what } = sessionLine(facts, { language });
+          const line = document.createElement("li");
+          const day = document.createElement("b");
+          day.textContent = when;
+          const about = document.createElement("span");
+          about.textContent = what;
+          line.append(day, " ", about);
+          return line;
+        });
+        const list = item.querySelector(".student-sessions");
+        list.replaceChildren(...lines);
+        list.hidden = lines.length === 0;
+        item.querySelector(".student-summaries").hidden = !(answer.summaries > 0);
+      },
+      () => undefined,
+    );
+  }
 }
 
 function drawHome() {
@@ -131,34 +182,41 @@ onShow("home", () => {
   confirmed = false;
   drawHome();
   findResumable();
-  readAgain();
+  // The latest sessions once the account is read again: after a session it has
+  // changed and the rows are drawn again, so each is read once, into its row.
+  readAgain().then((home) => {
+    if (home) drawSessions();
+  });
 });
 
 /**
  * Reads the family's account again each time the home shows: a session that
  * just ended may have used the day or started the trial. It is drawn while
  * the page still shows the home, signed in; a sign-in that expired meanwhile
- * goes back to signing in. A failed read keeps what is drawn.
+ * goes back to signing in. A failed read keeps what is drawn. True while the
+ * home still shows, signed in.
  */
 async function readAgain() {
   let latest;
   try {
     latest = await call("api/account");
   } catch {
-    return;
+    return current() === "home" && getAccount().signed_in === true;
   }
-  if (current() !== "home" || getAccount().signed_in !== true) return;
+  if (current() !== "home" || getAccount().signed_in !== true) return false;
   if (latest.signed_in !== true) {
     // Each module forgets what it drew about the family before signing in shows.
     setAccount(latest);
     const land = landing();
-    return go(land === "c01" ? "p13" : land, { replace: true, fresh: true, flow: "back", message: "Tu sesión se cerró. Vuelve a entrar." });
+    go(land === "c01" ? "p13" : land, { replace: true, fresh: true, flow: "back", message: "Tu sesión se cerró. Vuelve a entrar." });
+    return false;
   }
   const drawn = (account) => JSON.stringify([account.name, account.team, account.plan, account.students]);
   const changed = drawn(latest) !== drawn(getAccount());
   setAccount(latest);
   // Unchanged, the rows stay as they are, and so does the focus in them.
   if (changed) drawHome();
+  return true;
 }
 
 async function findResumable() {
@@ -234,8 +292,12 @@ $("a02-no").addEventListener("click", () => {
 
 // --- A student's settings ---------------------------------------------------------------
 
-/** Opens Configurar for a student; from a02 (`handingOver`), saving goes back to it. */
-function edit(student, handingOver = false) {
+/**
+ * Opens Configurar for a student; from a02 (`handingOver`), saving goes back to
+ * it. `at`: "past" for the home's «Ver resúmenes», which opens it at the
+ * summaries of the latest sessions.
+ */
+function edit(student, handingOver = false, at = null) {
   openEditor(student, subjectsKept(), async (saved) => {
     // Saved or removed: the family's students are read again, then the screen before.
     try {
@@ -249,7 +311,7 @@ function edit(student, handingOver = false) {
       return go("home", { replace: true, fresh: true });
     }
     back();
-  });
+  }, { at });
   go("editor");
 }
 

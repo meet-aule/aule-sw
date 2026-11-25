@@ -76,6 +76,8 @@ const WORDS = {
     // A16 Hola, soy Aule, on a first run: César's AI disclosure, the one line of two sentences.
     intro_title: "Hola, soy Aule",
     intro_line: "Soy tu tutor. Soy una inteligencia artificial.",
+    // A16's second line, true now that the home shows each session's summary (D35).
+    intro_parent: "Tu papá o mamá recibe un resumen de lo que hacemos.",
     // The talk button, as the coach speaks of it.
     talk_hold: "Mantén apretado para hablar",
     talk_hold_key: "Mantén apretado para hablar (o la barra espaciadora)",
@@ -181,6 +183,7 @@ const WORDS = {
     camera_none: "There's no camera, but you can come in with your voice.",
     intro_title: "Hi, I'm Aule",
     intro_line: "I'm your tutor. I'm an artificial intelligence.",
+    intro_parent: "Your mum or dad gets a summary of what we do.",
     talk_hold: "Hold to talk",
     talk_hold_key: "Hold to talk (or the space bar)",
     talk_listening: "I'm listening… let go to send",

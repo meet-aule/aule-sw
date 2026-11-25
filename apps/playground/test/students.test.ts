@@ -19,6 +19,8 @@ const SUBJECTS = ["matematica", "comunicacion", "ciencia", "personal_social", "i
 // read, as when the platform is slow or the student was just removed.
 const seen: { method: string; path: string; auth: string | undefined; body: unknown }[] = [];
 let keepsSubjects = true;
+// The platform's reviews answer 503 while this is set.
+let failReviews = false;
 const liam = () => ({
   id: LIAM,
   family_id: "fam-1",
@@ -85,6 +87,7 @@ const platform = createServer(async (request, response) => {
     });
   }
   if (path === `/v1/children/${LIAM}/reviews`) {
+    if (failReviews) return answer(503, { error: { message: "unavailable" } });
     return answer(200, {
       reviews: [
         { session_id: "s-0", summary: "Practicó fracciones.", next_step: "Sigue comparar.", flags: [], created_at: "2026-11-17T23:10:00Z" },
@@ -92,9 +95,39 @@ const platform = createServer(async (request, response) => {
     });
   }
   if (path === `/v1/children/${LIAM}/memories/${MEMORY}` && method === "DELETE") return answer(204, {});
+  if (path === `/v1/children/${LIAM}/sessions?limit=3`) return answer(200, { sessions: LATEST });
   if (path === "/v1/sessions") return answer(201, { session_id: "s-1", serverUrl: "wss://x", token: "jwt", room: "r" });
   answer(404, { error: { message: "no such path" } });
 });
+
+// What the platform's GET /v1/children/{id}/sessions could send, with what the page must never show.
+const MARK = "written-by-the-child";
+const LATEST = [
+  {
+    started_at: "2026-11-24T15:10:00Z",
+    seconds: 372.4,
+    end_reason: "child_ended",
+    breaks: 1,
+    objective: { kind: "homework", subject: "matematica", topic: MARK, due: "2026-11-27" },
+    exercises: { tried: 4, right: 3 },
+    skills: ["Sumar hasta 20", "x".repeat(81), 7, "Restar hasta 10", "Contar hasta 100"],
+    id: "s-1",
+    child_turns: 22,
+    guardian_summary: MARK,
+  },
+  {
+    started_at: "2026-11-23T20:00:00Z",
+    seconds: null,
+    end_reason: "a_reason_from_a_newer_platform",
+    breaks: -1,
+    objective: { kind: "play", subject: "latin" },
+    exercises: { tried: -2, right: 5 },
+    skills: "Sumar hasta 20",
+  },
+  { started_at: "2026-11-22T20:00:00Z", seconds: 12, end_reason: "idle", breaks: 99, objective: null, exercises: { tried: 2, right: 3 }, skills: [] },
+  { started_at: "yesterday", seconds: 60, end_reason: "idle" },
+  { started_at: "2026-11-20T20:00:00Z", seconds: 60, end_reason: "error", objective: { kind: "explore", subject: "other" } },
+];
 
 let base = "";
 let server: ReturnType<typeof createPlayground>;
@@ -372,6 +405,68 @@ test("what is kept about a student is short enough to read, and one memory can b
     auth: `Bearer ${TOKEN}`,
     body: null,
   });
+});
+
+test("a student's latest sessions are facts the page can show, and nothing else the platform sent", async () => {
+  assert.equal((await post("student/sessions", { student_id: LIAM }, null)).status, 401);
+  assert.equal((await post("student/sessions", { student_id: "nope" })).status, 400);
+  seen.length = 0;
+
+  const response = await post("student/sessions", { student_id: LIAM });
+
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.deepEqual(body, {
+    sessions: [
+      {
+        day: "2026-11-24T15:10:00Z",
+        minutes: 6,
+        kind: "homework",
+        subject: "matematica",
+        // Two at most, each a name of the catalogue's length.
+        skills: ["Sumar hasta 20", "Restar hasta 10"],
+        // How many were tried; how many were right is not the home's (a child lands there).
+        tried: 4,
+        breaks: 1,
+        ending: "child_ended",
+      },
+      // What is not one of the platform's values is left out, and counts that are not counts are none.
+      { day: "2026-11-23T20:00:00Z", minutes: null, kind: null, subject: null, skills: [], tried: 0, breaks: 0, ending: null },
+      // A session shorter than a minute is one minute; more right than tried is no count at all.
+      { day: "2026-11-22T20:00:00Z", minutes: 1, kind: null, subject: null, skills: [], tried: 0, breaks: 0, ending: "idle" },
+    ],
+    // How many of the review's summaries Configurar has: a count, so the home links them only then.
+    summaries: 1,
+  });
+  // A start that is not a date is not shown; three at most.
+  assert.equal(body.sessions.length, 3);
+  // The topic typed on A04 · Detalles, the review's words and the platform's ids never reach the page.
+  const sent = JSON.stringify(body);
+  assert.ok(!sent.includes(MARK));
+  assert.ok(!sent.includes("Practicó fracciones"), "the review's summary stays behind");
+  for (const key of ["topic", "due", "id", "guardian_summary", "child_turns", "content", "right", "summary", "next_step"]) {
+    assert.ok(!sent.includes(`"${key}"`), key);
+  }
+  assert.deepEqual(
+    seen.map((call) => [call.method, call.path, call.auth]).sort(),
+    [
+      ["GET", `/v1/children/${LIAM}/reviews`, `Bearer ${TOKEN}`],
+      ["GET", `/v1/children/${LIAM}/sessions?limit=3`, `Bearer ${TOKEN}`],
+    ],
+  );
+});
+
+test("a student whose reviews cannot be read still has their latest sessions, and no summaries to link", async () => {
+  failReviews = true;
+  try {
+    const response = await post("student/sessions", { student_id: LIAM });
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.sessions.length, 3);
+    assert.equal(body.summaries, 0);
+  } finally {
+    failReviews = false;
+  }
 });
 
 test("a session carries what the family said it is for, and nothing when they said nothing", async () => {
