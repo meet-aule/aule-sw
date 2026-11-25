@@ -42,6 +42,10 @@ lettre = { version = "0.11", default-features = false, features = ["tokio1-rustl
 semver = "1"
 jsonwebtoken = { version = "12", features = ["aws_lc_rs"] }
 sea-orm = { version = "2.0.4", default-features = false, features = ["sqlx-postgres", "runtime-tokio-rustls", "macros", "with-uuid", "with-chrono", "with-json", "postgres-array", "postgres-vector"] }
+# The team console's passkeys. Pinned exactly: 0.6 fails the RustSec check
+# (rsa 0.10.0-rc through crypto-glue). No attestation: passkeys are made
+# with attestation "none". conditional-ui is the discoverable sign-in.
+webauthn-rs = { version = "=0.5.5", default-features = false, features = ["conditional-ui"] }
 
 [dev-dependencies]
 # Only the schema check and the migration command diff the entities against a

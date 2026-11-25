@@ -213,6 +213,10 @@ The embedding model must return 1024 dimensions (`bge-m3` does). Another size ne
 ## Develop
 
 Use Rust 1.94 or newer (required by SQLx 0.9) and PostgreSQL 17 with pgvector.
+webauthn-rs, for the team's passkeys, links the system's OpenSSL, so a build
+also needs its headers and pkg-config: `apt install pkg-config libssl-dev` on
+Debian or Ubuntu, `brew install openssl@3 pkg-config` on macOS. The image
+installs them itself.
 
 ```bash
 cargo fmt --check && cargo clippy --all-targets -- -D warnings
