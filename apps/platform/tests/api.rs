@@ -324,21 +324,23 @@ impl App {
         child["id"].as_str().unwrap().to_string()
     }
 
-    /// A child's session that started `ago` (`'29 days'`) and lasted `minutes`.
-    async fn past_session(&self, child: &str, ago: &str, minutes: i32) {
-        sqlx::query(
+    /// A child's session that started `ago` (`'29 days'`) and lasted `minutes`;
+    /// returns its id.
+    async fn past_session(&self, child: &str, ago: &str, minutes: i32) -> String {
+        sqlx::query_scalar(
             "insert into sessions (id, child_id, audience, room, language, status, agent_token_hash,
                                    created_at, started_at, ended_at)
              values (gen_random_uuid(), $1::uuid, 'child', gen_random_uuid()::text, 'es', 'ended',
                      gen_random_uuid()::text, now() - $2::interval, now() - $2::interval,
-                     now() - $2::interval + make_interval(mins => $3))",
+                     now() - $2::interval + make_interval(mins => $3))
+             returning id::text",
         )
         .bind(child)
         .bind(ago)
         .bind(minutes)
-        .execute(&self.state.pool)
+        .fetch_one(&self.state.pool)
         .await
-        .unwrap();
+        .unwrap()
     }
 
     async fn consent(&self, child: &str, purpose: &str, granted: bool) {
@@ -476,6 +478,7 @@ async fn every_route_needs_its_credentials(pool: PgPool) {
     for (method, path) in [
         (Method::POST, "/v1/families"),
         (Method::GET, "/v1/skills"),
+        (Method::GET, "/v1/children/00000000-0000-0000-0000-000000000000/sessions"),
         (Method::POST, "/v1/sessions"),
         (Method::GET, "/v1/agent/session"),
     ] {
@@ -1205,6 +1208,7 @@ async fn a_guardian_signs_in_with_a_code_and_reaches_only_their_family(pool: PgP
         (Method::GET, format!("/v1/children/{child}"), None),
         (Method::GET, format!("/v1/children/{child}/skills"), None),
         (Method::GET, format!("/v1/children/{child}/memories"), None),
+        (Method::GET, format!("/v1/children/{child}/sessions"), None),
         (Method::DELETE, format!("/v1/children/{child}"), None),
         (Method::POST, format!("/v1/families/{family}/children"), Some(json!({ "nickname": "X" }))),
         (Method::POST, "/v1/sessions".to_string(), Some(json!({ "child_id": child, "audience": "child" }))),
@@ -1249,6 +1253,210 @@ async fn a_guardian_signs_in_with_a_code_and_reaches_only_their_family(pool: PgP
     assert_eq!(app.count("select count(*) from guardian_children").await, 0);
     assert_eq!(app.count("select count(*) from consent_records").await, 1);
     assert_eq!(app.count("select count(*) from families").await, 1, "Luis is still there");
+}
+
+/// Every key of a JSON document, at any depth.
+fn keys(value: &Value) -> Vec<String> {
+    match value {
+        Value::Object(fields) => {
+            fields.iter().flat_map(|(key, inner)| std::iter::once(key.clone()).chain(keys(inner))).collect()
+        }
+        Value::Array(items) => items.iter().flat_map(keys).collect(),
+        _ => Vec::new(),
+    }
+}
+
+#[sqlx::test(migrator = "aule_platform::MIGRATOR")]
+async fn a_guardian_reads_their_childs_latest_sessions_as_facts(pool: PgPool) {
+    let app = app(pool);
+    let db = &app.state.pool;
+    let update = |sql: &'static str, session: &str| sqlx::query(sql).bind(session.to_string()).execute(db);
+
+    // Ana's family, by code, and Pedro, its other guardian, by code too.
+    let ana = app.sign_in("ana@example.org", "Ana").await;
+    let (_, me) = app.call(Method::GET, "/v1/me", Some(&ana), None).await;
+    let family = me["family_id"].as_str().unwrap();
+    sqlx::query(
+        "insert into guardians (id, family_id, email, name)
+         values (gen_random_uuid(), $1::uuid, 'pedro@example.org', 'Pedro')",
+    )
+    .bind(family)
+    .execute(db)
+    .await
+    .unwrap();
+    let pedro = app.sign_in("pedro@example.org", "Pedro").await;
+    let child = app.child_of(family).await;
+    let catalog = json!({ "skills": [
+        { "id": "contar-hasta-10", "subject": "matematica", "name": "Contar hasta 10" },
+        { "id": "sumar-hasta-20", "subject": "matematica", "name": "Sumar hasta 20" },
+        { "id": "restar-hasta-10", "subject": "matematica", "name": "Restar hasta 10" },
+        { "id": "fracciones.equivalentes", "subject": "matematica", "name": "Fracciones equivalentes" }
+    ]});
+    assert_eq!(app.admin(Method::PUT, "/v1/skills", Some(catalog)).await.0, StatusCode::OK);
+
+    // Yesterday, six minutes of homework with a topic typed for it and a break. The
+    // tutor checked two exercises on skills of the catalog, which the learner model
+    // also got as attempts, and left one open on a skill outside it; the review
+    // read one more skill. What was typed and said is in the topic, the review and
+    // the transcript.
+    let said = "el cuaderno azul de Mateo";
+    let homework = app.past_session(&child, "1 day", 6).await;
+    sqlx::query(
+        "update sessions set breaks = 1, end_reason = 'child_ended', child_turns = 9, objective = $2
+         where id = $1::uuid",
+    )
+    .bind(&homework)
+    .bind(json!({ "kind": "homework", "subject": "matematica", "topic": said, "due": "2026-11-27" }))
+    .execute(db)
+    .await
+    .unwrap();
+    sqlx::query(
+        "insert into session_exercises
+           (session_id, skill_id, expression, answer, probe, status, attempts, created_at)
+         values ($1::uuid, 'sumar-hasta-20', '8 + 5', '13', false, 'correct', 1,
+                 now() - interval '1 day' + interval '1 minute'),
+                ($1::uuid, 'restar-hasta-10', '9 - 4', '5', false, 'failed', 3,
+                 now() - interval '1 day' + interval '2 minutes'),
+                ($1::uuid, 'no-esta-en-el-catalogo', '2 + 2', '4', false, 'dropped', 0,
+                 now() - interval '1 day' + interval '4 minutes')",
+    )
+    .bind(&homework)
+    .execute(db)
+    .await
+    .unwrap();
+    sqlx::query(
+        "insert into attempts (id, child_id, session_id, skill_id, correct, credit, source, at)
+         values (gen_random_uuid(), $2::uuid, $1::uuid, 'sumar-hasta-20', true, 1, 'tutor',
+                 now() - interval '1 day' + interval '1 minute'),
+                (gen_random_uuid(), $2::uuid, $1::uuid, 'restar-hasta-10', false, 0, 'tutor',
+                 now() - interval '1 day' + interval '3 minutes'),
+                (gen_random_uuid(), $2::uuid, $1::uuid, 'contar-hasta-10', true, null, 'review',
+                 now() - interval '1 day' + interval '6 minutes')",
+    )
+    .bind(&homework)
+    .bind(&child)
+    .execute(db)
+    .await
+    .unwrap();
+    sqlx::query(
+        "insert into session_reviews (session_id, child_id, guardian_summary)
+         values ($1::uuid, $2::uuid, $3)",
+    )
+    .bind(&homework)
+    .bind(&child)
+    .bind(said)
+    .execute(db)
+    .await
+    .unwrap();
+    sqlx::query(
+        "insert into session_turns (session_id, seq, role, content) values ($1::uuid, 0, 'child', $2)",
+    )
+    .bind(&homework)
+    .bind(said)
+    .execute(db)
+    .await
+    .unwrap();
+    // Two days ago, twenty minutes the session engine ran until the time was up,
+    // with three exercises of its own, two of them right.
+    let practice = app.past_session(&child, "2 days", 20).await;
+    sqlx::query(
+        "update sessions set engine = true, end_reason = 'budget_reached', objective = $2
+         where id = $1::uuid",
+    )
+    .bind(&practice)
+    .bind(json!({ "kind": "exam_prep", "subject": "matematica", "topic": said, "due": null }))
+    .execute(db)
+    .await
+    .unwrap();
+    sqlx::query(
+        "insert into attempts (id, child_id, session_id, skill_id, correct, source, at)
+         select gen_random_uuid(), $2::uuid, $1::uuid, 'fracciones.equivalentes', n < 3, 'engine',
+                now() - interval '2 days' + make_interval(mins => 5 * n)
+         from generate_series(1, 3) n",
+    )
+    .bind(&practice)
+    .bind(&child)
+    .execute(db)
+    .await
+    .unwrap();
+    // Three days ago, one left open that the housekeeping closed hours later.
+    let left_open = app.past_session(&child, "3 days", 240).await;
+    update("update sessions set end_reason = 'device_offline' where id = $1::uuid", &left_open)
+        .await
+        .unwrap();
+    // Not shown: the session going on now, one the tutor never started, the team
+    // trying the tutor with his profile, and a sibling's.
+    let ongoing = app.past_session(&child, "10 minutes", 20).await;
+    update("update sessions set status = 'active', ended_at = null where id = $1::uuid", &ongoing)
+        .await
+        .unwrap();
+    let unstarted = app.past_session(&child, "1 hour", 1).await;
+    update("update sessions set started_at = null where id = $1::uuid", &unstarted).await.unwrap();
+    let team_try = app.past_session(&child, "2 hours", 10).await;
+    update("update sessions set audience = 'operator' where id = $1::uuid", &team_try).await.unwrap();
+    app.past_session(&app.child_of(family).await, "3 hours", 10).await;
+
+    // Both guardians read the same three, and so does the team.
+    let path = format!("/v1/children/{child}/sessions");
+    let (status, facts) = app.call(Method::GET, &path, Some(&ana), None).await;
+    assert_eq!(status, StatusCode::OK, "{facts}");
+    assert_eq!(app.call(Method::GET, &path, Some(&pedro), None).await, (StatusCode::OK, facts.clone()));
+    assert_eq!(app.admin(Method::GET, &path, None).await, (StatusCode::OK, facts.clone()));
+    let sessions = facts["sessions"].as_array().unwrap();
+    let started: Vec<chrono::DateTime<chrono::Utc>> =
+        sessions.iter().map(|session| session["started_at"].as_str().unwrap().parse().unwrap()).collect();
+    assert!(started.windows(2).all(|pair| pair[0] > pair[1]), "newest first: {facts}");
+    let rest: Vec<Value> = sessions
+        .iter()
+        .map(|session| {
+            let mut session = session.clone();
+            session.as_object_mut().unwrap().remove("started_at");
+            session
+        })
+        .collect();
+    assert_eq!(
+        rest,
+        [
+            json!({
+                "seconds": 360.0, "end_reason": "child_ended", "breaks": 1,
+                "objective": { "kind": "homework", "subject": "matematica" },
+                "exercises": { "tried": 2, "right": 1 },
+                "skills": ["Sumar hasta 20", "Restar hasta 10", "Contar hasta 10"]
+            }),
+            json!({
+                "seconds": 1200.0, "end_reason": "budget_reached", "breaks": 0,
+                "objective": { "kind": "exam_prep", "subject": "matematica" },
+                "exercises": { "tried": 3, "right": 2 },
+                "skills": ["Fracciones equivalentes"]
+            }),
+            // No length is known for the one closed hours later.
+            json!({
+                "seconds": null, "end_reason": "device_offline", "breaks": 0, "objective": null,
+                "exercises": { "tried": 0, "right": 0 }, "skills": []
+            }),
+        ],
+        "{facts}"
+    );
+    // Nothing typed or said, no review, no count of turns and no id.
+    let named = keys(&facts);
+    for never in ["topic", "due", "id", "session_id", "guardian_summary", "summary", "content", "child_turns"]
+    {
+        assert!(!named.iter().any(|key| key == never), "{never}: {facts}");
+    }
+    assert!(!facts.to_string().contains(said), "{facts}");
+
+    // Three unless asked, and from one to ten.
+    for ago in 10..19 {
+        app.past_session(&child, &format!("{ago} days"), 5).await;
+    }
+    for (query, shown) in [("", 3), ("?limit=0", 1), ("?limit=-4", 1), ("?limit=5", 5), ("?limit=99", 10)] {
+        let (status, body) = app.call(Method::GET, &format!("{path}{query}"), Some(&ana), None).await;
+        assert_eq!(
+            (status, body["sessions"].as_array().map(Vec::len)),
+            (StatusCode::OK, Some(shown)),
+            "{query}"
+        );
+    }
 }
 
 #[sqlx::test(migrator = "aule_platform::MIGRATOR")]
