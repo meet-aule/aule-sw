@@ -63,7 +63,11 @@ async def evaluate(args: argparse.Namespace) -> int:
     from openai import AsyncOpenAI
 
     scorer = AsyncOpenAI(api_key=os.environ["OPENAI_API_KEY"], timeout=10, max_retries=1)
-    reader = opinion.SecondOpinion()
+    # AULE_JEV_FIRST_READING=1 (and TYPESAFE_API_KEY) evaluates Jev's first reading too.
+    jev_first = os.environ.get("AULE_JEV_FIRST_READING", "").lower() in ("1", "true", "yes", "on")
+    reader = opinion.SecondOpinion(
+        jev=opinion.JevReading(os.environ["TYPESAFE_API_KEY"]) if jev_first else None
+    )
     totals: Counter[str] = Counter()
     try:
         for case in cases:

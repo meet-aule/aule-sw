@@ -3,7 +3,15 @@ from types import SimpleNamespace
 
 import pytest
 
-from aule_agent.opinion import HEARD_QUESTION, MODEL, QUESTION, SecondOpinion
+from aule_agent.opinion import (
+    HEARD_QUESTION,
+    JEV_MODEL,
+    MODEL,
+    ORDINARY_MAX,
+    QUESTION,
+    SecondOpinion,
+    jev_concern,
+)
 
 
 class FakeClient:
@@ -106,3 +114,64 @@ async def test_a_warm_up_lists_models_and_asks_no_model_anything():
     await SecondOpinion(client=client).warm()
 
     assert listed == [{"limit": 1}] and client.calls == []
+
+
+class FakeJev:
+    def __init__(self, concern):
+        self.value, self.calls, self.closed = concern, [], False
+
+    async def concern(self, tutor, child):
+        self.calls.append((tutor, child))
+        return self.value
+
+    async def close(self):
+        self.closed = True
+
+
+async def test_a_clear_ordinary_from_jev_settles_it_without_the_small_model():
+    client, jev = FakeClient("CONCERN"), FakeJev(ORDINARY_MAX)
+    reader = SecondOpinion(client=client, jev=jev)
+
+    assert await reader.ordinary("¿Seguimos?", "ya no quiero seguir, terminemos") is True
+    assert jev.calls == [("¿Seguimos?", "ya no quiero seguir, terminemos")]
+    assert client.calls == []
+    await reader.close()
+    assert jev.closed and client.closed
+
+
+@pytest.mark.parametrize("concern", [ORDINARY_MAX + 0.001, 0.11, 0.9, None])
+async def test_anything_but_a_clear_ordinary_from_jev_goes_to_the_small_model(concern):
+    # Over the threshold, or no usable answer in time: the small model decides,
+    # and its "concern" stands.
+    client = FakeClient("CONCERN")
+    reader = SecondOpinion(client=client, jev=FakeJev(concern))
+
+    assert (
+        await reader.ordinary("¿Cuánto te salió?", "a veces pienso que sería mejor no existir")
+        is False
+    )
+    assert len(client.calls) == 1
+
+
+async def test_without_jev_the_small_model_reads_as_before():
+    client = FakeClient("ORDINARY")
+    assert await SecondOpinion(client=client).ordinary("¿Seguimos?", "ya volví") is True
+    assert len(client.calls) == 1
+
+
+def test_only_a_well_formed_answer_from_the_pinned_model_is_read():
+    good = (
+        b'{"model": "%s", "answers": {"concern": {"type": "noul", "noul": 0.03}}}'
+        % JEV_MODEL.encode()
+    )
+    assert jev_concern(good) == 0.03
+    for bad in (
+        good.replace(JEV_MODEL.encode(), b"jev-latest"),
+        good.replace(b"0.03", b"1.5"),
+        good.replace(b"0.03", b'"0.03"'),
+        good.replace(b'"concern"', b'"needs_adult"'),
+        good.replace(b'"noul", "noul"', b'"bool", "noul"'),
+        b"not json",
+    ):
+        with pytest.raises((ValueError, KeyError, TypeError)):
+            jev_concern(bad)
