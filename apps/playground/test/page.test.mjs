@@ -911,7 +911,8 @@ test("the session puts Aule's face on a stage, which a drawing or the camera tak
   // What the stage shows comes from the camera's view and the board, and every change of either says so.
   assert.match(bodyOf(app, "showStage"), /\$\("stage"\)\.dataset\.shows = !\$\("camera-view"\)\.hidden \? "camera" : !\$\("board"\)\.hidden \? "drawing" : "face";/);
   for (const name of ["draw", "showCamera", "teardown"]) assert.match(bodyOf(app, name), /\bshowStage\(\);/, name);
-  assert.match(bodyOf(app, "showStep"), /\$\("board"\)\.hidden = true;\s*boardShows = null;\s*showStage\(\);/);
+  // A new exercise, or the one in hand posed again, brings the board back to it (D40).
+  assert.match(bodyOf(app, "boardToCard"), /\$\("board"\)\.hidden = true;\s*boardShows = null;\s*showStage\(\);/);
   // A drawing stays until the next one, a new exercise or the end: no timer brings the face back.
   assert.doesNotMatch(bodyOf(app, "draw"), /setTimeout/);
   // While the camera shows, a drawing waits under it.
