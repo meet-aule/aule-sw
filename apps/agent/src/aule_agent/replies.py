@@ -1,6 +1,6 @@
 """The fixed replies a person hears when a safety gate stops a turn, when a
-session is stopped because the student is not working, and when the clock
-asks for a break or says the end is near.
+session is stopped because the student is not working, when the clock asks
+for a break or says the end is near, and when the tutor's model fails.
 
 They are written and reviewed by people, in every supported language, and are
 never generated or translated by a model: what is said after a gate stops a
@@ -156,6 +156,21 @@ REPLIES: dict[str, dict[str, str]] = {
         "pasa y vuelva a iniciar la sesión.",
         "en": "I need an adult's help to continue safely. Ask them to check what's happening and "
         "start the session again.",
+    },
+    # Said when the tutor's model failed or took too long, before the turn is
+    # tried once more: true whatever happens next. No wires or cables: the
+    # physical-safety gate reads what the tutor said with the next turn.
+    "hold_on": {
+        "es": "Dame un momentito, se me enredaron las ideas.",
+        "en": "Give me a moment, my ideas got all tangled up.",
+    },
+    # Said when the tutor's model cannot answer for the rest of the session,
+    # which then ends.
+    "tutor_unavailable": {
+        "es": "Lo siento, algo no me está funcionando y no puedo seguir ahora. Lo intentamos "
+        "otra vez más tarde. ¡Hasta pronto!",
+        "en": "Sorry, something isn't working for me and I can't carry on right now. Let's try "
+        "again later. See you soon!",
     },
 }
 

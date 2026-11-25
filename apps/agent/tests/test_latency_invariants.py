@@ -863,8 +863,10 @@ VERDICTS = {
             opinion.HEARD_QUESTION,
         ],
     ),
+    # Changed on purpose: the lines said when the tutor's model fails
+    # ("hold_on", "tutor_unavailable"). No gate's verdict changed.
     "replies": (
-        "4df6d0a8128e6e37a1c9fe9e33bb42ef92b23a13bddc6e84ea966620aa1f75ea",
+        "77c1d4fa9ca369058d8540bd69e4178df7dd98f138d5a87c90c62f399580deb4",
         lambda: [
             replies.REPLIES,
             replies.ADULT_HELP_SEQUENCE,

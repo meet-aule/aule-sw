@@ -6,9 +6,20 @@ from unittest.mock import PropertyMock, patch
 
 import numpy as np
 import pytest
-from fakes import Delays, World
+from fakes import NO_CREDIT, Delays, World
 from livekit import rtc
-from livekit.agents import Agent, FlushSentinel, ModelSettings, StopResponse, llm, stt, tokenize
+from livekit.agents import (
+    Agent,
+    APIConnectionError,
+    APIStatusError,
+    APITimeoutError,
+    FlushSentinel,
+    ModelSettings,
+    StopResponse,
+    llm,
+    stt,
+    tokenize,
+)
 from livekit.agents.types import DEFAULT_API_CONNECT_OPTIONS
 from livekit.agents.voice.generation import mark_instructions_cache_boundary, update_instructions
 
@@ -25,6 +36,7 @@ from aule_agent.tutor import (
     MAX_TYPED_CHARS,
     UNCHECKED,
     UNCUT_WAIT_SECONDS,
+    NoReplyInTime,
     Persona,
     Tutor,
     VoiceAhead,
@@ -33,6 +45,7 @@ from aule_agent.tutor import (
     persona_notes,
     shows_something,
     voiced_first,
+    why_unanswerable,
     with_frame,
 )
 from aule_agent.worker import language_of, persona_of
@@ -2178,3 +2191,216 @@ async def test_a_call_begun_by_a_reply_asked_early_for_a_stopped_turn_says_nothi
     assert said is None and model.finished == []
     assert [text for text, _, _ in session.said] == [REPLIES["adult_help"]["es"]]
     assert tutor.early_replies == {"used": 0, "dropped": 1}
+
+
+# --- A model that fails ------------------------------------------------------
+
+
+def failed(status, kind="api_error", message="synthetic failure"):
+    """The provider's refusal, as the model's plugin raises it."""
+    body = {"type": "error", "error": {"type": kind, "message": message}}
+    return APIStatusError(f"Error code: {status}", status_code=status, body=body)
+
+
+def tries_ran_out(status=529):
+    """What LiveKit raises once every one of its own tries of a request failed."""
+    error = APIConnectionError("failed to generate LLM completion after 4 attempts")
+    error.__cause__ = failed(status, "overloaded_error")
+    return error
+
+
+class Unsteady:
+    """Stands in for LiveKit's default llm_node: each request fails with the
+    next error, never answers (``HANGS``) or writes the next text."""
+
+    HANGS = object()
+
+    def __init__(self, *outcomes):
+        self.outcomes = list(outcomes)
+        self.asked = 0
+        self.closed = 0
+
+    def __call__(self, agent, chat_ctx, tools, settings):
+        self.asked += 1
+        return self._step(self.outcomes.pop(0))
+
+    async def _step(self, outcome):
+        try:
+            if outcome is Unsteady.HANGS:
+                await asyncio.Event().wait()
+            if isinstance(outcome, BaseException):
+                raise outcome
+            yield outcome
+        finally:
+            self.closed += 1
+
+
+TURN = "zanahoria azul siete, ¿cuánto es tres cuartos más un octavo?"
+
+
+async def step(tutor, model):
+    """What one step of the tutor gives the voice: text, and "|" where a line ends."""
+    chat_ctx = llm.ChatContext.empty()
+    chat_ctx.add_message(role="user", content=TURN)
+    with patch.object(Agent.default, "llm_node", side_effect=model):
+        chunks = [chunk async for chunk in tutor.llm_node(chat_ctx, [], None)]
+    return ["|" if isinstance(chunk, FlushSentinel) else chunk for chunk in chunks]
+
+
+def given_up(tutor):
+    """Records each time the tutor gives its model up, as the worker would close the session."""
+    closings = []
+    tutor.on_unavailable = lambda: closings.append("closed")
+    return closings
+
+
+@pytest.mark.parametrize("language", ["es", "en"])
+async def test_a_step_the_model_fails_gets_a_fixed_line_and_is_asked_once_more(language, caplog):
+    gates = ScriptedGates(ALLOW)
+    tutor = Tutor(language=language, gates=gates)
+    closings = given_up(tutor)
+    model = Unsteady(tries_ran_out(529), "Muy bien.")
+
+    with caplog.at_level("INFO", logger="aule.agent.tutor"):
+        said = await step(tutor, model)
+
+    # The line at once, on its own, then the second answer, judged like any reply.
+    assert said == [REPLIES["hold_on"][language], "|", "Muy bien."]
+    assert model.asked == 2 and gates.spoken_texts == ["Muy bien."]
+    assert closings == [] and tutor._failures == 0
+    retried = [r for r in caplog.records if r.message == "model step failed, trying it once more"]
+    assert [(r.levelname, r.error, r.status) for r in retried] == [("INFO", "APIStatusError", 529)]
+    assert TURN not in caplog.text
+
+
+async def test_a_step_not_over_in_time_gets_the_line_and_is_asked_once_more(monkeypatch):
+    monkeypatch.setattr("aule_agent.tutor.STEP_SECONDS", 0.05)
+    gates = ScriptedGates(ALLOW)
+    tutor = Tutor(language="es", gates=gates)
+    model = Unsteady(Unsteady.HANGS, "Muy bien.")
+
+    said = await step(tutor, model)
+
+    assert said == [REPLIES["hold_on"]["es"], "|", "Muy bien."]
+    # The request that hung was closed, not left running.
+    assert model.asked == model.closed == 2
+
+
+async def test_a_model_that_fails_twice_in_a_row_is_given_up_and_the_session_closes(caplog):
+    gates, session = ScriptedGates(ALLOW), Session()
+    tutor = Tutor(language="en", gates=gates)
+    closings = given_up(tutor)
+    model = Unsteady(tries_ran_out(529), tries_ran_out(500))
+
+    with caplog.at_level("WARNING", logger="aule.agent.tutor"):
+        said = await step(tutor, model)
+        # The session is closing: nothing more reaches the model, not even a
+        # turn the gates let through.
+        assert await step(tutor, model) == []
+        assert not await hear(tutor, session, "one more")
+
+    assert said == [REPLIES["hold_on"]["en"], "|"]
+    assert model.asked == 2 and closings == ["closed"] and gates.spoken_texts == []
+    (warning,) = caplog.records
+    assert warning.message == "tutor model unavailable"
+    # The type and status of the last failure, and why it was given up.
+    assert (warning.error, warning.status, warning.failures, warning.cause) == (
+        "APIStatusError",
+        500,
+        2,
+        "in_a_row",
+    )
+    assert TURN not in caplog.text
+
+
+@pytest.mark.parametrize(
+    ("status", "kind", "message", "cause"),
+    [
+        # As every request was answered on 2026-11-25.
+        (400, "invalid_request_error", NO_CREDIT, "billing"),
+        (401, "authentication_error", "invalid x-api-key", "authentication"),
+        (402, "billing_error", "Your payment method was declined.", "billing"),
+        (403, "permission_error", "Your API key does not have permission.", "permission"),
+    ],
+)
+async def test_a_model_that_cannot_answer_any_more_is_given_up_at_once(
+    status, kind, message, cause, caplog
+):
+    tutor = Tutor(language="es", gates=ScriptedGates())
+    closings = given_up(tutor)
+    model = Unsteady(failed(status, kind, message), "never asked")
+
+    with caplog.at_level("INFO", logger="aule.agent.tutor"):
+        said = await step(tutor, model)
+
+    # No line that promises a moment it cannot keep: the session closes with its own.
+    assert said == [] and model.asked == 1 and closings == ["closed"]
+    (warning,) = caplog.records
+    assert (warning.levelname, warning.message) == ("WARNING", "tutor model unavailable")
+    assert (warning.error, warning.status, warning.failures, warning.cause) == (
+        "APIStatusError",
+        status,
+        1,
+        cause,
+    )
+    # Its type and status only: nothing the provider wrote, nothing the student said.
+    assert message not in caplog.text and TURN not in caplog.text
+
+
+async def test_the_line_is_said_once_a_turn_and_again_in_the_next():
+    gates, session = ScriptedGates(ALLOW, ALLOW, ALLOW, ALLOW), Session()
+    tutor = Tutor(language="es", gates=gates)
+    model = Unsteady(
+        tries_ran_out(), "Primero.", tries_ran_out(), "Después.", tries_ran_out(), "Otra vez."
+    )
+
+    first = await step(tutor, model)
+    # The same turn's next step, after a tool: a step that fails is still asked once more.
+    second = await step(tutor, model)
+    assert await hear(tutor, session, "y ahora")
+    third = await step(tutor, model)
+
+    hold_on = REPLIES["hold_on"]["es"]
+    assert (first, second, third) == (
+        [hold_on, "|", "Primero."],
+        ["Después."],
+        [hold_on, "|", "Otra vez."],
+    )
+    assert tutor._failures == 0
+
+
+async def test_an_early_reply_that_failed_is_asked_again_as_a_new_request():
+    model, session = Unsteady(tries_ran_out(), "Muy bien."), Session()
+    tutor = Tutor(language="es", gates=ScriptedGates(ALLOW, ALLOW), early_reply=True)
+
+    said = await answer(tutor, session, model, *the_turn())
+
+    assert ["|" if isinstance(chunk, FlushSentinel) else chunk for chunk in said] == [
+        REPLIES["hold_on"]["es"],
+        "|",
+        "Muy bien.",
+    ]
+    # The early request was taken and failed; the second one was asked anew.
+    assert model.asked == 2 and tutor.early_replies == {"used": 1, "dropped": 0}
+
+
+@pytest.mark.parametrize(
+    ("error", "cause"),
+    [
+        (failed(400, "invalid_request_error", NO_CREDIT), "billing"),
+        (failed(400, "invalid_request_error", "messages: roles must alternate"), None),
+        (failed(401, "authentication_error"), "authentication"),
+        (failed(402, "billing_error"), "billing"),
+        (failed(403, "permission_error"), "permission"),
+        # A refusal whose body is not the API's JSON is known by its status.
+        (APIStatusError("Forbidden (403)", status_code=403, body="<html>"), "permission"),
+        (failed(404, "not_found_error"), None),
+        (failed(429, "rate_limit_error"), None),
+        (failed(529, "overloaded_error"), None),
+        (tries_ran_out(529), None),
+        (APITimeoutError(), None),
+        (NoReplyInTime(), None),
+    ],
+)
+def test_only_a_refused_key_no_credit_or_no_permission_gives_the_model_up_at_once(error, cause):
+    assert why_unanswerable(error) == cause
