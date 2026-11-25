@@ -16,6 +16,7 @@ from aule_agent.platform import (
     platform_session,
     user_agent,
 )
+from aule_agent.tutor import OpenExercise
 
 SESSION = PlatformSession(url="http://platform", token="t")
 ENV = {"AULE_PLATFORM_URL": "http://platform/"}
@@ -108,6 +109,94 @@ async def test_an_exercise_the_platform_cannot_check_is_not_an_error():
 
     assert await platform.pose("¿cuál es mayor?", None, None) is None
     assert await platform.answer("la roja") is None
+
+
+SAME = {"exercise": 7, "stage": "practice", "say": "Same exercise as before: carry on with it."}
+
+
+async def test_the_exercise_open_is_the_one_the_platform_last_opened():
+    send = Recorder(
+        {"exercise": 7, "stage": "practice", "say": "Ask it and wait."},
+        SAME,
+        {"exercise": 8, "stage": "practice", "say": "Ask it and wait."},
+    )
+    platform = Platform(SESSION, send)
+    assert platform.exercise is None
+
+    await platform.pose(" 25 + 3 * 2 ", None, None)
+    assert platform.exercise == OpenExercise(id=7, expression="25 + 3 * 2")
+    # Stated again, however it is written, it is the same exercise.
+    await platform.pose("25+3×2", None, None)
+    assert platform.exercise == OpenExercise(id=7, expression="25 + 3 * 2")
+    await platform.pose("1/2 + 1/3", None, None)
+    assert platform.exercise == OpenExercise(id=8, expression="1/2 + 1/3")
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        {"verdict": "correct", "closed": True, "say": "Correct."},
+        {"verdict": "incorrect", "closed": True, "say": "Work it out.", "reveal": "31"},
+        Refused(409),
+    ],
+)
+async def test_an_answer_that_closes_the_exercise_or_finds_none_open_leaves_none_open(answer):
+    platform = Platform(SESSION, Recorder({"exercise": 7, "say": "Ask it."}, answer))
+    await platform.pose("25 + 3 * 2", None, None)
+
+    await platform.answer("31")
+
+    assert platform.exercise is None
+    assert not platform.gone
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        {"verdict": "incorrect", "closed": False, "say": "Give one hint."},
+        {"verdict": "dont_know", "say": "Give one hint."},
+        TimeoutError(),
+        RuntimeError("down"),
+        Refused(400),
+        Refused(500),
+    ],
+)
+async def test_an_answer_that_leaves_it_open_or_fails_keeps_the_exercise(answer):
+    platform = Platform(SESSION, Recorder({"exercise": 7, "say": "Ask it."}, answer))
+    await platform.pose("25 + 3 * 2", None, None)
+
+    await platform.answer("56")
+
+    assert platform.exercise == OpenExercise(id=7, expression="25 + 3 * 2")
+
+
+@pytest.mark.parametrize("failure", [Refused(400), Refused(409), TimeoutError(), RuntimeError()])
+async def test_a_pose_that_fails_keeps_the_exercise_open_before_it(failure):
+    platform = Platform(SESSION, Recorder({"exercise": 7, "say": "Ask it."}, failure, {"say": "?"}))
+    await platform.pose("25 + 3 * 2", None, None)
+
+    # Not arithmetic it can check: the platform leaves the open one as it was.
+    assert await platform.pose("¿cuál es mayor?", None, None) is None
+    # An answer without an id says nothing about which exercise is open.
+    await platform.pose("3 x 4", None, None)
+
+    assert platform.exercise == OpenExercise(id=7, expression="25 + 3 * 2")
+
+
+async def test_nothing_about_an_exercise_is_sent_once_the_platform_is_gone():
+    send = Recorder({"exercise": 7, "say": "Ask it."}, Refused(410))
+    platform = Platform(SESSION, send)
+    await platform.pose("25 + 3 * 2", None, None)
+    await platform.report_once()
+    assert platform.gone
+
+    assert await platform.pose("1/2 + 1/3", None, None) is None
+    assert await platform.answer("31") is None
+
+    assert [path for _, path, _ in send.calls] == [
+        "/v1/agent/session/exercises",
+        "/v1/agent/session/turns",
+    ]
 
 
 async def test_turns_are_numbered_and_named_for_the_platform():
