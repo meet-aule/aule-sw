@@ -20,17 +20,34 @@ from pathlib import Path
 
 import latency_harness as harness
 import pytest
-from fakes import CHILD_WORDS, TRIGGERS, Delays, Played, Spread, TurnPlan, World, words_of
+from fakes import (
+    CHILD_WORDS,
+    TRIGGERS,
+    Delays,
+    Played,
+    Spread,
+    TurnPlan,
+    World,
+    _last_user,
+    words_of,
+)
 from test_metrics import fits_the_platform
 
 from aule_agent import moderation, opinion, physical_safety, replies, safety
+from aule_agent.prompts import response_language
 from aule_agent.replies import ADULT_HELP_SEQUENCE, MEANWHILE, REPLIES
 from aule_agent.timing import STAGES
 
 # The input gates take longer than the model takes to write its whole reply,
 # so with early replies the reply is written, and waiting, when they decide.
 FAST = Delays(scale=0.05, moderation=Spread(6.0, 8.0), typesafe=Spread(6.0, 8.0))
-MODES = {"early_off": {}, "early_on": {"AULE_EARLY_REPLY": "1"}}
+# The defaults, the reply asked early (D1), and the reply voiced ahead (D3)
+# with the notes after the history (D2).
+MODES = {
+    "early_off": {},
+    "early_on": {"AULE_EARLY_REPLY": "1"},
+    "voice_ahead": {"AULE_VOICE_AHEAD": "1", "AULE_NOTES_AFTER_HISTORY": "1"},
+}
 AGENT = Path(__file__).resolve().parents[1]
 
 
@@ -49,6 +66,8 @@ class Spec:
     # the hearing hears).
     tail: str | None = None
     tail_vad: bool = True
+    # What the model writes in a step with a tool before it calls the tool.
+    preamble: str = ""
 
 
 def violence(text: str = "") -> str:
@@ -56,6 +75,8 @@ def violence(text: str = "") -> str:
 
 
 ORDINARY = Spec()
+# A worked example before its question: every paragraph of a reply is said.
+EXAMPLE = "Imagina dos pizzas cortadas en mitades. ¿Cuántos pedazos hay?"
 # Each session: an ordinary turn first, so that the turn under test is not the
 # session's first check (which waits longer for a new connection).
 SESSIONS: dict[str, list[Spec]] = {
@@ -94,8 +115,20 @@ SESSIONS: dict[str, list[Spec]] = {
     "meanwhile": [
         ORDINARY,
         Spec(tools=("check_answer", "pose_exercise"), reply="Muy bien, ahora prueba otra."),
-        Spec(tools=("show",), reply="Mira la pantalla y dime qué ves."),
+        Spec(
+            tools=("show",),
+            reply="Mira la pantalla y dime qué ves.",
+            preamble="Primero lo registro y luego te lo muestro. Así lo ves mejor.",
+        ),
     ],
+    # A reply of two paragraphs, judged and heard whole.
+    "paragraphs": [
+        ORDINARY,
+        Spec(reply=f"{EXAMPLE}\n\nAhora dime si eso es multiplicar o dividir."),
+    ],
+    # A reply the output gate stops for its last paragraph, once the voice has
+    # made its first sentence.
+    "reply_stopped_later": [ORDINARY, Spec(reply=f"{EXAMPLE}\n\n{violence('Y ahora')}")],
 }
 # What each session's last turn hears instead of an answer, and the flag it raises.
 STOPPED = {
@@ -139,6 +172,7 @@ def scripted(world: World, specs: list[Spec]) -> list[harness.Turn]:
             more_tools=spec.tools[1:],
             tool_tokens=12,
             reply_after_tool=spec.reply,
+            preamble=spec.preamble,
         )
         kind = "tool" if spec.tools else "reply"
         turns.append(
@@ -322,6 +356,120 @@ def test_a_reply_the_output_gate_stops_is_never_heard_or_shown(sessions, name):
     assert [tuple(item) for item in run.world.flags] == [flag]
 
 
+def test_nothing_is_heard_before_the_output_gate_approved_it_voiced_ahead_or_not(sessions):
+    runs, _ = sessions
+    for name, run in runs.items():
+        world = run.world
+        assert harness.unapproved(world) == 0, name
+        fixed = harness.FIXED_LINES | set(harness._engine_lines(world))
+        for segment in world.played[1:]:
+            for text in segment.texts:
+                if any(text.strip() in line for line in fixed):
+                    continue
+                approvals = [at for at, said, allowed in world.judged if allowed and text in said]
+                # The sentence played was part of a text the gate had approved by then.
+                assert approvals and min(approvals) <= segment.started_at, (name, text)
+
+
+def voiced_before(world: World, sentence: str, moment: float) -> bool:
+    """Whether the voice was given ``sentence`` before ``moment``."""
+    return any(at < moment and said == sentence for at, said in world.voiced)
+
+
+@pytest.mark.parametrize("name", REPLY_STOPPED)
+def test_what_the_voice_made_of_a_reply_the_output_gate_stops_is_never_heard(modes, name):
+    for mode, (runs, _) in modes.items():
+        run = runs[name]
+        result = run.results[-1]
+        reply = SESSIONS[name][-1].reply
+        (decided_at,) = [at for at, said, allowed in run.world.judged if said == reply]
+        made = [at for at, sentence in run.world.made if sentence == reply]
+
+        assert heard(result.played) == spoken(REPLIES[REPLY_STOPPED[name][0]]["es"]), mode
+        if mode == "voice_ahead":
+            # The voice had made it before the gate said no: the gate was slower.
+            assert made and made[0] < decided_at
+            assert run.world.tutor.voiced_ahead["sentences_dropped"] >= 1
+        else:
+            # The voice's provider never got it.
+            assert not voiced_before(run.world, reply, float("inf")), mode
+
+
+def test_nothing_of_a_step_with_a_tool_ever_reaches_the_voice(sessions):
+    runs, _ = sessions
+    run = runs["meanwhile"]
+    unsaid = "Primero"
+    assert not [sentence for _, sentence in run.world.voiced if unsaid in sentence]
+    assert unsaid not in "".join(text for result in run.results for text in result.shown)
+    assert run.world.tutor.voiced_ahead["sentences_dropped"] == 0
+
+
+def test_a_reply_of_two_paragraphs_is_heard_whole_after_the_gate_approved_all_of_it(modes):
+    for mode, (runs, _) in modes.items():
+        run = runs["paragraphs"]
+        result = run.results[-1]
+        reply = SESSIONS["paragraphs"][-1].reply
+        (approved_at,) = [at for at, said, allowed in run.world.judged if allowed and said == reply]
+
+        assert heard(result.played) == spoken(reply), mode
+        assert result.played[0].started_at >= approved_at, mode
+        voiced = run.world.tutor.voiced_ahead
+        if mode == "voice_ahead":
+            # Said with what the voice made ahead, on every turn: a paragraph
+            # break dropped nothing.
+            assert voiced["sentences_said"] == len(SESSIONS["paragraphs"])
+            assert voiced["sentences_dropped"] == 0
+        else:
+            assert voiced["sentences_said"] == voiced["sentences_dropped"] == 0, mode
+            first = "Imagina dos pizzas cortadas en mitades."
+            assert not voiced_before(run.world, first, approved_at), mode
+
+
+def test_a_reply_stopped_for_its_last_paragraph_is_never_heard_not_even_its_first_sentence(
+    modes,
+):
+    for mode, (runs, _) in modes.items():
+        run = runs["reply_stopped_later"]
+        result = run.results[-1]
+        reply = SESSIONS["reply_stopped_later"][-1].reply
+        first = "Imagina dos pizzas cortadas en mitades."
+        (decided_at,) = [at for at, said, allowed in run.world.judged if said == reply]
+        made = [at for at, sentence in run.world.made if sentence == first]
+
+        assert heard(result.played) == spoken(REPLIES["redirect"]["es"]), mode
+        assert first not in "".join(result.shown), mode
+        assert [tuple(item) for item in run.world.flags] == [
+            ("moderation_output", "redirect", ["violence"])
+        ], mode
+        if mode == "voice_ahead":
+            # The voice had made the first sentence before the gate said no to the reply.
+            assert made and made[-1] < decided_at
+            assert run.world.tutor.voiced_ahead["sentences_dropped"] >= 1
+        else:
+            assert not voiced_before(run.world, first, float("inf")), mode
+
+
+def test_a_tool_steps_line_is_the_one_voiced_after_the_opening(sessions):
+    runs, _ = sessions
+    world = runs["meanwhile"].world
+    voiced = [sentence for _, sentence in world.voiced]
+    # Each line went to the voice once, when the session began, and was
+    # replayed for both turns that called a tool.
+    assert all(voiced.count(REPLIES[key]["es"]) == 1 for key in MEANWHILE)
+    assert world.tutor.voiced_ahead["lines_said"] == 2
+
+
+def test_what_is_shown_is_what_is_heard(sessions):
+    runs, _ = sessions
+
+    def letters(text: str) -> str:
+        return "".join(text.split())
+
+    for name, run in runs.items():
+        for result in run.results:
+            assert letters("".join(result.shown)) == letters(result.heard()), (name, result.number)
+
+
 def test_a_clear_yes_from_the_second_reader_lets_a_reply_through(sessions):
     runs, _ = sessions
     result = runs["reply_reader_yes"].results[-1]
@@ -440,9 +588,10 @@ def test_an_early_reply_to_a_stopped_turn_is_written_closed_and_never_reaches_th
         assert spoken(call.output_text) not in spoken("".join(stopped.shown))
 
 
-def test_early_replies_change_nothing_the_child_hears_reads_or_the_platform_keeps(modes):
+@pytest.mark.parametrize("mode", ["early_on", "voice_ahead"])
+def test_early_replies_change_nothing_the_child_hears_reads_or_the_platform_keeps(modes, mode):
     off, _ = modes["early_off"]
-    on, _ = modes["early_on"]
+    on, _ = modes[mode]
     for name in SESSIONS:
         assert [heard(r.played) for r in on[name].results] == [
             heard(r.played) for r in off[name].results
@@ -474,6 +623,140 @@ def test_an_answered_turn_asks_the_model_once_per_step_and_a_stopped_one_once_mo
             assert metrics_on.get(key) == metrics_off.get(key), (name, key)
         used = on[name].world.tutor.early_replies
         assert used["dropped"] == stopped, name
+
+
+def _blocks(request: dict) -> list[str]:
+    """A request as the cache reads it, tools, system and messages in that
+    order, one block at a time as the client serializes it, without the cache
+    markers and the notes (an unmarked last system block or a system message)."""
+
+    def plain(value: object) -> object:
+        if isinstance(value, dict):
+            return {k: plain(v) for k, v in value.items() if k != "cache_control"}
+        if isinstance(value, list):
+            return [plain(item) for item in value]
+        return value
+
+    def serialized(value: object) -> str:
+        return json.dumps(plain(value), ensure_ascii=False, separators=(",", ":"))
+
+    blocks = [serialized(tool) for tool in request.get("tools") or []]
+    blocks += [serialized(b) for b in request.get("system") or [] if "cache_control" in b]
+    for message in request["messages"]:
+        if message["role"] == "system":
+            continue
+        content = message["content"]
+        for block in [{"type": "text", "text": content}] if isinstance(content, str) else content:
+            blocks.append(serialized({"role": message["role"], **block}))
+    return blocks
+
+
+@pytest.mark.parametrize("mode", ["early_off", "voice_ahead"])
+def test_each_request_is_the_one_before_it_byte_for_byte_with_more_history(modes, mode):
+    # The notes at the end of the system prompt, and after the history (D2).
+    runs, _ = modes[mode]
+    pairs = 0
+    for name, run in runs.items():
+        streamed = [call.kwargs for call in run.world.model_calls if call.kwargs["stream"]]
+        plan_changed = 0
+        for before, after in zip(streamed, streamed[1:], strict=False):
+            older, newer = _blocks(before), _blocks(after)
+            tools = len(before.get("tools") or [])
+            # Tools and rules never change; the student's part only once, with a late plan.
+            assert newer[: tools + 1] == older[: tools + 1], name
+            if newer[tools + 1] != older[tools + 1]:
+                plan_changed += 1
+                assert newer[tools + 2 :][: len(older) - tools - 2] == older[tools + 2 :], name
+            else:
+                assert "".join(newer).startswith("".join(older)), name
+                assert newer[: len(older)] == older, name
+            pairs += 1
+        assert plan_changed <= 1, name
+    # Not vacuous: the sessions make some eighteen pairs of requests.
+    assert pairs >= 15
+
+
+# Engine sessions: the engine sets new rules for talk on every turn the model
+# answers, in the hook, after LiveKit copied the turn's context for its reply.
+PLACEMENTS = {"system": {}, "after_history": {"AULE_NOTES_AFTER_HISTORY": "1"}}
+
+
+def engine_turns(world: World) -> list[harness.Turn]:
+    """Off the script with new rules, a line of the script, then off the
+    script twice more with new rules, the first with a tool."""
+    turns = []
+    for number, tool in ((1, None), (2, "script"), (3, "show"), (4, None)):
+        words = words_of(number)
+        if tool == "script":
+            line = {"say": f"Pregunta {number}.", "echoes": False}
+            world.platform.scripted_turns[words] = {"lines": [line]}
+            turns.append(harness.Turn(number, "scripted", words, 0.4, 0.1))
+            continue
+        world.platform.scripted_turns[words] = {"converse": f"Regla {number}: sin pistas ahora."}
+        world.plans[words] = TurnPlan(
+            reply="" if tool else ORDINARY.reply,
+            tool=tool,
+            tool_tokens=12,
+            reply_after_tool=ORDINARY.reply,
+        )
+        turns.append(harness.Turn(number, "off_script", words, 0.4, 0.1, tool))
+    return turns
+
+
+@pytest.fixture(scope="module")
+def engine_sessions() -> dict[str, list[World]]:
+    async def run(env: dict[str, str]) -> list[World]:
+        with harness.offline(env):
+            worlds = [World(seed=index, delays=FAST, mix="engine") for index in range(4)]
+            runs = await asyncio.gather(
+                *(harness.run_session(w, engine_turns(w), gap=(0.0, 0.05)) for w in worlds)
+            )
+        return [run.world for run in runs]
+
+    return {name: asyncio.run(run(env)) for name, env in PLACEMENTS.items()}
+
+
+@pytest.mark.parametrize("placement", list(PLACEMENTS))
+def test_in_engine_sessions_each_reply_has_its_turns_rules_and_the_prefix_stays(
+    engine_sessions, placement
+):
+    rule = response_language("es")
+    answered = pairs = 0
+    for world in engine_sessions[placement]:
+        streamed = [call.kwargs for call in world.model_calls if call.kwargs["stream"]]
+        for request in streamed:
+            if placement == "after_history":
+                notes = request["messages"][-1]
+                assert notes["role"] == "system", world.seed
+                told = notes["content"]
+            else:
+                notes = request["system"][-1]
+                assert "cache_control" not in notes, world.seed
+                told = notes["text"]
+            # The language rule ends every request, once.
+            assert told.endswith(rule) and told.count(rule) == 1, world.seed
+            # The rules the engine set for the turn this request answers: the
+            # child's last words in it.
+            text = _last_user(request)[0]
+            words = max((w for w in world.platform.scripted_turns if w in text), key=text.rfind)
+            assert world.platform.scripted_turns[words]["converse"] in told, world.seed
+            answered += 1
+        plan_changed = 0
+        for before, after in zip(streamed, streamed[1:], strict=False):
+            older, newer = _blocks(before), _blocks(after)
+            tools = len(before.get("tools") or [])
+            # Tools and rules never change; the student's part only once, with a late plan.
+            assert newer[: tools + 1] == older[: tools + 1], world.seed
+            if newer[tools + 1] != older[tools + 1]:
+                plan_changed += 1
+                assert newer[tools + 2 :][: len(older) - tools - 2] == older[tools + 2 :]
+            else:
+                assert newer[: len(older)] == older, world.seed
+            pairs += 1
+        assert plan_changed <= 1, world.seed
+    # Not vacuous: four replies in each session, each to a turn whose rules
+    # had just changed (one a tool's two steps).
+    assert answered == 16 and pairs == 12, (answered, pairs)
 
 
 def _digest(value: object) -> str:

@@ -100,6 +100,12 @@ def test_no_reply_is_asked_before_the_gates_decide_unless_turned_on():
     assert Settings.from_env({**COMPLETE, "AULE_EARLY_REPLY": "off"}).early_reply is False
 
 
+def test_no_reply_goes_to_the_voice_before_the_output_gate_passed_it_unless_turned_on():
+    assert Settings.from_env(COMPLETE).voice_ahead is False
+    assert Settings.from_env({**COMPLETE, "AULE_VOICE_AHEAD": "1"}).voice_ahead is True
+    assert Settings.from_env({**COMPLETE, "AULE_VOICE_AHEAD": "no"}).voice_ahead is False
+
+
 def test_the_moderation_key_is_also_the_speech_key_when_openai_speaks():
     settings = Settings.from_env({**COMPLETE, "AULE_TTS": "openai", "OPENAI_API_KEY": "sk"})
 

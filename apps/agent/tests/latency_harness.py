@@ -208,6 +208,7 @@ def spy(world: World, gates: Gates) -> None:
 
     async def spoken_spy(text: str) -> Any:
         decision = await spoken(text)
+        world.judged.append((time.time(), text, decision.allowed))
         if decision.allowed:
             world.approved.append(text)
         return decision
@@ -659,6 +660,10 @@ def summarize(
         "early_replies": {
             kind: sum(run.world.tutor.early_replies[kind] for run in runs if run.world.tutor)
             for kind in ("used", "dropped")
+        },
+        "voiced_ahead": {
+            kind: sum(run.world.tutor.voiced_ahead[kind] for run in runs if run.world.tutor)
+            for kind in ("sentences_said", "sentences_dropped", "lines_said")
         },
         "model_requests_before_the_input_gates": asked_early,
         "second_reader_calls": sum(len(run.world.reader_calls) for run in runs),

@@ -417,6 +417,9 @@ async def entrypoint(ctx: JobContext) -> None:
 
     # How long the tutor takes to answer, and how sure the hearing is.
     timing = Timing()
+    usage = Usage()
+    voice = build_tts(settings, language)
+    voice.on("metrics_collected", usage.spoke)
     tutor = Tutor(
         language=language,
         gates=gates,
@@ -435,14 +438,15 @@ async def entrypoint(ctx: JobContext) -> None:
         breaks=bool(platform and not platform.scripted),
         timing=timing,
         early_reply=settings.early_reply,
+        # The session's own voice: the lines said while a tool works are voiced
+        # ahead with it, and with the setting a reply's first sentence too.
+        voice=voice,
+        voice_ahead=settings.voice_ahead,
     )
-    usage = Usage()
     model = build_llm(settings)
     model.on("metrics_collected", usage.add)
     hearing = build_stt(settings, language)
     hearing.on("metrics_collected", usage.heard)
-    voice = build_tts(settings, language)
-    voice.on("metrics_collected", usage.spoke)
     session = AgentSession(
         stt=hearing,
         llm=model,
@@ -557,6 +561,7 @@ async def entrypoint(ctx: JobContext) -> None:
         logger.info("session timing", extra=timing.summary())
         if settings.early_reply:
             logger.info("session early replies", extra=dict(tutor.early_replies))
+        logger.info("session voice ahead", extra=dict(tutor.voiced_ahead))
         await gates.close()
         if platform:
             if not platform.end_reason:

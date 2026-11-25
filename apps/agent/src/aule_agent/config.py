@@ -67,6 +67,10 @@ class Settings:
     # still judge the turn. Nothing of the reply reaches the child before they
     # let it through; the child's words reach the model before they decide.
     early_reply: bool = False
+    # Whether the voice is given a reply's first sentence while the output
+    # gate judges the reply. Nothing of it is heard before the gate approves
+    # it; the voice's provider gets the sentence before the gate decides.
+    voice_ahead: bool = False
     # Kept out of the repr so a logged Settings never shows a key.
     openai_api_key: str | None = field(default=None, repr=False)
     typesafe_api_key: str | None = field(default=None, repr=False)
@@ -124,6 +128,7 @@ class Settings:
         push_to_talk = get("AULE_PUSH_TO_TALK").lower() in ("1", "true", "yes", "on")
         notes_after_history = get("AULE_NOTES_AFTER_HISTORY").lower() in ("1", "true", "yes", "on")
         early_reply = get("AULE_EARLY_REPLY").lower() in ("1", "true", "yes", "on")
+        voice_ahead = get("AULE_VOICE_AHEAD").lower() in ("1", "true", "yes", "on")
 
         if problems:
             raise ConfigError("; ".join(problems))
@@ -140,6 +145,7 @@ class Settings:
             break_minutes=break_minutes,
             notes_after_history=notes_after_history,
             early_reply=early_reply,
+            voice_ahead=voice_ahead,
             openai_api_key=get(MODERATION_KEY) or None,
             typesafe_api_key=get(PHYSICAL_SAFETY_KEY) or None,
         )

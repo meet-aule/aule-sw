@@ -170,6 +170,7 @@ def happened(monkeypatch: pytest.MonkeyPatch) -> list[Any]:
         session_max_minutes=20,
         break_minutes=30,
         early_reply=False,
+        voice_ahead=False,
     )
     monkeypatch.setattr(worker, "Settings", SimpleNamespace(from_env=lambda: settings))
     monkeypatch.setattr(worker, "build_gates", lambda settings, report=None: Gates(happened))

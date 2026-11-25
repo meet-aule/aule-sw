@@ -201,7 +201,9 @@ class World:
         self.played: list[Played] = []
         self.shown: list[tuple[float, str]] = []
         self.voice_texts: dict[int, str] = {}
+        # Each sentence the voice was given, and when its audio was made.
         self.voiced: list[tuple[float, str]] = []
+        self.made: list[tuple[float, str]] = []
         self.model_calls: list[ModelCall] = []
         self.reader_calls: list[tuple[float, str]] = []
         self.api_errors: list[str] = []
@@ -214,10 +216,11 @@ class World:
         self.flags: list[tuple[str, str, list[str]]] = []
         self.reported_turns: list[dict[str, Any]] = []
         self.metrics: dict[str, float] = {}
-        # When the input gates decided each turn (and whether it passed), and
-        # every text the output gate approved.
+        # When the input gates decided each turn (and whether it passed), every
+        # text the output gate approved, and when it decided on each.
         self.decided: list[tuple[float, bool]] = []
         self.approved: list[str] = []
+        self.judged: list[tuple[float, str, bool]] = []
         self.cache = PromptCache()
         # When the model stand-in begins a response with a thinking block:
         # "between_tools" (after a tool's result, as thinking between tools
@@ -667,6 +670,7 @@ class FakeVoiceStream(tts.SynthesizeStream):
                 self._mark_started()
                 world.voiced.append((time.time(), sentence.token))
                 await asyncio.sleep(world.delays.scaled(world.delays.voice_first_audio, world.rng))
+                world.made.append((time.time(), sentence.token))
                 for frame in self._voice.frames_for(sentence.token):
                     output_emitter.push_frame(frame)
             if started:

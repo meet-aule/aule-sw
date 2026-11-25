@@ -7,13 +7,25 @@ import json
 import logging
 import re
 import time
-from collections.abc import AsyncIterable, Awaitable, Callable
+from collections.abc import AsyncIterable, AsyncIterator, Awaitable, Callable, Coroutine
 from dataclasses import dataclass
 from typing import Any, Protocol
 
 import numpy as np
 from livekit import rtc
-from livekit.agents import Agent, ModelSettings, StopResponse, function_tool, llm, stt
+from livekit.agents import (
+    Agent,
+    APIConnectOptions,
+    ModelSettings,
+    StopResponse,
+    function_tool,
+    llm,
+    stt,
+    tokenize,
+    tts,
+    utils,
+)
+from livekit.agents.types import USERDATA_TIMED_TRANSCRIPT
 from livekit.agents.voice.generation import (
     INSTRUCTIONS_MESSAGE_ID,
     mark_instructions_cache_boundary,
@@ -116,6 +128,11 @@ WARM_UP = "(warm-up)"
 EARLY_REPLY_KEPT_SECONDS = 10.0
 # How long a stopped turn's fixed line waits for its early request to close.
 EARLY_REPLY_CLOSE_SECONDS = 0.5
+
+# How long the voice of a reply's first sentence, made while the output gate
+# judged the reply, waits to be said (see ``HeldVoice``). Later than this, the
+# reply it was made for is over.
+HELD_VOICE_SECONDS = 10.0
 
 DEFAULT_TUTOR_NAME = "Aule"
 PERSONAS = ("calido", "jugueton", "aventurero", "tranquilo")
@@ -307,6 +324,119 @@ async def timed(stream: AsyncIterable[Any], took: Took) -> AsyncIterable[Any]:
         yield chunk
 
 
+# How the voice cuts what it is given into sentences: the AssemblyAI plugin's
+# own default. A sentence voiced ahead is cut where the voice would cut it.
+_SENTENCES = tokenize.blingfire.SentenceTokenizer()
+
+
+def voiced_first(text: str, *, whole: bool) -> tuple[str, bool] | None:
+    """What of ``text`` the voice may be given before the text may be said,
+    and whether that is all of it.
+
+    The voice says a sentence once the next one has begun, so the shortest
+    beginning in which a second sentence has begun gets the first one said
+    and nothing more. A ``whole`` text of one sentence is given whole. None
+    while the first sentence is not known yet.
+    """
+    text = text.lstrip()
+    if len(_SENTENCES.tokenize(text)) < 2:
+        return (text, True) if whole and text.strip() else None
+    end = len(text)
+    while end > 1 and len(_SENTENCES.tokenize(text[: end - 1])) >= 2:
+        end -= 1
+    return text[:end], False
+
+
+@dataclass(frozen=True)
+class VoiceAhead:
+    """How ``checked`` has the voice make a reply's first sentence while the
+    output gate still judges the reply (``HeldVoice``)."""
+
+    # Gives the voice this beginning of the reply; True when it is all of it.
+    give: Callable[[str, bool], None]
+    # The gate let this text through: what the voice made of its beginning may be said.
+    approve: Callable[[str], None]
+    # Nothing given to the voice so far is going to be said.
+    drop: Callable[[], None]
+
+
+class HeldVoice:
+    """The voice of a reply's first sentence, made while the output gate still
+    judges the reply (``checked``).
+
+    The voice gets the reply's beginning, up to just past its first sentence,
+    on the stream that then says the rest of the reply, and what it makes is
+    held here. None of it is heard before the gate lets the reply through
+    (``approved``), and then only through ``Tutor.tts_node``, for text that
+    begins with those very words. Anything else drops it unheard.
+    """
+
+    def __init__(
+        self, voice: tts.TTS, given: str, *, whole: bool, conn_options: APIConnectOptions
+    ) -> None:
+        self.given = given
+        self.whole = whole
+        self.approved = False
+        self.given_at = time.monotonic()
+        # From the text given to the voice to its first audio, once it came.
+        self.first_audio: float | None = None
+        self.expiry: asyncio.TimerHandle | None = None
+        self._stream = voice.stream(conn_options=conn_options)
+        self._stream.push_text(given)
+        if whole:
+            self._stream.end_input()
+        self._audio: asyncio.Queue[rtc.AudioFrame | Exception | None] = asyncio.Queue()
+        self._reading = asyncio.create_task(self._read())
+
+    async def _read(self) -> None:
+        try:
+            async for audio in self._stream:
+                if self.first_audio is None:
+                    self.first_audio = time.monotonic() - self.given_at
+                self._audio.put_nowait(audio.frame)
+        except Exception as error:
+            # Raised where the audio is played, as the voice's own failure would be.
+            self._audio.put_nowait(error)
+        finally:
+            self._audio.put_nowait(None)
+
+    def fits(self, text: str) -> bool:
+        """Whether ``text`` begins with what the voice was given (is all of it,
+        when that was whole)."""
+        text = text.lstrip()
+        if self.whole:
+            return text.rstrip() == self.given.rstrip()
+        return text.startswith(self.given)
+
+    async def frames(self, rest: AsyncIterable[str]) -> AsyncIterable[rtc.AudioFrame]:
+        """What the voice made of what it was given, then of ``rest``, said on
+        the same stream: the voice cuts the whole text as it would have."""
+        forwarding = asyncio.create_task(self._forward(rest))
+        try:
+            while (audio := await self._audio.get()) is not None:
+                if isinstance(audio, Exception):
+                    raise audio
+                yield audio
+        finally:
+            await utils.aio.cancel_and_wait(forwarding)
+            await self.aclose()
+
+    async def _forward(self, rest: AsyncIterable[str]) -> None:
+        if self.whole:
+            return
+        try:
+            async for chunk in rest:
+                self._stream.push_text(chunk)
+        finally:
+            self._stream.end_input()
+
+    async def aclose(self) -> None:
+        if self.expiry is not None:
+            self.expiry.cancel()
+        await self._stream.aclose()
+        await utils.aio.cancel_and_wait(self._reading)
+
+
 async def checked(
     stream: AsyncIterable[Any],
     gates: Gates,
@@ -314,6 +444,7 @@ async def checked(
     meanwhile: Callable[[], str] | None = None,
     *,
     took: Took | None = None,
+    ahead: VoiceAhead | None = None,
 ) -> AsyncIterable[Any]:
     """What reaches the voice from one step of the model.
 
@@ -329,39 +460,64 @@ async def checked(
     gate on what is spoken has approved all of it: a safe beginning says
     nothing about how a sentence ends. A reply that does not pass is replaced
     by a fixed one.
+
+    So that the reply is not then kept waiting for the voice, its first
+    sentence may be given to the voice (``ahead``, AULE_VOICE_AHEAD) once the
+    step is over and has called no tool, while the gate judges the whole
+    reply. What the voice makes of it stays unheard until the gate has
+    approved the whole reply, and is dropped when the gate says no.
     """
-    chunks = [chunk async for chunk in stream]
-    if any(_calls_of(chunk) for chunk in chunks):
-        left_out = sum(len(_text_of(chunk)) for chunk in chunks)
-        if left_out:
-            # Counts only: what was left out is never logged.
-            logger.info(
-                "nothing of the model's said in a step with a tool", extra={"chars": left_out}
-            )
-        line = meanwhile() if meanwhile is not None else ""
-        if line:
-            yield line
-        for chunk in chunks:
-            if not _text_of(chunk):
+    chunks: list[Any] = []
+    # The voice, once given the reply's beginning, until it may say it.
+    held: VoiceAhead | None = None
+    try:
+        async for chunk in stream:
+            chunks.append(chunk)
+        if any(_calls_of(chunk) for chunk in chunks):
+            left_out = sum(len(_text_of(chunk)) for chunk in chunks)
+            if left_out:
+                # Counts only: what was left out is never logged.
+                logger.info(
+                    "nothing of the model's said in a step with a tool", extra={"chars": left_out}
+                )
+            line = meanwhile() if meanwhile is not None else ""
+            if line:
+                yield line
+            for chunk in chunks:
+                if not _text_of(chunk):
+                    yield chunk
+            return
+        written = "".join(_text_of(chunk) for chunk in chunks)
+        if not gates.checks_spoken:
+            for chunk in chunks:
                 yield chunk
-        return
-    if not gates.checks_spoken:
+            return
+        if ahead is not None and (first := voiced_first(written, whole=True)):
+            # The step is over and called no tool: it is the reply, and what
+            # the voice needs of it goes now, while the gate judges it.
+            ahead.give(*first)
+            held = ahead
+        # A paragraph break is not a reasoning boundary: it may separate the
+        # example from its question. Provider thinking is a separate stream type,
+        # and tool-step text is suppressed above. Judge the whole final reply.
+        started = time.monotonic()
+        decision = await gates.spoken(written)
+        if took is not None:
+            took("gate_out", time.monotonic() - started)
+        if not decision.allowed:
+            if held is not None:
+                held.drop()
+                held = None
+            yield reply(decision.reply or "unavailable", language)
+            return
+        if held is not None:
+            held.approve(written)
+            held = None
         for chunk in chunks:
             yield chunk
-        return
-    written = "".join(_text_of(chunk) for chunk in chunks)
-    # A paragraph break is not a reasoning boundary: it may separate the
-    # example from its question. Provider thinking is a separate stream type,
-    # and tool-step text is suppressed above. Judge the whole final reply.
-    started = time.monotonic()
-    decision = await gates.spoken(written)
-    if took is not None:
-        took("gate_out", time.monotonic() - started)
-    if not decision.allowed:
-        yield reply(decision.reply or "unavailable", language)
-    else:
-        for chunk in chunks:
-            yield chunk
+    finally:
+        if held is not None:
+            held.drop()
 
 
 class HeldTimes:
@@ -486,6 +642,29 @@ class EarlyReply:
         await asyncio.wait({self._task}, timeout=timeout)
 
 
+async def _then(first: str, rest: AsyncIterator[str]) -> AsyncIterable[str]:
+    """``first``, then what is left of ``rest``."""
+    if first:
+        yield first
+    async for chunk in rest:
+        yield chunk
+
+
+async def _replayed(frames: list[rtc.AudioFrame]) -> AsyncIterable[rtc.AudioFrame]:
+    """New frames with the audio of ``frames``, and the timing of its words."""
+    for frame in frames:
+        userdata: dict[str, Any] = {}
+        if (words := frame.userdata.get(USERDATA_TIMED_TRANSCRIPT)) is not None:
+            userdata[USERDATA_TIMED_TRANSCRIPT] = list(words)
+        yield rtc.AudioFrame(
+            bytes(frame.data),
+            frame.sample_rate,
+            frame.num_channels,
+            frame.samples_per_channel,
+            userdata=userdata,
+        )
+
+
 async def present(visual: object, gates: Gates, show: Show) -> str:
     """Puts a visual on the student's screen, if it can be drawn and may be read.
 
@@ -521,10 +700,15 @@ class Tutor(Agent):
         breaks: bool = False,
         timing: Timing | None = None,
         early_reply: bool = False,
+        voice: tts.TTS | None = None,
+        voice_ahead: bool = False,
     ) -> None:
         # `context` is what the platform knows about this student and the
         # supervisor's plan for the session; empty when there is no platform.
         # `show` is given when the student has a screen to draw on.
+        # `voice` is the session's voice: the short lines said while a tool
+        # works are voiced with it once, and with `voice_ahead` the first
+        # sentence of a reply while the output gate judges it (``HeldVoice``).
         # `checker` judges answers to computations, so the model neither has to
         # work them out nor holds the answer of an exercise that is still open.
         # `student_name` and `session_number` only choose and fill the greeting.
@@ -629,6 +813,19 @@ class Tutor(Agent):
         self._asks_early = early_reply
         self._early: EarlyReply | None = None
         self.early_replies = {"used": 0, "dropped": 0}
+        # What the voice made ahead of it being said: the lines said while a
+        # tool works, made once, and with `voice_ahead` the first sentence of
+        # the reply the output gate is judging.
+        self._voice = voice
+        self._lines_voiced: dict[str, list[rtc.AudioFrame]] = {}
+        self._held: HeldVoice | None = None
+        # How often each was said, and how often a sentence was not (counts only).
+        self.voiced_ahead = {"sentences_said": 0, "sentences_dropped": 0, "lines_said": 0}
+        self._ahead = (
+            VoiceAhead(give=self._give_voice, approve=self._approve_voice, drop=self._drop_voice)
+            if voice is not None and voice_ahead
+            else None
+        )
         self._engine = engine
         # Which answer of the engine is being said. Lines of an older one stop
         # as soon as a newer answer arrives.
@@ -713,6 +910,7 @@ class Tutor(Agent):
         opening = self._engine.opening() if self._engine is not None else ()
         if opening:
             await self._say(opening)
+            self._voice_the_lines_ahead()
             return
         # A written greeting, said at once. The name is a family's own text, so
         # the greeting with it is judged like anything else that is spoken, and
@@ -727,6 +925,32 @@ class Tutor(Agent):
             else written_greeting(self._language, self._tutor_name, None, self._session_number)
         )
         await self.session.say(text, add_to_chat_ctx=True, allow_interruptions=True)
+        self._voice_the_lines_ahead()
+
+    def _voice_the_lines_ahead(self) -> None:
+        """Has the voice make the lines said while a tool works, once, out of
+        the opening's way, so that a tool step's line plays without waiting
+        for the voice. Not waited for: a line not made in time is voiced when
+        it is said, as before."""
+        if self._voice is not None:
+            self._in_background(self._voice_the_lines(self._voice))
+
+    async def _voice_the_lines(self, voice: tts.TTS) -> None:
+        for key in MEANWHILE:
+            text = reply(key, self._language)
+            try:
+                async with voice.synthesize(text) as stream:
+                    frames = [audio.frame async for audio in stream]
+            except Exception as error:
+                logger.info("line not voiced ahead", extra={"error": type(error).__name__})
+                continue
+            if frames:
+                self._lines_voiced[text] = frames
+
+    def _in_background(self, work: Coroutine[Any, Any, None]) -> None:
+        task = asyncio.create_task(work)
+        self._watches.add(task)
+        task.add_done_callback(self._watches.discard)
 
     async def _say(self, lines: tuple[Line, ...]) -> None:
         """Says lines of the script as they are written, each with its drawing.
@@ -812,6 +1036,7 @@ class Tutor(Agent):
         self._drew = False
         # A spoken turn during a drill is the student's try (a typed one never comes here).
         self._drill.took()
+        self._drop_voice()
         self._ask_early(turn_ctx, new_message)
         try:
             if not await self._may_answer(turn_ctx, new_message):
@@ -1015,9 +1240,52 @@ class Tutor(Agent):
 
     def hold_started(self) -> None:
         """The talk button went down: what was heard before is not this turn's,
-        and neither is a reply asked for an earlier one."""
+        and neither is a reply asked for an earlier one, or its voice."""
         self._words_in_flight = False
         self._drop_early_reply()
+        self._drop_voice()
+
+    def _give_voice(self, text: str, whole: bool) -> None:
+        """Gives the voice the beginning of what may be said next (``HeldVoice``),
+        in place of whatever it was given before."""
+        self._drop_voice()
+        # Only a voice that streams can be given the beginning of a text and
+        # the rest of it later.
+        if self._voice is None or not self._voice.capabilities.streaming:
+            return
+        try:
+            session = self.session
+        except RuntimeError:
+            return
+        if not session.output.audio_enabled:
+            return
+        held = HeldVoice(
+            self._voice, text, whole=whole, conn_options=session.conn_options.tts_conn_options
+        )
+        held.expiry = asyncio.get_running_loop().call_later(
+            HELD_VOICE_SECONDS, self._expire_voice, held
+        )
+        self._held = held
+
+    def _approve_voice(self, text: str) -> None:
+        """``text`` may be said now: what the voice made of its beginning may be
+        heard, if that is what it was given."""
+        held = self._held
+        if held is not None and held.fits(text):
+            held.approved = True
+        else:
+            self._drop_voice()
+
+    def _drop_voice(self) -> None:
+        """Whatever the voice was given ahead is not going to be said."""
+        held, self._held = self._held, None
+        if held is not None:
+            self.voiced_ahead["sentences_dropped"] += 1
+            self._in_background(held.aclose())
+
+    def _expire_voice(self, held: HeldVoice) -> None:
+        if self._held is held:
+            self._drop_voice()
 
     async def stt_node(
         self, audio: AsyncIterable[rtc.AudioFrame], model_settings: ModelSettings
@@ -1060,29 +1328,67 @@ class Tutor(Agent):
     async def tts_node(
         self, text: AsyncIterable[str], model_settings: ModelSettings
     ) -> AsyncIterable[rtc.AudioFrame]:
+        """The voice of what is said: made ahead when it could be, by the voice
+        otherwise.
+
+        LiveKit hands this node text only once it may be said: a reply after
+        ``checked`` released it, a fixed line or a line of the script. Read
+        far enough to tell, text that begins with what the voice made ahead
+        and was approved for (``HeldVoice``) is said with it, and so is a line
+        said while a tool works that was made when the session began.
+        """
         took = self._took()
-        sent: list[float] = []
-
-        async def watched() -> AsyncIterable[str]:
-            async for chunk in text:
-                if not sent:
-                    sent.append(time.monotonic())
-                yield chunk
-
+        chunks = aiter(text)
+        start, ended, sent_at = "", True, 0.0
+        async for chunk in chunks:
+            sent_at = sent_at or time.monotonic()
+            start += chunk
+            if not self._may_be_voiced_ahead(start):
+                ended = False
+                break
+        held = self._held
+        line = self._lines_voiced.get(start.strip()) if ended else None
+        frames: AsyncIterable[rtc.AudioFrame]
+        if held is not None and held.approved and held.fits(start) and (ended or not held.whole):
+            self._held = None
+            self.voiced_ahead["sentences_said"] += 1
+            frames = held.frames(_then(start.lstrip()[len(held.given) :], chunks))
+        elif line is not None:
+            self.voiced_ahead["lines_said"] += 1
+            held, frames = None, _replayed(line)
+        else:
+            held, frames = None, Agent.default.tts_node(self, _then(start, chunks), model_settings)
         first = True
-        frames = Agent.default.tts_node(self, watched(), model_settings)
-        async with contextlib.aclosing(frames):
+        async with contextlib.aclosing(frames):  # type: ignore[type-var]
             async for frame in frames:
-                if first and sent:
-                    took("tts_ttfb", time.monotonic() - sent[0])
-                first = False
+                if first:
+                    first = False
+                    if held is not None and held.first_audio is not None:
+                        # The voice's own time, from the moment it got the text.
+                        took("tts_ttfb", held.first_audio)
+                    elif held is None and line is None and sent_at:
+                        took("tts_ttfb", time.monotonic() - sent_at)
                 yield frame
+
+    def _may_be_voiced_ahead(self, start: str) -> bool:
+        """Whether more of a text that begins with ``start`` could still make it
+        one the voice made ahead (a whole one has to end where it ends)."""
+        text = start.lstrip()
+        held = self._held
+        if held is not None and held.approved:
+            if held.whole and held.given.rstrip().startswith(text.rstrip()):
+                return True
+            if not held.whole and len(text) < len(held.given) and held.given.startswith(text):
+                return True
+        return any(line.startswith(text.rstrip()) for line in self._lines_voiced)
 
     async def llm_node(
         self, chat_ctx: llm.ChatContext, tools: list[llm.Tool], model_settings: ModelSettings
     ) -> AsyncIterable[llm.ChatChunk | str]:
         took = self._took()
         prompt = self._prompt()
+        # A new step: what the voice was given for an earlier one is not said now.
+        self._drop_voice()
         # Read by the model's client as the request is laid out (``providers``),
         # with the instructions as they are now.
         REQUEST.set(prompt)
@@ -1126,7 +1432,12 @@ class Tutor(Agent):
             # when there is a gate to wait for or a tool whose step must be
             # known whole before any of it is said.
             stream = checked(
-                stream, self._gates, self._language, self._meanwhile if tools else None, took=took
+                stream,
+                self._gates,
+                self._language,
+                self._meanwhile if tools else None,
+                took=took,
+                ahead=self._ahead,
             )
         started = time.monotonic()
         chars, called = 0, []
