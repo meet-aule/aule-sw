@@ -387,6 +387,12 @@ Only skills present in the platform's catalog are recorded.
 
 When the session is reviewed, the family's summary (`session_reviews.guardian_summary`, and the notice made from it) is the engine's report, word for word. The supervisor's review still records its next step and flags, not its own summary. A session that ended before anything happened has no engine report and is summarized by the supervisor as before.
 
+Migration 0022 adds `team_passkeys`, the passkeys the team signs in to its
+console with: for each one, the team member's guardian account (it is erased
+with it), the credential id, the public key with its counter and flags as
+webauthn-rs keeps them, the member's name for it, and when it was made and last
+used. Nothing in it is secret. No row exists until a team member adds one.
+
 Migration 0021 adds nullable `families.source`, the link a family signed up
 from, with a check on its form; families from before keep null.
 
@@ -394,10 +400,12 @@ Migration 0020 adds nullable `sessions.end_reason`. Existing sessions keep null;
 new closures persist the same fixed reason published in `session.ended.v1`, now
 including `provider_error`. No transcript is returned by the lifecycle endpoint.
 
-Both only add to the schema, and still an image from before one of them does
-not start on a database that has run it: every command migrates first, and
-sqlx refuses a database with a migration the image does not know
+All three only add to the schema, and still an image from before one of them
+does not start on a database that has run it: every command migrates first,
+and sqlx refuses a database with a migration the image does not know
 (`VersionMissing`). To roll the image back past one, undo it and delete its row
-from `_sqlx_migrations` first; for 0021, `alter table families drop column
-source` (the links families came from are lost) and `delete from
-_sqlx_migrations where version = 21`.
+from `_sqlx_migrations` first, newest first. For 0022, `drop table
+team_passkeys` (the team's passkeys are lost: each member should also delete
+theirs from their devices) and `delete from _sqlx_migrations where version =
+22`; for 0021, `alter table families drop column source` (the links families
+came from are lost) and `delete from _sqlx_migrations where version = 21`.
