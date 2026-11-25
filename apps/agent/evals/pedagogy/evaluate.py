@@ -271,6 +271,11 @@ async def run_case(budget, case, arm, extra, repetition, output):
                                 for e in result.events
                                 if e.type == "message" and e.item.role == "assistant"
                             ]
+                            turn["function_events"] = [
+                                e.item.model_dump(mode="json")
+                                for e in result.events
+                                if e.type in ("function_call", "function_call_output")
+                            ]
                         else:
                             turn["error"] = "input_gate_blocked"
                 except Exception as error:

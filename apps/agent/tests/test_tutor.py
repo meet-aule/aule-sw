@@ -1,4 +1,5 @@
 import asyncio
+import json
 import time
 from types import SimpleNamespace
 from unittest.mock import PropertyMock, patch
@@ -20,7 +21,6 @@ from aule_agent.tutor import (
     Persona,
     Tutor,
     checked,
-    for_the_student,
     persona_from,
     persona_notes,
     shows_something,
@@ -420,9 +420,14 @@ def test_the_checking_tools_exist_only_with_something_to_check_with():
     checking = Tutor(language="es", gates=ScriptedGates(), checker=ScriptedChecker())
 
     drill = ["pose_phrase", "check_phrase"]
-    assert [tool.info.name for tool in plain.tools] == drill
+    assert [tool.info.name for tool in plain.tools] == ["compare_numbers", *drill]
     assert "pose_exercise" not in plain.instructions
-    assert [tool.info.name for tool in checking.tools] == ["pose_exercise", "check_answer", *drill]
+    assert [tool.info.name for tool in checking.tools] == [
+        "compare_numbers",
+        "pose_exercise",
+        "check_answer",
+        *drill,
+    ]
     assert "pose_exercise" in checking.instructions
 
 
@@ -461,7 +466,7 @@ def test_no_tool_declares_a_nullable_argument_which_the_model_api_refuses_with_a
         language="es", gates=ScriptedGates(), checker=ScriptedChecker(), show=lambda visual: None
     )
 
-    assert len(tutor.tools) == 5
+    assert len(tutor.tools) == 6
     for each in tutor.tools:
         assert not nullable(each.info.raw_schema), each.info.name
 
@@ -524,23 +529,54 @@ async def test_a_late_plan_joins_the_student_context_and_keeps_the_guidance():
     assert final.index("Plan: fractions.") < final.index("divertido.") < final.index("Slow down.")
 
 
-async def test_only_the_paragraph_for_the_student_is_spoken_and_judged():
-    gates = ScriptedGates(ALLOW)
-    call = llm.ChatChunk(
-        id="tool",
-        delta=llm.ChoiceDelta(
-            role="assistant",
-            tool_calls=[llm.FunctionToolCall(name="show", arguments="{}", call_id="c1")],
+@pytest.mark.parametrize(
+    "first, second",
+    [
+        (
+            "Imagina dos pizzas cortadas en mitades. ¿Cuántos pedazos hay?",
+            "Ahora dime si eso es multiplicar o dividir por un medio.",
         ),
-    )
-    model = stream(
-        "Esto no es un cálculo, así que no lo registro.\n\n", "Cuéntame cómo lo pensaste.", call
-    )
+        (
+            "Let's use pizza. Say you have two whole pizzas, cut into halves.",
+            "Then tell me, is that two times one half, or two divided by one half?",
+        ),
+    ],
+)
+async def test_all_instructional_paragraphs_are_judged_and_spoken(first: str, second: str) -> None:
+    gates = ScriptedGates(ALLOW)
+    metadata = llm.ChatChunk(id="usage")
+    chunks = [first + "\n\n", second, metadata]
 
-    released = [chunk async for chunk in checked(model, gates, "es")]
+    released = [chunk async for chunk in checked(stream(*chunks), gates, "es")]
 
-    assert gates.spoken_texts == ["Cuéntame cómo lo pensaste."]
-    assert released == ["Cuéntame cómo lo pensaste.", call]
+    assert gates.spoken_texts == [first + "\n\n" + second]
+    assert released == chunks
+
+
+@pytest.mark.parametrize("unsafe_first", [True, False])
+async def test_any_blocked_paragraph_stops_the_whole_reply(unsafe_first: bool) -> None:
+    gates = ScriptedGates(Decision(Action.REDIRECT, "redirect"))
+    paragraphs = ["Blocked test content.", "A safe question."]
+    if not unsafe_first:
+        paragraphs.reverse()
+    written = "\n\n".join(paragraphs)
+
+    released = [chunk async for chunk in checked(stream(written), gates, "en")]
+
+    assert gates.spoken_texts == [written]
+    assert released == [reply("redirect", "en")]
+
+
+async def test_tool_step_text_is_not_spoken_even_without_a_filler() -> None:
+    gates, call = ScriptedGates(), a_call("compare_numbers")
+    released = [
+        chunk
+        async for chunk in checked(
+            stream("I should check the numbers.\n\nLet me check.", call), gates, "en"
+        )
+    ]
+    assert released == [call]
+    assert gates.spoken_texts == []
 
 
 def a_call(name):
@@ -553,7 +589,7 @@ def a_call(name):
     )
 
 
-@pytest.mark.parametrize("tool", ["check_answer", "pose_exercise", "show"])
+@pytest.mark.parametrize("tool", ["check_answer", "pose_exercise", "compare_numbers", "show"])
 async def test_a_step_that_calls_a_tool_says_a_fixed_line_and_nothing_of_the_models(tool):
     gates, call = ScriptedGates(), a_call(tool)
     thinking = stream("El plan pide empezar fácil, ", "así que muestro las barras.", call)
@@ -610,11 +646,6 @@ async def test_one_line_per_turn_of_the_student_however_many_tools_the_turn_take
 def test_the_lines_said_while_a_tool_works_are_short_in_both_languages():
     assert set(MEANWHILE) <= set(REPLIES)
     assert all(len(REPLIES[key][language]) <= 14 for key in MEANWHILE for language in ("es", "en"))
-
-
-def test_a_reply_of_one_paragraph_is_left_as_written():
-    assert for_the_student("Muy bien.\nSigamos.") == "Muy bien.\nSigamos."
-    assert for_the_student("Pienso.\n\n\n  Hola.  ") == "Hola."
 
 
 async def enter(tutor, session):
@@ -1035,3 +1066,21 @@ async def test_a_drill_measures_the_spoken_try_and_draws_its_tune():
     assert said.startswith("Their voice went up at the end")
     assert [visual["kind"] for visual in shown] == ["contour"] and shown[0]["expected"] == "rising"
     assert not tutor._drill.open
+
+
+async def test_comparing_numbers_does_not_replace_the_registered_exercise() -> None:
+    checker = ScriptedChecker(posed="Ask it.", judged="Correct.")
+    tutor = Tutor(language="es", gates=ScriptedGates(), checker=checker)
+    await tool(tutor, "pose_exercise")({"expression": "1/14 + 1/15"})
+    compared = json.loads(await tool(tutor, "compare_numbers")({"left": "2/29", "right": "1/15"}))
+    assert compared["relation"] == "greater_than"
+    await tool(tutor, "check_answer")({"said": "29/210"})
+    assert checker.calls == [("pose", "1/14 + 1/15", None, None), ("answer", "29/210")]
+
+
+async def test_an_unavailable_gate_does_not_release_any_paragraph() -> None:
+    gates = ScriptedGates(Decision(Action.UNAVAILABLE, "unavailable"))
+    text = "Una explicación completa.\n\nUna pregunta para el estudiante."
+    released = [c async for c in checked(stream(text), gates, "es")]
+    assert gates.spoken_texts == [text]
+    assert released == [reply("unavailable", "es")]
