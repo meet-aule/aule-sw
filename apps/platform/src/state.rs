@@ -48,6 +48,9 @@ pub struct AppState {
     /// library refused the settings config.rs accepted (logged): passkeys
     /// then answer 503, and the emailed code still works.
     pub webauthn: Option<Arc<webauthn_rs::Webauthn>>,
+    /// Passkey ceremonies in progress, each for a few minutes and one use.
+    /// Losing them costs a press of the button again.
+    pub passkey_ceremonies: Arc<Mutex<crate::passkeys::Ceremonies>>,
 }
 
 impl AppState {
@@ -127,6 +130,7 @@ impl AppState {
             claim_attempts: Arc::default(),
             engines: Arc::default(),
             webauthn,
+            passkey_ceremonies: Arc::default(),
         }
     }
 }
