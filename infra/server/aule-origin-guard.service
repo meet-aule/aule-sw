@@ -1,0 +1,12 @@
+[Unit]
+Description=Aule: the ports Cloudflare forwards to go through the origin firewall
+# Before Docker starts the services that listen on them.
+Before=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/etc/aule/aule-origin-guard.sh
+
+[Install]
+WantedBy=multi-user.target docker.service

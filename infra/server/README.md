@@ -5,6 +5,7 @@ What runs on aule-prod outside the containers, kept here so a new server can be 
 | File | On the server | What it does |
 |---|---|---|
 | `aule-compose.sh` | `/etc/aule/aule-compose.sh` | `docker compose` for this repository with the server's settings: `sudo -u aule-admin /etc/aule/aule-compose.sh up -d --build <service>` |
+| `aule-origin-guard.sh`, `aule-origin-guard.service` | `/etc/aule/aule-origin-guard.sh`, `/etc/systemd/system/aule-origin-guard.service` | Keeps the ports Cloudflare forwards to (8090, 7880, 8092) behind the origin firewall, from boot |
 | `aule-backup.sh` | `/etc/aule/aule-backup.sh` | Compressed, unencrypted backup of the database, every six hours |
 | `RESTORE.md` | `/etc/aule/RESTORE.md` | How to restore one |
 | `aule-restore-check.sh` | `/etc/aule/aule-restore-check.sh` | Weekly restore of a new backup into a temporary database |
@@ -16,6 +17,75 @@ Name only the services that changed. Restarting `agent` ends the sessions in pro
 so name it, or no service (which rebuilds them all), only when no session is open.
 
 The alerts are in `infra/watch`.
+
+## Team console
+
+The team's console (`apps/admin`, compose service `admin`) answers at
+https://admin.meetaule.com through its Cloudflare Worker (`infra/edge`), on port
+8092.
+
+- **Its own env file**, `/etc/aule/admin.env` (owned by root, group
+  `aule-admin`, mode 640), holds `ADMIN_EDGE_SECRET=`, the same value as the
+  Worker's `EDGE_SECRET` (`openssl rand -hex 32`). No other service reads it,
+  and `aule.env` is not touched. Only once it is there does `aule-compose.sh`
+  set `AULE_ADMIN_HOST=0.0.0.0` so the Worker can reach the console; until then
+  it listens on loopback. With the secret, the console gives every request
+  without it the same 404, except `/healthz` from this machine, and it does not
+  start on a public address without one.
+- **The origin firewall.** `aule-origin-guard.sh` gives each of 8090 (the
+  playground), 7880 (LiveKit's signalling) and 8092 one jump from raw
+  `PREROUTING` to the `AULE_ORIGIN` chain, for IPv4 and IPv6. The chain and its
+  Cloudflare ranges are the store repository's `deploy/origin-firewall.sh`'s;
+  the guard never touches the ranges. `aule-origin-guard.service` runs it at
+  boot before Docker, so each port is guarded before anything listens there;
+  if the chain is not there yet, the guard makes one that lets in only this
+  machine, until the store's script lets Cloudflare in. It can run any number
+  of times. From outside, `curl -m 5 http://<server>:8092/healthz` must time
+  out. A ufw rule for 8092 is needed only if ufw is what lets 8090 in.
+- **From Cloudflare to the server the hop is plain http**, as the playground's
+  is: the console's cookie, the sign-in codes and the families' data cross the
+  network unencrypted between Cloudflare and the server, where anyone on the
+  way could read them. The Worker's secret proves the request came through it;
+  it hides nothing. A Cloudflare Tunnel, or a certificate at the origin with
+  Cloudflare checking it, would close that; neither is set up yet.
+
+```sh
+# Once, as root
+install -o root -g root -m 750 infra/server/aule-origin-guard.sh /etc/aule/aule-origin-guard.sh
+install -o root -g root -m 644 infra/server/aule-origin-guard.service /etc/systemd/system/aule-origin-guard.service
+systemctl daemon-reload && systemctl enable --now aule-origin-guard.service
+```
+
+It keeps no tutoring state, so it can be rebuilt on its own at any time, with
+sessions open (pull and build under `umask 002`, as for every service):
+
+```sh
+sudo -u aule-admin bash -c 'umask 002; /etc/aule/aule-compose.sh up -d --build --no-deps admin'
+```
+
+A restart signs the team out, and also clears its sign-in limits for a team
+member locked out by them. The playground still restarts only when no session
+is open (`select count(*) from sessions where status <> 'ended'` is 0): the
+console's «En vivo» page says so in one line, «Ninguna sesión abierta: se puede
+desplegar.».
+
+The first deploy goes in this order:
+
+1. this `aule-compose.sh` into `/etc/aule/`, the previous copy kept;
+2. the platform and its worker, with no session open: the console needs their
+   routes for the team, and against an older platform it signs nobody in and
+   shows wrong pages;
+3. the origin guard, then the console's env file;
+4. the console, checked on loopback (`/healthz`);
+5. the Worker, with its two secrets (`infra/edge/README.md`);
+6. a sign-in with a team address;
+7. the watch's new checks (`infra/watch/README.md`);
+8. only then, with no session open, the playground without its old panel.
+
+Until step 8, no playground rebuild: built from a checkout with the console in
+it, the playground loses the old panel at once. Rolling the platform back takes
+the console down with it, since the console needs the platform's routes for
+the team.
 
 ## Offsite copy health
 

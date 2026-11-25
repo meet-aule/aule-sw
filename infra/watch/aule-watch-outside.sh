@@ -6,14 +6,18 @@
 #   ~/bin/aule-watch-outside.sh          check, and mail on a change
 #   ~/bin/aule-watch-outside.sh --test   send one test mail
 #
-# It only fetches public pages. A failure is mailed when it starts and then
-# every six hours while it lasts, through Resend's HTTP API with the key in
+# It only fetches public pages, and checks that the team console's port on the
+# server answers nobody but Cloudflare. A failure is mailed when it starts and
+# then every six hours while it lasts, through Resend's HTTP API with the key in
 # ~/.config/aule/resend-key (mode 600). The server's own checks are
 # /etc/aule/aule-watch.sh on aule-prod.
 set -uo pipefail
 umask 077
 
 KEY_FILE="$HOME/.config/aule/resend-key"
+# The server's public address, kept on this machine and not in the repository
+# (one line, mode 600). Without it, the console's port is not checked.
+ORIGIN_FILE="$HOME/.config/aule/origin-host"
 STATE_DIR="$HOME/.local/state/aule"
 STATE="$STATE_DIR/watch-outside.failing"
 LAST_MAIL="$STATE_DIR/watch-outside.last-mail"
@@ -28,6 +32,17 @@ cd /
 backup_ok() {
   CHECK_DETAIL="copia o verificación externa fallida, ausente o demasiado antigua"
   python3 "$HOME/.local/lib/aule/offsite-health.py" check /var/tmp/aule-backup-health/latest.json
+}
+
+console_closed() { # the team console's port must not answer from here
+  local origin
+  origin=$(tr -d '[:space:]' < "$ORIGIN_FILE")
+  if [ -z "$origin" ]; then
+    CHECK_DETAIL="no hay dirección del servidor en $ORIGIN_FILE"
+    return 1
+  fi
+  CHECK_DETAIL="el puerto 8092 del servidor responde desde fuera de Cloudflare: falta la regla del cortafuegos de origen"
+  ! curl -s -o /dev/null --connect-timeout 5 --max-time 8 "http://$origin:8092/healthz"
 }
 
 mail() { # subject, body
@@ -46,7 +61,7 @@ mail() { # subject, body
 when=$(date -u '+%Y-%m-%d %H:%M UTC')
 
 if [ "${1:-}" = "--test" ]; then
-  mail "Aule: prueba del vigía externo" "El vigía externo de Aule está activo ($when, desde el servidor de casa). Cada 5 minutos abre la página de sesión, LiveKit y la tienda desde fuera; si el servidor entero se cae, llega un correo."
+  mail "Aule: prueba del vigía externo" "El vigía externo de Aule está activo ($when, desde el servidor de casa). Cada 5 minutos abre la página de sesión, LiveKit y la tienda desde fuera, y comprueba que el puerto de la consola del equipo no responde fuera de Cloudflare; si el servidor entero se cae, llega un correo."
   exit $?
 fi
 
@@ -55,9 +70,11 @@ check "página de sesión (playground.meetaule.com)" http https://playground.mee
 check "audio (livekit.meetaule.com)" http https://livekit.meetaule.com/ 15 20
 check "tienda (shop.meetaule.com)" http https://shop.meetaule.com/ 15 20
 check "respaldo externo (falló o no se verificó en 26 h)" backup_ok
+if [ -r "$ORIGIN_FILE" ]; then check "consola cerrada fuera de Cloudflare (puerto 8092)" console_closed; fi
 
 watch_notify "monitor externo" "Para contrastar desde otra conexión:
 curl -I --max-time 15 https://playground.meetaule.com/session/healthz
 curl -I --max-time 15 https://livekit.meetaule.com/
 Si fallan los tres destinos públicos, comprueba el acceso SSH al servidor y la conectividad del proveedor.
-Si solo falla el respaldo externo, revisa la última copia y su verificación."
+Si solo falla el respaldo externo, revisa la última copia y su verificación.
+Si la consola responde desde fuera, revisa aule-origin-guard en el servidor: sudo iptables -t raw -S PREROUTING (infra/server/README.md)."

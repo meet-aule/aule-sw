@@ -30,7 +30,7 @@ jobs:
           printf 'Executed on **%s** in an unprivileged container.\n' "$RUNNER_NAME" >> "$GITHUB_STEP_SUMMARY"
 
   contracts:
-    name: Contracts and playground (Node)
+    name: Contracts, playground and console (Node)
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -44,6 +44,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @aule/playground typecheck
+      - run: pnpm --filter @aule/admin typecheck
       - run: pnpm test
 
   agent:
@@ -132,7 +133,7 @@ jobs:
     timeout-minutes: 25
     strategy:
       matrix:
-        app: [agent, playground, platform]
+        app: [admin, agent, playground, platform]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

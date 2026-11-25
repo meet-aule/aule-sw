@@ -1,8 +1,9 @@
 // The Workers in front of the server (infra/edge/src). The page's Worker turns
 // the bare address into the session page and keeps the query, so a shared
-// link's ?src= reaches the page. Both send any other request to the server as
-// it came, less the analytics cookies the brand site and the shop leave on all
-// of meetaule.com.
+// link's ?src= reaches the page. All three send any other request to the
+// server as it came, less the analytics cookies the brand site and the shop
+// leave on all of meetaule.com; the team console's sends the bare address too,
+// only over https, with its secret and the client's address added.
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { test } from "node:test";
@@ -14,6 +15,7 @@ async function load(file) {
 }
 const playground = await load("playground.js");
 const livekit = await load("livekit.js");
+const admin = await load("admin.js");
 
 test("the bare address opens the session page with its query, on the same site", async () => {
   for (const [address, location] of [
@@ -37,7 +39,12 @@ test("any other address goes to the server as it came, query and all", async (t)
   assert.deepEqual(asked, ["http://origin.invalid:8090/guia?src=cesar"]);
 });
 
-// Each Worker, an address it serves, its settings, and where that address goes.
+// The console's Worker's secret in these tests, and what it adds to every request with it.
+const EDGE_SECRET = "an-edge-secret-of-the-tests-0123456789abcdef";
+const ADMIN_ENV = { ORIGIN_URL: "http://origin.invalid:8092", EDGE_SECRET };
+
+// Each Worker, an address it serves, its settings, where that address goes,
+// and the headers it adds of its own.
 const WORKERS = [
   [
     "playground.js",
@@ -45,6 +52,7 @@ const WORKERS = [
     "https://playground.meetaule.com/session/api/account?src=feria",
     { ORIGIN_URL: "http://origin.invalid:8090" },
     "http://origin.invalid:8090/session/api/account?src=feria",
+    {},
   ],
   [
     "livekit.js",
@@ -52,6 +60,15 @@ const WORKERS = [
     "https://livekit.meetaule.com/rtc?access_token=token&auto_subscribe=1",
     { ORIGIN_URL: "http://origin.invalid:7880" },
     "http://origin.invalid:7880/rtc?access_token=token&auto_subscribe=1",
+    {},
+  ],
+  [
+    "admin.js",
+    admin,
+    "https://admin.meetaule.com/api/families?q=ana",
+    ADMIN_ENV,
+    "http://origin.invalid:8092/api/families?q=ana",
+    { "x-edge-secret": EDGE_SECRET },
   ],
 ];
 
@@ -124,11 +141,11 @@ const COOKIES = [
   [null, null],
 ];
 
-const othersThanCookie = (headers) => [...headers].filter(([name]) => name !== "cookie");
+const othersThanCookie = (headers) => Object.fromEntries([...headers].filter(([name]) => name !== "cookie"));
 
-test("both Workers take the analytics cookies out, keep the other cookies in their order and every other header as it came", async (t) => {
+test("every forwarding Worker takes the analytics cookies out, keeps the other cookies in their order and every other header as it came", async (t) => {
   const asked = forwarded(t);
-  for (const [file, worker, address, env, origin] of WORKERS) {
+  for (const [file, worker, address, env, origin, added] of WORKERS) {
     for (const [cookie, kept] of COOKIES) {
       const what = `${file}: ${cookie}`;
       const incoming = new Request(address, {
@@ -140,7 +157,7 @@ test("both Workers take the analytics cookies out, keep the other cookies in the
       assert.equal(request.url, origin, what);
       assert.equal(request.method, "GET", what);
       assert.equal(request.headers.get("cookie"), kept, what);
-      assert.deepEqual(othersThanCookie(request.headers), othersThanCookie(incoming.headers), what);
+      assert.deepEqual(othersThanCookie(request.headers), { ...othersThanCookie(incoming.headers), ...added }, what);
       // Cloudflare does not let a Worker change the incoming request's headers.
       assert.deepEqual([...incoming.headers], before, what);
     }
@@ -157,11 +174,75 @@ test("a WebSocket upgrade still goes to the server as it came, less those cookie
     "sec-websocket-version": "13",
     upgrade: "websocket",
   };
-  for (const [file, worker, address, env, origin] of WORKERS) {
+  for (const [file, worker, address, env, origin, added] of WORKERS) {
     await worker.fetch(new Request(address, { headers: { ...upgrade, cookie: `${GA}; ${GUARDIAN}; ${PH}; ${GA4}` } }), env);
     const request = asked.at(-1);
     assert.equal(request.method, "GET", file);
     assert.equal(request.url, origin, file);
-    assert.deepEqual(Object.fromEntries(request.headers), { ...upgrade, cookie: GUARDIAN }, file);
+    assert.deepEqual(Object.fromEntries(request.headers), { ...upgrade, cookie: GUARDIAN, ...added }, file);
   }
+});
+
+test("the console's bare address goes to the console as it came: its own sign-in decides, not a redirect", async (t) => {
+  const asked = forwarded(t);
+  for (const [address, origin] of [
+    ["https://admin.meetaule.com/", "http://origin.invalid:8092/"],
+    ["https://admin.meetaule.com", "http://origin.invalid:8092/"],
+    ["https://admin.meetaule.com/signin?next=https://evil.example", "http://origin.invalid:8092/signin?next=https://evil.example"],
+  ]) {
+    const response = await admin.fetch(new Request(address), ADMIN_ENV);
+    assert.equal(response.status, 204, address);
+    assert.equal(asked.at(-1).url, origin, address);
+  }
+});
+
+test("the console's writes reach it with their body, and its answers come back as they are, never followed", async (t) => {
+  const sent = [];
+  t.mock.method(globalThis, "fetch", async (input, init) => {
+    // A Worker hands fetch a stream as the body; Node reads it the same way.
+    sent.push({ url: String(input), method: init.method, redirect: init.redirect, body: init.body ? await new Response(init.body).text() : null });
+    return new Response(null, { status: 303, headers: { location: "https://elsewhere.example/" } });
+  });
+  const body = JSON.stringify({ email: "equipo@example.org" });
+  const response = await admin.fetch(
+    new Request("https://admin.meetaule.com/api/signin/start", {
+      method: "POST",
+      headers: { "content-type": "application/json", origin: "https://admin.meetaule.com" },
+      body,
+    }),
+    ADMIN_ENV,
+  );
+  assert.deepEqual(sent, [{ url: "http://origin.invalid:8092/api/signin/start", method: "POST", redirect: "manual", body }]);
+  assert.equal(response.status, 303, "handed back, not followed");
+  assert.equal(response.headers.get("location"), "https://elsewhere.example/");
+});
+
+test("the console's Worker adds its secret and the address Cloudflare saw, over whatever the request carried", async (t) => {
+  const asked = forwarded(t);
+  const forged = { "x-edge-secret": "forged", "x-client-ip": "198.51.100.66" };
+  await admin.fetch(new Request("https://admin.meetaule.com/api/signin/verify", { headers: { ...forged, "cf-connecting-ip": "203.0.113.9" } }), ADMIN_ENV);
+  assert.equal(asked.at(-1).headers.get("x-edge-secret"), EDGE_SECRET);
+  assert.equal(asked.at(-1).headers.get("x-client-ip"), "203.0.113.9");
+  await admin.fetch(new Request("https://admin.meetaule.com/", { headers: { "cf-connecting-ip": "2001:db8::7" } }), ADMIN_ENV);
+  assert.equal(asked.at(-1).headers.get("x-client-ip"), "2001:db8::7");
+  // With no address from Cloudflare, none goes on: never the one the request named.
+  await admin.fetch(new Request("https://admin.meetaule.com/", { headers: forged }), ADMIN_ENV);
+  assert.equal(asked.at(-1).headers.get("x-client-ip"), null);
+  assert.equal(asked.at(-1).headers.get("x-edge-secret"), EDGE_SECRET);
+});
+
+test("the console's Worker answers plain http, and a missing secret, itself: nothing reaches the server", async (t) => {
+  const asked = forwarded(t);
+  for (const [address, env, status] of [
+    ["http://admin.meetaule.com/", ADMIN_ENV, 403],
+    ["http://admin.meetaule.com/api/signin/start", ADMIN_ENV, 403],
+    ["https://admin.meetaule.com/", { ORIGIN_URL: "http://origin.invalid:8092" }, 503],
+    ["https://admin.meetaule.com/", { ORIGIN_URL: "http://origin.invalid:8092", EDGE_SECRET: "" }, 503],
+  ]) {
+    const response = await admin.fetch(new Request(address, { headers: { cookie: GUARDIAN } }), env);
+    assert.equal(response.status, status, address);
+    assert.equal(response.headers.get("cache-control"), "no-store");
+    assert.equal(response.headers.get("location"), null, "no redirect");
+  }
+  assert.equal(asked.length, 0);
 });

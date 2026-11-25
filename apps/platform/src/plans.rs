@@ -8,21 +8,24 @@
 //! (`AULE_ADMIN_EMAILS`) are not counted: they use Aule to try it.
 
 use axum::Json;
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use chrono::{DateTime, Duration, NaiveTime, Utc};
 use sea_orm::ActiveValue::Set;
 use sea_orm::{
-    ColumnTrait, ConnectionTrait, DbBackend, EntityTrait, QueryFilter, QueryOrder, QuerySelect, Statement,
+    ColumnTrait, ConnectionTrait, DbBackend, DbErr, EntityTrait, QueryFilter, QueryOrder, QueryResult,
+    QuerySelect, Statement,
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 use crate::auth::{Guardian, Input, Staff};
 use crate::entity::{family, guardian, subscription};
 use crate::error::{ApiError, ApiResult};
 use crate::state::AppState;
+use crate::team::{self, Cursor};
 
 pub const TRIAL_DAYS: i64 = 7;
 pub const TRIAL_PER_DAY: i64 = 1;
@@ -33,6 +36,11 @@ pub const CURRENCY: &str = "PEN";
 /// A session shorter than this does not count.
 pub const SHORT_MINUTES: i32 = 2;
 const MAX_GRANT_DAYS: i64 = 366;
+/// The families one request looks at, at most: the list's page when no plan
+/// is asked for, and how far a search by plan goes before it answers.
+const FAMILIES_PAGE: i64 = 300;
+/// The link codes the list names, the most used first.
+const MAX_SOURCES: i64 = 100;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Plan {
@@ -48,6 +56,9 @@ pub enum Plan {
 }
 
 impl Plan {
+    /// Every plan, as the team filters the families by it.
+    pub const ALL: [Self; 6] = [Self::Trial, Self::Paid, Self::Granted, Self::None, Self::Team, Self::Free];
+
     pub fn name(self) -> &'static str {
         match self {
             Self::Trial => "trial",
@@ -123,7 +134,10 @@ async fn counted(db: &impl ConnectionTrait, family_id: Uuid, since: DateTime<Utc
 }
 
 /// When the family's first session that counts started: the trial's first day.
-async fn first_session(db: &impl ConnectionTrait, family_id: Uuid) -> ApiResult<Option<DateTime<Utc>>> {
+pub(crate) async fn first_session(
+    db: &impl ConnectionTrait,
+    family_id: Uuid,
+) -> ApiResult<Option<DateTime<Utc>>> {
     let row = db
         .query_one_raw(Statement::from_sql_and_values(
             DbBackend::Postgres,
@@ -214,7 +228,7 @@ pub async fn admit(state: &AppState, family_id: Uuid) -> ApiResult<()> {
 }
 
 /// The signed-in family's plan and what is left of it, and whether the person
-/// is on Aule's team (the page then shows the way to the admin panel).
+/// is on Aule's team (the page then shows the way to the team's console).
 pub async fn mine(guardian: Guardian, State(state): State<AppState>) -> ApiResult<Json<Value>> {
     let standing = standing(&state, guardian.family_id, Utc::now()).await?;
     let email: Option<String> = guardian::Entity::find_by_id(guardian.id)
@@ -228,56 +242,180 @@ pub async fn mine(guardian: Guardian, State(state): State<AppState>) -> ApiResul
     Ok(Json(answer))
 }
 
+#[derive(Deserialize)]
+pub struct FamiliesQuery {
+    #[serde(default)]
+    q: Option<String>,
+    #[serde(default)]
+    source: Option<String>,
+    #[serde(default)]
+    status: Option<String>,
+    #[serde(default)]
+    before: Option<String>,
+    #[serde(default)]
+    limit: Option<String>,
+}
+
+/// The families a search and a link ask for: `$1` a pattern found in the
+/// family's name or in a guardian's address, `$2` the link it came from. A
+/// null asks for every family.
+const FAMILIES_MATCHING: &str = r"($1::text is null or families.name ilike $1 escape '\'
+       or exists (select 1 from guardians where guardians.family_id = families.id
+                    and guardians.email::text ilike $1 escape '\'))
+   and ($2::text is null or families.source = $2)";
+
 /// Every family, newest first, with its plan, the link it signed up from and
 /// how much it uses Aule: what the team needs to look after the families, and
-/// nothing a child said.
-pub async fn families(_: Staff, State(state): State<AppState>) -> ApiResult<Json<Value>> {
+/// nothing a child said. `q` finds a family by its name or by a guardian's
+/// address, `source` by the link it came from and `status` by the plan it has
+/// now; `before` and `limit` page through them. With none of them, it is the
+/// newest 300.
+pub async fn families(
+    _: Staff,
+    State(state): State<AppState>,
+    Query(query): Query<FamiliesQuery>,
+) -> ApiResult<Json<Value>> {
+    let search = team::given(&query.q).map(team::search_pattern).transpose()?;
+    let source = match team::given(&query.source) {
+        None => None,
+        Some(code) => Some(
+            crate::signin::source_code(Some(code))
+                .ok_or_else(|| ApiError::bad_request("source is not a link code"))?,
+        ),
+    };
+    let status = match team::given(&query.status) {
+        None => None,
+        Some(name) => Some(Plan::ALL.into_iter().find(|plan| plan.name() == name).ok_or_else(|| {
+            let names: Vec<&str> = Plan::ALL.iter().map(|plan| plan.name()).collect();
+            ApiError::bad_request(format!("status must be one of: {}", names.join(", ")))
+        })?),
+    };
+    let before = team::given(&query.before).map(Cursor::read).transpose()?;
+    let limit = team::page_size(team::given(&query.limit), FAMILIES_PAGE, FAMILIES_PAGE)?;
+    // A plan is known only once `standing` has worked it out, family by
+    // family: a search by plan looks at up to a page of them, and `next` goes
+    // on from the last one it looked at.
+    let scan = if status.is_some() { FAMILIES_PAGE } else { limit };
     let rows = state
         .db
-        .query_all_raw(Statement::from_string(
+        .query_all_raw(Statement::from_sql_and_values(
             DbBackend::Postgres,
-            "with used as (
-               select children.family_id,
-                      count(*) filter (where sessions.started_at > now() - interval '7 days') as sessions_7d,
-                      count(*) filter (where sessions.started_at > now() - interval '30 days') as sessions_30d,
-                      coalesce(sum(extract(epoch from (coalesce(sessions.ended_at, now()) - sessions.started_at)))
-                        filter (where sessions.started_at > now() - interval '30 days'), 0)::float8 / 60 as minutes_30d,
-                      max(sessions.started_at) as last_session
-               from sessions join children on children.id = sessions.child_id
-               where sessions.started_at is not null
-               group by children.family_id
-             )
-             select families.id, families.name, families.created_at, families.source,
-                    (select string_agg(guardians.email, ', ' order by guardians.created_at)
-                       from guardians where guardians.family_id = families.id) as emails,
-                    (select count(*) from children where children.family_id = families.id) as children,
-                    coalesce(used.sessions_7d, 0) as sessions_7d, coalesce(used.sessions_30d, 0) as sessions_30d,
-                    coalesce(used.minutes_30d, 0) as minutes_30d, used.last_session
-             from families left join used on used.family_id = families.id
-             order by families.created_at desc
-             limit 300",
+            format!(
+                "with page as (
+                   select families.id, families.name, families.created_at, families.source
+                   from families
+                   where {FAMILIES_MATCHING}
+                     and ($3::timestamptz is null or (families.created_at, families.id) < ($3, $4::uuid))
+                   order by families.created_at desc, families.id desc
+                   limit $5
+                 ), used as (
+                   select children.family_id,
+                          count(*) filter (where sessions.started_at > now() - interval '7 days') as sessions_7d,
+                          count(*) filter (where sessions.started_at > now() - interval '30 days') as sessions_30d,
+                          coalesce(sum(extract(epoch from (coalesce(sessions.ended_at, now()) - sessions.started_at)))
+                            filter (where sessions.started_at > now() - interval '30 days'), 0)::float8 / 60 as minutes_30d,
+                          max(sessions.started_at) as last_session
+                   from sessions join children on children.id = sessions.child_id
+                   where sessions.started_at is not null and children.family_id in (select id from page)
+                   group by children.family_id
+                 )
+                 select page.id, page.name, page.created_at, page.source,
+                        (select string_agg(guardians.email, ', ' order by guardians.created_at)
+                           from guardians where guardians.family_id = page.id) as emails,
+                        (select count(*) from children where children.family_id = page.id) as children,
+                        coalesce(used.sessions_7d, 0) as sessions_7d, coalesce(used.sessions_30d, 0) as sessions_30d,
+                        coalesce(used.minutes_30d, 0) as minutes_30d, used.last_session
+                 from page left join used on used.family_id = page.id
+                 order by page.created_at desc, page.id desc"
+            ),
+            [
+                search.clone().into(),
+                source.clone().into(),
+                before.map(|cursor| cursor.at).into(),
+                before.map(|cursor| cursor.id).into(),
+                (scan + 1).into(),
+            ],
         ))
         .await?;
     let now = Utc::now();
-    let mut families = Vec::with_capacity(rows.len());
-    for row in rows {
+    let looked_at = rows.len().min(usize::try_from(scan).unwrap_or(usize::MAX));
+    let mut families = Vec::new();
+    let mut next = None;
+    for (index, row) in rows.iter().enumerate().take(looked_at) {
         let id: Uuid = row.try_get("", "id")?;
         let standing = standing(&state, id, now).await?;
-        families.push(json!({
-            "id": id,
-            "name": row.try_get::<String>("", "name")?,
-            "created_at": row.try_get::<DateTime<Utc>>("", "created_at")?,
-            "source": row.try_get::<Option<String>>("", "source")?,
-            "emails": row.try_get::<Option<String>>("", "emails")?,
-            "children": row.try_get::<i64>("", "children")?,
-            "sessions_7d": row.try_get::<i64>("", "sessions_7d")?,
-            "sessions_30d": row.try_get::<i64>("", "sessions_30d")?,
-            "minutes_30d": (row.try_get::<f64>("", "minutes_30d")? * 10.0).round() / 10.0,
-            "last_session": row.try_get::<Option<DateTime<Utc>>>("", "last_session")?,
-            "standing": standing.json(),
-        }));
+        if status.is_some_and(|plan| plan != standing.plan) {
+            continue;
+        }
+        families.push(family_row(row, id, &standing)?);
+        if families.len() == usize::try_from(limit).unwrap_or(usize::MAX) {
+            if index + 1 < rows.len() {
+                next = Some(cursor_of(row)?);
+            }
+            break;
+        }
     }
-    Ok(Json(json!({ "families": families })))
+    // Every row it may look at was looked at and more are left: a search by
+    // plan goes on from the last one, even with a page short of its limit.
+    if next.is_none() && rows.len() > looked_at && looked_at > 0 {
+        next = Some(cursor_of(&rows[looked_at - 1])?);
+    }
+    // How many there are is known without a plan asked for; with one, it
+    // would take the plan of every family.
+    let total = match status {
+        Some(_) => None,
+        None => {
+            let row = state
+                .db
+                .query_one_raw(Statement::from_sql_and_values(
+                    DbBackend::Postgres,
+                    format!("select count(*) as total from families where {FAMILIES_MATCHING}"),
+                    [search.into(), source.into()],
+                ))
+                .await?;
+            Some(row.map(|row| row.try_get::<i64>("", "total")).transpose()?.unwrap_or(0))
+        }
+    };
+    let sources: Vec<Value> = state
+        .db
+        .query_all_raw(Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            "select source, count(*) as families from families where source is not null
+             group by source order by count(*) desc, source limit $1",
+            [MAX_SOURCES.into()],
+        ))
+        .await?
+        .iter()
+        .map(|row| {
+            Ok(json!({
+                "source": row.try_get::<String>("", "source")?,
+                "families": row.try_get::<i64>("", "families")?,
+            }))
+        })
+        .collect::<Result<_, DbErr>>()?;
+    Ok(Json(json!({ "families": families, "next": next, "total": total, "sources": sources })))
+}
+
+/// Where the families list goes on after this row.
+fn cursor_of(row: &QueryResult) -> Result<String, DbErr> {
+    Ok(Cursor::write(row.try_get("", "created_at")?, row.try_get("", "id")?))
+}
+
+/// A family as the team's list shows it.
+fn family_row(row: &QueryResult, id: Uuid, standing: &Standing) -> Result<Value, DbErr> {
+    Ok(json!({
+        "id": id,
+        "name": row.try_get::<String>("", "name")?,
+        "created_at": row.try_get::<DateTime<Utc>>("", "created_at")?,
+        "source": row.try_get::<Option<String>>("", "source")?,
+        "emails": row.try_get::<Option<String>>("", "emails")?,
+        "children": row.try_get::<i64>("", "children")?,
+        "sessions_7d": row.try_get::<i64>("", "sessions_7d")?,
+        "sessions_30d": row.try_get::<i64>("", "sessions_30d")?,
+        "minutes_30d": (row.try_get::<f64>("", "minutes_30d")? * 10.0).round() / 10.0,
+        "last_session": row.try_get::<Option<DateTime<Utc>>>("", "last_session")?,
+        "standing": standing.json(),
+    }))
 }
 
 #[derive(Deserialize)]
@@ -318,9 +456,20 @@ pub async fn grant(
     })
     .exec_without_returning(&state.db)
     .await?;
-    tracing::info!(%family_id, days = body.days, by = staff.email.as_deref().unwrap_or("operator"), "a plan was granted");
+    tracing::info!(%family_id, days = body.days, by = %who(&staff), "a plan was granted");
     let standing = standing(&state, family_id, now).await?;
     Ok((StatusCode::CREATED, Json(standing.json())))
+}
+
+/// Who on the team did something, as the log names them: the first 12 hex
+/// digits of their address's SHA-256, which the team can match against its
+/// own few addresses, or "operator". The log never holds an address; a grant
+/// also keeps who made it in `granted_by`.
+fn who(staff: &Staff) -> String {
+    match &staff.email {
+        Some(email) => hex::encode(&Sha256::digest(email.as_bytes())[..6]),
+        None => "operator".into(),
+    }
 }
 
 /// Ends what the team granted a family, from now. A paid plan is not touched.
@@ -338,7 +487,7 @@ pub async fn ungrant(
         .filter(subscription::Column::StartsAt.lt(now))
         .exec(&state.db)
         .await?;
-    tracing::info!(%family_id, by = staff.email.as_deref().unwrap_or("operator"), "a granted plan was ended");
+    tracing::info!(%family_id, by = %who(&staff), "a granted plan was ended");
     let standing = standing(&state, family_id, now).await?;
     Ok(Json(standing.json()))
 }
@@ -346,6 +495,22 @@ pub async fn ungrant(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_log_names_a_team_member_by_a_short_hash_of_their_address() {
+        let staff = Staff { email: Some("team@example.org".into()) };
+        let named = who(&staff);
+        assert_eq!(named.len(), 12);
+        assert!(named.chars().all(|c| c.is_ascii_hexdigit()));
+        assert!(!named.contains('@') && !named.contains("team"));
+        assert_eq!(
+            named,
+            who(&Staff { email: Some("team@example.org".into()) }),
+            "the same person, the same name"
+        );
+        assert_ne!(named, who(&Staff { email: Some("otra@example.org".into()) }));
+        assert_eq!(who(&Staff { email: None }), "operator");
+    }
 
     #[test]
     fn today_starts_at_midnight_where_the_family_lives() {

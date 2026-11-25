@@ -481,11 +481,35 @@ async fn every_route_needs_its_credentials(pool: PgPool) {
         (Method::GET, "/v1/children/00000000-0000-0000-0000-000000000000/sessions"),
         (Method::POST, "/v1/sessions"),
         (Method::GET, "/v1/agent/session"),
+        (Method::GET, "/v1/admin/families?q=ana&status=trial"),
+        (Method::GET, "/v1/admin/sessions/open"),
+        (Method::GET, "/v1/admin/families/00000000-0000-0000-0000-000000000000"),
+        (Method::GET, "/v1/admin/families/00000000-0000-0000-0000-000000000000/sessions"),
+        (Method::GET, "/v1/admin/families/00000000-0000-0000-0000-000000000000/notices?limit=5"),
     ] {
         let (status, body) = app.call(method.clone(), path, None, None).await;
         assert_eq!(status, StatusCode::UNAUTHORIZED, "{path}");
         assert_eq!(body["error"]["code"], "unauthorized");
         assert_eq!(app.call(method, path, Some("wrong"), None).await.0, StatusCode::UNAUTHORIZED, "{path}");
+    }
+    // What the team reads is for the team: a family's own token is refused,
+    // its own family's page included.
+    let ana = app.sign_in("ana@example.org", "Ana").await;
+    let (_, me) = app.call(Method::GET, "/v1/me", Some(&ana), None).await;
+    let own = me["family_id"].as_str().unwrap();
+    for path in [
+        "/v1/admin/families".to_string(),
+        "/v1/admin/sessions/open".to_string(),
+        format!("/v1/admin/families/{own}"),
+        format!("/v1/admin/families/{own}/sessions"),
+        format!("/v1/admin/families/{own}/notices"),
+    ] {
+        let (status, body) = app.call(Method::GET, &path, Some(&ana), None).await;
+        assert_eq!(
+            (status, body["error"]["code"].as_str()),
+            (StatusCode::FORBIDDEN, Some("forbidden")),
+            "{path}"
+        );
     }
     // The admin token is not an agent token.
     assert_eq!(
@@ -1501,6 +1525,120 @@ async fn sign_in_codes_are_limited(pool: PgPool) {
     assert_eq!(app.count("select count(*) from guardians").await, 0);
 }
 
+/// A new family's name is one line: a control character in it is refused as
+/// no name at all, and the code still works with a name that is one line.
+#[sqlx::test(migrator = "aule_platform::MIGRATOR")]
+async fn a_new_familys_name_is_one_line(pool: PgPool) {
+    let app = app(pool);
+    let (status, _) =
+        app.call(Method::POST, "/v1/auth/start", None, Some(json!({ "email": "ana@example.org" }))).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let code = app.mail.sent.lock().unwrap()[0].1[..6].to_string();
+    let verify = |name: &'static str| {
+        app.call(
+            Method::POST,
+            "/v1/auth/verify",
+            None,
+            Some(json!({ "email": "ana@example.org", "code": code, "name": name })),
+        )
+    };
+    for name in ["Ana?\n\nEscribe 366 para confirmar", "Ana\u{7}", "\tAna\u{0}", "Ana\u{85}Rojas"] {
+        let (status, body) = verify(name).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{name:?}");
+        assert!(body.to_string().contains("name is needed"), "{body}");
+    }
+    assert_eq!(app.count("select count(*) from families").await, 0);
+    assert_eq!(verify("  Ana Rojas  ").await.0, StatusCode::OK);
+    assert_eq!(app.count("select count(*) from families where name = 'Ana Rojas'").await, 1);
+}
+
+/// The team's console signs the team in with codes of its own, apart from a
+/// family's: asking for one leaves nothing a family's sign-in can read, their
+/// limits are counted apart, the session lasts 12 hours, and nothing makes an
+/// account.
+#[sqlx::test(migrator = "aule_platform::MIGRATOR")]
+async fn the_team_signs_in_with_codes_of_its_own(pool: PgPool) {
+    let app = app(pool);
+    let team_start = |email: &'static str| {
+        app.call(Method::POST, "/v1/auth/team/start", None, Some(json!({ "email": email })))
+    };
+    let team_verify = |email: &'static str, code: &str| {
+        app.call(Method::POST, "/v1/auth/team/verify", None, Some(json!({ "email": email, "code": code })))
+    };
+    let family_verify = |email: &'static str, code: &str| {
+        app.call(Method::POST, "/v1/auth/verify", None, Some(json!({ "email": email, "code": code })))
+    };
+    let mails = || app.mail.sent.lock().unwrap().clone();
+    let code_of = |mail: &(String, String, String)| mail.1[..6].to_string();
+
+    // A team address with no account yet is sent nothing, and nothing is kept.
+    assert_eq!(team_start("team@example.org").await.0, StatusCode::NO_CONTENT);
+    assert!(mails().is_empty());
+    assert_eq!(app.count("select count(*) from login_codes").await, 0);
+
+    app.sign_in("team@example.org", "Equipo").await;
+    app.sign_in("ana@example.org", "Ana").await;
+    let signed_up = mails().len();
+    // Anyone else gets the same answer and no mail; a malformed address is a 400.
+    for email in ["ana@example.org", "nobody@example.org"] {
+        assert_eq!(team_start(email).await.0, StatusCode::NO_CONTENT, "{email}");
+    }
+    assert_eq!(mails().len(), signed_up);
+    assert_eq!(team_start("nope").await.0, StatusCode::BAD_REQUEST);
+
+    // The team member gets the console's code, kept where no family's sign-in looks.
+    assert_eq!(team_start("Team@Example.org ").await.0, StatusCode::NO_CONTENT);
+    let mail = mails().last().unwrap().clone();
+    assert_eq!(mail.0, "team@example.org");
+    assert!(mail.1.contains("panel del equipo"), "{}", mail.1);
+    let code = code_of(&mail);
+    assert_eq!(app.count("select count(*) from login_codes where email = 'team@example.org'").await, 0);
+    assert_eq!(
+        family_verify("team@example.org", &code).await.0,
+        StatusCode::FORBIDDEN,
+        "not a family's code"
+    );
+    assert_eq!(team_verify("ana@example.org", &code).await.0, StatusCode::FORBIDDEN, "nor anyone else's");
+
+    // The right code opens a session of 12 hours that reaches the team's routes, once.
+    let (status, body) = team_verify("team@example.org", &code).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["expires_in_hours"], 12);
+    let token = body["token"].as_str().unwrap().to_string();
+    assert_eq!(app.call(Method::GET, "/v1/admin/families", Some(&token), None).await.0, StatusCode::OK);
+    let hours: f64 = sqlx::query_scalar(
+        "select extract(epoch from expires_at - now())::float8 / 3600 from guardian_sessions where token_hash = $1",
+    )
+    .bind(aule_platform::auth::token_hash(&token))
+    .fetch_one(&app.state.pool)
+    .await
+    .unwrap();
+    assert!((11.9..=12.0).contains(&hours), "{hours}");
+    assert_eq!(team_verify("team@example.org", &code).await.0, StatusCode::FORBIDDEN, "a code works once");
+    assert_eq!(app.count("select count(*) from guardians").await, 2, "no account was made");
+
+    // The team's codes have their own five an hour: a family's code still goes out after them.
+    let before = mails().len();
+    for _ in 0..6 {
+        assert_eq!(team_start("team@example.org").await.0, StatusCode::NO_CONTENT);
+    }
+    assert_eq!(mails().len(), before + 5);
+    let team_code = code_of(&mails()[before + 4]);
+    let (status, _) =
+        app.call(Method::POST, "/v1/auth/start", None, Some(json!({ "email": "team@example.org" }))).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    assert_eq!(mails().len(), before + 6, "the family's own code was sent");
+    let family_code = code_of(mails().last().unwrap());
+
+    // Five wrong tries burn the team's code, and leave the family's as it was.
+    let wrong = if team_code == "000000" { "111111" } else { "000000" };
+    for _ in 0..5 {
+        assert_eq!(team_verify("team@example.org", wrong).await.0, StatusCode::FORBIDDEN);
+    }
+    assert_eq!(team_verify("team@example.org", &team_code).await.0, StatusCode::FORBIDDEN);
+    assert_eq!(family_verify("team@example.org", &family_code).await.0, StatusCode::OK);
+}
+
 async fn claim(app: &App, token: &str, code: &str, child: Option<&str>) -> (StatusCode, Value) {
     app.call(Method::POST, "/v1/devices/claim", Some(token), Some(json!({ "code": code, "child_id": child })))
         .await
@@ -2507,6 +2645,762 @@ async fn free_access_allows_used_and_expired_trials_without_staff_privileges(poo
     let (status, refused) = app.call(Method::POST, "/v1/sessions", Some(&ana), Some(body)).await;
     assert_eq!(status, StatusCode::PAYMENT_REQUIRED);
     assert_eq!(refused["error"]["message"], "trial_over");
+}
+
+/// A family that signed up `days` ago, with one guardian, and the link it came by.
+async fn family_since(app: &App, name: &str, email: &str, source: Option<&str>, days: i32) -> String {
+    sqlx::query_scalar(
+        "with family as (
+           insert into families (id, name, source, created_at)
+           values (gen_random_uuid(), $1, $3, now() - make_interval(days => $4)) returning id)
+         insert into guardians (id, family_id, email, name)
+         select gen_random_uuid(), id, $2, $1 from family returning family_id::text",
+    )
+    .bind(name)
+    .bind(email)
+    .bind(source)
+    .bind(days)
+    .fetch_one(&app.state.pool)
+    .await
+    .unwrap()
+}
+
+/// The names in the team's list for `query`, newest first, and the whole answer.
+async fn listed(app: &App, token: &str, query: &str) -> (Vec<String>, Value) {
+    let (status, answer) =
+        app.call(Method::GET, &format!("/v1/admin/families{query}"), Some(token), None).await;
+    assert_eq!(status, StatusCode::OK, "{query}: {answer}");
+    let names = answer["families"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|family| family["name"].as_str().unwrap().to_string());
+    (names.collect(), answer)
+}
+
+#[sqlx::test(migrator = "aule_platform::MIGRATOR")]
+async fn the_team_searches_and_filters_families_and_pages_through_them(pool: PgPool) {
+    let app = app(pool);
+    let team = app.sign_in("team@example.org", "Equipo").await;
+    let mamani = family_since(&app, "Mamani", "ana@example.org", Some("cesar"), 5).await;
+    let rojas = family_since(&app, "Rojas", "a_b@x.org", Some("cesar"), 4).await;
+    let flores = family_since(&app, "Flores", "axb@x.org", Some("colegio-2"), 3).await;
+    family_since(&app, "Torres", "luis@example.org", None, 2).await;
+    let names = |list: &[&str]| list.iter().map(|name| name.to_string()).collect::<Vec<_>>();
+
+    // With nothing asked, the list is today's: every family, newest first, as it was.
+    let (all, answer) = listed(&app, &team, "").await;
+    assert_eq!(all, names(&["Equipo", "Torres", "Flores", "Rojas", "Mamani"]));
+    assert_eq!((answer["next"].clone(), answer["total"].clone()), (Value::Null, json!(5)));
+    assert_eq!(
+        answer["sources"],
+        json!([{ "source": "cesar", "families": 2 }, { "source": "colegio-2", "families": 1 }])
+    );
+    let mut fields = keys(&answer["families"][1]);
+    fields.sort();
+    assert_eq!(
+        fields,
+        [
+            "allowed",
+            "amount_cents",
+            "children",
+            "created_at",
+            "currency",
+            "emails",
+            "ends_at",
+            "id",
+            "last_session",
+            "left",
+            "minutes_30d",
+            "name",
+            "period",
+            "plan",
+            "price",
+            "sessions_30d",
+            "sessions_7d",
+            "sessions_per_week",
+            "source",
+            "standing",
+            "used",
+        ]
+    );
+
+    // By a guardian's address or the family's name, whatever the case; `_` and `%` mean themselves.
+    assert_eq!(listed(&app, &team, "?q=ANA@").await.0, names(&["Mamani"]));
+    assert_eq!(listed(&app, &team, "?q=a_b").await.0, names(&["Rojas"]));
+    assert_eq!(listed(&app, &team, "?q=%25").await.0, names(&[]));
+    assert_eq!(listed(&app, &team, "?q=%20flor%20").await.0, names(&["Flores"]));
+    let (found, answer) = listed(&app, &team, "?q=x.org").await;
+    assert_eq!((found, answer["total"].clone()), (names(&["Flores", "Rojas"]), json!(2)));
+    // By the link it came by, alone or with a search.
+    let (found, answer) = listed(&app, &team, "?source=cesar").await;
+    assert_eq!((found, answer["total"].clone()), (names(&["Rojas", "Mamani"]), json!(2)));
+    assert_eq!(listed(&app, &team, "?source=cesar&q=ana").await.0, names(&["Mamani"]));
+    assert_eq!(listed(&app, &team, "?source=nadie").await.1["total"], 0);
+    // An empty field is no filter, as a form sends it.
+    assert_eq!(listed(&app, &team, "?q=&source=&status=&before=&limit=").await.0.len(), 5);
+
+    // By the plan it has now: granted, over, the team's own, and the trial.
+    let grant = format!("/v1/admin/families/{rojas}/grant");
+    let (status, _) = app.call(Method::POST, &grant, Some(&team), Some(json!({ "days": 30 }))).await;
+    assert_eq!(status, StatusCode::CREATED);
+    let child = app.child_of(&flores).await;
+    app.past_session(&child, "9 days", 20).await;
+    for (status, expected) in [
+        ("trial", names(&["Torres", "Mamani"])),
+        ("granted", names(&["Rojas"])),
+        ("none", names(&["Flores"])),
+        ("team", names(&["Equipo"])),
+        ("paid", names(&[])),
+        ("free", names(&[])),
+    ] {
+        let (found, answer) = listed(&app, &team, &format!("?status={status}")).await;
+        assert_eq!(found, expected, "{status}");
+        assert_eq!(answer["total"], Value::Null, "counting by plan would take every family's");
+    }
+
+    // A page at a time: `next` goes on where the page before ended, and the last page has none.
+    let (page, answer) = listed(&app, &team, "?limit=2").await;
+    assert_eq!(page, names(&["Equipo", "Torres"]));
+    let next = answer["next"].as_str().unwrap().to_string();
+    let (page, answer) = listed(&app, &team, &format!("?limit=2&before={next}")).await;
+    assert_eq!((page, answer["total"].clone()), (names(&["Flores", "Rojas"]), json!(5)));
+    let next = answer["next"].as_str().unwrap().to_string();
+    let (page, answer) = listed(&app, &team, &format!("?limit=2&before={next}")).await;
+    assert_eq!((page, answer["next"].clone()), (names(&["Mamani"]), Value::Null));
+    let (page, answer) = listed(&app, &team, "?status=trial&limit=1").await;
+    assert_eq!(page, names(&["Torres"]));
+    let next = answer["next"].as_str().unwrap().to_string();
+    let (page, answer) = listed(&app, &team, &format!("?status=trial&limit=1&before={next}")).await;
+    assert_eq!((page, answer["next"].clone()), (names(&["Mamani"]), Value::Null));
+    // A limit is kept within 1 and 300.
+    assert_eq!(listed(&app, &team, "?limit=0").await.0, names(&["Equipo"]));
+    assert_eq!(listed(&app, &team, "?limit=5000").await.0.len(), 5);
+
+    // A search by plan looks at 300 families at most: a page with none found
+    // still says where to go on, and the next one finds the family further down.
+    sqlx::query(
+        "insert into families (id, name, created_at)
+         select gen_random_uuid(), 'Relleno ' || n, now() - interval '1 day' - make_interval(secs => n)
+         from generate_series(1, 300) n",
+    )
+    .execute(&app.state.pool)
+    .await
+    .unwrap();
+    let (page, answer) = listed(&app, &team, "?status=none").await;
+    assert_eq!(page, names(&[]));
+    let next = answer["next"].as_str().unwrap().to_string();
+    let (page, answer) = listed(&app, &team, &format!("?status=none&before={next}")).await;
+    assert_eq!((page, answer["next"].clone()), (names(&["Flores"]), Value::Null));
+    let (page, answer) = listed(&app, &team, "").await;
+    assert_eq!((page.len(), answer["total"].clone()), (300, json!(305)));
+    assert!(answer["next"].is_string());
+
+    // What is no search, no link, no plan or no cursor is refused, and only the team gets this far.
+    for query in [
+        format!("?q={}", "a".repeat(101)),
+        "?q=ana%0Aluis".to_string(),
+        "?source=Cesar".to_string(),
+        "?source=%3Cb%3E".to_string(),
+        "?status=gratis".to_string(),
+        "?before=ayer".to_string(),
+        format!("?before={}", mamani.to_uppercase()),
+        "?limit=muchas".to_string(),
+    ] {
+        let (status, refused) =
+            app.call(Method::GET, &format!("/v1/admin/families{query}"), Some(&team), None).await;
+        assert_eq!(
+            (status, refused["error"]["code"].as_str()),
+            (StatusCode::BAD_REQUEST, Some("bad_request")),
+            "{query}"
+        );
+    }
+    let luis = app.sign_in("luis@example.org", "Luis").await;
+    assert_eq!(
+        app.call(Method::GET, "/v1/admin/families?q=ana&limit=1", Some(&luis), None).await.0,
+        StatusCode::FORBIDDEN
+    );
+}
+
+/// A session put in the table as it is at some point of its life: `status`,
+/// made `minutes` ago, for a child or the operator, from the web or a device.
+/// Its room and agent token, and what it is for, are words the team must never
+/// be sent: they all say SECRETO.
+async fn session_at(
+    app: &App,
+    child: Option<&str>,
+    status: &str,
+    minutes: i32,
+    engine: bool,
+    device: Option<&str>,
+) -> String {
+    sqlx::query_scalar(
+        "insert into sessions (id, child_id, audience, room, language, status, agent_token_hash, created_at,
+                               started_at, ended_at, engine, device_id, objective)
+         values (gen_random_uuid(), $1::uuid, case when $1 is null then 'operator' else 'child' end,
+                 'SECRETO-sala-' || gen_random_uuid(), 'es', $2, 'SECRETO-hash-' || gen_random_uuid(),
+                 now() - make_interval(mins => $3),
+                 case when $2 <> 'created' then now() - make_interval(mins => $3) + interval '20 seconds' end,
+                 case when $2 = 'ended' then now() end, $4, $5::uuid,
+                 '{\"kind\": \"homework\", \"subject\": \"math\", \"topic\": \"SECRETO-TEMA\", \"due\": \"2026-12-01\"}')
+         returning id::text",
+    )
+    .bind(child)
+    .bind(status)
+    .bind(minutes)
+    .bind(engine)
+    .bind(device)
+    .fetch_one(&app.state.pool)
+    .await
+    .unwrap()
+}
+
+/// What no answer to the team may carry: what was said or written about a
+/// child, how to reach a session, and anyone's sign-in.
+fn assert_nothing_said(answer: &Value, tokens: &[&str]) {
+    let text = answer.to_string();
+    for secret in ["SECRETO", "\"room\"", "\"token\"", "agent_token", "\"objective\"", "\"topic\"", "\"due\""]
+    {
+        assert!(!text.contains(secret), "{secret} in {text}");
+    }
+    for token in tokens {
+        assert!(!text.contains(token), "a token in {text}");
+    }
+    for key in keys(answer) {
+        assert!(
+            ![
+                "title",
+                "body",
+                "content",
+                "said",
+                "summary",
+                "guardian_summary",
+                "notes",
+                "interests",
+                "tutor_name",
+                "tutor_persona",
+                "tutor_persona_note",
+                "engine_profile",
+                "payment_token",
+                "provider_subscription",
+                "guardian_id",
+                "child_id",
+                "session_id",
+                "code",
+                "code_hash",
+            ]
+            .contains(&key.as_str()),
+            "{key} in {text}"
+        );
+    }
+}
+
+#[sqlx::test(migrator = "aule_platform::MIGRATOR")]
+async fn the_team_sees_who_is_in_a_session_and_nothing_said(pool: PgPool) {
+    let app = app(pool);
+    let team = app.sign_in("team@example.org", "Equipo").await;
+    let open = || app.call(Method::GET, "/v1/admin/sessions/open", Some(&team), None);
+
+    // Nobody in a session: nothing to wait for before a deploy.
+    let (status, none) = open().await;
+    assert_eq!(status, StatusCode::OK, "{none}");
+    assert_eq!(
+        none,
+        json!({ "open": 0, "starting": 0, "overdue": 0, "overdue_after_minutes": 70, "more": false, "sessions": [] })
+    );
+
+    // Mateo of the Quispe family: one starting, one on the web with the
+    // engine, one on the family's device, one over, one open for two hours;
+    // and a test of the operator's, with no child.
+    let child = app.child().await;
+    let family: String = sqlx::query_scalar("select family_id::text from children where id = $1::uuid")
+        .bind(&child)
+        .fetch_one(&app.state.pool)
+        .await
+        .unwrap();
+    let device: String = sqlx::query_scalar(
+        "insert into devices (id, serial, hmac_key, model, family_id, child_id, claimed_at)
+         values (gen_random_uuid(), 'AULE-0001', decode(repeat('ab', 32), 'hex'), 'slate', $1::uuid, $2::uuid, now())
+         returning id::text",
+    )
+    .bind(&family)
+    .bind(&child)
+    .fetch_one(&app.state.pool)
+    .await
+    .unwrap();
+    session_at(&app, Some(&child), "created", 1, false, None).await;
+    session_at(&app, None, "active", 3, false, None).await;
+    session_at(&app, Some(&child), "active", 5, true, None).await;
+    session_at(&app, Some(&child), "active", 10, false, Some(&device)).await;
+    session_at(&app, Some(&child), "ended", 15, false, None).await;
+    session_at(&app, Some(&child), "active", 120, false, None).await;
+    let ana = app.sign_in("ana@example.org", "Ana").await;
+
+    let (status, answer) = open().await;
+    assert_eq!(status, StatusCode::OK, "{answer}");
+    // Five open, one still starting, one past 20 minutes and 50 more.
+    assert_eq!(
+        (&answer["open"], &answer["starting"], &answer["overdue"], &answer["more"]),
+        (&json!(5), &json!(1), &json!(1), &json!(false))
+    );
+    let seen: Vec<Value> = answer["sessions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|session| {
+            json!([
+                session["family"],
+                session["child"],
+                session["status"],
+                session["engine"],
+                session["via"],
+                session["overdue"],
+                session["audience"],
+                session["started_at"].is_string()
+            ])
+        })
+        .collect();
+    assert_eq!(
+        seen,
+        [
+            json!(["Quispe", "Mateo", "created", false, "web", false, "child", false]),
+            json!([null, null, "active", false, "web", false, "operator", true]),
+            json!(["Quispe", "Mateo", "active", true, "web", false, "child", true]),
+            json!(["Quispe", "Mateo", "active", false, "device", false, "child", true]),
+            json!(["Quispe", "Mateo", "active", false, "web", true, "child", true]),
+        ],
+        "newest first"
+    );
+    assert_eq!(answer["sessions"][0]["family_id"], json!(family));
+    assert_eq!(answer["sessions"][1]["family_id"], Value::Null);
+    let mut fields = keys(&answer["sessions"][0]);
+    fields.sort();
+    assert_eq!(
+        fields,
+        [
+            "audience",
+            "child",
+            "created_at",
+            "engine",
+            "family",
+            "family_id",
+            "overdue",
+            "started_at",
+            "status",
+            "via"
+        ]
+    );
+    assert_nothing_said(&answer, &[&team, &ana]);
+
+    // The list stops at 100; the counts do not.
+    sqlx::query(
+        "insert into sessions (id, child_id, audience, room, language, status, agent_token_hash, created_at)
+         select gen_random_uuid(), null, 'operator', gen_random_uuid()::text, 'es', 'created',
+                gen_random_uuid()::text, now() - interval '1 hour' from generate_series(1, 100)",
+    )
+    .execute(&app.state.pool)
+    .await
+    .unwrap();
+    let (_, many) = open().await;
+    assert_eq!((&many["open"], &many["starting"], &many["more"]), (&json!(105), &json!(101), &json!(true)));
+    assert_eq!(many["sessions"].as_array().unwrap().len(), 100);
+
+    // Only the team, and the operator, see it.
+    let (status, refused) = app.call(Method::GET, "/v1/admin/sessions/open", Some(&ana), None).await;
+    assert_eq!((status, refused["error"]["code"].as_str()), (StatusCode::FORBIDDEN, Some("forbidden")));
+    assert_eq!(
+        app.call(Method::GET, "/v1/admin/sessions/open", None, None).await.0,
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(app.admin(Method::GET, "/v1/admin/sessions/open", None).await.0, StatusCode::OK);
+}
+
+#[sqlx::test(migrator = "aule_platform::MIGRATOR")]
+async fn the_team_reads_a_family_without_what_was_said(pool: PgPool) {
+    let app = app(pool);
+    let db = &app.state.pool;
+    let team = app.sign_in("team@example.org", "Equipo").await;
+    // Ana's family, by the link `cesar`, and Pedro, its other guardian.
+    let ana = app.sign_in("ana@example.org", "Ana").await;
+    let (_, me) = app.call(Method::GET, "/v1/me", Some(&ana), None).await;
+    let family = me["family_id"].as_str().unwrap().to_string();
+    sqlx::query("update families set source = 'cesar' where id = $1::uuid")
+        .bind(&family)
+        .execute(db)
+        .await
+        .unwrap();
+    sqlx::query(
+        "insert into guardians (id, family_id, email, name, language, notices_by_push, created_at)
+         values (gen_random_uuid(), $1::uuid, 'pedro@example.org', 'Pedro', 'en', false, now() + interval '1 second')",
+    )
+    .bind(&family)
+    .execute(db)
+    .await
+    .unwrap();
+    // Mateo, with no year of birth, then Lucía, with notes, interests and a
+    // note for the tutor that the team must never be sent.
+    let mateo = app.child_of(&family).await;
+    let (status, lucia) = app
+        .call(
+            Method::POST,
+            &format!("/v1/families/{family}/children"),
+            Some(&ana),
+            Some(json!({ "nickname": "Lucía", "birth_year": 2017, "grade": "P3", "interests": ["SECRETO-INTERES"] })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{lucia}");
+    let lucia = lucia["id"].as_str().unwrap().to_string();
+    sqlx::query("update children set notes = 'SECRETO-NOTA', tutor_persona_note = 'SECRETO-PERSONA' where id = $1::uuid")
+        .bind(&lucia)
+        .execute(db)
+        .await
+        .unwrap();
+    // Ana gave voice and took it back; memory was recorded on paper.
+    for granted in [true, false] {
+        let body = json!({ "purpose": "voice", "granted": granted, "policy_version": "2026-11" });
+        let path = format!("/v1/children/{lucia}/consents");
+        assert_eq!(app.call(Method::POST, &path, Some(&ana), Some(body)).await.0, StatusCode::CREATED);
+    }
+    app.consent(&lucia, "memory", true).await;
+    // A paid plan that ended, a grant the team ended, and one from the operator.
+    sqlx::query(
+        "insert into subscriptions (id, family_id, plan, starts_at, ends_at, payment_token, provider_subscription, created_at)
+         values (gen_random_uuid(), $1::uuid, 'paid', now() - interval '40 days', now() - interval '10 days',
+                 'SECRETO-TARJETA', 'SECRETO-COBRO', now() - interval '40 days')",
+    )
+    .bind(&family)
+    .execute(db)
+    .await
+    .unwrap();
+    let grant = format!("/v1/admin/families/{family}/grant");
+    let (status, _) =
+        app.call(Method::POST, &grant, Some(&team), Some(json!({ "days": 30, "note": "piloto" }))).await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(app.call(Method::DELETE, &grant, Some(&team), None).await.0, StatusCode::OK);
+    assert_eq!(app.admin(Method::POST, &grant, Some(json!({ "days": 7 }))).await.0, StatusCode::CREATED);
+    // Sessions nine and two days ago, a transcript and a review of the last,
+    // and the notice it made: all of them words the team must not get.
+    app.past_session(&mateo, "9 days", 20).await;
+    let last = app.past_session(&lucia, "2 days", 25).await;
+    sqlx::query("insert into session_turns (session_id, seq, role, content) values ($1::uuid, 0, 'child', 'SECRETO-DICHO')")
+        .bind(&last)
+        .execute(db)
+        .await
+        .unwrap();
+    sqlx::query(
+        "insert into session_reviews (session_id, child_id, guardian_summary, next_step)
+         values ($1::uuid, $2::uuid, 'SECRETO-RESUMEN', 'SECRETO-PASO')",
+    )
+    .bind(&last)
+    .bind(&lucia)
+    .execute(db)
+    .await
+    .unwrap();
+    sqlx::query(
+        "insert into notices (id, family_id, child_id, session_id, kind, title, body)
+         values (gen_random_uuid(), $1::uuid, $2::uuid, $3::uuid, 'session_summary', 'SECRETO-AVISO', 'SECRETO-AVISO')",
+    )
+    .bind(&family)
+    .bind(&lucia)
+    .bind(&last)
+    .execute(db)
+    .await
+    .unwrap();
+
+    let path = format!("/v1/admin/families/{family}");
+    let (status, page) = app.call(Method::GET, &path, Some(&team), None).await;
+    assert_eq!(status, StatusCode::OK, "{page}");
+    assert_eq!(
+        (&page["id"], &page["name"], &page["source"]),
+        (&json!(family), &json!("Ana"), &json!("cesar"))
+    );
+    let guardians: Vec<Value> = page["guardians"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|guardian| {
+            json!([
+                guardian["name"],
+                guardian["email"],
+                guardian["language"],
+                guardian["notices_by_email"],
+                guardian["notices_by_push"],
+                guardian["created_at"].is_string()
+            ])
+        })
+        .collect();
+    assert_eq!(
+        guardians,
+        [
+            json!(["Ana", "ana@example.org", "es", true, true, true]),
+            json!(["Pedro", "pedro@example.org", "en", true, false, true])
+        ]
+    );
+    let (mateo_page, lucia_page) = (&page["children"][0], &page["children"][1]);
+    assert_eq!(page["children"].as_array().unwrap().len(), 2);
+    assert_eq!(
+        (&mateo_page["nickname"], &mateo_page["age"], &mateo_page["grade"]),
+        (&json!("Mateo"), &Value::Null, &json!("P4"))
+    );
+    let year = chrono::Utc::now().year();
+    assert_eq!(
+        (&lucia_page["nickname"], &lucia_page["age"], &lucia_page["grade"]),
+        (&json!("Lucía"), &json!(year - 2017), &json!("P3"))
+    );
+    // What each consent says now: voice taken back, memory given, transcripts never answered.
+    let consent = &lucia_page["consent"];
+    assert_eq!((&consent["voice"]["granted"], &consent["voice"]["source"]), (&json!(false), &json!("app")));
+    assert!(consent["voice"]["at"].is_string());
+    assert_eq!((&consent["memory"]["granted"], &consent["memory"]["source"]), (&json!(true), &json!("test")));
+    assert_eq!(consent["transcripts"], json!({ "granted": false, "at": null, "source": null }));
+    assert_eq!(mateo_page["consent"]["voice"], json!({ "granted": false, "at": null, "source": null }));
+    // The plan now, and every plan it has had, newest first, with who granted it.
+    assert_eq!(page["standing"]["plan"], "granted");
+    let plans: Vec<Value> = page["plans"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|plan| json!([plan["plan"], plan["granted_by"], plan["note"]]))
+        .collect();
+    assert_eq!(
+        plans,
+        [
+            json!(["granted", null, null]),
+            json!(["granted", "team@example.org", "piloto"]),
+            json!(["paid", null, null])
+        ]
+    );
+    let ended =
+        page["plans"][1]["ends_at"].as_str().unwrap().parse::<chrono::DateTime<chrono::Utc>>().unwrap();
+    assert!(ended <= chrono::Utc::now(), "the team's grant shows the days it really ran");
+    // The trial runs from the first session, nine days ago, whatever the plan now.
+    let started =
+        page["trial"]["started_at"].as_str().unwrap().parse::<chrono::DateTime<chrono::Utc>>().unwrap();
+    let ends = page["trial"]["ends_at"].as_str().unwrap().parse::<chrono::DateTime<chrono::Utc>>().unwrap();
+    assert_eq!((chrono::Utc::now() - started).num_days(), 9);
+    assert_eq!((ends - started).num_days(), 7);
+    assert_eq!((&page["sessions"]["started"], &page["sessions"]["open"]), (&json!(2), &json!(0)));
+    assert!(page["sessions"]["last_started_at"].is_string());
+    // Exactly these fields, and none of what was said, written or paid with.
+    let mut fields = keys(&page);
+    fields.sort();
+    fields.dedup();
+    assert_eq!(
+        fields,
+        [
+            "age",
+            "allowed",
+            "amount_cents",
+            "at",
+            "cancelled_at",
+            "children",
+            "consent",
+            "created_at",
+            "currency",
+            "email",
+            "ends_at",
+            "grade",
+            "granted",
+            "granted_by",
+            "guardians",
+            "id",
+            "language",
+            "last_started_at",
+            "left",
+            "memory",
+            "name",
+            "nickname",
+            "note",
+            "notices_by_email",
+            "notices_by_push",
+            "open",
+            "period",
+            "plan",
+            "plans",
+            "price",
+            "sessions",
+            "sessions_per_week",
+            "source",
+            "standing",
+            "started",
+            "started_at",
+            "starts_at",
+            "transcripts",
+            "trial",
+            "used",
+            "voice",
+        ]
+    );
+    assert_nothing_said(&page, &[&team, &ana]);
+
+    // Its sessions and notices say nothing more.
+    let (_, sessions) = app.call(Method::GET, &format!("{path}/sessions"), Some(&team), None).await;
+    assert_eq!(sessions["sessions"].as_array().unwrap().len(), 2);
+    assert_nothing_said(&sessions, &[&team, &ana]);
+    let (_, notices) = app.call(Method::GET, &format!("{path}/notices"), Some(&team), None).await;
+    assert_eq!(notices["notices"][0]["kind"], "session_summary");
+    assert_eq!(notices["notices"][0]["child"], "Lucía");
+    assert_nothing_said(&notices, &[&team, &ana]);
+
+    // A family that is not there, an id that is none, and a family's own token.
+    for route in ["", "/sessions", "/notices"] {
+        let (status, missing) = app
+            .call(
+                Method::GET,
+                &format!("/v1/admin/families/{}{route}", uuid::Uuid::now_v7()),
+                Some(&team),
+                None,
+            )
+            .await;
+        assert_eq!(
+            (status, missing["error"]["message"].as_str()),
+            (StatusCode::NOT_FOUND, Some("family not found"))
+        );
+        let malformed = format!("/v1/admin/families/not-an-id{route}");
+        assert_eq!(
+            app.call(Method::GET, &malformed, Some(&team), None).await.0,
+            StatusCode::BAD_REQUEST,
+            "{route}"
+        );
+        let own = format!("{path}{route}");
+        assert_eq!(app.call(Method::GET, &own, Some(&ana), None).await.0, StatusCode::FORBIDDEN, "{route}");
+    }
+}
+
+/// The `created_at` of every row of a list, page by page through `next`, and how many pages it took.
+async fn page_through(
+    app: &App,
+    token: &str,
+    path: &str,
+    rows: &str,
+    limit: i64,
+) -> (Vec<String>, Vec<usize>) {
+    let (mut seen, mut pages, mut before) = (Vec::new(), Vec::new(), String::new());
+    loop {
+        let (status, page) =
+            app.call(Method::GET, &format!("{path}?limit={limit}{before}"), Some(token), None).await;
+        assert_eq!(status, StatusCode::OK, "{page}");
+        let items = page[rows].as_array().unwrap();
+        pages.push(items.len());
+        seen.extend(items.iter().map(|item| item["created_at"].as_str().unwrap().to_string()));
+        match page["next"].as_str() {
+            Some(next) => before = format!("&before={next}"),
+            None => return (seen, pages),
+        }
+    }
+}
+
+#[sqlx::test(migrator = "aule_platform::MIGRATOR")]
+async fn the_team_pages_through_a_familys_sessions_and_notices(pool: PgPool) {
+    let app = app(pool);
+    let db = &app.state.pool;
+    let team = app.sign_in("team@example.org", "Equipo").await;
+    let child = app.child().await;
+    let family: String = sqlx::query_scalar("select family_id::text from children where id = $1::uuid")
+        .bind(&child)
+        .fetch_one(db)
+        .await
+        .unwrap();
+    let sessions_path = format!("/v1/admin/families/{family}/sessions");
+    let notices_path = format!("/v1/admin/families/{family}/notices");
+
+    // 25 sessions, one an hour. The newest ended as usual, the next one the
+    // housekeeping closed hours later, and the third never started.
+    let mut made = Vec::new();
+    for hours in 1..=25 {
+        made.push(app.past_session(&child, &format!("{hours} hours"), 20).await);
+    }
+    for (session, sql) in [
+        (&made[0], "update sessions set end_reason = 'child_ended' where id = $1::uuid"),
+        (
+            &made[1],
+            "update sessions set ended_at = created_at + interval '4 hours', end_reason = 'device_offline' where id = $1::uuid",
+        ),
+        (
+            &made[2],
+            "update sessions set started_at = null, end_reason = 'device_offline' where id = $1::uuid",
+        ),
+    ] {
+        sqlx::query(sql).bind(session).execute(db).await.unwrap();
+    }
+    let (seen, pages) = page_through(&app, &team, &sessions_path, "sessions", 10).await;
+    assert_eq!(pages, [10, 10, 5]);
+    let mut sorted = seen.clone();
+    sorted.sort_by(|a, b| b.cmp(a));
+    sorted.dedup();
+    assert_eq!(seen, sorted, "newest first, each once");
+    let (_, first) = app.call(Method::GET, &format!("{sessions_path}?limit=3"), Some(&team), None).await;
+    let facts: Vec<Value> = first["sessions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|session| {
+            json!([
+                session["seconds"],
+                session["end_reason"],
+                session["status"],
+                session["child"],
+                session["via"]
+            ])
+        })
+        .collect();
+    assert_eq!(
+        facts,
+        [
+            json!([1200.0, "child_ended", "ended", "Mateo", "web"]),
+            json!([null, "device_offline", "ended", "Mateo", "web"]),
+            json!([null, "device_offline", "ended", "Mateo", "web"]),
+        ]
+    );
+    let mut fields = keys(&first["sessions"][0]);
+    fields.sort();
+    assert_eq!(
+        fields,
+        ["audience", "child", "created_at", "end_reason", "engine", "seconds", "started_at", "status", "via"]
+    );
+
+    // 20 to a page unless asked, at least 1 and at most 50.
+    for hours in 26..=60 {
+        app.past_session(&child, &format!("{hours} hours"), 20).await;
+    }
+    for (asked, size) in [("", 20), ("?limit=0", 1), ("?limit=-5", 1), ("?limit=500", 50)] {
+        let (status, page) =
+            app.call(Method::GET, &format!("{sessions_path}{asked}"), Some(&team), None).await;
+        assert_eq!((status, page["sessions"].as_array().unwrap().len()), (StatusCode::OK, size), "{asked}");
+        assert!(page["next"].is_string(), "{asked}");
+    }
+
+    // Notices page the same way, and never with their words.
+    sqlx::query(
+        "insert into notices (id, family_id, child_id, kind, title, body, created_at, emailed_at)
+         select gen_random_uuid(), $1::uuid, $2::uuid, 'session_summary', 'SECRETO-AVISO', 'SECRETO-AVISO',
+                now() - make_interval(mins => n), now() - make_interval(mins => n) + interval '1 minute'
+         from generate_series(1, 25) n",
+    )
+    .bind(&family)
+    .bind(&child)
+    .execute(db)
+    .await
+    .unwrap();
+    let (seen, pages) = page_through(&app, &team, &notices_path, "notices", 10).await;
+    assert_eq!((pages, seen.len()), (vec![10, 10, 5], 25));
+    let (_, notices) = app.call(Method::GET, &notices_path, Some(&team), None).await;
+    let mut fields = keys(&notices["notices"][0]);
+    fields.sort();
+    assert_eq!(fields, ["child", "created_at", "emailed_at", "kind", "pushed_at", "read_at"]);
+    assert_nothing_said(&notices, &[&team]);
+
+    // What is not a cursor or a number is refused.
+    for path in [&sessions_path, &notices_path] {
+        for asked in ["?before=ayer", "?before=1_x", "?limit=muchos"] {
+            let (status, refused) = app.call(Method::GET, &format!("{path}{asked}"), Some(&team), None).await;
+            assert_eq!(
+                (status, refused["error"]["code"].as_str()),
+                (StatusCode::BAD_REQUEST, Some("bad_request")),
+                "{asked}"
+            );
+        }
+    }
 }
 
 #[sqlx::test(migrator = "aule_platform::MIGRATOR")]

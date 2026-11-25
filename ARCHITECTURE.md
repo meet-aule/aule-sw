@@ -11,6 +11,8 @@ Aule's server is a platform that knows each child's learning, a voice agent that
  ───────────▶ │   serve           learning · memory · supervisor  │
   playground  │   worker          reviews, retention, housekeeping│
  ───────────▶ │                   Postgres + pgvector             │
+  console     │                                                   │
+ ───────────▶ │                   Staff routes, for the team      │
               └───────▲──────────────────────────┬────────────────┘
         plan, turns,  │                          │ room tokens
         guidance      │                          ▼
@@ -25,6 +27,7 @@ Aule's server is a platform that knows each child's learning, a voice agent that
 | `apps/platform` | Rust | The API, the database, the learner model, memory, the supervisor, and the worker process that runs jobs |
 | `apps/agent` | Python | The conversation: speech, the tutor, the safety gates |
 | `apps/playground` | Node, TypeScript | A page for the people running a server to talk to the tutor |
+| `apps/admin` | Node, TypeScript | The team's console at admin.meetaule.com: its own sign-in for the team's addresses, and the families, the numbers, the plans and who is in a session now, read through the platform's Staff routes |
 | `contracts/` | JSON Schema | The events they exchange |
 
 The platform is one crate that runs as two processes, `serve` (the API) and `worker` (jobs). It is a modular monolith, not a set of microservices: a module reads and writes only its own tables and talks to the others through their public functions.
@@ -129,6 +132,7 @@ Built:
 - Visuals: the tutor can show an exercise or a simple diagram on the student's screen. It sends a small description that follows a shared contract, and the screen draws it in black on white; no image is generated. What is written on the screen passes the same gate as what is spoken.
 - The two safety gates in the agent: content moderation on what is heard and on what is about to be spoken, and the physical-safety check on what is heard. Both fail closed, a child's session does not start unless both are configured and their providers answer when it starts, and what they stop is reported as fixed categories. The physical-safety check is told the student's age, or the ages of their school grade, and nothing else from their profile; the tutor's lines are sent to it without the student's name. No session lets a participant in the room drive it past the gates (LiveKit's session host is off).
 - The playground: family sign-in, student setup and consent, voice and typed sessions, exercises, the administration panel and recovery of a still-running tutor after a browser or BFF restart. The platform remains responsible for authorization, quotas and session deadlines; recovery does not restart the session clock.
+- The team's console (`apps/admin`): the panel the team used in the playground, at admin.meetaule.com behind its own sign-in by emailed code for the team's addresses only, with the platform's Staff check on every call. Beside the panel's numbers it shows who is in a session now, with one line that says whether a deploy can go, the families with search and filters by link and plan, and a page per family with its consents, plans, sessions and the notices it was sent (their kind and dates). It holds no data of its own, and nothing a child said: the platform's routes for the team never send it.
 - A compose file for all of it, next to an existing LiveKit server.
 
 Not built yet:

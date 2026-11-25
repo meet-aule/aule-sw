@@ -55,6 +55,7 @@ updates:
     commit-message:
       prefix: "build(images)"
     directories:
+      - /apps/admin
       - /apps/agent
       - /apps/platform
       - /apps/playground
@@ -81,7 +82,7 @@ updates:
   - package-ecosystem: docker
     commit-message:
       prefix: "chore(images)"
-    directories: [/apps/agent, /apps/platform, /apps/playground]
+    directories: [/apps/admin, /apps/agent, /apps/platform, /apps/playground]
     schedule:
       interval: weekly
     cooldown:

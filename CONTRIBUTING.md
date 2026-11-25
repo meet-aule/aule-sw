@@ -39,8 +39,8 @@ by hand; `scripts/version.py` writes them all.
 
 ## Required checks
 
-- `Software CI`: Node contracts/playground/curriculum tests, Python tests, Rust
-  formatting and tests against PostgreSQL 17 with pgvector, all three Docker builds,
+- `Software CI`: Node contracts/playground/console/curriculum tests, Python tests, Rust
+  formatting and tests against PostgreSQL 17 with pgvector, all four Docker builds,
   the version's copies and the changelog with the tests of `scripts/version.py`,
   and the reproducible student performance benchmark on pinned public data.
 - `Ruff`: Python lint and formatting.

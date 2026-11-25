@@ -52,6 +52,7 @@ MARKED = (
 )
 # JSON takes no comments, so these are listed instead: their top-level "version".
 JSON_COPIES = (
+    "apps/admin/package.json",
     "apps/playground/package.json",
     "contracts/package.json",
     "curriculum/package.json",
