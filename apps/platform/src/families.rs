@@ -220,6 +220,49 @@ pub struct ChildInput {
     /// `RELATIONSHIPS`. Keeps its value when left out; an empty text removes it.
     #[serde(default)]
     relationship: Option<String>,
+    /// Only as the child is added: what the guardian consents to, written
+    /// with the child.
+    #[serde(default)]
+    consents: Option<NewConsents>,
+}
+
+/// The consents a guardian gives as they add a child. A child is added to talk
+/// with the tutor, so `voice` must be granted; `memory` and `transcripts` are
+/// answered too, yes or no, so the record says what was chosen.
+#[derive(Deserialize)]
+pub struct NewConsents {
+    voice: bool,
+    memory: bool,
+    transcripts: bool,
+    policy_version: String,
+    #[serde(default)]
+    locale: Option<String>,
+}
+
+struct CheckedConsents {
+    answers: [(&'static str, bool); 3],
+    policy_version: String,
+    locale: String,
+}
+
+impl NewConsents {
+    fn checked(self, caller: &Caller) -> ApiResult<CheckedConsents> {
+        // The operator records an answer given some other way, one at a time
+        // and saying how (`record_consent`).
+        if caller.guardian_id().is_none() {
+            return Err(ApiError::bad_request("consents are given by a signed-in guardian"));
+        }
+        if !self.voice {
+            return Err(ApiError::bad_request(
+                "consents.voice must be true: a child is added to talk with the tutor",
+            ));
+        }
+        Ok(CheckedConsents {
+            answers: [("voice", true), ("memory", self.memory), ("transcripts", self.transcripts)],
+            policy_version: text(&self.policy_version, "consents.policy_version", 40)?,
+            locale: locale_of(self.locale.as_deref(), "consents.locale")?,
+        })
+    }
 }
 
 struct CheckedChild {
@@ -358,15 +401,19 @@ async fn relationship_of(
     Ok(row.map(|row| row.relationship))
 }
 
+/// A child of the family, and, from a guardian, the consents they give with it
+/// (`NewConsents`): all in one transaction, so a child is never there without
+/// the consents it was added with.
 pub async fn create_child(
     caller: Caller,
     State(state): State<AppState>,
     Path(family_id): Path<Uuid>,
-    Input(body): Input<ChildInput>,
+    Input(mut body): Input<ChildInput>,
 ) -> ApiResult<(StatusCode, Json<Child>)> {
     if !caller.may_access(family_id) {
         return Err(ApiError::NotFound("family"));
     }
+    let consents = body.consents.take().map(|consents| consents.checked(&caller)).transpose()?;
     let child = body.checked(Utc::now())?;
     family::Entity::find_by_id(family_id).one(&state.db).await?.ok_or(ApiError::NotFound("family"))?;
     let txn = state.db.begin().await?;
@@ -388,6 +435,21 @@ pub async fn create_child(
     .insert(&txn)
     .await?;
     set_relationship(&txn, &caller, created.id, child.relationship).await?;
+    if let Some(consents) = consents {
+        for (purpose, granted) in consents.answers {
+            let answer = Answer {
+                family_id,
+                child_id: created.id,
+                guardian_id: caller.guardian_id(),
+                purpose,
+                granted,
+                policy_version: &consents.policy_version,
+                locale: &consents.locale,
+                source: "app",
+            };
+            write_answer(&txn, &answer).await?;
+        }
+    }
     txn.commit().await?;
     Ok((StatusCode::CREATED, Json(created.into())))
 }
@@ -399,6 +461,10 @@ pub async fn update_child(
     Input(body): Input<ChildInput>,
 ) -> ApiResult<Json<Child>> {
     child_for(&state.db, &caller, child_id).await?;
+    // Said here, they would be dropped without a word: an answer has its own route.
+    if body.consents.is_some() {
+        return Err(ApiError::bad_request("consents are recorded with POST /v1/children/{id}/consents"));
+    }
     let child = body.checked(Utc::now())?;
     let mut row = child::ActiveModel {
         id: Unchanged(child_id),
@@ -483,6 +549,46 @@ pub async fn current_consent(
     Ok(consent)
 }
 
+/// The language an answer was given in, as the guardian's app says it.
+fn locale_of(locale: Option<&str>, field: &str) -> ApiResult<String> {
+    Ok(locale.map(|locale| text(locale, field, 20)).transpose()?.unwrap_or_else(|| "es-PE".into()))
+}
+
+/// One answer about one purpose, as it is kept.
+struct Answer<'a> {
+    family_id: Uuid,
+    child_id: Uuid,
+    guardian_id: Option<Uuid>,
+    purpose: &'a str,
+    granted: bool,
+    policy_version: &'a str,
+    locale: &'a str,
+    source: &'a str,
+}
+
+/// Appends an answer. The time is the clock's, not the transaction's: two
+/// answers in one transaction keep their order.
+async fn write_answer(db: &impl ConnectionTrait, answer: &Answer<'_>) -> Result<(), DbErr> {
+    db.execute_raw(Statement::from_sql_and_values(
+        DbBackend::Postgres,
+        "insert into consent_records (id, family_id, child_id, guardian_id, purpose, granted, policy_version, locale, source, created_at)
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, clock_timestamp())",
+        [
+            Uuid::now_v7().into(),
+            answer.family_id.into(),
+            answer.child_id.into(),
+            answer.guardian_id.into(),
+            answer.purpose.into(),
+            answer.granted.into(),
+            answer.policy_version.into(),
+            answer.locale.into(),
+            answer.source.into(),
+        ],
+    ))
+    .await?;
+    Ok(())
+}
+
 #[derive(Deserialize)]
 pub struct ConsentInput {
     purpose: String,
@@ -538,31 +644,19 @@ pub async fn record_consent(
         .one(&txn)
         .await?
         .ok_or(ApiError::NotFound("child"))?;
-    let locale = body
-        .locale
-        .as_deref()
-        .map(|locale| text(locale, "locale", 20))
-        .transpose()?
-        .unwrap_or_else(|| "es-PE".into());
-    // The time is the clock's, not the transaction's: two answers in one
-    // transaction keep their order.
-    txn.execute_raw(Statement::from_sql_and_values(
-        DbBackend::Postgres,
-        "insert into consent_records (id, family_id, child_id, guardian_id, purpose, granted, policy_version, locale, source, created_at)
-         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, clock_timestamp())",
-        [
-            Uuid::now_v7().into(),
-            child.family_id.into(),
-            child_id.into(),
-            guardian_id.into(),
-            body.purpose.clone().into(),
-            body.granted.into(),
-            text(&body.policy_version, "policy_version", 40)?.into(),
-            locale.into(),
-            source.into(),
-        ],
-    ))
-    .await?;
+    let locale = locale_of(body.locale.as_deref(), "locale")?;
+    let policy_version = text(&body.policy_version, "policy_version", 40)?;
+    let answer = Answer {
+        family_id: child.family_id,
+        child_id,
+        guardian_id,
+        purpose: &body.purpose,
+        granted: body.granted,
+        policy_version: &policy_version,
+        locale: &locale,
+        source: &source,
+    };
+    write_answer(&txn, &answer).await?;
 
     // Taking consent back takes the data back too.
     if !body.granted {

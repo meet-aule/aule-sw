@@ -1301,6 +1301,132 @@ async fn a_guardian_signs_in_with_a_code_and_reaches_only_their_family(pool: PgP
     assert_eq!(app.count("select count(*) from families").await, 1, "Luis is still there");
 }
 
+/// A consent record as it is kept: purpose, answer, policy, locale, source and guardian.
+type Answered = (String, bool, String, String, String, Option<String>);
+
+#[sqlx::test(migrator = "aule_platform::MIGRATOR")]
+async fn a_guardian_adds_a_child_with_their_consents_in_one_go(pool: PgPool) {
+    let app = app(pool);
+    let ana = app.sign_in("ana@example.org", "Ana").await;
+    let (_, me) = app.call(Method::GET, "/v1/me", Some(&ana), None).await;
+    let family = me["family_id"].as_str().unwrap().to_string();
+    let guardian = me["guardian"]["id"].as_str().unwrap().to_string();
+    let path = format!("/v1/families/{family}/children");
+    let add = |body: Value| app.call(Method::POST, &path, Some(&ana), Some(body));
+    let consents = |voice: Value| json!({ "voice": voice, "memory": true, "transcripts": false, "policy_version": "app-2026-11-v2", "locale": "en" });
+
+    // Voice must be granted, and memory and transcripts answered: otherwise no
+    // child is made, and nothing is recorded.
+    let (status, body) = add(json!({ "nickname": "Mati", "consents": consents(json!(false)) })).await;
+    assert_eq!(
+        (status, body["error"]["message"].as_str()),
+        (
+            StatusCode::BAD_REQUEST,
+            Some("consents.voice must be true: a child is added to talk with the tutor")
+        )
+    );
+    for refused in [
+        json!({ "nickname": "Mati", "consents": consents(Value::Null) }),
+        json!({ "nickname": "Mati", "consents": { "memory": true, "transcripts": false, "policy_version": "v1" } }),
+        json!({ "nickname": "Mati", "consents": { "voice": true, "transcripts": false, "policy_version": "v1" } }),
+        json!({ "nickname": "Mati", "consents": { "voice": true, "memory": true, "policy_version": "v1" } }),
+        json!({ "nickname": "Mati", "consents": { "voice": true, "memory": true, "transcripts": false } }),
+        json!({ "nickname": "Mati", "consents": { "voice": true, "memory": true, "transcripts": false, "policy_version": " " } }),
+        json!({ "nickname": "Mati", "consents": { "voice": true, "memory": true, "transcripts": false, "policy_version": "v".repeat(41) } }),
+        json!({ "nickname": "Mati", "consents": { "voice": "yes", "memory": true, "transcripts": false, "policy_version": "v1" } }),
+        json!({ "nickname": "Mati", "consents": true }),
+        // Nor when the child is not one: their consents do not stay behind.
+        json!({ "nickname": " ", "consents": consents(json!(true)) }),
+    ] {
+        let (status, body) = add(refused.clone()).await;
+        assert_eq!(
+            (status, body["error"]["code"].as_str()),
+            (StatusCode::BAD_REQUEST, Some("bad_request")),
+            "{refused}"
+        );
+    }
+    assert_eq!(app.count("select count(*) from children").await, 0);
+    assert_eq!(app.count("select count(*) from consent_records").await, 0);
+
+    // With voice granted, the child and the three answers are written together,
+    // as Ana's own, from the app.
+    let (status, child) =
+        add(json!({ "nickname": "Mati", "relationship": "MTH", "consents": consents(json!(true)) })).await;
+    assert_eq!(status, StatusCode::CREATED, "{child}");
+    let child = child["id"].as_str().unwrap().to_string();
+    let (_, read) = app.call(Method::GET, &format!("/v1/children/{child}"), Some(&ana), None).await;
+    assert_eq!(read["consent"], json!({ "voice": true, "memory": true, "transcripts": false }));
+    assert_eq!(read["relationship"], "MTH");
+    let records: Vec<Answered> = sqlx::query_as(
+        "select purpose, granted, policy_version, locale, source, guardian_id::text
+         from consent_records where child_id = $1::uuid order by purpose",
+    )
+    .bind(&child)
+    .fetch_all(&app.state.pool)
+    .await
+    .unwrap();
+    let answer = |purpose: &str, granted: bool| -> Answered {
+        let policy = "app-2026-11-v2".to_string();
+        (purpose.to_string(), granted, policy, "en".to_string(), "app".to_string(), Some(guardian.clone()))
+    };
+    assert_eq!(records, [answer("memory", true), answer("transcripts", false), answer("voice", true)]);
+    let transactions: i64 = sqlx::query_scalar(
+        "select count(distinct tx) from (
+             select xmin::text as tx from children where id = $1::uuid
+             union all select xmin::text from consent_records where child_id = $1::uuid
+             union all select xmin::text from guardian_children where child_id = $1::uuid
+         ) written",
+    )
+    .bind(&child)
+    .fetch_one(&app.state.pool)
+    .await
+    .unwrap();
+    assert_eq!(transactions, 1, "one transaction wrote the child, its consents and Ana's relationship");
+    // The consent holds at once: Mati can start a session.
+    let (status, session) = app
+        .call(
+            Method::POST,
+            "/v1/sessions",
+            Some(&ana),
+            Some(json!({ "child_id": child, "audience": "child" })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{session}");
+
+    // Consents are given as a child is added, never by changing one: an answer
+    // has its own route.
+    let (status, body) = app
+        .call(
+            Method::PUT,
+            &format!("/v1/children/{child}"),
+            Some(&ana),
+            Some(json!({ "nickname": "Mati", "consents": consents(json!(true)) })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert_eq!(app.count("select count(*) from consent_records").await, 3);
+
+    // Without them, a child is added as before, with nothing consented yet.
+    let (status, other) = add(json!({ "nickname": "Lu" })).await;
+    assert_eq!(status, StatusCode::CREATED, "{other}");
+    let other = other["id"].as_str().unwrap();
+    let (_, read) = app.call(Method::GET, &format!("/v1/children/{other}"), Some(&ana), None).await;
+    assert_eq!(read["consent"], json!({ "voice": false, "memory": false, "transcripts": false }));
+    assert_eq!(app.count("select count(*) from consent_records").await, 3);
+
+    // The operator records an answer given some other way, one at a time and
+    // saying how: not with a child.
+    let (status, body) = app
+        .admin(Method::POST, &path, Some(json!({ "nickname": "Leo", "consents": consents(json!(true)) })))
+        .await;
+    assert_eq!(
+        (status, body["error"]["message"].as_str()),
+        (StatusCode::BAD_REQUEST, Some("consents are given by a signed-in guardian"))
+    );
+    assert_eq!(app.count("select count(*) from children").await, 2);
+    assert_eq!(app.count("select count(*) from consent_records").await, 3);
+}
+
 /// Every key of a JSON document, at any depth.
 fn keys(value: &Value) -> Vec<String> {
     match value {
