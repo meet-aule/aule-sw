@@ -110,6 +110,9 @@ pub struct Config {
     pub intentos_foto: u8,
     /// TAR-06 [PROPUESTA]: turnos de conversación sin foto tras los que se sigue sin ella.
     pub charlas_sin_foto: u8,
+    /// E1 [PROPUESTA]: turnos de conversación seguidos sobre una misma explicación
+    /// o ejemplo resuelto tras los que el motor sigue con lo siguiente.
+    pub charlas_por_explicacion: u8,
 }
 
 impl Default for Config {
@@ -150,6 +153,7 @@ impl Default for Config {
             confianza_minima_foto: 70,
             intentos_foto: 2,
             charlas_sin_foto: 3,
+            charlas_por_explicacion: 3,
         }
     }
 }

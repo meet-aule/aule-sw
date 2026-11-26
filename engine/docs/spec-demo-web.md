@@ -66,6 +66,7 @@ Next item correctness, Time-to-master.
 - **E1-03.** Ejemplos no asistidos (Aule explica la secuencia y ejecuta cada paso) y asistidos (Aule recuerda la secuencia; el Alumno ejecuta los pasos). **[PROPUESTA]** Si hace todos los pasos de un ejemplo asistido bien al primer intento y sin Pistas, pasa a explicarlo sin el ejemplo asistido siguiente.
 - **E1-04.** Se completa cuando el Alumno explica con sus palabras de qué va el tema y concluyó los 2 tipos de ejemplos.
 - **E1-05.** Si no logra explicarlo: la misma secuencia de Pistas; si las agota, repaso conceptual de ese tema en ese nivel.
+- **E1-06 [PROPUESTA].** La teoría y los ejemplos no asistidos avanzan cuando el Alumno lo pide, y por voz no hay un botón para pedirlo: cada explicación y cada ejemplo no asistido terminan con «¿Seguimos?», y sus dos respuestas («Entendido, sigue», «No entendí») se pueden tocar. «Sí», «sigamos» o «seguimos» siguen; «no», «no entendí» u «otra vez» lo explican de nuevo. Lo demás es conversación y no avanza nada: al tercer turno de conversación seguido sobre la misma explicación, Aule sigue con lo siguiente por su cuenta.
 
 ## 7. Etapa 2: Refuerzo
 

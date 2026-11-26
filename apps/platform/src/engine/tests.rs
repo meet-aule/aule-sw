@@ -4,7 +4,7 @@
 
 use super::visuals::tests::{assert_follows, contract};
 use super::*;
-use aule_core::motor::NO_TENGO_TAREA;
+use aule_core::motor::{NO_TENGO_TAREA, SEGUIMOS};
 
 fn setup(goal: Goal) -> Setup {
     Setup {
@@ -633,6 +633,48 @@ fn what_is_not_an_answer_goes_where_the_engine_expects_it() {
     assert!(turn.converse.is_some(), "{turn:?}");
     assert_eq!(student.engine.card().unwrap().enunciado, card);
     student.says("entendido, sigue");
+    assert_ne!(student.engine.card().unwrap().enunciado, card);
+}
+
+#[test]
+fn an_explanation_asks_whether_to_go_on_and_talk_on_it_has_a_limit() {
+    let mut student = in_screening();
+    student.answers(true);
+    for _ in 0..4 {
+        student.answers(false);
+    }
+    assert_eq!(student.at(), "etapa1:2:teoria");
+    // The engine's own question ends the explanation: by voice there is no
+    // "go on" button, and without it a child does not know it is their turn.
+    let offered = vec!["Entendido, sigue".to_string(), "No entendí".to_string()];
+    let brought = student.turns.last().unwrap().clone();
+    assert_eq!(brought.lines.last().unwrap().say, SEGUIMOS, "{brought:?}");
+    assert_eq!(tappable(&brought), Some(offered.clone()));
+    assert_eq!(student.engine.step(student.now)["choices"]["options"], json!(offered));
+
+    // Twice the model answers and the explanation stays. The third time in a
+    // row the engine goes on by itself, and the model is not asked.
+    let card = student.engine.card().unwrap().enunciado;
+    for said in ["Tres partes de cuatro, ¿no?", "Cuatro"] {
+        let turn = student.says(said);
+        assert!(turn.lines.is_empty() && turn.converse.is_some(), "{turn:?}");
+        assert_eq!(student.engine.card().unwrap().enunciado, card);
+    }
+    let moved = student.says("mi perro se llama Rocky");
+    assert_eq!(moved.converse, None, "{moved:?}");
+    assert_eq!(moved.lines[0].say, "Sigamos, y lo vas a ver en lo que viene.", "{moved:?}");
+    assert_eq!(moved.lines.last().unwrap().say, SEGUIMOS);
+    assert_eq!(tappable(&moved), Some(offered));
+    assert_ne!(student.engine.card().unwrap().enunciado, card);
+
+    // Said aloud: «no» has it explained again, «sigamos» goes on.
+    let card = student.engine.card().unwrap().enunciado;
+    let again = student.says("no");
+    assert!(said_by_tutor(&again).starts_with("Vamos de nuevo, despacito:"), "{again:?}");
+    assert_eq!(again.lines.last().unwrap().say, SEGUIMOS);
+    assert_eq!((again.converse.clone(), student.engine.card().unwrap().enunciado), (None, card.clone()));
+    let on = student.says("sigamos");
+    assert_eq!(on.converse, None, "{on:?}");
     assert_ne!(student.engine.card().unwrap().enunciado, card);
 }
 
