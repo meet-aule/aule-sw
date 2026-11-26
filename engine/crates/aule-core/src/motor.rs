@@ -5,7 +5,7 @@
 
 use crate::banco::{Banco, Ejercicio, Forma, Grafico, NivelContenido};
 use crate::config::{ActividadPausa, Config, TipoPausa, TipoPista};
-use crate::informe::{self, lista, Hecho};
+use crate::informe::{self, lista, lista_o, Hecho};
 use crate::metricas::{Contexto, Metricas, RegistroNic, RegistroTtm};
 use crate::modelo::{
     fecha_larga, leer_fecha, ordenar_objetivos, EstadoObjetivo, FechaDicha, Objetivo, Perfil,
@@ -3164,9 +3164,17 @@ impl Motor {
         let previa = std::mem::replace(&mut self.act, Actividad::Siguiente);
         self.pausas_tomadas += 1;
         let acts = self.cfg.actividades_pausa.clone();
+        // [PROPUESTA] La línea nombra las actividades: por voz la tabla no se
+        // ve, y quien todavía no lee no tiene otra forma de saber cuáles hay.
+        let nombres: Vec<String> = acts.iter().map(|a| a.nombre.clone()).collect();
+        let elige = if nombres.is_empty() {
+            String::new()
+        } else {
+            format!(" Elige una: {}.", lista_o(&nombres))
+        };
         out.push(
             msg(format!(
-                "¡Pausa activa! Son {} minutos para mover el cuerpo o respirar. ¿Cómo te sientes? Elige una:",
+                "¡Pausa activa! Son {} minutos para mover el cuerpo o respirar. ¿Cómo te sientes?{elige}",
                 self.cfg.pausa_duracion_s / 60
             ))
             .adj(Adjunto::Actividades { actividades: acts }),
