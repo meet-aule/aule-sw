@@ -1024,11 +1024,11 @@ VERDICTS = {
             opinion.HEARD_QUESTION,
         ],
     ),
-    # Changed on purpose: the lines said when the tutor's model fails
-    # ("hold_on", "tutor_unavailable") and the calm breaks for a tired student
-    # (RESTS, pinned as BREAKS is). No gate's verdict changed.
+    # Changed on purpose: the line said when the platform does not take what
+    # a photo of the homework showed ("homework_unreachable"). No gate's
+    # verdict changed.
     "replies": (
-        "46642b931116c868d742a2537d910e000c93491d37c353c0f9750a1a2037c1f0",
+        "b625a5a855c26414f36fc1de5ada674cc17107a67b8020064a132cc9b8e340fe",
         lambda: [
             replies.REPLIES,
             replies.ADULT_HELP_SEQUENCE,

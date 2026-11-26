@@ -151,6 +151,12 @@ REPLIES: dict[str, dict[str, str]] = {
         "es": "Mira la pantalla y cuéntame qué ves.",
         "en": "Look at the screen and tell me what you see.",
     },
+    # Said when the engine could not be told what a photo of the homework
+    # showed: the platform did not take it. The student may show it again.
+    "homework_unreachable": {
+        "es": "No pude mirar tu tarea. ¿Me la muestras otra vez?",
+        "en": "I couldn't look at your homework. Can you show it to me again?",
+    },
     "context_limit": {
         "es": "Necesito ayuda de un adulto para seguir con seguridad. Pídele que revise lo que "
         "pasa y vuelva a iniciar la sesión.",
