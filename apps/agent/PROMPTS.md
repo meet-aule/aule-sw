@@ -79,8 +79,9 @@ changing blocks in either place and checks that the tools, the rules and the
 student's part are sent byte for byte the same while every update arrives with the
 language rule last.
 
-The existing 4,000-character limit still covers the complete static tutor policy;
-profile, plan, persona, guidance, engine rules and conversation are additional
+The 4,450-character limit of [test_prompt_budget.py](tests/test_prompt_budget.py)
+covers the complete static tutor policy, every optional block and the language rule
+included; profile, plan, persona, guidance, engine rules and conversation are additional
 dynamic context, not covered by that limit. Provider context limits and actual
 token usage are distinct from this local size guard.
 

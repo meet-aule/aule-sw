@@ -9,15 +9,19 @@ import json
 
 import pytest
 
+from aule_agent.prompts import INSTRUCTIONS, response_language
 from aule_agent.tutor import Tutor
 
 # Characters of static policy in the most complete session, the final language
-# rule included: es 4,078 and en 4,069, with the analogy rule, the checking rule
-# for answers checked in code and the reply-length rule (#225). Raised from
-# 4,000 on purpose: the analogy and checking rules were approved together on
-# 2026-11-25 and do not fit beside the length rule.
-INSTRUCTIONS_BUDGET = 4_100
-TOOLS_BUDGET = 9_000  # characters of the tools' JSON (8,923)
+# rule included: es 4,401 and en 4,392, with the analogy rule, the checking rule
+# for answers checked in code, the reply-length rule (#225) and the three rules
+# of the 2026-11-25 test session: every exercise and example is shown, each new
+# one has other numbers and a new setting, and the student explains an interest
+# the tutor does not know well. Raised on purpose: from 4,000 when the analogy
+# and checking rules, approved together on 2026-11-25, did not fit beside the
+# length rule; from 4,100 for the three rules of that test session.
+INSTRUCTIONS_BUDGET = 4_450
+TOOLS_BUDGET = 9_000  # characters of the tools' JSON (8,971)
 
 
 class Gates:
@@ -67,3 +71,39 @@ def test_one_analogy_rule_keeps_the_exercises_operations_among_the_teaching_rule
         < instructions.index("Use different numbers for worked examples.")
         < speaking
     )
+
+
+@pytest.mark.parametrize("language", ["es", "en"])
+def test_each_new_example_or_exercise_has_other_numbers_and_a_new_setting(language):
+    instructions = complete(language).instructions
+    # The test session of 2026-11-25 kept to one setting, and its exercises
+    # were alike. The rule follows the analogy rule, among the teaching rules,
+    # and every session carries it, with a screen or without one.
+    rule = "- Give each new example or exercise different numbers and a setting not used yet."
+    assert INSTRUCTIONS.count(rule) == 1 and instructions.count(rule) == 1
+    assert (
+        instructions.index("How you teach:")
+        < instructions.index("Use different numbers for worked examples.")
+        < instructions.index(rule)
+        < instructions.index("How you speak:")
+    )
+    assert instructions.endswith(response_language(language))
+
+
+@pytest.mark.parametrize("language", ["es", "en"])
+def test_the_student_explains_an_interest_the_tutor_does_not_know_well(language):
+    instructions = complete(language).instructions
+    # In the test session of 2026-11-25 the tutor built its examples on an
+    # interest the student named, without knowing it well.
+    rule = (
+        "- Ask them to explain any interest you don't know well; build examples on what they "
+        "say, not on guesses."
+    )
+    assert INSTRUCTIONS.count(rule) == 1 and instructions.count(rule) == 1
+    assert (
+        instructions.index("How you teach:")
+        < instructions.index("- Give each new example or exercise different numbers")
+        < instructions.index(rule)
+        < instructions.index("How you speak:")
+    )
+    assert instructions.endswith(response_language(language))
