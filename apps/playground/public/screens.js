@@ -33,8 +33,8 @@ let showing = null;
 let shownAt = 0;
 // The history entry the screen showing belongs to, to tell Back from Forward.
 let shownN = 0;
-// "new" while a family signs up, "back" when it comes back: P02 and P03 then
-// show the plain line, since a returning parent is not onboarding.
+// The progress context carried through browser history. The shared entry
+// has no onboarding progress until the family is authenticated (D42).
 let flow = "new";
 let account = { signed_in: false };
 // This load of the page. An entry from an earlier load is not stepped back into.
@@ -85,10 +85,10 @@ function allowed(id) {
   return !screen.needs || needs.get(screen.needs)?.() === true;
 }
 
-/** Where a visit lands: the family's students, C01's question, or nothing without a way to sign in. */
+/** Where a visit lands: the family's students, the shared sign-in, or nothing without a way to sign in. */
 export function landing() {
   if (signedIn()) return "home";
-  return account.google_client_id || account.providers?.length ? "c01" : null;
+  return account.google_client_id || account.providers?.length ? "p01" : null;
 }
 
 /** The screen itself if it can show, else the first one back from it that can. */

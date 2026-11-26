@@ -31,11 +31,11 @@ Surface: **paper** is the parent's look (page 160:1345), **ink** the device's pu
 | Figma | Móvil / Escritorio | `data-screen` | Surface | Status | Logic in |
 |---|---|---|---|---|---|
 | C00 ¿Quién eres? | 160:1649 / 160:1727 | — | — | out (retired 24 Nov, D24) | — |
-| C01 ¿Ya tienes cuenta? | 160:1661 / 160:1741 | `c01` | paper | build (the first screen, Atrás=No) | `signin.js` |
-| P01 ¿Cómo quieres entrar? | 160:1636 / 160:1455 | `p01` | paper | build | `signin.js` |
-| P02 Tu correo | 160:1624 / 160:1755 | `p02` | paper | adapt (D34: the parent's name in a new family's flow) | `signin.js` |
+| C01 ¿Ya tienes cuenta? | 160:1661 / 160:1741 | — | — | retired (D42) | — |
+| P01 ¿Cómo quieres entrar? | 160:1636 / 160:1455 | `p01` | paper | adapt (D42: shared entry, email inline) | `signin.js` |
+| P02 Tu correo | 160:1624 / 160:1755 | `p01` | paper | folded into the shared entry (D42) | `signin.js` |
 | P03 Código | 160:1604 / 160:1768 | `p03` | paper | build | `signin.js` |
-| — (after P03: the parent's name, for a family coming back with a new address) | — | `p03-name` | paper | web-only | `signin.js` |
+| — (after P03: the parent's name, for a family coming back with a new address) | — | `p03` | paper | inline after proof of the address (D42) | `signin.js` |
 | P04 Tu autorización (+ P04 · Marcada) | 160:1592 / 160:1442; Marcada 160:1994 | `p04` | paper | build | `onboarding.js` |
 | P05 Conozcamos a tu hijo | 160:1581 / 160:1789 | `p05` | paper | adapt (D34: from the home, after the first session) | `onboarding.js` |
 | — (interview question 1: the grade) | — | `p06-grade` | paper | web-only (D34: from the home, first) | `onboarding.js` |
@@ -46,11 +46,12 @@ Surface: **paper** is the parent's look (page 160:1345), **ink** the device's pu
 | P10 Nombre de usuario | 160:1493 / 160:1877 | `p10-name` takes its place, with an optional grade and P12's «Empezar su primera sesión» | paper | web-only | `onboarding.js`, `home.js` |
 | P11 Confírmalo en Aule (+ · No es su nombre) | 160:1479 / 160:1894; 160:1973 / 160:1982 | — | — | out | — |
 | P12 Listo | 160:1469 / 160:1909 | — | — | folded into `p10-name` (D34) | — |
-| P13 Entra a tu cuenta (+ · De vuelta, where a browser that signed in before starts) | 160:1674 / 160:1920; 160:1711 / 160:1934 | `p13` | paper | build | `signin.js` |
+| P13 Entra a tu cuenta (+ · De vuelta, where a browser that signed in before starts) | 160:1674 / 160:1920; 160:1711 / 160:1934 | `p01` | paper | shared entry (D42) | `signin.js` |
 | P14 Revisa tu correo | 160:1688 / 160:1948 | `p14` | paper | adapt | `signin.js` |
 | P15 Escríbenos | 160:1701 / 160:1962 | `p15` | paper | adapt | `signin.js` |
 | — (the family's students, with each one's latest sessions, D35; Pendiente · Cuenta del padre is not Vigente) | — | `home` | paper | restyle | `home.js`, `summaries.js`, `signin.js` (signing out, erasing) |
 | — (a student's settings; no Figma screen) | — | `editor` | paper | restyle | `students.js`, `home.js` |
+| — (the family's session summaries, D43) | — | `summaries` | paper | web-only | `reviews.js` |
 
 ### 3.2 The student (page 190:717; A02 on «Vigente · Setup · v1», A16 on «Vigente · Onboarding · v1»)
 
@@ -70,20 +71,17 @@ Surface: **paper** is the parent's look (page 160:1345), **ink** the device's pu
 ### 3.3 The flows
 
 ```
-(signed out) c01 ─No, es mi primera vez→ p01 ─Con mi correo→ p02 → p03 ─(a new address)→ p03-name
-(signed out, a browser that signed in before) p13 ─← Atrás→ c01
-p01 ─Continuar con Google | Otras formas de entrar (GitHub, Facebook, Apple)→ signed in
+(signed out) p01 (email and providers together) → p03 (code; name inline only for a new account) → signed in
+p01 ─Google | GitHub | Facebook | Apple→ signed in
 signed in → p04 (no students) or home
-(signed out, a new family) p02 (its address and its name) → p03 → signed in
 p04 ─Autorizo→ p10-name (the name, a grade if they like) ─Empezar su primera sesión→ a02 ─Sí, soy yo→ a04 (a first run) → a04-details → a05 → session (A16's words, the coach)
 p10-name ─Empezar más tarde (or, with no session left in the plan, Guardar)→ home «Listo. Aule ya conoce a {nombre}.»
 a02 ─No soy yo→ editor ─Guardar→ a02 (the new name)        a02 ─Volver→ home
 home ─Cuéntale a Aule sobre {nombre}→ p05 ─Empezar entrevista→ p06-grade → p06 → p07 → home «Gracias. Aule ya sabe más de {nombre}.»
 p05 ─En otro momento→ home
-c01 ─Sí, ya tengo cuenta→ p13 → (the same ways) → home
 p03 ─No me llega el correo→ p14 ─¿Sigue sin llegar? Escríbenos→ p15 (mailto:admin@meetaule.com)
 home ─a student→ a04 ─a tile→ a04-details ─Seguir→ a05 ─Empezar la sesión→ session ─Terminar→ session-end ─Volver→ home
-a04 ─No lo sé→ a05 (no objective)        home ─Configurar→ editor        home ─Ver resúmenes→ editor, at «Últimas sesiones»
+a04 ─No lo sé→ a05 (no objective)        home ─Configurar→ editor        home ─Ver resúmenes→ summaries ─Volver al inicio→ home
 session ─time over | the platform closed it | connection cut→ session-end
 home ─the student whose session a reload left open→ a05 «¿Seguimos donde nos quedamos?» ─Seguir con la sesión→ session (same room, same time)
 a05 «¿Seguimos…?» ─Empezar otra sesión→ (the open one is closed) a04
@@ -101,18 +99,18 @@ Each step forward is an entry in the browser's history: Back and «← Atrás» 
 
 | Figma component (id; variants) | Class / element | States in code | Used on |
 |---|---|---|---|
-| Encabezado/Base 160:1348 (Atrás=Sí 160:1349, Atrás=No 160:1352) | `.screen-head` > `.head-row` with `.wordmark` and `button.link.back[data-back]` | no `.back` for Atrás=No (c01, home) | every paper screen |
+| Encabezado/Base 160:1348 (Atrás=Sí 160:1349, Atrás=No 160:1352) | `.screen-head` > `.head-row` with `.wordmark` and `button.link.back[data-back]` | no `.back` for Atrás=No (p01, home) | every paper screen |
 | Barra de progreso/Base 160:1415 (Sin avance 160:1416; 1–12 de 12 160:1417…160:1439) | `ol.progress` with two `li.segment` (track, fill, name), «Tu cuenta» and «Su perfil» (D8); `ol.progress.plain` | drawn by `screens.js` from `steps.js` | every paper screen |
 | Pregunta/Base 161:2101 | `.question` > `.question-step`, `h2.question-title[tabindex=-1]`, `.question-help` | step and help optional | every paper screen |
-| Campo/Línea 160:1355 (Vacío 160:1356, Lleno 160:1362, Error 160:1368) | `.field` > `label`, `input`/`textarea`/`select`, `.field-error` | `aria-invalid="true"` draws the error | p02, p03-name, p06, p07, p10-name, editor, erase |
-| Opción/Grande 160:1374 (Normal 160:1375, Seleccionada 160:1379, Foco 160:1384, Error 160:1388) | one choice: `button.option`; several: `label.pick` > checkbox + `span.option`; the editor's `label.chip` and `label.tone` | `aria-pressed`/`:checked` → `--picked` fill and «✓»; `:focus-visible` → Foco | c01, p01, p13, p06-grade, p07, editor |
+| Campo/Línea 160:1355 (Vacío 160:1356, Lleno 160:1362, Error 160:1368) | `.field` > `label`, `input`/`textarea`/`select`, `.field-error` | `aria-invalid="true"` draws the error | p01, p03, p06, p07, p10-name, editor, erase |
+| Opción/Grande 160:1374 (Normal 160:1375, Seleccionada 160:1379, Foco 160:1384, Error 160:1388) | one choice: `button.option`; several: `label.pick` > checkbox + `span.option`; the editor's `label.chip` and `label.tone` | `aria-pressed`/`:checked` → `--picked` fill and «✓»; `:focus-visible` → Foco | p06-grade, p07, editor |
 | Botón/Principal 160:1392 (Normal 160:1393, Deshabilitado 160:1395) | `.primary` (a `button`, or the `a` of p15) | `:disabled` → `--line` fill, `--muted` label | the foot of the paper screens |
 | Casilla/Base 160:1397 (Sin marcar 160:1398, Marcada 160:1401) | `label.check` > the real checkbox, out of sight over the whole row, + `.box`; `.check.boxed` with its frame | `:checked` → ink box with «✓»; P04's box starts unticked, and so do both choices in its panel, «Recordar…» and «Guardar por escrito…» (D5) | p04 and its panel, editor |
 | Dígito/Base 160:1405 (Vacío 160:1406, Foco 160:1408, Lleno 160:1410) | `.digits`: one real `input#email-code` over six `aria-hidden` boxes | the next box has `.focus` (2.5 px copper) | p03 |
 | Enlace/Base 161:2096 | `.link` (`button` or `a`); `.link-small` (P14's small link) | — | «← Atrás», «Reenviar», «Qué guardamos», «En otro momento», «Saltar pregunta», «Terminar», the home's links, «Ver resúmenes» under a student's sessions (D35) |
 | Acción/Pequeña 161:2104 | `button.small` | — | «Configurar», «Olvidar», «Agregar», «Entendido» (the cookie notice, D36) |
-| Fila/Alumno 161:2110 | `li.student-row` > `button.student-go` (name, description) + `button.small`; under them, web-only, `ul.student-sessions` (a line for each of the latest sessions) and `button.link.student-summaries` «Ver resúmenes» (D35) | `aria-disabled` when the plan has no session left; the list and the link are hidden until a session has been read | home |
-| Botón/Google 168:991 | `#google-p01`, `#google-p13`: Google draws its own button there | — | p01, p13 |
+| Fila/Alumno 161:2110 | `li.student-row` > `button.student-go` (name, description) + `button.small`; under them, web-only, `ul.student-sessions` (a line for each of the latest sessions) and `button.link.student-summaries` «Ver resúmenes» (D35) | `aria-disabled` when the plan has no session left; the facts list hides until sessions are read; the summaries link also reaches its empty state | home |
+| Botón/Google 168:991 | `#google-p01`: Google draws its own button there | — | p01 |
 | (web addition) Botón/Principal in the error colour | `.primary.danger` | — | «Borrar mi cuenta» |
 | (web addition) Enlace/Base in the error colour | `.link.danger` | — | «Quitar a este alumno» |
 | Vista previa/Base 161:2113 | not used: the camera's preview is on an ink screen (`.preview`) | | |
@@ -231,6 +229,8 @@ Each is what the code does today; the owner can change any of them.
 | D39 | A session the engine runs shows its route as one line under the title: a dot for each stop done, then the stop in hand in the engine's words («●● Refuerzo Nivel 2»). The stops still to come are not shown, and with no stop in hand (before the first, after the last) the line hides. A screen reader hears «Ahora: Refuerzo Nivel 2. Ya hiciste 2 partes.», in Spanish as the engine's names are (an engine session is always Spanish); the line is not live, since the card's title says the stage too. | The co-founder's test of 25 Nov: every stop of the route, done, in hand and to come, was a box in a row, and a child on the first saw every level still ahead; on a phone the boxes were cut to a few letters. The dots keep a quiet sense of what is done. |
 | D40 | The exercise card shows the exercise Aule posed. The engine's next exercise goes on the card once Aule has shown its statement or its drawing, or said its statement, as the engine's own lines do when they present one; until then the card keeps the exercise Aule posed before, without its answer box, since a typed answer is checked against the engine's. A session carried on after a reload shows the card it is on, and the steps of one exercise do not wait again. Any other exercise Aule shows (an example with other numbers, or the one it is talking about) is drawn on the stage next to the card; the card's own statement shown again brings the stage back to it and is not written there twice. | The co-founder's test of 25 Nov: the card stayed on the exercise the engine planned while the tutor talked about others, and the page dropped every exercise the tutor showed while a card was up. The platform cannot say which exercise the tutor posed: with the engine the tutor's model has no `pose_exercise`, the platform refuses that route for an engine's session (`practice.rs` `running`), and the engine's rules for talk have the model explain with other numbers. The page sees what Aule shows and says, and the engine's lines always show or say the exercise they present. |
 | D41 | While a session shows, the address is its own, `/session/<id>`, put in with `replaceState` (no history entry), and A05 keeps it while it offers to carry that session on; every other screen, the end screen too, is at `/session/`. Opened there, the family's open session goes straight to A05's «¿Seguimos donde nos quedamos?»; any other or malformed id, or no sign-in, gives the page as at `/session/`, address and all. | The owner's request. The id grants and reveals nothing: the server answers every id with the same page, what can be carried on is still the sign-in's (`api/session/recovery`), and the page sends no Referer. |
+| D42 | New and returning families start at `p01`, with the email field and configured providers together. C01 and P13 no longer branch the flow; P02 is inline. P03 reveals the name field only when the platform returns `name_needed` after a valid code, and verifies that code again with the name. The account's existence is never queried before that proof. Consent and the child's profile are unchanged. The shortest first-run path to A05 is seven screens by email and six by Google. | The owner's usability request. Supersedes D24's first screen and D34's name-on-P02 adaptation. Google now loads on this shared signed-out entry when configured, with the provider-cookie notice beside it; never on signed-in family or student screens. No new persistent identity data or authentication route. |
+| D43 | «Ver resúmenes» opens `summaries`, separate from `editor`: the latest five review summaries, each with its next step under its own heading. The link is always available, including before any review is ready. Empty, loading and failed states explain what happened and offer refresh/retry. The screen clears on exit or sign-out, ignores obsolete responses, and renders text only. Home's session facts remain as D35 describes; its start button now says «Empezar con {nombre}». | The owner's usability request. Reuses the existing guardian-scoped read and its limits; no new permissions, generated summaries or measurements of learning. Configurar retains profile, consent and memory controls. |
 | — | Google's button stops at its 400 px on desktop. | — |
 
 ## 8. Not built, and what would need the platform

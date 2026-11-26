@@ -29,21 +29,19 @@ const drawn = (id, flow) =>
     ?.map((part) => `${part.done}/${part.steps}${part.current ? "*" : ""}`)
     .join(" ") ?? "plain";
 
-test("the progress has two named parts of 3 and 2 steps, filled up to the step showing: the interview left the onboarding (D34)", () => {
+test("the progress has two named parts of 2 steps, filled up to the step showing: the interview left the onboarding (D34)", () => {
   assert.deepEqual(
     SEGMENTS.map((part) => [part.name, part.steps]),
     [
-      ["Tu cuenta", 3],
+      ["Tu cuenta", 2],
       ["Su perfil", 2],
     ],
   );
   const expected = {
-    p01: "1/3* 0/2",
-    p02: "2/3* 0/2",
-    p03: "3/3* 0/2",
-    "p03-name": "3/3* 0/2",
-    p04: "3/3 1/2*",
-    "p10-name": "3/3 2/2*",
+    p01: "plain",
+    p03: "plain",
+    p04: "2/2 1/2*",
+    "p10-name": "2/2 2/2*",
   };
   for (const [id, parts] of Object.entries(expected)) assert.equal(drawn(id), parts, id);
   // Wherever there is progress, one part is the current one.
@@ -54,9 +52,9 @@ test("the progress has two named parts of 3 and 2 steps, filled up to the step s
 });
 
 test("outside the onboarding, and for a family coming back, the header is the plain line", () => {
-  for (const id of ["c01", "p13", "p14", "p15", "home", "editor", "p05", "p06", "p06-grade", "p07"]) assert.equal(drawn(id), "plain", id);
-  for (const id of ["p02", "p03", "p03-name"]) assert.equal(drawn(id, "back"), "plain", `${id} coming back`);
-  assert.equal(drawn("p04", "back"), "3/3 1/2*", "adding a child is onboarding, whoever starts it");
+  for (const id of ["p01", "p03", "p14", "p15", "home", "summaries", "editor", "p05", "p06", "p06-grade", "p07"]) assert.equal(drawn(id), "plain", id);
+  for (const id of ["p01", "p03"]) assert.equal(drawn(id, "back"), "plain", `${id} coming back`);
+  assert.equal(drawn("p04", "back"), "2/2 1/2*", "adding a child is onboarding, whoever starts it");
 });
 
 test("the interview is for a child the family has, from the home, the grade first; P12 is folded into the name (D34)", () => {
@@ -208,12 +206,13 @@ test("every screen has its surface, a way back that exists, and the Figma nodes 
   }
 });
 
-test("a signed-out visit starts at C01, which has no way back: C00 was retired on 24 Nov", () => {
-  assert.ok(!("c00" in SCREENS) && !("c00-student" in SCREENS));
-  assert.equal(SCREENS.c01.back, null);
-  assert.equal(SCREENS.p13.back, "c01", "P13's «← Atrás» still reaches C01");
-  // Nothing leads back to a screen that is gone.
-  for (const [id, screen] of Object.entries(SCREENS)) assert.ok(!String(screen.back).startsWith("c00"), id);
+test("a signed-out visit starts at the shared entry, and the code goes back to it (D42)", () => {
+  assert.equal(SCREENS.p01.back, null);
+  assert.equal(SCREENS.p03.back, "p01");
+  for (const retired of ["c00", "c01", "p02", "p03-name", "p13"]) assert.ok(!(retired in SCREENS));
+  assert.equal(SCREENS.summaries.auth, "in");
+  assert.equal(SCREENS.summaries.needs, "summaries");
+  assert.equal(SCREENS.summaries.back, "home");
 });
 
 test("a02, the hand-off, is the device's A02 on ink: no progress, it needs the child handed over, and it goes back to the home", () => {

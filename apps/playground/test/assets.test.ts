@@ -100,6 +100,32 @@ test("without the right version a file is checked every time, and a match is a 3
   assert.equal(await again.text(), "");
 });
 
+test("every first-party module dependency is served at one fingerprinted address", async () => {
+  const html = await (await fetch(`${base}/`)).text();
+  const pending = [...html.matchAll(/<script[^>]*type="module"[^>]*src="([^"]+)"/g)].map(([, path]) => path!);
+  const visited = new Map<string, string>();
+  while (pending.length) {
+    const path = pending.pop()!;
+    const url = new URL(path, `${base}/`);
+    const hash = url.searchParams.get("v");
+    assert.match(hash ?? "", /^[0-9a-f]{12}$/, `${url.pathname} has a fingerprint`);
+    if (visited.has(url.pathname)) {
+      assert.equal(hash, visited.get(url.pathname), `${url.pathname} runs only once`);
+      continue;
+    }
+    visited.set(url.pathname, hash!);
+    const response = await fetch(url);
+    assert.equal(response.status, 200, url.pathname);
+    assert.match(response.headers.get("content-type") ?? "", /javascript/);
+    const body = await response.text();
+    assert.equal(fingerprint(Buffer.from(body)), hash, url.pathname);
+    for (const [, dependency] of body.matchAll(/\bfrom\s+"(\.\/[^"\s]+\.js(?:\?[^"\s]*)?)"/g)) {
+      pending.push(dependency!);
+    }
+  }
+  assert.ok(visited.has(new URL(`${base}/reviews.js`).pathname), "the summaries screen is reachable from the page");
+});
+
 test("a page is never kept, not even asked for at its own hash", async () => {
   // Kept, Back after signing out would bring the signed-in page back whole,
   // and an address with the page's hash would pin it for a year.

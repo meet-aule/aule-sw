@@ -125,20 +125,11 @@ function count(number, one, many) {
   return `${number} ${number === 1 ? one : many}`;
 }
 
-function day(text) {
-  const date = new Date(`${text}T12:00:00`);
-  return Number.isNaN(date.getTime())
-    ? text
-    : date.toLocaleDateString("es", { day: "numeric", month: "long" });
-}
-
-// What is kept about a student who already has sessions. `at`: "past" when the
-// home's «Ver resúmenes» opened the editor, which then shows the summaries.
-async function showKnown(student, at) {
+// What is kept about a student, to inspect or forget in their settings.
+async function showKnown(student) {
   const section = $("known");
   section.hidden = true;
   $("memories").replaceChildren();
-  $("past").replaceChildren();
   let known;
   try {
     known = await call("api/student/known", { student_id: student.id });
@@ -181,23 +172,7 @@ async function showKnown(student, at) {
     none.textContent = `Aule todavía no recuerda nada de ${student.name}.`;
     $("memories").append(none);
   }
-  for (const session of known.sessions) {
-    const item = document.createElement("li");
-    const when = document.createElement("b");
-    when.textContent = day(session.day);
-    const text = document.createElement("span");
-    text.textContent = session.next ? `${session.summary} ${session.next}` : session.summary;
-    item.append(when, text);
-    $("past").append(item);
-  }
-  $("past-title").hidden = known.sessions.length === 0;
   section.hidden = false;
-  // From the home: the summaries, or what is kept while the review has written none yet.
-  if (at === "past") {
-    const heading = known.sessions.length ? $("past-title") : $("known-title");
-    heading.scrollIntoView({ block: "start" });
-    heading.focus({ preventScroll: true });
-  }
 }
 
 function fill(student, subjects) {
@@ -251,14 +226,13 @@ function fill(student, subjects) {
  * Fills the editor for one of the family's students. `subjects` are the ones
  * that can be kept for a student, null when none can. `finished` is told the
  * id of the student that was saved, or null when the student was removed;
- * going back (the screen's «← Atrás») changes nothing and tells nobody. `at`:
- * "past" to open it at the summaries of the latest sessions.
+ * going back (the screen's «← Atrás») changes nothing and tells nobody.
  */
-export function openEditor(student, subjects, finished, { at = null } = {}) {
+export function openEditor(student, subjects, finished) {
   editing = student;
   done = finished;
   fill(student, subjects);
-  showKnown(student, at);
+  showKnown(student);
 }
 
 /** Forgets the student being edited and empties the editor, as on signing out. */
@@ -270,7 +244,7 @@ export function clearEditor() {
   // the student's grade and what the guardian is to them.
   $("relationship-label").textContent = "";
   for (const id of ["student-name", "student-note", "interest-new"]) $(id).value = "";
-  for (const id of ["student-grade", "student-relationship", "student-subjects", "student-interests", "student-tone", "memories", "past"]) {
+  for (const id of ["student-grade", "student-relationship", "student-subjects", "student-interests", "student-tone", "memories"]) {
     $(id).replaceChildren();
   }
   $("student-language").value = "es";
