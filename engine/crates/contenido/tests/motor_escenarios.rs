@@ -201,6 +201,42 @@ fn a11_retomar_tamizaje() {
     assert_ne!(q.m.ejercicio_actual().unwrap().id, id3, "otra pregunta");
 }
 
+/// [PROPUESTA] El calentamiento dice para qué es, según el objetivo.
+#[test]
+fn tam01_el_calentamiento_dice_para_que_es() {
+    let resto = "vamos a hacer algunos ejercicios de calentamiento: son 5 preguntas, de la más fácil a la más difícil. En cada una dime tu respuesta y cómo lo pensaste.";
+    for (objetivos, para) in [
+        (
+            vec![obj(1, TipoObjetivo::Tarea, 5, Some(3))],
+            "Para ayudarte a resolver tu tarea de la mejor forma",
+        ),
+        (
+            vec![obj(1, TipoObjetivo::Preparacion, 5, Some(3))],
+            "Para prepararte bien para tu evaluación",
+        ),
+        (
+            vec![obj(1, TipoObjetivo::Correccion, -2, None)],
+            "Para saber desde dónde empezar",
+        ),
+        // Sin tareas ni evaluaciones: el Alumno elige el tema y luego el calentamiento.
+        (vec![], "Para saber desde dónde empezar"),
+    ] {
+        let elige_tema = objetivos.is_empty();
+        let mut p = Prueba::new(None, objetivos);
+        p.iniciar();
+        if elige_tema {
+            p.e(Entrada::Texto("Sí, fracciones".into()));
+        }
+        assert_eq!(p.act(), "tamizaje:1");
+        let linea = format!("{para}, {resto}");
+        assert!(
+            p.log.iter().any(|m| m.texto == linea),
+            "falta «{linea}» en:\n{}",
+            texto(&p.log)
+        );
+    }
+}
+
 /// A12: nivel 3 y tarea de nivel 3: directo a la tarea.
 #[test]
 fn a12_directo_a_la_tarea() {

@@ -1365,9 +1365,18 @@ impl Motor {
             }
             None => {
                 self.aplicar("TAM-01", "Nivel desconocido: Tamizaje (1 vez por tema)");
+                // [PROPUESTA] Antes de empezar, el Alumno oye para qué es el
+                // calentamiento, según el objetivo de la sesión.
+                let para = match self.obj_actual.map(|i| self.objetivos[i].tipo) {
+                    Some(TipoObjetivo::Tarea) => {
+                        "Para ayudarte a resolver tu tarea de la mejor forma"
+                    }
+                    Some(TipoObjetivo::Preparacion) => "Para prepararte bien para tu evaluación",
+                    _ => "Para saber desde dónde empezar",
+                };
                 out.push(msg(format!(
-                    "Primero veamos cómo te va con {}: son 5 preguntas, de la más fácil a la más difícil. En cada una dime tu respuesta y cómo lo pensaste.",
-                    tema.to_lowercase()
+                    "{para}, vamos a hacer algunos ejercicios de calentamiento: son {} preguntas, de la más fácil a la más difícil. En cada una dime tu respuesta y cómo lo pensaste.",
+                    self.cfg.niveles_por_tema
                 )));
                 out.push(
                     msg("Aquí no hay pistas y equivocarse está bien: quiero ver cómo piensas tú.")
