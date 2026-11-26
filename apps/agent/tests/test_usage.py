@@ -81,6 +81,40 @@ def test_an_early_request_is_paid_like_any_call_and_told_apart_when_its_reply_we
     assert (summary["early_calls_dropped"], summary["early_input_tokens_dropped"]) == (1, 9200)
 
 
+def test_a_homework_photo_read_is_paid_like_a_tutor_call_and_counted_with_them():
+    usage = Usage()
+    usage.add(SimpleNamespace(prompt_tokens=3466, prompt_cached_tokens=3310, completion_tokens=66))
+    # As the Messages API answers: the input apart from what the cache read and wrote.
+    usage.looked(
+        SimpleNamespace(
+            input_tokens=1400,
+            output_tokens=21,
+            cache_read_input_tokens=None,
+            cache_creation_input_tokens=None,
+        )
+    )
+    usage.looked(
+        SimpleNamespace(
+            input_tokens=100,
+            output_tokens=9,
+            cache_read_input_tokens=50,
+            cache_creation_input_tokens=7,
+        )
+    )
+    # A call that came back with no usage is still a call.
+    usage.looked(None)
+
+    assert usage.summary() == {
+        "llm_calls": 4,
+        "input_tokens": 3466 + 1400 + 157,
+        "cached_input_tokens": 3310 + 50,
+        "cache_write_tokens": 7,
+        "output_tokens": 66 + 21 + 9,
+        "stt_seconds": 0.0,
+        "tts_chars": 0,
+    }
+
+
 def test_without_early_requests_the_session_reports_what_it_always_did():
     usage = Usage()
     usage.add(SimpleNamespace(prompt_tokens=10, completion_tokens=1))
