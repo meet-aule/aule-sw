@@ -805,6 +805,29 @@ fn pau07_de_noche_quien_esta_cansado_descansa() {
     assert_eq!(p.act(), "terminada");
 }
 
+/// [PROPUESTA] Cada actividad de la pausa trae consigo sus palabras y su tipo:
+/// la lista se puede reordenar o cambiar en la configuración sin tocar el motor.
+#[test]
+fn pau06_las_actividades_se_eligen_por_sus_palabras_esten_donde_esten() {
+    let mut p = Prueba::new(None, vec![obj(1, TipoObjetivo::Tarea, 5, None)]);
+    p.m.cfg.actividades_pausa.reverse();
+    p.iniciar();
+    p.e(Entrada::Cansado);
+    assert_eq!(p.act(), "pausa");
+    // «globo» elige la respiración aunque ya no sea la tercera de la lista.
+    let r = p.e(Entrada::Texto("la del globo".into()));
+    assert!(texto(&r).contains("Respiración del globo"), "{}", texto(&r));
+
+    // A quien está cansado y no elige se le propone la primera relajante de la
+    // lista como esté: ahora, el estiramiento.
+    let mut p = Prueba::new(None, vec![obj(1, TipoObjetivo::Tarea, 5, None)]);
+    p.m.cfg.actividades_pausa.reverse();
+    p.iniciar();
+    p.e(Entrada::Cansado);
+    let r = p.e(Entrada::Texto("no sé, la que sea".into()));
+    assert!(texto(&r).contains("Estiramiento del gato"), "{}", texto(&r));
+}
+
 /// [PROPUESTA] Tener sueño no elige los saltos de estrella: a quien no elige
 /// se le propone una actividad tranquila.
 #[test]

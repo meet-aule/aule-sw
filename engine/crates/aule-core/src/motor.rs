@@ -4,7 +4,7 @@
 //! Cada decisión deja registrada la regla que la produjo (p. ej. "TAM-03").
 
 use crate::banco::{Banco, Ejercicio, Forma, Grafico, NivelContenido};
-use crate::config::{ActividadPausa, Config, TipoPista};
+use crate::config::{ActividadPausa, Config, TipoPausa, TipoPista};
 use crate::informe::{self, lista, Hecho};
 use crate::metricas::{Contexto, Metricas, RegistroNic, RegistroTtm};
 use crate::modelo::{
@@ -3190,7 +3190,7 @@ impl Motor {
             let relajantes: Vec<usize> = acts
                 .iter()
                 .enumerate()
-                .filter(|(_, a)| a.tipo == "relajante")
+                .filter(|(_, a)| a.tipo == TipoPausa::Relajante)
                 .map(|(k, _)| k)
                 .collect();
             if !relajantes.is_empty() {
@@ -3206,24 +3206,13 @@ impl Motor {
         if let Some(k) = acts.iter().position(|a| n.contains(&normalizar(&a.nombre))) {
             return Some(k);
         }
-        let palabras = [
-            ("salto", 0),
-            ("aburr", 1),
-            ("espejo", 1),
-            ("nervios", 2),
-            ("ansios", 2),
-            ("respir", 2),
-            ("globo", 2),
-            ("frustr", 3),
-            ("molest", 3),
-            ("estir", 3),
-            ("gato", 3),
-        ];
-        palabras
-            .iter()
-            .find(|(p, _)| n.contains(p))
-            .map(|(_, k)| *k)
-            .filter(|k| *k < acts.len())
+        // Si no, por una de las palabras que cada actividad trae consigo.
+        acts.iter().position(|a| {
+            a.palabras
+                .iter()
+                .map(|p| normalizar(p))
+                .any(|p| !p.is_empty() && n.contains(&p))
+        })
     }
 
     fn elegir_actividad(&mut self, k: usize, out: &mut Vec<Mensaje>) {
