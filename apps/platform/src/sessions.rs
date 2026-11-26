@@ -476,6 +476,19 @@ pub async fn agent_start(
             )));
         }
     };
+    // And never on a device: it has no camera to show the homework to. The web
+    // page has one, with the talk button or without it, so this is the
+    // platform's to decide and not the agent's.
+    let on_device = homework > 0
+        && session_row::Entity::find_by_id(session.id)
+            .select_only()
+            .column(session_row::Column::DeviceId)
+            .into_tuple::<Option<Uuid>>()
+            .one(&state.db)
+            .await?
+            .flatten()
+            .is_some();
+    let homework = if on_device { 0 } else { homework };
     session_row::Entity::update_many()
         .col_expr(session_row::Column::Status, Expr::value("active"))
         .col_expr(session_row::Column::StartedAt, Expr::current_timestamp())

@@ -600,14 +600,16 @@ async def test_an_admitted_session_starts_with_no_way_around_the_gates(monkeypat
 @pytest.mark.parametrize(
     ("push_to_talk", "engine", "course", "reads"),
     [
+        # With the talk button or without it: the web page has both it and a camera.
         (False, True, True, True),
-        (True, True, True, False),
+        (True, True, True, True),
         (False, False, False, False),
         # A platform that says nothing of the course: there is nothing to read against.
         (False, True, False, False),
+        (True, True, False, False),
     ],
 )
-async def test_only_an_engine_session_with_a_course_and_no_talk_button_reads_homework_photos(
+async def test_an_engine_session_reads_homework_photos_when_the_platform_sends_its_course(
     monkeypatch, push_to_talk, engine, course, reads
 ):
     events, sessions, shutdown, readers = [], [], [], []
@@ -662,9 +664,10 @@ async def test_only_an_engine_session_with_a_course_and_no_talk_button_reads_hom
     try:
         (session,) = sessions
         tutor = session.start_options["agent"]
-        # Without the talk button the platform is told the agent reads photos.
+        # The platform is always told the agent reads photos: whether this
+        # session's screen can show one is the platform's to know.
         (asked,) = [path for _, method, path, _ in events if method == "GET"]
-        assert asked == (START if push_to_talk else f"{START}?homework=1")
+        assert asked == f"{START}?homework=1"
         assert tutor._reader is (readers[0] if reads else None)
         assert len(readers) == int(reads)
         if reads:

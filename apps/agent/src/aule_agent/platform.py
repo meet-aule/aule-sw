@@ -37,6 +37,9 @@ CHECK_TIMEOUT_SECONDS = 1.5
 # What a photo of the homework showed is told while the student waits too,
 # after «Veamos.» and the read.
 HOMEWORK_TIMEOUT_SECONDS = 3.0
+# What the agent can do with a photo of the homework, as it tells the platform
+# at the start: 1, read which level of the course it needs.
+HOMEWORK_CAPABILITY = 1
 REPORT_TIMEOUT_SECONDS = 10.0
 REPORT_RETRY_SECONDS = 1.0
 END_FLUSH_TIMEOUT_SECONDS = 5.0

@@ -5703,6 +5703,30 @@ async fn the_engine_reads_the_homeworks_level_from_a_photo_only_when_allowed(poo
     );
     let pupil = Pupil { app: &app, session: id.clone(), token: token.clone(), contract: visual_contract() };
 
+    // On a device, which has no camera to show the homework to, nothing is
+    // granted, whatever the setting and the agent say.
+    {
+        let (session, token) = engine_session(&app, &child, fractions("homework")).await;
+        let id = session["session_id"].as_str().unwrap().to_string();
+        sqlx::query(
+            "with device as (
+                 insert into devices (id, serial, hmac_key, model, family_id, child_id)
+                 select gen_random_uuid(), 'AULE-0002', decode(repeat('cd', 32), 'hex'), 'aule-v0.2', family_id, id
+                 from children where id = $2::uuid
+                 returning id)
+             update sessions set device_id = (select id from device) where id = $1::uuid",
+        )
+        .bind(&id)
+        .bind(&child)
+        .execute(&app.state.pool)
+        .await
+        .unwrap();
+        let (status, start) = app.call(Method::GET, "/v1/agent/session?homework=1", Some(&token), None).await;
+        assert_eq!(status, StatusCode::OK, "{start}");
+        assert_eq!(first_input(&app, &id).await, json!({ "kind": "start" }));
+        assert!(start.get("homework").is_none() && start["script"].get("awaits").is_none(), "{start}");
+    }
+
     // After the warm-up the engine asks for the photo, and says it waits for one.
     pupil.says(json!({ "said": "sí" })).await;
     for right in [true, false, false, false] {
