@@ -1724,28 +1724,32 @@ h3[tabindex="-1"]:focus {
    a short screen (a phone on its side, the device's 800 × 480) and from 901 px, two:
    the stage and what is done under it on the left, the talk on the right. The page's
    order puts the clock and «Terminar» last, so a Tab never reaches «Terminar» before
-   the talk button; the grid draws them in the top bar, on the title's row. */
+   the talk button; the grid draws them in the top bar, on the title's row.
+   The session is the screen's height and never scrolls: under the top bar its body
+   takes the rest, the conversation scrolls in its own box, and an exercise card in its
+   own when it is taller than its room. The stage is always seen whole (D30). */
 .screen[data-screen="session"] {
-  /* Aule's face on the stage; 52 px in the band when a drawing or the camera takes it. */
-  --face: clamp(120px, calc(42vh - 80px), 200px);
+  /* Aule's face on the stage; 52 px in the band when a drawing or the camera takes it. On a
+     phone under 780 px tall it is smaller, so the stage, the talk and the conversation's
+     newest line fit the screen. */
+  --face: clamp(64px, min(calc(42vh - 80px), calc(100vh - 509px)), 200px);
   /* The stage's height while Aule's face is on it; on one column a drawing or the camera
      may take more (below). */
   --stage: clamp(220px, 42vh, 440px);
   display: grid;
   grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
   align-items: start;
   gap: 12px 20px;
   max-width: 1280px;
+  height: 100vh;
+  height: 100dvh;
   margin: 0 auto;
-  padding: 8px 16px 32px;
+  padding: 8px 16px 16px;
 }
 
 .session-title,
-.session-intro,
-.session-message,
-.session-help,
-.session-retry,
-.route,
+.session-body,
 .session-bar-end {
   grid-column: 1 / -1;
 }
@@ -1792,7 +1796,7 @@ h3[tabindex="-1"]:focus {
 
 /* A web-only state of the session: Aule did not arrive. Botón/Compacto 191:1396 under the line. */
 .session-retry {
-  justify-self: start;
+  align-self: flex-start;
 }
 
 /* Under a camera's problem, the adult's line (D33): empty, it takes no room. */
@@ -1805,11 +1809,58 @@ h3[tabindex="-1"]:focus {
   display: none;
 }
 
+/* Under the top bar: A16's lines, the messages and an engine's route, then the stage and
+   the talk, which take what they leave. */
+.session-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-self: stretch;
+  min-height: 0;
+}
+
+/* One column: the stage, what is under it and the talk are one column of parts, which share
+   its height (the two boxes that hold them in two columns lay nothing out here), so none of
+   them runs over another. Two columns below. */
+.session-main {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+}
+
 .work,
 .talking {
-  display: grid;
-  gap: 12px;
-  min-width: 0;
+  display: contents;
+}
+
+.work > *,
+.talking > * {
+  flex: none;
+}
+
+/* Short of room, the stage gives up its own first (its share of the shrinking is twenty
+   times its size's), down to what Aule's face needs, or a drawing with the band under it;
+   then an exercise card taller than what is left scrolls in its own box. The camera, while
+   the child aims it, gives up nothing. */
+.work > .stage {
+  flex: 0 20 auto;
+  min-height: min(var(--stage), calc(var(--face) + 72px));
+}
+
+.work > .stage[data-shows="drawing"] {
+  min-height: min(var(--stage), 200px);
+}
+
+.work > .stage[data-shows="camera"] {
+  flex-shrink: 0;
+}
+
+.work > .card {
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 /* The stage (web-only, D30): Aule's face, large, with one line under it; or what Aule
@@ -2099,6 +2150,17 @@ h3[tabindex="-1"]:focus {
   list-style: none;
 }
 
+/* The conversation takes what is left and scrolls in its own box, so the page and its
+   buttons stay where they are. On one column it keeps the newest line in sight, from 664 px
+   tall; under that an exercise has the room first. */
+.talking #transcript {
+  flex: 1 1 0;
+  align-content: start;
+  min-height: clamp(0px, calc(100vh - 600px), 64px);
+  padding-right: 4px;
+  overflow-y: auto;
+}
+
 /* The conversation in the device's ink: the tutor on white, the student in black. */
 #transcript li {
   max-width: 85%;
@@ -2197,50 +2259,34 @@ h3[tabindex="-1"]:focus {
   }
 }
 
-/* A session the engine runs: where it is, and the exercise in hand. */
+/* A session the engine runs: where it is, and the exercise in hand. The route is one line:
+   a dot for each stop done, then the stop in hand; nothing of what is still to come (D39). */
 .route {
   display: flex;
-  gap: 8px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  font: 400 16px/1.3 var(--sans);
 }
 
-.route li {
-  display: grid;
-  flex: 1 1 0;
-  gap: 2px;
-  min-width: 0;
-  padding: 8px 12px;
-  border: 2px solid var(--device-ink);
-  border-radius: var(--device-radius);
-  background: var(--device-paper);
-  color: var(--device-ink);
-  font: 400 14px/1.3 var(--sans);
+.route strong {
+  font-weight: 600;
 }
 
-.route li strong {
-  font: 600 16px/1.3 var(--sans);
+.route-done {
+  display: flex;
+  gap: 6px;
 }
 
-.route li span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.route-done:empty {
+  display: none;
 }
 
-.route li[data-state="pending"] {
-  border-style: dashed;
-}
-
-.route li[data-state="current"] {
-  border-width: 4px;
-  padding: 6px 10px;
-}
-
-.route li[data-state="done"] {
+.route-done i {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
   background: var(--device-ink);
-  color: var(--device-paper);
 }
 
 .card {
@@ -2378,27 +2424,25 @@ h3[tabindex="-1"]:focus {
   gap: 8px;
 }
 
-/* Two columns: the conversation keeps to its column and scrolls inside it, so the page
-   and its buttons stay where they are. */
+/* Two columns: each takes the body's whole height, the conversation its column's rest. */
 @media (min-width: 901px), (min-width: 560px) and (max-width: 900px) and (max-height: 639px) {
-  .talking {
-    position: sticky;
-    top: 16px;
-    display: flex;
-    flex-direction: column;
-    max-height: calc(100vh - 32px);
+  .session-main {
+    display: grid;
+    grid-template-rows: minmax(0, 1fr);
+    gap: 12px 20px;
   }
 
-  .talking > * {
-    flex: none;
+  .work,
+  .talking {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-width: 0;
+    min-height: 0;
   }
 
   .talking #transcript {
-    flex: 1 1 auto;
-    align-content: start;
     min-height: 0;
-    padding-right: 4px;
-    overflow-y: auto;
   }
 }
 
@@ -2406,8 +2450,11 @@ h3[tabindex="-1"]:focus {
   .screen[data-screen="session"] {
     --face: 240px;
     --stage: clamp(300px, calc(100vh - 300px), 520px);
-    grid-template-columns: minmax(0, 3fr) minmax(300px, 2fr);
     padding-top: 16px;
+  }
+
+  .session-main {
+    grid-template-columns: minmax(0, 3fr) minmax(300px, 2fr);
   }
 
   .session-title {
@@ -2423,10 +2470,18 @@ h3[tabindex="-1"]:focus {
   .screen[data-screen="session"] {
     --face: clamp(72px, calc(100vh - 230px - var(--intro-room, 0px) - var(--route-room, 0px)), 200px);
     --stage: max(160px, calc(100vh - 128px - var(--intro-room, 0px) - var(--route-room, 0px) - var(--aim-room, 0px)));
-    grid-template-columns: minmax(0, 1fr) minmax(250px, 300px);
     gap: 8px 16px;
     padding-top: 4px;
     padding-bottom: 8px;
+  }
+
+  .session-body {
+    gap: 8px;
+  }
+
+  .session-main {
+    grid-template-columns: minmax(0, 1fr) minmax(250px, 300px);
+    gap: 8px 16px;
   }
 
   /* A16's lines, while Aule's face is on the stage: a drawing or the camera sets them aside. */
@@ -2434,14 +2489,9 @@ h3[tabindex="-1"]:focus {
     --intro-room: 72px;
   }
 
-  /* A session the engine runs: its route, over the stage. */
+  /* A session the engine runs: its route's one line, over the stage. */
   .screen[data-screen="session"]:has(#route:not([hidden])) {
-    --route-room: 49px;
-  }
-
-  .talking {
-    top: 4px;
-    max-height: calc(100vh - 8px);
+    --route-room: 29px;
   }
 
   .session-intro {
@@ -2459,42 +2509,40 @@ h3[tabindex="-1"]:focus {
   .screen[data-screen="session"]:has(.camera-aim:not(:empty)) {
     --aim-room: 16px;
   }
-
-  .route li span {
-    display: none;
-  }
 }
 
-/* One column: the conversation scrolls in its own box, and A16's lines take room from the
-   stage. With held turns the talk button stays at the bottom of the screen, under the
-   thumb, however far the conversation pushes the page down. */
+/* One column: the parts of the session share the screen's height and the conversation
+   scrolls in its own box; A16's lines take room from the stage. With held turns the talk
+   button stays at the bottom of the screen, under the thumb, and the session ends above it. */
 @media (max-width: 900px) and (min-height: 640px), (max-width: 559px) {
   .screen[data-screen="session"]:has(.session-intro:not(:empty)) {
-    --face: clamp(110px, calc(42vh - 140px), 180px);
+    --face: clamp(64px, min(calc(42vh - 140px), calc(100vh - 560px)), 180px);
   }
 
   .screen[data-screen="session"]:has(.session-intro:not(:empty)) .stage {
     --stage: clamp(200px, calc(42vh - 64px), 400px);
   }
 
-  /* Both of A16's lines (D35): the stage takes what they, the bar, «Mostrar mi tarea» and the
-     coach's shelf leave, so «Mostrar mi tarea» clears the shelf on a small phone too (375 × 548,
-     a small iPhone with Safari's bars). A drawing or the camera may take more (above). */
+  /* Both of A16's lines (D35): the stage takes what they, the bar, «Mostrar mi tarea», the
+     conversation's newest line and the coach's shelf leave, so all of it fits on a small phone
+     too (375 × 548, a small iPhone with Safari's bars). A drawing or the camera may take more
+     (below). */
   .screen[data-screen="session"]:has(#session-parent:not(:empty)) {
-    --face: clamp(80px, calc(100vh - 463px), 170px);
+    --face: clamp(64px, calc(100vh - 600px), 170px);
   }
 
   .screen[data-screen="session"]:has(#session-parent:not(:empty)) .stage {
     --stage: clamp(140px, calc(100vh - 404px), 380px);
   }
 
-  .talking #transcript {
-    max-height: 50vh;
-    overflow-y: auto;
+  /* A drawing and an exercise card together on a phone under 724 px tall: the exercise has
+     the room, and the conversation's newest line waits; under 680 px the drawing is smaller. */
+  .screen[data-screen="session"]:has(#card:not([hidden])):has(.stage[data-shows="drawing"]) .talking #transcript {
+    min-height: clamp(0px, calc(100vh - 724px), 64px);
   }
 
-  .route li span {
-    display: none;
+  .work > .stage[data-shows="drawing"] {
+    min-height: min(var(--stage), clamp(140px, calc(100vh - 480px), 200px));
   }
 
   /* A drawing takes the stage at the screen's full width, with the band under it (D30):
@@ -2523,8 +2571,8 @@ h3[tabindex="-1"]:focus {
     margin: 0;
   }
 
-  /* A web-only shelf under the fixed talk button (and the coach, when it shows): the page
-     scrolls behind it, so nothing of the session shows between the coach and the button. */
+  /* A web-only shelf under the fixed talk button (and the coach, when it shows): the session
+     ends above it, and nothing of it shows between the coach and the button. */
   main.push-to-talk .screen[data-screen="session"]::after {
     content: "";
     position: fixed;
@@ -2566,10 +2614,11 @@ h3[tabindex="-1"]:focus {
   }
 }
 
-/* Under 901 px, A16's lines step aside while a drawing or the camera takes the stage, so
-   either has the room, and come back with Aule's face. Out of sight only: the first is a
-   status, and stays where a screen reader reads it. */
+/* Under 901 px, A16's lines step aside while a drawing or the camera takes the stage, or an
+   exercise card the room under it, so each has the room, and come back with Aule's face. Out
+   of sight only: the first is a status, and stays where a screen reader reads it. */
 @media (max-width: 900px) {
+  .screen[data-screen="session"]:has(#card:not([hidden])) .session-intro:not(:empty),
   .screen[data-screen="session"]:has(.stage:not([data-shows="face"])) .session-intro:not(:empty) {
     position: absolute;
     width: 1px;
@@ -2580,11 +2629,28 @@ h3[tabindex="-1"]:focus {
   }
 }
 
-/* On a short screen an exercise card takes the room: Aule's face goes to its band, as with
-   a drawing, so the card's words and its answer are on the first screen. */
-@media (max-width: 900px) and (max-height: 760px) {
+/* Under 901 px an exercise card takes the room: Aule's face goes to its band, as with a
+   drawing, so the card's words and its answer fit under the stage. While the child aims the
+   camera, the camera has the room: the card waits, as a drawing does under it, with what was
+   typed in it, and the conversation's newest line waits too (D31). */
+@media (max-width: 900px) {
+  .screen[data-screen="session"]:has(.stage[data-shows="camera"]) #card {
+    display: none;
+  }
+
+  .screen[data-screen="session"]:has(.stage[data-shows="camera"]) .talking #transcript {
+    min-height: 0;
+  }
+
+  .work > .stage[data-shows="camera"] {
+    flex-shrink: 20;
+    min-height: min(var(--stage), 180px);
+  }
+
   .screen[data-screen="session"]:has(#card:not([hidden])) .stage[data-shows="face"] {
     height: auto;
+    min-height: 0;
+    flex: none;
   }
 
   .screen[data-screen="session"]:has(#card:not([hidden])) .stage[data-shows="face"] .tutor {

@@ -895,7 +895,7 @@ test("the session puts Aule's face on a stage, which a drawing or the camera tak
   const session = sessionHtml();
   // The stage holds the face, the board and the camera, in that order; the section no longer is #stage.
   assert.doesNotMatch(session.match(/<section[^>]*>/)[0], /id="stage"/);
-  const stage = session.match(/<div class="stage" id="stage" data-shows="face">[\s\S]*?\n {10}<\/div>/)?.[0] ?? "";
+  const stage = session.match(/\n( *)<div class="stage" id="stage" data-shows="face">[\s\S]*?\n\1<\/div>/)?.[0] ?? "";
   const at = (id) => stage.indexOf(`id="${id}"`);
   assert.ok(at("tutor") > 0 && at("tutor") < at("board") && at("board") < at("camera-view"), "face, board, camera");
   assert.ok(at("camera") > at("camera-view"), "the video is in the camera's view");
@@ -911,7 +911,8 @@ test("the session puts Aule's face on a stage, which a drawing or the camera tak
   // What the stage shows comes from the camera's view and the board, and every change of either says so.
   assert.match(bodyOf(app, "showStage"), /\$\("stage"\)\.dataset\.shows = !\$\("camera-view"\)\.hidden \? "camera" : !\$\("board"\)\.hidden \? "drawing" : "face";/);
   for (const name of ["draw", "showCamera", "teardown"]) assert.match(bodyOf(app, name), /\bshowStage\(\);/, name);
-  assert.match(bodyOf(app, "showStep"), /\$\("board"\)\.hidden = true;\s*boardShows = null;\s*showStage\(\);/);
+  // A new exercise, or the one in hand posed again, brings the board back to it (D40).
+  assert.match(bodyOf(app, "boardToCard"), /\$\("board"\)\.hidden = true;\s*boardShows = null;\s*showStage\(\);/);
   // A drawing stays until the next one, a new exercise or the end: no timer brings the face back.
   assert.doesNotMatch(bodyOf(app, "draw"), /setTimeout/);
   // While the camera shows, a drawing waits under it.
@@ -1120,17 +1121,63 @@ test("the stage gives a drawing and the camera the room they need, and the camer
   const short = block("(min-width: 560px) and (max-width: 900px) and (max-height: 639px)");
   assert.match(short, /--stage: max\(160px, calc\(100vh - 128px - var\(--intro-room, 0px\) - var\(--route-room, 0px\) - var\(--aim-room, 0px\)\)\);/);
   assert.match(short, /:has\(\.session-intro:not\(:empty\)\):has\(\.stage\[data-shows="face"\]\) \{\s*--intro-room: 72px;/);
-  assert.match(short, /:has\(#route:not\(\[hidden\]\)\) \{\s*--route-room: 49px;/);
+  assert.match(short, /:has\(#route:not\(\[hidden\]\)\) \{\s*--route-room: 29px;/);
   assert.match(short, /:has\(\.camera-aim:not\(:empty\)\) \{\s*--aim-room: 16px;/);
   // Under 901 px A16's lines step aside while a drawing or the camera shows: out of sight, not
   // out of the tree, since the first is a status.
   const aside = block("(max-width: 900px)");
   assert.match(aside, /:has\(\.stage:not\(\[data-shows="face"\]\)\) \.session-intro:not\(:empty\) \{[^}]*clip: rect\(0 0 0 0\);/);
-  assert.doesNotMatch(aside, /display: none/);
-  // On a short screen an exercise card takes the room, and Aule's face goes to its band.
-  assert.match(block("(max-width: 900px) and (max-height: 760px)"), /:has\(#card:not\(\[hidden\]\)\) \.stage\[data-shows="face"\] \{\s*height: auto;/);
+  const [, lines] = aside.match(/\.session-intro:not\(:empty\) \{([^}]*)\}/) ?? [];
+  assert.ok(lines);
+  assert.doesNotMatch(lines, /display: none/);
+  // Under 901 px an exercise card takes the room, and Aule's face goes to its band.
+  assert.match(block("(max-width: 900px)"), /:has\(#card:not\(\[hidden\]\)\) \.stage\[data-shows="face"\] \{\s*height: auto;/);
   // The message line's empty place takes no row: the stage starts right under the title.
   assert.ok(rule(".session-message:not(:has(> :not([hidden])))"));
+});
+
+test("the session is the screen's height and never scrolls: the conversation and a card scroll in their own boxes, and the stage is whole (D30)", () => {
+  const session = sessionHtml();
+  const at = (text) => session.indexOf(text);
+  // The top bar, then a body with the lines over the stage and the main part: the stage's column and the talk's.
+  assert.ok(at('class="session-title"') < at('<div class="session-body">'));
+  for (const [before, after] of [
+    ['<div class="session-body">', 'id="session-intro"'],
+    ['id="retry-session"', 'id="route"'],
+    ['id="route"', '<div class="session-main">'],
+    ['<div class="session-main">', '<div class="work">'],
+    ['<div class="work">', '<div class="talking">'],
+    ['<div class="talking">', 'class="session-bar-end"'],
+  ]) {
+    assert.ok(at(before) !== -1 && at(before) < at(after), `${before} before ${after}`);
+  }
+  const rule = (selector) =>
+    rules(css)
+      .filter(([found]) => found.replace(/\/\*[\s\S]*?\*\//g, "").trim() === selector)
+      .map(([, body]) => body)
+      .join("\n");
+  // The screen's height, in two rows: the bar, and a body that takes the rest.
+  const screen = rule('.screen[data-screen="session"]');
+  assert.match(screen, /grid-template-rows: auto minmax\(0, 1fr\);/);
+  assert.match(screen, /height: 100vh;\s*height: 100dvh;/);
+  assert.match(rule(".session-body"), /display: flex;\s*flex-direction: column;[\s\S]*min-height: 0;/);
+  // One column: the parts share one column's height, so none runs over another.
+  assert.match(rule(".session-main"), /display: flex;\s*flex: 1 1 0;\s*flex-direction: column;/);
+  assert.match(rule(".work,\n.talking"), /display: contents;/);
+  // The conversation takes what is left and scrolls in its own box, at every size; nothing pins it
+  // to a share of a page that scrolls, nor sticks a column to one.
+  assert.match(rule(".talking #transcript"), /flex: 1 1 0;[\s\S]*overflow-y: auto;/);
+  assert.doesNotMatch(css, /max-height: 50vh|position: sticky/);
+  // Short of room the stage gives up its own first, down to what Aule's face needs; then a card scrolls in its own box.
+  assert.match(rule(".work > .stage"), /flex: 0 20 auto;\s*min-height: min\(var\(--stage\), calc\(var\(--face\) \+ 72px\)\);/);
+  assert.match(rule(".work > .card"), /flex: 0 1 auto;\s*min-height: 0;\s*overflow-y: auto;/);
+  // While the child aims the camera it gives up nothing from 901 px; under that the card waits and the camera may shrink (D31).
+  assert.match(rule('.work > .stage[data-shows="camera"]'), /flex-shrink: 0;[\s\S]*flex-shrink: 20;\s*min-height: min\(var\(--stage\), 180px\);/);
+  // Under 901 px a card takes the room (Aule's face in its band) and A16's lines step aside for it.
+  const media = [...css.matchAll(/@media ([^{]+)\{((?:[^{}]*\{[^{}]*\})+)\s*\}/g)].map(([, query, body]) => [query.trim(), body]);
+  const narrow = media.filter(([query]) => query === "(max-width: 900px)").map(([, body]) => body).join("\n");
+  assert.match(narrow, /:has\(#card:not\(\[hidden\]\)\) \.session-intro:not\(:empty\),/);
+  assert.match(narrow, /:has\(\.stage\[data-shows="camera"\]\) #card \{\s*display: none;/);
 });
 
 test("the team's link goes to the team's console, and the page names no other way to it", () => {

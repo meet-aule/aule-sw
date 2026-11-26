@@ -513,6 +513,8 @@ async function onTranscription(reader, participant) {
     if (heldLines.includes(line)) showHeldLines();
     followTranscript();
   }
+  // Aule saying an exercise's statement poses it, for the card that waits for it (D40).
+  if (!mine) aulePosed(`words:${plain(text)}`);
 }
 
 // The page stays where the person left it; only the conversation's own column
@@ -539,18 +541,94 @@ function followTranscript(always = false) {
 
 // --- a session run by the engine: its stages and the exercise in hand ---------
 
-const ROUTE_STATE = { done: "Hecho", current: "Ahora", pending: "Después" };
+/**
+ * Where a session the engine runs is now (D39): the stop in hand, after a dot
+ * for each stop done. The stops still to come are not shown: a child on the
+ * first one saw every level ahead of it. Out of sight, a screen reader hears
+ * «Ahora: Refuerzo Nivel 2. Ya hiciste 2 partes.», in Spanish, as the engine's
+ * names are. With no stop in hand (before the first, after the last) it hides.
+ */
+function showRoute(route) {
+  const now = route.find((stop) => stop.state === "current");
+  $("route").hidden = !now;
+  if (!now) return $("route").replaceChildren();
+  const done = route.filter((stop) => stop.state === "done").length;
+  const unseen = (text) => {
+    const words = document.createElement("span");
+    words.className = "sr-only";
+    words.textContent = text;
+    return words;
+  };
+  const dots = document.createElement("span");
+  dots.className = "route-done";
+  dots.setAttribute("aria-hidden", "true");
+  dots.append(...Array.from({ length: done }, () => document.createElement("i")));
+  const name = document.createElement("strong");
+  name.textContent = now.name;
+  const detail = document.createElement("span");
+  detail.textContent = now.detail ?? "";
+  const tally = done ? ` Ya hiciste ${done} ${done === 1 ? "parte" : "partes"}.` : "";
+  $("route").replaceChildren(unseen("Ahora: "), dots, name, ...(now.detail ? [" ", detail] : []), unseen(`.${tally}`));
+}
+
+// The card shows the exercise Aule posed, not merely the one the engine has
+// reached (D40). The engine's next card waits until Aule shows its statement
+// or its drawing, or says its statement, as the engine's own lines do when they
+// present one: a tutor still speaking, or one that never got the engine's
+// answer, has not posed it. What Aule showed and said lately is kept for that,
+// as plain words or a drawing's description, and so is every statement it
+// posed, so the steps of one exercise do not wait again.
+let cardOnScreen = null;
+let cardWaiting = null;
+let lately = [];
+let posed = new Set();
+const LATELY_KEPT = 12;
+// A session carried on after a reload: Aule posed the card it is on before the reload.
+let trustCard = false;
+
+/** Words as letters and digits in lower case: a statement compares equal shown, wrapped or said. */
+const plain = (text) => String(text ?? "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+
+/** What Aule showed, as one string: an exercise's words, or a drawing's description, its keys in order. */
+function shownAs(visual) {
+  if (visual?.kind === "exercise") return `words:${plain((visual.lines ?? []).join(" "))}`;
+  const ordered = (_, value) =>
+    value && typeof value === "object" && !Array.isArray(value)
+      ? Object.fromEntries(Object.entries(value).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)))
+      : value;
+  return `drawing:${JSON.stringify(visual, ordered)}`;
+}
+
+/** Whether Aule has posed the exercise of `card`: shown its statement or its drawing, or said its statement. */
+function posedCard(card) {
+  const words = plain(card.statement);
+  if (!words || trustCard || posed.has(words)) return true;
+  const drawing = card.visual ? shownAs(card.visual) : null;
+  return lately.some((what) => what === drawing || (what.startsWith("words:") && what.includes(words)));
+}
+
+/** Something Aule showed or said (shownAs, or its words): a card that waited for it shows. */
+function aulePosed(what) {
+  lately = [...lately.slice(1 - LATELY_KEPT), what];
+  if (cardWaiting && posedCard(cardWaiting)) presentCard(cardWaiting);
+}
 
 function stopSteps() {
   clearInterval(stepTimer);
   stepTimer = null;
   cardShown = "";
+  cardOnScreen = null;
+  cardWaiting = null;
+  lately = [];
+  posed = new Set();
+  trustCard = false;
   $("route").hidden = true;
   $("card").hidden = true;
 }
 
-function followSteps(id) {
+function followSteps(id, resumed = false) {
   stopSteps();
+  trustCard = resumed;
   const ask = () => showStep(id).catch(() => undefined);
   ask();
   stepTimer = setInterval(ask, STEP_POLL_MS);
@@ -574,28 +652,42 @@ async function showStep(id, given) {
   // Not the engine's session, or it is over: nothing more to follow.
   if (!step) return stopSteps();
 
-  $("route").replaceChildren(
-    ...(step.route ?? []).map((stop) => {
-      const line = document.createElement("li");
-      line.dataset.state = stop.state;
-      const name = document.createElement("strong");
-      name.textContent = stop.name;
-      const detail = document.createElement("span");
-      detail.textContent = stop.detail ?? "";
-      line.append(name, detail);
-      line.setAttribute("aria-label", `${stop.name}: ${ROUTE_STATE[stop.state] ?? ""}`);
-      if (stop.state === "current") line.setAttribute("aria-current", "step");
-      return line;
-    }),
-  );
-  $("route").hidden = !(step.route ?? []).length;
+  showRoute(step.route ?? []);
+  showCard(step.card ?? null);
+}
 
-  const card = step.card;
-  const shown = card ? `${card.title}|${card.statement}` : "";
-  if (shown === cardShown) return;
-  cardShown = shown;
+/**
+ * The engine's card, once Aule has posed its exercise (D40). Until then the
+ * card keeps the exercise Aule posed before, without its answer box: what is
+ * typed there is checked against the engine's exercise, not the one shown.
+ */
+function showCard(card) {
+  if (!card) {
+    cardWaiting = null;
+    return presentCard(null);
+  }
+  if (`${card.title}|${card.statement}` === cardShown) {
+    // Nothing new: a half-written answer stays, and the box comes back if a card waited.
+    if (cardWaiting) {
+      cardWaiting = null;
+      $("answer").hidden = !card.asks_answer;
+    }
+    return;
+  }
+  if (posedCard(card)) return presentCard(card);
+  cardWaiting = card;
+  $("answer").hidden = true;
+}
+
+/** Puts `card` on the screen, or takes the card away: its answer box empty, the board back to its exercise. */
+function presentCard(card) {
+  cardWaiting = null;
+  cardOnScreen = card;
+  cardShown = card ? `${card.title}|${card.statement}` : "";
   $("card").hidden = !card;
   if (!card) return;
+  trustCard = false;
+  posed.add(plain(card.statement));
   $("card-title").textContent = card.title ?? "";
   $("card-statement").textContent = card.statement ?? "";
   $("answer").hidden = !card.asks_answer;
@@ -604,8 +696,15 @@ async function showStep(id, given) {
   $("card-help").hidden = !card.format_help;
   $("answer-text").value = "";
   $("explanation-text").value = "";
-  // A new exercise brings its own drawing, or an empty board: the drawing of
-  // the one before does not stay next to it, and the stage shows Aule again.
+  boardToCard(card);
+}
+
+/**
+ * A new exercise, or the one in hand posed again, brings its own drawing or an
+ * empty board: the drawing of another does not stay next to it, and the stage
+ * shows Aule again.
+ */
+function boardToCard(card) {
   $("board").hidden = true;
   boardShows = null;
   showStage();
@@ -693,13 +792,25 @@ function showInk() {
   if (lastExercise) draw(lastExercise);
 }
 
+/** Whether `shown` (shownAs) is the exercise on the card: its words, or its drawing. */
+function cardOwn(shown) {
+  if (!cardOnScreen) return false;
+  return shown === `words:${plain(cardOnScreen.statement)}` || (cardOnScreen.visual != null && shown === shownAs(cardOnScreen.visual));
+}
+
 async function onVisual(reader) {
   try {
     const visual = JSON.parse(await reader.readAll());
     if (visual.kind === "exercise") lastExercise = visual;
-    // With the exercise card on the screen its statement is already there:
-    // the board is for drawings, not for the same words again.
-    if (visual.kind === "exercise" && !$("card").hidden && !inkMode) return;
+    const shown = shownAs(visual);
+    const waited = cardWaiting;
+    aulePosed(shown);
+    // Aule posed the exercise the card waited for: the card shows its words, the board its drawing.
+    if (waited && !cardWaiting) return;
+    // The exercise in hand, shown again: the board goes back to it, and the card's words are not
+    // written there a second time («Modo tinta» writes them, D32). Any other exercise Aule shows
+    // is drawn: an example with other numbers, or the one it is talking about now.
+    if (cardOwn(shown) && !inkMode) return boardToCard(cardOnScreen);
     draw(visual);
   } catch {
     // A description this page cannot draw is skipped; the voice carries on.
@@ -1274,7 +1385,7 @@ async function join(session, { resumed = false } = {}) {
   room.remoteParticipants.forEach(watchTutor);
   sessionId = session.session_id ?? null;
   startClock(session.expiresInSeconds);
-  if (session.session_id && session.engine === true) followSteps(session.session_id);
+  if (session.session_id && session.engine === true) followSteps(session.session_id, resumed);
   // A15: «La sesión empezó.» (A16 on a first run), with the microphone as A05 left it.
   go("session");
   if (inkMode) showInk();
@@ -2008,13 +2119,9 @@ $("device").addEventListener("click", () => {
   $("board").classList.toggle("device", inkMode);
   setToggle($("device"), "Modo tinta", inkMode);
   if (inkMode) return showInk();
-  // Back to the page's own board: no exercise next to its card.
-  if (boardShows === "exercise" && !$("card").hidden) {
-    $("board").replaceChildren();
-    $("board").hidden = true;
-    boardShows = null;
-    showStage();
-  }
+  // Back to the page's own board: not the card's words next to the card. An exercise on the
+  // board is the last one shown (onVisual, boardToCard, showInk); another one stays.
+  if (boardShows === "exercise" && cardOwn(shownAs(lastExercise))) boardToCard(cardOnScreen);
 });
 
 // «Mostrar mi tarea» turns the camera on for the child to point it; «Listo»
