@@ -1,6 +1,7 @@
 //! Escenarios del motor de aule-core con el banco real.
 //! (Viven aquí porque necesitan el contenido, y `contenido` depende de `aule-core`.)
 
+use aule_core::banco::Angulo;
 use aule_core::config::Config;
 use aule_core::modelo::{EstadoObjetivo, Objetivo, Perfil, TipoObjetivo};
 use aule_core::motor::{Calificacion, Clase, Entrada, Esperando, Mensaje, Motor};
@@ -457,6 +458,27 @@ fn a16_vuelve_a_etapa1() {
     p.pasar_e1();
     p.pasar_e2();
     assert_eq!(p.act(), "tarea:1");
+}
+
+/// [PROPUESTA] La práctica empieza por la gráfica, el error y el inverso:
+/// quien acierta 3 seguidos a la primera también encuentra un error y
+/// resuelve un problema inverso antes de terminar la Etapa 2.
+#[test]
+fn e201_quien_acierta_3_seguidos_tambien_ve_el_error_y_el_inverso() {
+    let mut p = llegar_a_e2(2);
+    let mut vistos = vec![];
+    while p.act().starts_with("etapa2") {
+        vistos.push(p.m.ejercicio_actual().and_then(|e| e.angulo));
+        p.responder(true);
+    }
+    assert_eq!(
+        vistos,
+        [
+            Some(Angulo::Grafica),
+            Some(Angulo::Error),
+            Some(Angulo::Inverso)
+        ]
+    );
 }
 
 /// [PROPUESTA] E2-02: la Etapa 2 termina cuando los últimos 3 ejercicios salen

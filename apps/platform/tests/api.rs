@@ -4761,11 +4761,13 @@ async fn the_session_engine_runs_a_session_from_the_greeting_to_the_family_repor
     assert!(said_in(&right).contains("Ejercicio 2."), "{right}");
     assert_eq!(pupil.progress().await, "Nivel 2 · Ejercicio 2 de 5");
 
-    // An answer typed on the page: the page gets the new step, and the tutor
-    // collects what to say with its next report of turns, once.
-    let (answer, _) = solve(&pupil.step().await["card"], true);
+    // An answer typed on the page, with the explanation box when the exercise
+    // asks for one: the page gets the new step, and the tutor collects what to
+    // say with its next report of turns, once.
+    let (answer, explanation) = solve(&pupil.step().await["card"], true);
     let path = format!("/v1/sessions/{session}/answers");
-    let (status, step) = app.admin(Method::POST, &path, Some(json!({ "answer": answer }))).await;
+    let typed = json!({ "answer": answer, "explanation": explanation });
+    let (status, step) = app.admin(Method::POST, &path, Some(typed)).await;
     assert_eq!(status, StatusCode::OK, "{step}");
     assert_eq!(step["progress"], "Nivel 2 · Ejercicio 3 de 5");
     let turns = json!({ "turns": [{ "seq": 0, "role": "child", "content": "ya lo escribí" }] });
