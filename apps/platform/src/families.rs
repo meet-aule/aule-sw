@@ -97,6 +97,17 @@ pub struct Child {
 pub const TUTOR_NAME: &str = "Aule";
 /// The subjects a family can ask to reinforce.
 pub const SUBJECTS: [&str; 5] = ["matematica", "comunicacion", "ciencia", "personal_social", "ingles"];
+/// The name the skills catalog (`curriculum/*.json`, `skills.subject`) gives a
+/// family's subject, where it has skills for it under another name. The one
+/// place where the two vocabularies meet: a catalog for a new subject adds
+/// its line here, and a test holds the catalogs to it.
+const CATALOG_SUBJECTS: [(&str, &str); 1] = [("matematica", "math")];
+
+/// A family's subject as the skills catalog names it: its own name unless
+/// `CATALOG_SUBJECTS` gives another.
+pub fn catalog_subject(subject: &str) -> &str {
+    CATALOG_SUBJECTS.iter().find(|(family, _)| *family == subject).map_or(subject, |(_, catalog)| catalog)
+}
 pub const TUTOR_PERSONAS: [&str; 4] = ["calido", "jugueton", "aventurero", "tranquilo"];
 /// What a guardian can be to a child: FHIR R4's `RelatedPerson.relationship`,
 /// codes of HL7 v3 RoleCode (mother, father, stepmother, stepfather,
@@ -695,4 +706,46 @@ pub async fn record_consent(
     let consent = current_consent(&txn, child_id).await?;
     txn.commit().await?;
     Ok((StatusCode::CREATED, Json(json!({ "consent": consent }))))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeSet;
+
+    use super::*;
+
+    #[test]
+    fn the_catalogs_names_are_given_only_to_subjects_a_family_can_ask_for() {
+        for (family, catalog) in CATALOG_SUBJECTS {
+            assert!(SUBJECTS.contains(&family), "{family}");
+            assert_eq!(catalog_subject(family), catalog);
+        }
+        // A subject with no other name keeps its own, and so does anything else.
+        assert_eq!(catalog_subject("personal_social"), "personal_social");
+        assert_eq!(catalog_subject("other"), "other");
+    }
+
+    #[test]
+    fn every_subject_in_the_skill_catalogs_is_one_a_family_can_ask_for() {
+        // Read from `curriculum/*.json` itself: a catalog for a new subject
+        // fails here until `CATALOG_SUBJECTS` (or `SUBJECTS`) names it.
+        let folder = concat!(env!("CARGO_MANIFEST_DIR"), "/../../curriculum");
+        let known: BTreeSet<&str> = SUBJECTS.iter().map(|subject| catalog_subject(subject)).collect();
+        let mut seen = BTreeSet::new();
+        for entry in std::fs::read_dir(folder).unwrap() {
+            let path = entry.unwrap().path();
+            let name = path.file_name().unwrap().to_string_lossy().to_string();
+            if path.extension().is_none_or(|extension| extension != "json") || name == "package.json" {
+                continue;
+            }
+            let catalog: serde_json::Value =
+                serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+            for skill in catalog["skills"].as_array().unwrap() {
+                let subject = skill["subject"].as_str().unwrap().to_string();
+                assert!(known.contains(subject.as_str()), "{name}: {subject}");
+                seen.insert(subject);
+            }
+        }
+        assert!(seen.contains("math"), "{seen:?}");
+    }
 }
