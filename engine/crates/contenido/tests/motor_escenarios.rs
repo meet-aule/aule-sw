@@ -766,6 +766,56 @@ fn a23_cansado_en_el_minuto_20() {
     assert_eq!(p.act(), "tarea:2");
 }
 
+/// [PROPUESTA] PAU-07: de noche, quien dice que está cansado descansa. La
+/// sesión se cierra con su despedida y no se le propone moverse.
+#[test]
+fn pau07_de_noche_quien_esta_cansado_descansa() {
+    let mut p = Prueba::new(Some(3), vec![obj(1, TipoObjetivo::Tarea, 5, Some(3))]);
+    p.m.perfil.minuto_inicio = Some(22 * 60 + 50);
+    p.iniciar();
+    let r = p.e(Entrada::Cansado);
+    let dicho = texto(&r);
+    assert!(
+        dicho.contains("Ya es tarde, y lo mejor ahora es descansar"),
+        "{dicho}"
+    );
+    assert!(
+        !dicho.contains("Pausa activa") && !dicho.contains("Saltos de estrella"),
+        "{dicho}"
+    );
+    assert_eq!(p.act(), "terminada");
+    assert!(p.registro_tiene("PAU-07"));
+
+    // De día, el mismo cansancio trae la pausa.
+    let mut p = Prueba::new(Some(3), vec![obj(1, TipoObjetivo::Tarea, 5, Some(3))]);
+    p.m.perfil.minuto_inicio = Some(16 * 60);
+    p.iniciar();
+    p.e(Entrada::Cansado);
+    assert_eq!(p.act(), "pausa");
+
+    // La noche también llega durante la sesión: empezó a las 20:40 y van 25 minutos.
+    let mut p = Prueba::new(Some(3), vec![obj(1, TipoObjetivo::Tarea, 5, Some(3))]);
+    p.m.perfil.minuto_inicio = Some(20 * 60 + 40);
+    p.iniciar();
+    p.reloj.avanzar_min(25);
+    p.e(Entrada::Cansado);
+    assert_eq!(p.act(), "terminada");
+}
+
+/// [PROPUESTA] Tener sueño no elige los saltos de estrella: a quien no elige
+/// se le propone una actividad tranquila.
+#[test]
+fn tener_sueno_no_elige_los_saltos_de_estrella() {
+    let mut p = Prueba::new(None, vec![obj(1, TipoObjetivo::Tarea, 5, None)]);
+    p.iniciar();
+    p.e(Entrada::Cansado);
+    assert_eq!(p.act(), "pausa");
+    let r = p.e(Entrada::Texto("tengo sueño".into()));
+    let dicho = texto(&r);
+    assert!(!dicho.contains("Saltos de estrella"), "{dicho}");
+    assert!(dicho.contains("Respiración del globo"), "{dicho}");
+}
+
 /// A24: termina en el minuto 20 sin pendientes ni sugerencia del padre: extracurricular y elige el alumno.
 #[test]
 fn a24_extracurricular_elige_el_alumno() {

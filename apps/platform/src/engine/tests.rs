@@ -556,9 +556,11 @@ fn what_is_not_an_answer_goes_where_the_engine_expects_it() {
     let turn = student.says("estoy cansado");
     assert_eq!(student.at(), "pausa");
     assert_eq!(turn.lines.last().unwrap().show.as_ref().unwrap()["kind"], "table");
-    // In the break, naming an activity chooses it; anything else is talk.
+    // In the break, naming an activity chooses it; anything else is talk. Being
+    // sleepy never picks the star jumps: a calm activity is proposed instead.
     let turn = student.says("tengo sueño");
-    assert!(said_by_tutor(&turn).contains("Saltos de estrella"), "{turn:?}");
+    let said = said_by_tutor(&turn);
+    assert!(said.contains("Respiración del globo") && !said.contains("Saltos de estrella"), "{turn:?}");
     let turn = student.says("¿cuánto falta?");
     assert!(turn.lines.is_empty(), "{turn:?}");
     assert!(turn.converse.unwrap().contains("active break"));

@@ -106,6 +106,10 @@ pub struct Perfil {
     pub numero_sesion: u32,
     /// Temas que el alumno pidió y no cubrimos (para el informe).
     pub temas_pedidos: Vec<String>,
+    /// [PROPUESTA] Minuto del día (0 a 1439) en que empezó la sesión, en la hora
+    /// de la familia. Ausente = no se sabe (PAU-07 no se aplica).
+    #[serde(default)]
+    pub minuto_inicio: Option<u16>,
 }
 
 impl Perfil {
@@ -123,6 +127,7 @@ impl Perfil {
             proxima_sesion: hoy + Duration::days(2),
             numero_sesion: 1,
             temas_pedidos: vec![],
+            minuto_inicio: None,
         }
     }
 }
