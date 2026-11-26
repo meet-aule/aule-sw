@@ -7,7 +7,8 @@
 //!   the learner model, the child's profile and what is remembered about them.
 //! - **During** a session it reads each turn after it happened and may write
 //!   [`Guidance`] for the tutor's next turns. The tutor never waits for it, so
-//!   it adds no delay; its advice arrives one turn late by design.
+//!   it adds no delay; its advice arrives one turn late by design. Not in a
+//!   session the engine runs: there the engine decides the tutor's next step.
 //! - **After** a session it writes a [`Review`]: which answers count as
 //!   evidence for the learner model, what is worth remembering, and a summary
 //!   for the guardian.

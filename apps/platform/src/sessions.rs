@@ -679,7 +679,11 @@ pub async fn agent_turns(
     }
     crate::practice::note_answer_said(&state.db, session.id, &tutor_said).await?;
 
-    if child_spoke && state.llm.is_some() && state.watching.lock().expect("lock").insert(session.id) {
+    // A session the engine runs is not read while it goes on: the engine
+    // decides what the tutor does next, so advice would pull against it, and
+    // it has its own breaks. The review afterwards still reads all of it.
+    let watched = child_spoke && state.llm.is_some() && !engine::runs(&session);
+    if watched && state.watching.lock().expect("lock").insert(session.id) {
         let (state, session) = (state.clone(), session.clone());
         tokio::spawn(async move {
             if let Err(error) = watch(&state, &session).await {
@@ -770,9 +774,7 @@ async fn watch(state: &AppState, session: &Session) -> ApiResult<()> {
             ))
             .await?;
     }
-    // The engine decides what the tutor does next; advice would pull against
-    // it. What the supervisor read (not working, tired) still counts above.
-    if !guidance.is_empty() && !engine::runs(session) {
+    if !guidance.is_empty() {
         let signals =
             serde_json::to_value(&guidance.signals).map_err(|error| ApiError::Internal(error.to_string()))?;
         session_guidance::Entity::insert(session_guidance::ActiveModel {

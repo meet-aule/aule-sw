@@ -5252,10 +5252,10 @@ async fn the_session_engine_runs_a_session_from_the_greeting_to_the_family_repor
     let (_, report) =
         app.call(Method::POST, "/v1/agent/session/turns", agent, Some(json!({ "turns": [] }))).await;
     assert!(report.get("script").is_none(), "handed over once: {report}");
-    // The supervisor still reads the session, but writes no advice against the engine.
-    eventually("the supervisor read the turn", || async { app.state.watching.lock().unwrap().is_empty() })
-        .await;
-    assert!(app.llm.asked.lock().unwrap().contains(&"guidance".to_string()));
+    // The supervisor does not read a session the engine runs while it goes on:
+    // the engine decides what the tutor does next, so no advice is asked for.
+    assert!(app.state.watching.lock().unwrap().is_empty());
+    assert!(!app.llm.asked.lock().unwrap().contains(&"guidance".to_string()));
     assert_eq!(app.count("select count(*) from session_guidance").await, 0);
 
     // Only the operator and the child's own guardians see the page.
@@ -5563,7 +5563,7 @@ async fn an_engine_session_leaves_the_level_and_its_evidence_and_the_next_one_st
     );
 
     // A break is the engine's, and ends on its own; the platform offers none
-    // of its own, though the supervisor still read that the student is tired.
+    // of its own, and the supervisor does not read the session while it goes on.
     // The session's start is pinned to the afternoon where the family lives, so
     // the break does not depend on when the tests run: at night the engine
     // closes a tired student's session instead (PAU-07).
@@ -5590,7 +5590,8 @@ async fn an_engine_session_leaves_the_level_and_its_evidence_and_the_next_one_st
         app.call(Method::POST, "/v1/agent/session/turns", agent, Some(json!({ "turns": [] }))).await.1
     };
     let answer = report("estoy cansado").await;
-    assert_eq!(app.count("select count(*) from sessions where tired_at is not null").await, 1);
+    // Nobody marks the student as tired from outside the engine.
+    assert_eq!(app.count("select count(*) from sessions where tired_at is not null").await, 0);
     assert_eq!(answer["pause"], Value::Null, "{answer}");
     assert_eq!(answer["guidance"], json!([]));
     minutes_pass(&app, &id, 4).await;
@@ -5600,10 +5601,11 @@ async fn an_engine_session_leaves_the_level_and_its_evidence_and_the_next_one_st
     assert!(said_in(&back).contains("seguimos"), "{back}");
     assert_eq!(back["lines"].as_array().unwrap().last().unwrap()["say"], exercise["statement"]);
 
-    // Closing a session where the student is not working is still the platform's.
+    // Nor is a student who is plainly not working warned from outside it: that
+    // count came from the supervisor's reading of each turn.
     assert_eq!(report("jajaja pedo").await["stop"], Value::Null);
     let answer = report("jajaja caca").await;
-    assert_eq!((&answer["stop"], &answer["pause"]), (&json!("warn"), &Value::Null), "{answer}");
+    assert_eq!((&answer["stop"], &answer["pause"]), (&Value::Null, &Value::Null), "{answer}");
 
     // In a session the engine does not run, the same tired student is offered the platform's break.
     let (_, free) = app.session(&child).await;
