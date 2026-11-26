@@ -7,6 +7,7 @@ envelope.schema.json   the envelope every event uses (CloudEvents 1.0, structure
 events/                one schema per event type and version, for the envelope's `data`
 examples/              one valid example per event type, used by the tests of both sides
 visuals/               what the tutor shows on a screen: one schema and an example per kind
+choices/               answers the student can tap under the tutor's question, with examples
 ```
 
 ## Rules
@@ -29,3 +30,7 @@ cd apps/agent && uv run pytest          # Python: same examples, plus the agent'
 ## Visuals
 
 `visuals/visual.v1.schema.json` describes what the tutor can put on the student's screen: the statement of an exercise, fraction bars, a number line, an array of dots, a table, a bar chart or a rectangle with its sides. It is a description, not a picture. The agent's `show` tool takes exactly this shape, checks it and sends it to the room on the text-stream topic `aule.visual`; each screen draws it itself, in black on white, so it costs nothing to render and works on e-ink. A bar or a circle has its fraction written next to it unless the fraction says `labelled: false`, for when the fraction is what the student has to find. A new kind needs its example here, a drawing in every screen that shows visuals, and a line in the tool's description.
+
+## Choices
+
+`choices/choices.v1.schema.json` describes the answers a student can tap under the question the tutor has just asked: one to four short options, and `multiple` when several may be marked and sent together. The session engine offers its own (its questions with known answers, and an exercise's options); the tutor's model offers them with its `offer_choices` tool, which takes two to four, and they pass the gate on what the tutor says before any screen gets them. The agent sends them to the room on the text-stream topic `aule.choices` once the question has been said, and the screen draws them under that line. A tapped option is the student's turn: the screen sends its words as a typed message, so it passes the input gates like anything typed; several marked go as one turn, joined by commas («1/2, 2/4»).

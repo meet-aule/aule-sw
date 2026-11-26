@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/meet-aule/aule-sw/contracts/choices/choices.v1.schema.json",
+  "title": "choices.v1",
+  "description": "Answers the student can tap under the question the tutor has just asked, on a screen with a conversation. Tapping one is the student's turn, exactly as if they had typed its words: the screen sends them as a typed message, which passes the same gates. With multiple, the student marks several and sends them together, joined by commas, as one turn.",
+  "type": "object",
+  "required": [
+    "options"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "options": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 4,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 40,
+        "pattern": "\\S"
+      },
+      "description": "What each button says, which is also what tapping it sends. A word, a number or a few words."
+    },
+    "multiple": {
+      "type": "boolean",
+      "description": "true lets the student mark several before sending them, for a question such as «marca todas las que…». Left out, one tap answers."
+    }
+  }
+}

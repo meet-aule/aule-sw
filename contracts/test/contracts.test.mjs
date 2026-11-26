@@ -70,3 +70,31 @@ test('a fraction can be drawn with nothing written next to it', () => {
   assert.ok(validateVisual({ kind: 'fraction_bars', fractions: [{ ...fraction, label: '3/8', labelled: true }] }));
   assert.equal(validateVisual({ kind: 'fraction_bars', fractions: [{ ...fraction, labelled: 'no' }] }), false);
 });
+
+// What the student can tap under the tutor's question: one schema and its examples.
+const choices = read('choices/choices.v1.schema.json');
+const validateChoices = new Ajv2020({ allErrors: true, strict: true }).compile(choices);
+const choiceExamples = readdirSync(new URL('choices/examples/', root));
+
+test('every example of choices validates, a single tap and several marked', () => {
+  assert.ok(choiceExamples.length > 0);
+  const examples = choiceExamples.map((file) => read(`choices/examples/${file}`));
+  for (const [i, example] of examples.entries()) {
+    assert.ok(validateChoices(example), `${choiceExamples[i]}: ${JSON.stringify(validateChoices.errors)}`);
+  }
+  assert.ok(examples.some((example) => example.multiple === true), 'an example marks several');
+  assert.ok(examples.some((example) => example.multiple !== true), 'an example is answered with one tap');
+});
+
+test('choices without options, with too many, repeated, blank or with unknown fields are rejected', () => {
+  assert.equal(validateChoices({}), false);
+  assert.equal(validateChoices({ options: [] }), false);
+  assert.equal(validateChoices({ options: ['a', 'b', 'c', 'd', 'e'] }), false);
+  assert.equal(validateChoices({ options: ['Sí', 'Sí'] }), false);
+  assert.equal(validateChoices({ options: ['Sí', ''] }), false);
+  assert.equal(validateChoices({ options: ['Sí', '   '] }), false);
+  assert.equal(validateChoices({ options: ['x'.repeat(41)] }), false);
+  assert.equal(validateChoices({ options: ['Sí', 'No'], multiple: 'yes' }), false);
+  assert.equal(validateChoices({ options: ['Sí', 'No'], html: '<b>Sí</b>' }), false);
+  assert.equal(validateChoices({ options: [1, 2] }), false);
+});
