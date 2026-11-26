@@ -118,7 +118,7 @@ Built:
 - Contracts for four events, validated by tests in Node, Python and Rust.
 - The platform in Rust:
   - families, children and append-only consent;
-  - sign-in for guardians by a code sent to their email, with each guardian limited to their own family;
+  - sign-in for guardians by a code sent to their email, with each guardian limited to their own family, and a family's sign-in renewed as it is used, so it ends only after a month unused;
   - sessions created at token issue with a per-session agent token;
   - the learner model with calibrated difficulty, which starts a child at their own grade;
   - vector memory;
@@ -131,7 +131,7 @@ Built:
 - The agent: a first tutor on LiveKit Agents with the camera as an image on each turn, connected to the platform for the plan, the turn reports and the guidance.
 - Visuals: the tutor can show an exercise or a simple diagram on the student's screen. It sends a small description that follows a shared contract, and the screen draws it in black on white; no image is generated. What is written on the screen passes the same gate as what is spoken.
 - The two safety gates in the agent: content moderation on what is heard and on what is about to be spoken, and the physical-safety check on what is heard. Both fail closed, a child's session does not start unless both are configured and their providers answer when it starts, and what they stop is reported as fixed categories. The physical-safety check is told the student's age, or the ages of their school grade, and nothing else from their profile; the tutor's lines are sent to it without the student's name. No session lets a participant in the room drive it past the gates (LiveKit's session host is off).
-- The playground: family sign-in, student setup and consent, voice and typed sessions, exercises and recovery of a still-running tutor after a browser or BFF restart. The platform remains responsible for authorization, quotas and session deadlines; recovery does not restart the session clock.
+- The playground: family sign-in, student setup and consent, voice and typed sessions, exercises and recovery of a still-running tutor after a browser or BFF restart. The platform remains responsible for authorization, quotas and session deadlines; recovery does not restart the session clock. It is also the family app's way to the platform: a pass-through for the routes the app calls and no others, with a guardian's bearer only.
 - The team's console (`apps/admin`): the panel the team used in the playground, which now sends its old address there, at admin.meetaule.com behind its own sign-in by emailed code for the team's addresses only, or by a passkey a team member made there, with the platform's Staff check on every call. The platform is the passkeys' relying party: it checks every ceremony with webauthn-rs and keeps only their public half. Beside the panel's numbers it shows who is in a session now, with one line that says whether a deploy can go, the families with search and filters by link and plan, and a page per family with its consents, plans, sessions and the notices it was sent (their kind and dates). It holds no data of its own, and nothing a child said: the platform's routes for the team never send it.
 - A compose file for all of it, next to an existing LiveKit server.
 
@@ -147,6 +147,7 @@ Not validated:
 - The learner model's parameters come from public datasets (ASSISTments 2009 and 2017), not from Aule's children. Its forgetting term showed no measurable effect there. `apps/platform/examples/skill_model_eval.rs` refits them from a log of answers.
 - The supervisor has only run against scripted answers in tests. How good its plans, guidance and reviews are with real conversations has not been measured.
 - The device routes have only been exercised by tests that play the device. No board has talked to them.
+- The family app has not called the platform yet: the pass-through and the routes it reaches have only been exercised by tests that play the app.
 - The session engine's routes have only been exercised by tests that play the agent and the page. Its texts were written for a page where the student types, and how they sound spoken, and how well speech is read as answers, has not been tried with a child.
 - Automated sign-in and notice tests use a stand-in mail service. Each deployment still needs to verify its configured SMTP delivery; a passing test does not establish inbox delivery.
 - No push has been sent through Firebase: the sender was written from its documentation and tested against a stand-in.
