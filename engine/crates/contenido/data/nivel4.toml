@@ -2,6 +2,7 @@
 nivel = 4
 titulo = "Suma y resta con distinto denominador"
 subtema = "sumar y restar fracciones con distinto denominador"
+nombre_corto = "las sumas y restas con distinto denominador"
 
 # ---------------------------------------------------------------- Tamizaje
 

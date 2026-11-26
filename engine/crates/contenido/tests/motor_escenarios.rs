@@ -201,6 +201,154 @@ fn a11_retomar_tamizaje() {
     assert_ne!(q.m.ejercicio_actual().unwrap().id, id3, "otra pregunta");
 }
 
+/// [PROPUESTA] El calentamiento dice para qué es, según el objetivo.
+#[test]
+fn tam01_el_calentamiento_dice_para_que_es() {
+    let resto = "vamos a hacer algunos ejercicios de calentamiento: son 5 preguntas, de la más fácil a la más difícil. En cada una dime tu respuesta y cómo lo pensaste.";
+    for (objetivos, para) in [
+        (
+            vec![obj(1, TipoObjetivo::Tarea, 5, Some(3))],
+            "Para ayudarte a resolver tu tarea de la mejor forma",
+        ),
+        (
+            vec![obj(1, TipoObjetivo::Preparacion, 5, Some(3))],
+            "Para prepararte bien para tu evaluación",
+        ),
+        (
+            vec![obj(1, TipoObjetivo::Correccion, -2, None)],
+            "Para saber desde dónde empezar",
+        ),
+        // Sin tareas ni evaluaciones: el Alumno elige el tema y luego el calentamiento.
+        (vec![], "Para saber desde dónde empezar"),
+    ] {
+        let elige_tema = objetivos.is_empty();
+        let mut p = Prueba::new(None, objetivos);
+        p.iniciar();
+        if elige_tema {
+            p.e(Entrada::Texto("Sí, fracciones".into()));
+        }
+        assert_eq!(p.act(), "tamizaje:1");
+        let linea = format!("{para}, {resto}");
+        assert!(
+            p.log.iter().any(|m| m.texto == linea),
+            "falta «{linea}» en:\n{}",
+            texto(&p.log)
+        );
+    }
+}
+
+/// Responde las 5 preguntas del Tamizaje; devuelve lo que dijo Aule a la última.
+fn hacer_tamizaje(p: &mut Prueba, respuestas: [bool; 5]) -> Vec<Mensaje> {
+    let mut ultima = vec![];
+    for ok in respuestas {
+        assert!(p.act().starts_with("tamizaje"), "{}", p.act());
+        ultima = p.responder(ok);
+    }
+    ultima
+}
+
+fn textos(ms: &[Mensaje]) -> Vec<&str> {
+    ms.iter().map(|m| m.texto.as_str()).collect()
+}
+
+/// [PROPUESTA] Nivel 1 y tarea de nivel 3: al terminar el Tamizaje, Aule cuenta
+/// qué va a reforzar antes de la tarea y para qué, y empieza por el primero.
+#[test]
+fn tam08_el_plan_se_le_cuenta_al_alumno() {
+    let mut p = Prueba::new(None, vec![obj(1, TipoObjetivo::Tarea, 5, Some(3))]);
+    p.iniciar();
+    let r = hacer_tamizaje(&mut p, [true, false, false, false, false]);
+    assert_eq!(p.m.perfil.niveles["Fracciones"], 1);
+    assert_eq!(p.act(), "etapa1:2:teoria");
+    assert_eq!(
+        textos(&r)[..3],
+        [
+            "¡Gracias! Esa era la última pregunta del Tamizaje.",
+            "He analizado cómo te fue en los ejercicios, y antes de que hagamos la tarea, te voy a ayudar a reforzar las fracciones equivalentes y las sumas y restas con el mismo denominador. Esto es importante para que aprendas a hacer la tarea por tu cuenta.",
+            "Etapa 1: Descubrimiento. Empecemos por las fracciones equivalentes.",
+        ]
+    );
+    assert!(
+        !texto(&r).contains("¡Terminamos el Tamizaje!"),
+        "{}",
+        texto(&r)
+    );
+    assert!(p.registro_tiene("Plan contado al Alumno: niveles 2 y 3"));
+    // El nivel que sigue en el plan se presenta como siempre.
+    p.pasar_e1();
+    p.pasar_e2();
+    assert_eq!(p.act(), "etapa1:3:teoria");
+    assert!(texto(&p.log).contains(
+        "Etapa 1: Descubrimiento. Vamos a aprender algo nuevo: suma y resta con igual denominador; mixtos e impropias."
+    ));
+}
+
+/// [PROPUESTA] El plan según el objetivo; con un solo nivel se empieza sin
+/// repetir su nombre. Sin ningún nivel o con el objetivo ya alcanzado no hay
+/// plan: el cierre de siempre.
+#[test]
+fn tam08_el_plan_segun_el_objetivo_y_solo_si_hay_que_reforzar() {
+    let casos = [
+        (
+            vec![obj(1, TipoObjetivo::Preparacion, 5, Some(4))],
+            "He analizado cómo te fue en los ejercicios, y antes de que simulemos tu evaluación, te voy a ayudar a reforzar las sumas y restas con el mismo denominador y las sumas y restas con distinto denominador. Esto es importante para que en tu evaluación puedas resolver todo por tu cuenta.",
+            "Etapa 1: Descubrimiento. Empecemos por las sumas y restas con el mismo denominador.",
+        ),
+        (
+            // El nivel objetivo es el de las preguntas que falló (4).
+            vec![obj(1, TipoObjetivo::Correccion, -2, None)],
+            "He analizado cómo te fue en los ejercicios, y antes de que revisemos tu evaluación, te voy a ayudar a reforzar las sumas y restas con el mismo denominador y las sumas y restas con distinto denominador. Esto es importante para que puedas resolver por tu cuenta las preguntas que te salieron mal.",
+            "Etapa 1: Descubrimiento. Empecemos por las sumas y restas con el mismo denominador.",
+        ),
+        (
+            vec![obj(1, TipoObjetivo::Tarea, 5, Some(3))],
+            "He analizado cómo te fue en los ejercicios, y antes de que hagamos la tarea, te voy a ayudar a reforzar las sumas y restas con el mismo denominador. Esto es importante para que aprendas a hacer la tarea por tu cuenta.",
+            "Etapa 1: Descubrimiento. ¡Empecemos!",
+        ),
+        (
+            // Extracurricular: solo el nivel siguiente (RUT-04).
+            vec![],
+            "He analizado cómo te fue en los ejercicios, y ya sé desde dónde empezar: te voy a ayudar a aprender las sumas y restas con el mismo denominador.",
+            "Etapa 1: Descubrimiento. ¡Empecemos!",
+        ),
+    ];
+    for (objetivos, plan, empieza) in casos {
+        let elige_tema = objetivos.is_empty();
+        let mut p = Prueba::new(None, objetivos);
+        p.iniciar();
+        if elige_tema {
+            p.e(Entrada::Texto("Sí, fracciones".into()));
+        }
+        let r = hacer_tamizaje(&mut p, [true, true, false, false, false]);
+        assert_eq!(p.act(), "etapa1:3:teoria");
+        assert_eq!(textos(&r)[1..3], [plan, empieza], "{}", texto(&r));
+    }
+
+    // Ningún nivel: se construye desde el principio, sin plan.
+    let mut p = Prueba::new(None, vec![obj(1, TipoObjetivo::Tarea, 5, Some(3))]);
+    p.iniciar();
+    let r = hacer_tamizaje(&mut p, [false; 5]);
+    assert_eq!(p.act(), "etapa1:1:teoria");
+    assert_eq!(
+        textos(&r)[1..3],
+        [
+            "¡Terminamos el Tamizaje! Ya sé por dónde empezar: vamos a construir las fracciones desde el principio, paso a paso.",
+            "Etapa 1: Descubrimiento. Vamos a aprender algo nuevo: leer, escribir y representar fracciones.",
+        ]
+    );
+    // Ya tiene el nivel de la tarea: a la tarea, sin plan.
+    let mut p = Prueba::new(None, vec![obj(1, TipoObjetivo::Tarea, 5, Some(3))]);
+    p.iniciar();
+    let r = hacer_tamizaje(&mut p, [true, true, true, false, false]);
+    assert_eq!(p.act(), "tarea:1");
+    assert!(
+        texto(&r).contains("lo del nivel 3 ya lo manejas"),
+        "{}",
+        texto(&r)
+    );
+    assert!(!texto(&p.log).contains("He analizado"), "{}", texto(&p.log));
+}
+
 /// A12: nivel 3 y tarea de nivel 3: directo a la tarea.
 #[test]
 fn a12_directo_a_la_tarea() {
@@ -309,6 +457,140 @@ fn a16_vuelve_a_etapa1() {
     p.pasar_e1();
     p.pasar_e2();
     assert_eq!(p.act(), "tarea:1");
+}
+
+/// [PROPUESTA] E2-02: la Etapa 2 termina cuando los últimos 3 ejercicios salen
+/// bien al primer intento y sin pistas. Se le dice al Alumno que son hasta 5,
+/// MET-01 queda con los que hizo y el Informe dice lo que domina.
+#[test]
+fn e202_tres_seguidos_a_la_primera_terminan_la_etapa2() {
+    let mut p = llegar_a_e2(2);
+    assert_eq!(p.act(), "etapa2:3:1");
+    let dichas = textos(&p.log);
+    assert!(dichas.contains(
+        &"Etapa 2: Refuerzo. Ahora te toca a ti: son hasta 5 ejercicios. Si te trabas, pídeme una pista."
+    ));
+    assert!(dichas.contains(&"Ejercicio 1."), "{}", texto(&p.log));
+    // La pantalla sigue mostrando el lugar en la lista del banco.
+    assert_eq!(p.m.vista().progreso, "Nivel 3 · Ejercicio 1 de 5");
+    p.responder(true);
+    p.responder(true);
+    assert_eq!(p.act(), "etapa2:3:3");
+    let r = p.responder(true);
+    assert!(textos(&r).contains(
+        &"¡Completaste la Etapa 2! Te salieron 3 seguidos a la primera, así que ya dominas: sumar y restar fracciones con igual denominador y convertir mixtos e impropias."
+    ), "{}", texto(&r));
+    assert_eq!(p.act(), "tarea:1");
+    assert_eq!(p.m.metricas.nic[0].primer_intento, [true, true, true]);
+    assert!(p.registro_tiene(
+        "Completó 3 ejercicios del nivel 3: los últimos 3 bien al primer intento y sin pistas"
+    ));
+    assert_eq!(p.m.perfil.niveles["Fracciones"], 3);
+    while p.act().starts_with("tarea") {
+        p.responder(true);
+    }
+    assert!(p.m.informe().iter().any(|m| m
+        == "Ahora Liam domina sumar y restar fracciones con igual denominador y convertir mixtos e impropias. ¡Felicidades!"));
+
+    // Cuentan los últimos 3: con un error en el primero, termina en el cuarto.
+    let mut p = llegar_a_e2(2);
+    p.responder(false);
+    for _ in 0..3 {
+        p.responder(true);
+    }
+    assert_eq!(p.act(), "etapa2:3:4");
+    p.responder(true);
+    assert_eq!(p.act(), "tarea:1");
+    assert_eq!(
+        p.m.metricas.nic[0].primer_intento,
+        [false, true, true, true]
+    );
+
+    // Una pista también corta la racha: sin 3 seguidos, hasta el máximo de 5.
+    let mut p = llegar_a_e2(2);
+    p.responder(false);
+    p.responder(true);
+    p.responder(true);
+    p.e(Entrada::Ayuda);
+    p.responder(true);
+    p.responder(true);
+    assert_eq!(p.act(), "etapa2:3:5");
+    p.responder(true);
+    assert_eq!(p.act(), "tarea:1");
+    assert_eq!(
+        p.m.metricas.nic[0].primer_intento,
+        [false, true, false, true, true]
+    );
+    assert!(p.registro_tiene("Completó los 5 ejercicios del nivel 3"));
+
+    // Con el ajuste en 0, siempre los 5, y se dice el total.
+    let mut p = Prueba::new(Some(2), vec![obj(1, TipoObjetivo::Tarea, 5, Some(3))]);
+    p.m.cfg.etapa2_aciertos_seguidos = 0;
+    p.iniciar();
+    p.pasar_e1();
+    let dichas = textos(&p.log);
+    assert!(dichas.contains(
+        &"Etapa 2: Refuerzo. Ahora te toca a ti: son 5 ejercicios. Si te trabas, pídeme una pista."
+    ));
+    assert!(dichas.contains(&"Ejercicio 1 de 5."));
+    for _ in 0..4 {
+        p.responder(true);
+    }
+    assert_eq!(p.act(), "etapa2:3:5");
+    p.responder(true);
+    assert_eq!(p.act(), "tarea:1");
+}
+
+/// [PROPUESTA] E1-03: si los pasos del primer ejemplo guiado salen bien al
+/// primer intento y sin pistas, se pasa a explicarlo sin el segundo ejemplo.
+/// Con un error o una pista, el segundo ejemplo sigue.
+#[test]
+fn e103_un_ejemplo_guiado_limpio_lleva_a_explicar() {
+    let hasta_el_guiado = || {
+        let mut p = Prueba::new(Some(1), vec![obj(1, TipoObjetivo::Tarea, 5, Some(2))]);
+        p.iniciar();
+        while p.act() != "etapa1:2:asistido" {
+            assert!(p.act().starts_with("etapa1:2"), "{}", p.act());
+            p.e(Entrada::Texto("Entendido, sigue".into()));
+        }
+        p
+    };
+    let guiados = |p: &Prueba| {
+        p.log
+            .iter()
+            .filter(|m| m.texto.starts_with("Te acompaño paso a paso."))
+            .count()
+    };
+
+    let mut p = hasta_el_guiado();
+    for _ in 0..3 {
+        assert_eq!(p.act(), "etapa1:2:asistido");
+        p.responder(true);
+    }
+    assert_eq!(p.act(), "etapa1:2:explicar");
+    assert_eq!(guiados(&p), 1, "{}", texto(&p.log));
+    assert!(p.registro_tiene("Ejemplo guiado 1 sin errores ni pistas"));
+    p.responder(true);
+    assert_eq!(p.act(), "etapa2:2:1");
+
+    // Un paso con error: el segundo ejemplo sigue.
+    let mut p = hasta_el_guiado();
+    for ok in [true, false, true, true] {
+        p.responder(ok);
+    }
+    assert_eq!(p.act(), "etapa1:2:asistido");
+    assert_eq!(guiados(&p), 2);
+    let titulo = p.m.vista().tarjeta.unwrap().titulo;
+    assert!(titulo.contains("Ejemplo guiado 2 de 2"), "{titulo}");
+
+    // Una pista: también.
+    let mut p = hasta_el_guiado();
+    p.e(Entrada::Ayuda);
+    for _ in 0..3 {
+        p.responder(true);
+    }
+    assert_eq!(p.act(), "etapa1:2:asistido");
+    assert_eq!(guiados(&p), 2);
 }
 
 /// A18: simulación con falla: sin pistas, etapas, y se vuelve a simular solo lo fallado con ejercicios nuevos.

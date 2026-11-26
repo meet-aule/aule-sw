@@ -2,6 +2,7 @@
 nivel = 5
 titulo = "Problemas de varios pasos: fracción de una cantidad y operaciones combinadas"
 subtema = "resolver problemas de varios pasos con fracciones"
+nombre_corto = "los problemas de varios pasos"
 
 # ---------------------------------------------------------------- Tamizaje
 [[tamizaje]]

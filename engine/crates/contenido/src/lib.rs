@@ -297,6 +297,13 @@ pub fn validar(b: &Banco) -> Vec<String> {
         if nv as usize != i + 1 {
             err.push(format!("{l}: está en la posición {}", i + 1));
         }
+        // Se dice en una lista con otros niveles: pocas palabras.
+        let palabras = n.nombre_corto.split_whitespace().count();
+        if palabras == 0 || palabras > 8 {
+            err.push(format!(
+                "{l}: nombre_corto debe tener entre 1 y 8 palabras (tiene {palabras})"
+            ));
+        }
         if n.tamizaje.len() < 2 {
             err.push(format!("{l}: necesita 2 preguntas de tamizaje"));
         }

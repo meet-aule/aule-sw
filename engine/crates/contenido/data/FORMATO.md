@@ -29,6 +29,8 @@ Archivos: `nivel1.toml` … `nivel5.toml` (un nivel cada uno) y `extras.toml` (t
 - Ángulos de Etapa 2 (`angulo`): `grafica`, `calculo`, `contexto`, `error` (encontrar el error o V/F con justificación; normalmente `pide_explicacion = true`), `inverso` (dato faltante o problema inverso). Mínimo 2 por ángulo, 10 ejercicios en total por nivel.
 - Si `pide_explicacion = true`: `criterio_explicacion` (qué cuenta como buena explicación, para la IA) y `claves_explicacion`
   (grupos de palabras para el respaldo sin IA; cuenta si toca `minimo_claves` grupos; usa raíces cortas como `"simplific"`, `"mismo denominador"`).
+- `nombre_corto` (en cada nivel): cómo lo dice Aule en voz alta al contar el plan, en pocas palabras (máximo 8) y con artículo,
+  porque va en una lista con otros niveles: `"las fracciones equivalentes"`. `titulo` es para la pantalla y `subtema` para el informe.
 - Tamizaje: 2 preguntas por nivel (la segunda para retomar). Siempre piden respuesta **y** explicación. Sin pistas.
 - Simulación: al menos 4 por nivel (2 para simular + 2 repuestos para volver a simular con ejercicios nuevos). Sin pistas.
 
@@ -38,6 +40,7 @@ Archivos: `nivel1.toml` … `nivel5.toml` (un nivel cada uno) y `extras.toml` (t
 nivel = 3
 titulo = "Suma y resta con igual denominador; mixtos e impropias"
 subtema = "sumar y restar fracciones con igual denominador"
+nombre_corto = "las sumas y restas con el mismo denominador"
 
 [[tamizaje]]
 id = "n3-t1"

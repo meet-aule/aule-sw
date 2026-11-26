@@ -38,7 +38,7 @@ Next item correctness, Time-to-master.
 - **TAM-04.** Cada pregunta pide respuesta y explicación; es correcta solo si las dos están bien.
 - **TAM-05.** Aule baja la ansiedad ("Tranquilo, con calma", "No pasa nada si fallamos, estamos para aprender", "Tú puedes").
 - **TAM-06.** El Alumno puede salir si se siente abrumado: queda en el último nivel consecutivo correcto y la sesión siguiente retoma desde ese mismo nivel con una pregunta distinta.
-- **TAM-08.** El resultado y el plan van en el Informe.
+- **TAM-08.** El resultado y el plan van en el Informe. **[PROPUESTA]** Con un nivel por debajo del Nivel objetivo, Aule también le cuenta el plan al Alumno: qué va a reforzar antes del objetivo y para qué.
 
 ## 4. Sesión
 
@@ -63,14 +63,14 @@ Next item correctness, Time-to-master.
 
 - **E1-01.** Aprende a resolver ejercicios del nivel inmediato siguiente.
 - **E1-02.** Teoría que parte del nivel que ya alcanzó, sin abrumar con lo que ya sabe. Entre 5 y 10 minutos.
-- **E1-03.** Ejemplos no asistidos (Aule explica la secuencia y ejecuta cada paso) y asistidos (Aule recuerda la secuencia; el Alumno ejecuta los pasos).
+- **E1-03.** Ejemplos no asistidos (Aule explica la secuencia y ejecuta cada paso) y asistidos (Aule recuerda la secuencia; el Alumno ejecuta los pasos). **[PROPUESTA]** Si hace todos los pasos de un ejemplo asistido bien al primer intento y sin Pistas, pasa a explicarlo sin el ejemplo asistido siguiente.
 - **E1-04.** Se completa cuando el Alumno explica con sus palabras de qué va el tema y concluyó los 2 tipos de ejemplos.
 - **E1-05.** Si no logra explicarlo: la misma secuencia de Pistas; si las agota, repaso conceptual de ese tema en ese nivel.
 
 ## 7. Etapa 2: Refuerzo
 
 - **E2-01.** 5 ejercicios autónomos del mismo nivel, desde diferentes ángulos. Aquí se mide el Next item correctness.
-- **E2-02.** Se completa con los 5 correctos.
+- **E2-02.** Se completa con los 5 correctos. **[PROPUESTA]** O antes, cuando los últimos 3 salen bien al primer intento y sin Pistas (`etapa2_aciertos_seguidos`); por eso Aule dice que son "hasta 5".
 - **E2-03.** Si falla uno: Pistas; luego resuelve ese ejercicio, no los que ya hizo.
 - **E2-04.** Si vuelve a fallar después de las Pistas y del Paso a paso de un ejercicio similar: vuelve a la Etapa 1 de ese mismo nivel.
 - **E2-05.** Repetir un nivel no impide seguir hasta el Nivel objetivo.
@@ -100,7 +100,7 @@ Next item correctness, Time-to-master.
 ## 11. Cierre, métricas y datos
 
 - **DEMO-09.** Al terminar, vista previa en pantalla del Informe que recibiría el Padre de familia por WhatsApp a las 8pm. No se envía nada. **INF-02:** un solo saludo y luego un mensaje por cada cosa que se hizo. Plantillas en `crates/aule-core/src/informe.rs` (tal cual; solo cambian los corchetes).
-- **MET-01.** Next item correctness: en los 5 ejercicios de la Etapa 2, proporción bien al primer intento y sin Pistas. No cambia el flujo. Por tema y nivel, y también en la Simulación.
+- **MET-01.** Next item correctness: en los 5 ejercicios de la Etapa 2, proporción bien al primer intento y sin Pistas. No cambia el flujo. Por tema y nivel, y también en la Simulación. **[PROPUESTA]** Con E2-02 la Etapa 2 puede terminar antes: se mide en los ejercicios que hizo.
 - **MET-04.** Time-to-master: minutos desde que inicia la Etapa 1 de un nivel hasta completar los 5 de la Etapa 2, sin contar pausas. **MET-05.** Valor inicial: 1 nivel por sesión de 1 hora.
 - **DAT-03.** Audio y foto: borrado inmediato. **DEMO-16 [PROPUESTA].** Nada se guarda en disco: el estado vive en memoria y se borra al reiniciar.
 - **DEMO-15 [PROPUESTA].** "Sesión siguiente" conserva el nivel por tema, los objetivos sin completar y el Tamizaje incompleto.

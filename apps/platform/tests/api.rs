@@ -4755,9 +4755,10 @@ async fn the_session_engine_runs_a_session_from_the_greeting_to_the_family_repor
         "looking stores nothing"
     );
 
-    // ...and goes on from there: the right answer moves to the next exercise.
+    // ...and goes on from there: the right answer moves to the next exercise. It is
+    // said without the total, since practice may end before the fifth; the screen keeps it.
     let right = pupil.answers(true).await;
-    assert!(said_in(&right).contains("Ejercicio 2 de 5"), "{right}");
+    assert!(said_in(&right).contains("Ejercicio 2."), "{right}");
     assert_eq!(pupil.progress().await, "Nivel 2 · Ejercicio 2 de 5");
 
     // An answer typed on the page: the page gets the new step, and the tutor
@@ -4771,7 +4772,7 @@ async fn the_session_engine_runs_a_session_from_the_greeting_to_the_family_repor
     let (status, report) = app.call(Method::POST, "/v1/agent/session/turns", agent, Some(turns)).await;
     assert_eq!(status, StatusCode::OK, "{report}");
     assert_lines(&pupil.contract, &report["script"]["lines"]);
-    assert!(said_in(&report["script"]).contains("Ejercicio 3 de 5"), "{report}");
+    assert!(said_in(&report["script"]).contains("Ejercicio 3."), "{report}");
     assert_eq!(report["script"]["closed"], false);
     assert!(report["pause"].is_null() && report["stop"].is_null() && report["guidance"].is_array());
     let (_, report) =

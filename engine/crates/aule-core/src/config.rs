@@ -53,6 +53,10 @@ pub struct Config {
     pub etapa1_min_estimados: u32,
     /// E2-01: ejercicios autónomos de la Etapa 2.
     pub etapa2_ejercicios: usize,
+    /// E2-02 [PROPUESTA]: la Etapa 2 termina antes si los últimos n ejercicios
+    /// salieron bien al primer intento y sin pistas (lo que mide MET-01).
+    /// 0 = siempre todos los ejercicios.
+    pub etapa2_aciertos_seguidos: usize,
 
     /// PIS-02: orden de las pistas (2 socráticas y verbales, luego 1 gráfica).
     pub orden_pistas: Vec<TipoPista>,
@@ -96,6 +100,7 @@ impl Default for Config {
             tamizaje_min_estimados: 15,
             etapa1_min_estimados: 8,
             etapa2_ejercicios: 5,
+            etapa2_aciertos_seguidos: 3,
             orden_pistas: vec![
                 TipoPista::Socratica,
                 TipoPista::Socratica,
