@@ -1506,3 +1506,27 @@ fn tar08_sin_ejercicios_hasta_ese_nivel_la_tarea_ya_esta_preparada() {
     assert!(!texto(&r).contains("Vamos directo"), "{}", texto(&r));
     assert!(p.m.informe().contains(&informe.to_string()));
 }
+
+/// [PROPUESTA] PAU-07 y TAM-08: de noche, quien dice que está cansado
+/// mientras se espera la foto de su Tarea descansa, y el Informe cuenta el
+/// Tamizaje antes de lo que queda pendiente.
+#[test]
+fn pau07_de_noche_cansado_esperando_la_foto_descansa_y_el_informe_cuenta_el_tamizaje() {
+    let mut p = con_foto(None);
+    p.m.perfil.minuto_inicio = Some(22 * 60 + 50);
+    p.iniciar();
+    hacer_tamizaje(&mut p, [true, false, false, false, false]);
+    assert_eq!(p.act(), "pedir_tarea");
+    let r = p.e(Entrada::Cansado);
+    assert!(texto(&r).contains("Ya es tarde"), "{}", texto(&r));
+    assert!(p.m.terminada());
+    assert_eq!(p.m.recordatorio(), None);
+    let inf = p.m.informe();
+    let evaluado = inf.iter().position(|m| m.contains("hemos evaluado"));
+    let continua = inf.iter().position(|m| m.contains("hemos avanzado"));
+    assert!(evaluado.is_some() && evaluado < continua, "{inf:?}");
+    assert_eq!(
+        inf.iter().filter(|m| m.contains("hemos evaluado")).count(),
+        1
+    );
+}
