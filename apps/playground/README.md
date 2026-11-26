@@ -159,6 +159,7 @@ node --env-file=../../.env src/server.ts
 - **Hold to talk** appears when the tutor sets the participant attribute `aule.turns` to `manual`. The microphone is then closed except while the button (or the space bar) is held; Space talks wherever the focus is not on another control, and on «Mostrar mi tarea», «Listo» and «Cancelar» too (Enter presses those): pressing calls the tutor's `start_turn`, letting go calls `end_turn`, and losing the button or the window calls `cancel_turn`. The microphone switch is the device's mute: while it is off nothing is sent. While the button is held, a bar inside it follows the microphone's level, measured in the browser.
 
 - **Typing** to the tutor works at any time, next to speaking. A typed message passes the same safety gates as a spoken one.
+- **Answers to tap** come under Aule's question when it has a few possible answers: the engine's (such as «Sí» to «¿Empezamos?», a break's activities or «No tengo mi tarea») or the tutor's model's, once the question has been said. A tap is the student's turn, sent as a typed message, so it passes the same safety gates; where several may be marked, «Listo» sends them as one turn, joined by commas. Once answered, or once the conversation moves on, they cannot be pressed. FIGMA.md D44.
 - **Report for the family**: with the team box ticked and a platform, the page shows, after the session ends, the summary and next step the review wrote for the family.
 
 ### Reload recovery and session endings

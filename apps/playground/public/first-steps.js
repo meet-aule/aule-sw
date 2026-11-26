@@ -128,6 +128,11 @@ const WORDS = {
     talk_not_started: "No pudimos avisarle a Aule que estás hablando; inténtalo otra vez.",
     turn_unheard: "Aule no lo escuchó; mantén apretado el botón y dilo otra vez.",
     message_failed: "No se pudo enviar el mensaje.",
+    // The answers to tap under Aule's question (choices.js, D44): the name of their
+    // group, the line where several may be marked, and the button that sends them.
+    choices_label: "Toca tu respuesta",
+    choices_several: "Puedes tocar varias y luego «Listo».",
+    choices_done: "Listo",
   },
   en: {
     handoff_lead: "Now it's {name}'s turn.",
@@ -223,6 +228,9 @@ const WORDS = {
     talk_not_started: "We couldn't tell Aule you're talking; try again.",
     turn_unheard: "Aule didn't hear that; hold the button and say it again.",
     message_failed: "The message couldn't be sent.",
+    choices_label: "Tap your answer",
+    choices_several: "You can tap more than one, then “Done”.",
+    choices_done: "Done",
   },
 };
 

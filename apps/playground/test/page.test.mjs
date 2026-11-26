@@ -11,7 +11,7 @@ const read = (name) => readFile(new URL(name, pub), "utf8");
 const html = await read("index.html");
 const css = await read("style.css");
 const guides = { es: await read("guia.html"), en: await read("guide.html") };
-const ownScripts = ["app.js", "students.js", "signin.js", "steps.js", "screens.js", "onboarding.js", "home.js", "session-messages.js", "first-steps.js", "summaries.js", "reviews.js", "visuals.js", "cuy.js", "pixels.js"];
+const ownScripts = ["app.js", "students.js", "signin.js", "steps.js", "screens.js", "onboarding.js", "home.js", "session-messages.js", "first-steps.js", "summaries.js", "reviews.js", "visuals.js", "choices.js", "cuy.js", "pixels.js"];
 const scripts = Object.fromEntries(await Promise.all(ownScripts.map(async (name) => [name, await read(name)])));
 
 /** The body of every block that starts with `opening`, braces and all. */
@@ -114,7 +114,9 @@ test("the page's own modules import each other without a cycle, as the plan draw
   // Aule's face, the cuy and its pixels, is data and arithmetic: the session's page is all that takes them.
   assert.deepEqual(graph["cuy.js"], []);
   assert.deepEqual(graph["pixels.js"], []);
-  assert.deepEqual([...graph["app.js"]].sort(), ["cuy.js", "first-steps.js", "home.js", "pixels.js", "screens.js", "session-messages.js", "visuals.js"]);
+  assert.deepEqual([...graph["app.js"]].sort(), ["choices.js", "cuy.js", "first-steps.js", "home.js", "pixels.js", "screens.js", "session-messages.js", "visuals.js"]);
+  // The answers to tap are drawn from what the tutor sent, with the words they are handed.
+  assert.deepEqual(graph["choices.js"], []);
   // And none, followed through, comes back to itself.
   const visiting = new Set();
   const done = new Set();
@@ -277,9 +279,12 @@ test("a session's words go with it: the conversation, the card and anything half
   const [answer] = blocks(app, '$("answer").addEventListener("submit"');
   const answerGuard = answer.indexOf("if (id !== sessionId) return;");
   assert.ok(answerGuard !== -1 && answerGuard < answer.indexOf('$("transcript").append('));
-  const [typed] = blocks(app, '$("type").addEventListener("submit"');
-  const typedGuard = typed.indexOf("if (sending !== room) return;");
+  const typed = bodyOf(app, "sendTyped");
+  const typedGuard = typed.indexOf("if (sending !== room) return true;");
   assert.ok(typedGuard !== -1 && typedGuard < typed.indexOf('$("transcript").append('));
+  // A typed message and a tapped answer (D44) are sent and written the same way.
+  const [submit] = blocks(app, '$("type").addEventListener("submit"');
+  assert.match(submit, /await sendTyped\(text, "you_typed"\);/);
 });
 
 test("A05's web-only state names itself to a screen reader: its status line is in the tree before its words, and its title takes the focus again", () => {
@@ -1040,7 +1045,11 @@ test("the session's own words follow the student's language: «Terminar», the c
   assert.match(sessionHtml(), /<button type="submit" class="compact" id="type-send">Enviar<\/button>/);
   // Who said each line, in that language; no Spanish «Tú» is written into a line.
   assert.doesNotMatch(app, /dataset\.name = (?:mine \? )?"Tú/);
-  assert.equal((app.match(/dataset\.name = words\("you(?:_typed)?", sessionLanguage\(\)\)/g) ?? []).length, 3);
+  assert.equal((app.match(/dataset\.name = words\("you(?:_typed)?", sessionLanguage\(\)\)/g) ?? []).length, 2);
+  // A typed message and a tapped answer (D44) are named as sendTyped is told: «Tú (escrito)», «Tú».
+  assert.match(bodyOf(app, "sendTyped"), /line\.dataset\.name = words\(who, sessionLanguage\(\)\);/);
+  assert.match(app, /await sendTyped\(text, "you_typed"\);/);
+  assert.match(app, /send: \(text\) => sendTyped\(text, "you"\),/);
   assert.match(app, /line\.dataset\.name = mine \? words\("you", sessionLanguage\(\)\) : "Aule";/);
   // What went wrong with a turn or a typed message, too.
   for (const key of ["talk_not_started", "turn_unheard", "message_failed"]) assert.ok(app.includes(`words("${key}", language)`), key);
@@ -1074,6 +1083,10 @@ test("Space holds to talk on the talk button and on the camera's buttons, and ne
     assert.equal(typing({ tagName, id }), true, `${tagName}#${id}`);
   }
   assert.equal(typing({ tagName: "P", id: "camera-aim" }), false);
+  // On an answer to tap, or «Listo» under several, Space talks too (D44).
+  const inChoices = (selector) => (selector === ".choices" ? {} : null);
+  assert.equal(typing({ tagName: "BUTTON", id: "", closest: inChoices }), false);
+  assert.equal(typing({ tagName: "BUTTON", id: "end", closest: () => null }), true);
   // Held, the key repeats: every keydown it talks on is stopped (no scroll, no press), and the
   // turn starts once; its keyup is stopped too, so a focused button is never clicked.
   const [down] = blocks(app, 'document.addEventListener("keydown"');

@@ -7,6 +7,7 @@
 import { firstRun, openedSession, purposeAsked, sessionRequest } from "./home.js";
 import { addressFor, back, current, getAccount, go, need, onAccount, onHide, onShow, readdress, sessionAddress } from "./screens.js";
 import { TOPIC as VISUAL_TOPIC, renderVisual } from "./visuals.js";
+import { TOPIC as CHOICES_TOPIC, choicesItem, choicesOf } from "./choices.js";
 import { endedMessage, languageOf, recoveryMessage } from "./session-messages.js";
 import { COACH_HOLD_MS, HINTS_MS, VOICE, WINDOW_MS, cameraProblem, heard, isTap, levelOf, micProblem, words } from "./first-steps.js";
 import { cuy } from "./cuy.js";
@@ -517,6 +518,8 @@ async function onTranscription(reader, participant) {
     );
   let line = lines.get(id);
   if (!line) {
+    // The conversation moves on: what Aule offered to tap before cannot be pressed now.
+    closeChoices();
     line = document.createElement("li");
     line.dataset.who = mine ? "you" : "tutor";
     line.dataset.name = mine ? words("you", sessionLanguage()) : "Aule";
@@ -776,6 +779,68 @@ function item(text) {
   const element = document.createElement("li");
   element.textContent = text;
   return element;
+}
+
+// --- answers to tap under Aule's question (D44) -----------------------------------
+
+// What Aule offered to tap last, while it can still be pressed.
+let choicesNow = null;
+
+/** The conversation moved on: what Aule offered to tap stays to be read, and cannot be pressed. */
+function closeChoices() {
+  choicesNow?.close();
+  choicesNow = null;
+}
+
+/**
+ * Answers to tap, sent by the tutor once it has said its question: drawn under
+ * that line, as the conversation's newest item. A tap is the student's turn,
+ * sent as typed words are (sendTyped), and written in the conversation as theirs.
+ */
+async function onChoices(reader) {
+  try {
+    const offered = choicesOf(JSON.parse(await reader.readAll()));
+    if (!offered || !room) return;
+    closeChoices();
+    const language = sessionLanguage();
+    choicesNow = choicesItem(document, offered, {
+      language,
+      say: (key) => words(key, language),
+      send: (text) => sendTyped(text, "you"),
+    });
+    $("transcript").append(choicesNow.item);
+    followTranscript();
+  } catch {
+    // What this page cannot read is skipped: the answer can still be said or typed.
+  }
+}
+
+/**
+ * Sends the student's words to the tutor as typed, which judges them as it
+ * judges speech, and writes them in the conversation as theirs: `who` is how
+ * the line is named. True once they have gone.
+ */
+async function sendTyped(text, who) {
+  const sending = room;
+  if (!text || !sending) return false;
+  try {
+    await sending.localParticipant.sendText(text, { topic: CHAT_TOPIC });
+    // The session ended while the message was on its way: its words went with it.
+    if (sending !== room) return true;
+    // Typed words are not transcribed back, so the page writes them itself.
+    const line = item(text);
+    line.dataset.who = "you";
+    line.dataset.name = words(who, sessionLanguage());
+    closeChoices();
+    $("transcript").append(line);
+    // Their own message: back to the end, wherever they had scrolled to.
+    followTranscript(true);
+    return true;
+  } catch {
+    const language = sessionLanguage();
+    showMessage(words("message_failed", language), "error", language);
+    return false;
+  }
 }
 
 // The tutor describes what to show; the page draws it on the stage, where it
@@ -1396,6 +1461,10 @@ async function join(session, { resumed = false } = {}) {
     onVisual(reader);
   });
 
+  room.registerTextStreamHandler(CHOICES_TOPIC, (reader) => {
+    onChoices(reader);
+  });
+
   await room.connect(session.serverUrl, session.token);
   await room.startAudio();
   setTutorState("waiting");
@@ -1858,6 +1927,7 @@ function teardown({ quiet = false } = {}) {
  */
 function forgetWords() {
   $("transcript").replaceChildren();
+  choicesNow = null;
   lines.clear();
   heldLines = [];
   for (const id of ["typed", "answer-text", "explanation-text"]) $(id).value = "";
@@ -2116,11 +2186,12 @@ $("talk").addEventListener("pointercancel", () => stopTalking("cancel_turn"));
 $("talk").addEventListener("contextmenu", (event) => event.preventDefault());
 
 // The space bar is the button too, except while typing or on another control.
-// On the talk button it holds it; on «Mostrar mi tarea», «Listo» and «Cancelar»
-// it still talks, and never opens the camera or sends a picture (Enter presses
-// them): a child who talks with it presses it wherever the focus happens to be.
+// On the talk button it holds it; on «Mostrar mi tarea», «Listo» and «Cancelar»,
+// and on the answers to tap, it still talks, and never opens the camera, sends a
+// picture or answers (Enter presses them): a child who talks with it presses it
+// wherever the focus happens to be, a button just tapped included.
 const SPACE_TALKS = ["talk", "cam", "cam-send", "cam-cancel"];
-const typing = (target) => ["INPUT", "SELECT", "TEXTAREA", "BUTTON"].includes(target?.tagName) && !SPACE_TALKS.includes(target.id);
+const typing = (target) => ["INPUT", "SELECT", "TEXTAREA", "BUTTON"].includes(target?.tagName) && !SPACE_TALKS.includes(target.id) && !target.closest?.(".choices");
 const spaceTalks = (event) => event.code === "Space" && manualTurns && current() === "session" && !typing(event.target);
 document.addEventListener("keydown", (event) => {
   if (!spaceTalks(event)) return;
@@ -2165,24 +2236,9 @@ $("cam").addEventListener("click", async () => {
 $("type").addEventListener("submit", async (event) => {
   event.preventDefault();
   const text = $("typed").value.trim();
-  const sending = room;
-  if (!text || !sending) return;
+  if (!text || !room) return;
   $("typed").value = "";
-  try {
-    await sending.localParticipant.sendText(text, { topic: CHAT_TOPIC });
-    // The session ended while the message was on its way: its words went with it.
-    if (sending !== room) return;
-    // Typed words are not transcribed back, so the page writes them itself.
-    const line = item(text);
-    line.dataset.who = "you";
-    line.dataset.name = words("you_typed", sessionLanguage());
-    $("transcript").append(line);
-    // Their own message: back to the end, wherever they had scrolled to.
-    followTranscript(true);
-  } catch {
-    const language = sessionLanguage();
-    showMessage(words("message_failed", language), "error", language);
-  }
+  await sendTyped(text, "you_typed");
 });
 
 $("end").addEventListener("click", () => finishSession());

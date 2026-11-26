@@ -128,6 +128,9 @@ const SPEC_KEYS = [
   "talk_not_started",
   "turn_unheard",
   "message_failed",
+  "choices_label",
+  "choices_several",
+  "choices_done",
 ];
 
 // How many times a line says the name it is given.
@@ -175,6 +178,8 @@ test("the words are César's where he wrote them, and say «apretado» as the li
   // «Listo» is named by the line that asks for it, in each language.
   assert.ok(words("camera_aim", "es").includes(`«${words("camera_send", "es")}»`));
   assert.ok(words("camera_aim", "en").includes(`“${words("camera_send", "en")}”`));
+  assert.ok(words("choices_several", "es").includes(`«${words("choices_done", "es")}»`));
+  assert.ok(words("choices_several", "en").includes(`“${words("choices_done", "en")}”`));
   // The hints and the adult's lines name the link they lead to, in each language.
   for (const key of ["check_other_app", "mic_blocked_help", "mic_busy_help"]) {
     assert.ok(words(key, "es").includes(`«${words("retry", "es")}»`), key);
