@@ -375,13 +375,10 @@ fn words(text: &str) -> Vec<String> {
 /// Whether today's objective is for something the catalog cannot name: no
 /// skill matches its topic and the catalog holds no skill of its subject. Such
 /// a session is planned for the objective alone, since every other skill on
-/// offer belongs to another subject. The family's subjects
-/// (`families::SUBJECTS`) are named in Spanish; the catalog's are not.
+/// offer belongs to another subject. The family's subject is compared under
+/// the catalog's name for it (`families::catalog_subject`).
 pub fn beyond_catalog(subject: &str, asked: &[Candidate], catalog: &[Skill]) -> bool {
-    let subject = match subject {
-        "matematica" => "math",
-        other => other,
-    };
+    let subject = crate::families::catalog_subject(subject);
     asked.is_empty() && !catalog.iter().any(|skill| skill.subject == subject)
 }
 

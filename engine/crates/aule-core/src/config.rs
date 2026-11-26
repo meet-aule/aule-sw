@@ -9,13 +9,26 @@ pub enum TipoPista {
     Grafica,
 }
 
+/// PAU-06: para qué sirve una actividad de la pausa activa.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TipoPausa {
+    /// Para quien está somnoliento o aburrido.
+    Energizante,
+    /// Para quien está ansioso, frustrado o cansado.
+    Relajante,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ActividadPausa {
     pub nombre: String,
-    /// "energizante" (somnoliento o aburrido) o "relajante" (ansioso o frustrado).
-    pub tipo: String,
+    pub tipo: TipoPausa,
     pub para: String,
     pub pasos: Vec<String>,
+    /// [PROPUESTA] Palabras con las que el Alumno la elige al hablar, además de
+    /// por su nombre («respir», «globo»). Se comparan sin tildes ni mayúsculas.
+    #[serde(default)]
+    pub palabras: Vec<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -143,17 +156,19 @@ impl Default for Config {
 
 /// [PROPUESTA] Cesar no definió las 4 actividades de la pausa activa.
 pub fn actividades_propuestas() -> Vec<ActividadPausa> {
-    let a = |n: &str, t: &str, p: &str, pasos: &[&str]| ActividadPausa {
+    let a = |n: &str, t: TipoPausa, p: &str, palabras: &[&str], pasos: &[&str]| ActividadPausa {
         nombre: n.into(),
-        tipo: t.into(),
+        tipo: t,
         para: p.into(),
         pasos: pasos.iter().map(|s| s.to_string()).collect(),
+        palabras: palabras.iter().map(|s| s.to_string()).collect(),
     };
     vec![
         a(
             "Saltos de estrella",
-            "energizante",
+            TipoPausa::Energizante,
             "Si te falta energía",
+            &["salto"],
             &[
                 "Ponte de pie, con espacio a tu alrededor.",
                 "Haz 15 saltos abriendo brazos y piernas como una estrella.",
@@ -163,8 +178,9 @@ pub fn actividades_propuestas() -> Vec<ActividadPausa> {
         ),
         a(
             "Espejo de movimientos",
-            "energizante",
+            TipoPausa::Energizante,
             "Si estás aburrido",
+            &["aburr", "espejo"],
             &[
                 "Ponte de pie frente a la pantalla.",
                 "Toca tu nariz, tus rodillas y tus hombros, cada vez más rápido.",
@@ -174,8 +190,9 @@ pub fn actividades_propuestas() -> Vec<ActividadPausa> {
         ),
         a(
             "Respiración del globo",
-            "relajante",
+            TipoPausa::Relajante,
             "Si estás nervioso",
+            &["nervios", "ansios", "respir", "globo"],
             &[
                 "Siéntate cómodo y pon las manos en tu barriga.",
                 "Toma aire por la nariz contando 1, 2, 3, 4: tu barriga se infla como un globo.",
@@ -185,8 +202,9 @@ pub fn actividades_propuestas() -> Vec<ActividadPausa> {
         ),
         a(
             "Estiramiento del gato",
-            "relajante",
+            TipoPausa::Relajante,
             "Si estás frustrado",
+            &["frustr", "molest", "estir", "gato"],
             &[
                 "Junta tus manos y estira los brazos hacia adelante, redondeando la espalda.",
                 "Ahora llévalos hacia arriba y estírate como un gato que despierta.",
@@ -195,4 +213,31 @@ pub fn actividades_propuestas() -> Vec<ActividadPausa> {
             ],
         ),
     ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn una_actividad_se_guarda_y_se_lee_como_antes() {
+        // El tipo se escribe en minúsculas, como cuando era un texto, y una
+        // actividad guardada sin palabras se sigue leyendo.
+        let vieja =
+            r#"{"nombre":"Respirar","tipo":"relajante","para":"Si estás nervioso","pasos":[]}"#;
+        let leida: ActividadPausa = serde_json::from_str(vieja).unwrap();
+        assert_eq!(leida.tipo, TipoPausa::Relajante);
+        assert!(leida.palabras.is_empty());
+        let escrita = serde_json::to_value(&actividades_propuestas()[0]).unwrap();
+        assert_eq!(escrita["tipo"], "energizante");
+    }
+
+    #[test]
+    fn las_actividades_propuestas_traen_sus_palabras_y_hay_de_los_dos_tipos() {
+        let actividades = actividades_propuestas();
+        assert!(actividades.iter().all(|a| !a.palabras.is_empty()));
+        for tipo in [TipoPausa::Energizante, TipoPausa::Relajante] {
+            assert!(actividades.iter().any(|a| a.tipo == tipo), "{tipo:?}");
+        }
+    }
 }
