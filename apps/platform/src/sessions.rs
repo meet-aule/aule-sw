@@ -331,21 +331,34 @@ async fn prepare_brief(state: &AppState, session_id: Uuid, child: &Child, use_me
     // What the family asked for comes first; the learner model's own choices follow.
     let topic = objective.as_ref().and_then(|objective| objective["topic"].as_str()).unwrap_or_default();
     let mut candidates = learning::asked(&trace.skills, &catalog, child.grade.as_deref(), topic);
-    for candidate in learning::candidates(&trace.skills, &catalog, child.grade.as_deref(), now) {
-        if candidates.iter().all(|asked| asked.skill_id != candidate.skill_id) {
-            candidates.push(candidate);
+    // Unless the catalog cannot name the objective (Personal Social, say): then
+    // the learner model's skills and the last session's next step belong to
+    // another subject and would take the session away from it, as «leyes» in
+    // Personal Social once became Pythagoras.
+    let beyond_catalog = objective.as_ref().is_some_and(|objective| {
+        learning::beyond_catalog(objective["subject"].as_str().unwrap_or_default(), &candidates, &catalog)
+    });
+    if !beyond_catalog {
+        for candidate in learning::candidates(&trace.skills, &catalog, child.grade.as_deref(), now) {
+            if candidates.iter().all(|asked| asked.skill_id != candidate.skill_id) {
+                candidates.push(candidate);
+            }
         }
     }
     let memories = if use_memory { memory::latest(&state.db, child.id, 8).await? } else { Vec::new() };
-    let last_next_step: Option<String> = session_review::Entity::find()
-        .filter(session_review::Column::ChildId.eq(child.id))
-        .order_by_desc(session_review::Column::CreatedAt)
-        .select_only()
-        .column(session_review::Column::NextStep)
-        .into_tuple::<Option<String>>()
-        .one(&state.db)
-        .await?
-        .flatten();
+    let last_next_step: Option<String> = if beyond_catalog {
+        None
+    } else {
+        session_review::Entity::find()
+            .filter(session_review::Column::ChildId.eq(child.id))
+            .order_by_desc(session_review::Column::CreatedAt)
+            .select_only()
+            .column(session_review::Column::NextStep)
+            .into_tuple::<Option<String>>()
+            .one(&state.db)
+            .await?
+            .flatten()
+    };
 
     let brief = match &state.llm {
         Some(llm) => {

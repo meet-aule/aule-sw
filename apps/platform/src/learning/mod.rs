@@ -372,6 +372,19 @@ fn words(text: &str) -> Vec<String> {
         .collect()
 }
 
+/// Whether today's objective is for something the catalog cannot name: no
+/// skill matches its topic and the catalog holds no skill of its subject. Such
+/// a session is planned for the objective alone, since every other skill on
+/// offer belongs to another subject. The family's subjects
+/// (`families::SUBJECTS`) are named in Spanish; the catalog's are not.
+pub fn beyond_catalog(subject: &str, asked: &[Candidate], catalog: &[Skill]) -> bool {
+    let subject = match subject {
+        "matematica" => "math",
+        other => other,
+    };
+    asked.is_empty() && !catalog.iter().any(|skill| skill.subject == subject)
+}
+
 /// The skills that the topic of today's session names, best match first. A
 /// homework on perimeter is about the perimeter skills whether or not the
 /// learner model would have offered them today, so these come from the whole
@@ -542,6 +555,26 @@ mod tests {
                 difficulty: None,
             })
             .collect()
+    }
+
+    #[test]
+    fn an_objective_the_catalog_cannot_name_is_beyond_it() {
+        let catalog = vec![skill("fracciones.sumar", "P4", &[])];
+        let asked = vec![Candidate {
+            skill_id: "fracciones.sumar".into(),
+            name: None,
+            reason: Reason::Asked,
+            p_now: None,
+            target_difficulty: None,
+        }];
+        // Personal Social has no skill, so «leyes» is planned for on its own.
+        assert!(beyond_catalog("personal_social", &[], &catalog));
+        assert!(beyond_catalog("other", &[], &catalog));
+        // Mathematics is the catalog's, named in the family's Spanish.
+        assert!(!beyond_catalog("matematica", &[], &catalog));
+        // A topic a skill names is never beyond it, whatever the subject.
+        assert!(!beyond_catalog("other", &asked, &catalog));
+        assert!(!beyond_catalog("personal_social", &asked, &catalog));
     }
 
     fn skill(id: &str, grade: &str, prerequisites: &[&str]) -> Skill {
