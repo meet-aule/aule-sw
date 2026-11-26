@@ -88,10 +88,23 @@ pub enum Hecho {
 
 /// "a, b y c"
 pub fn lista(v: &[String]) -> String {
+    unir(v, "y")
+}
+
+/// "a, b o c": para ofrecer entre varias.
+pub fn lista_o(v: &[String]) -> String {
+    unir(v, "o")
+}
+
+fn unir(v: &[String], conjuncion: &str) -> String {
     match v.len() {
         0 => String::new(),
         1 => v[0].clone(),
-        _ => format!("{} y {}", v[..v.len() - 1].join(", "), v[v.len() - 1]),
+        _ => format!(
+            "{} {conjuncion} {}",
+            v[..v.len() - 1].join(", "),
+            v[v.len() - 1]
+        ),
     }
 }
 

@@ -1601,8 +1601,12 @@ fn opciones_la_pausa_ofrece_sus_actividades_y_tocar_una_la_elige() {
         let mut tocada = Prueba::new(Some(3), vec![obj(1, TipoObjetivo::Tarea, 5, Some(3))]);
         tocada.iniciar();
         let r = tocada.e(Entrada::Cansado);
+        // La línea las nombra todas: por voz no se ve la tabla.
         assert!(
-            r.last().unwrap().texto.ends_with("Elige una:"),
+            r.last().unwrap().texto.ends_with(&format!(
+                "Elige una: {}.",
+                aule_core::informe::lista_o(&nombres)
+            )),
             "{}",
             texto(&r)
         );

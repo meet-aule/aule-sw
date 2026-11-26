@@ -1262,13 +1262,15 @@ fn the_engines_questions_offer_what_can_be_tapped_and_a_tap_is_said() {
     assert!(started.reply()["lines"].as_array().unwrap().iter().all(|line| line.get("choices").is_none()));
     assert!(student.engine.step(student.now).get("choices").is_none());
 
-    // A break: its four activities under «Elige una:». Tapped, one is chosen
-    // as when it is said, and nothing more is offered.
+    // A break: its four activities under «Elige una:», which names them all for
+    // a student who listens. Tapped, one is chosen as when it is said, and
+    // nothing more is offered.
     let names: Vec<String> =
         aule_core::config::actividades_propuestas().into_iter().map(|activity| activity.nombre).collect();
     let mut student = in_practice();
     let tired = student.says("estoy cansado");
-    assert!(tired.lines.last().unwrap().say.ends_with("Elige una:"), "{tired:?}");
+    let asked = &tired.lines.last().unwrap().say;
+    assert!(asked.ends_with(&format!("Elige una: {}.", aule_core::informe::lista_o(&names))), "{tired:?}");
     assert_eq!(tappable(&tired), Some(names.clone()));
     assert_eq!(student.engine.step(student.now)["choices"]["options"], json!(names));
     let chosen = student.says(&names[1]);
