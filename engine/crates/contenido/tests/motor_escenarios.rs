@@ -400,6 +400,32 @@ fn ses05_sin_aviso_en_30_minutos() {
     assert_eq!(indice_aviso(&mut p), None);
 }
 
+/// [PROPUESTA] A quien dijo que está cansado y no elige, se le propone una
+/// actividad relajante, la siguiente de ellas en cada pausa; en una pausa por
+/// tiempo, la siguiente de la lista, como antes.
+#[test]
+fn cansado_sin_elegir_se_le_propone_una_actividad_relajante() {
+    let mut p = Prueba::new(Some(3), vec![obj(1, TipoObjetivo::Tarea, 5, Some(3))]);
+    p.iniciar();
+    p.e(Entrada::Cansado);
+    let r = p.e(Entrada::Texto("no sé, la que sea".into()));
+    assert!(texto(&r).contains("Respiración del globo"), "{}", texto(&r));
+    assert!(!texto(&r).contains("Saltos de estrella"), "{}", texto(&r));
+    p.e(Entrada::SaltarPausa);
+    p.e(Entrada::Cansado);
+    let r = p.e(Entrada::Texto("la que sea".into()));
+    assert!(texto(&r).contains("Estiramiento del gato"), "{}", texto(&r));
+
+    let mut p = Prueba::new(Some(3), vec![obj(1, TipoObjetivo::Tarea, 5, Some(3))]);
+    p.iniciar();
+    p.responder(true);
+    p.reloj.avanzar_min(31);
+    p.responder(true);
+    assert!(p.registro_tiene("PAU-02"));
+    let r = p.e(Entrada::Texto("no sé, la que sea".into()));
+    assert!(texto(&r).contains("Saltos de estrella"), "{}", texto(&r));
+}
+
 /// A22: minuto 30 en medio de un ejercicio: la pausa entra al terminar.
 #[test]
 fn a22_pausa_al_terminar_el_ejercicio() {
@@ -683,9 +709,9 @@ fn pausa_se_vuelve_diciendolo_y_una_pregunta_no_la_termina() {
     p.iniciar();
     p.e(Entrada::Cansado);
     assert_eq!(p.act(), "pausa");
-    // Sin nombrar una actividad, se le propone una.
+    // Sin nombrar una actividad, se le propone una: relajante, porque dijo que está cansado.
     let r = p.e(Entrada::Texto("no sé, la que sea".into()));
-    assert!(texto(&r).contains("Saltos de estrella"), "{}", texto(&r));
+    assert!(texto(&r).contains("Respiración del globo"), "{}", texto(&r));
     p.reloj.avanzar_s(60);
     let r = p.e(Entrada::Texto("¿cuánto falta?".into()));
     assert_eq!(

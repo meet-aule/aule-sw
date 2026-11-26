@@ -557,13 +557,14 @@ fn what_is_not_an_answer_goes_where_the_engine_expects_it() {
     assert!(turn.lines.is_empty(), "{turn:?}");
     assert!(turn.converse.unwrap().contains("active break"));
 
-    // "Ya volví" before doing any activity is answered, then one is proposed;
-    // said after the activity, it ends the break.
+    // "Ya volví" before doing any activity is answered, then one is proposed,
+    // a calm one since the break began with "estoy cansado"; said after the
+    // activity, it ends the break.
     let mut student = in_practice();
     student.says("estoy cansado");
     let turn = student.says("ya volví");
     let said = said_by_tutor(&turn);
-    assert!(said.contains("Antes de seguir") && said.contains("Saltos de estrella"), "{turn:?}");
+    assert!(said.contains("Antes de seguir") && said.contains("Respiración del globo"), "{turn:?}");
     assert_eq!(student.at(), "pausa");
     student.says("ya volví");
     assert_ne!(student.at(), "pausa");
