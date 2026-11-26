@@ -3,10 +3,11 @@
 
 use aule_core::banco::Angulo;
 use aule_core::config::Config;
+use aule_core::conversacion::Intencion;
 use aule_core::informe::Hecho;
 use aule_core::modelo::{EstadoObjetivo, Objetivo, Perfil, TipoObjetivo};
 use aule_core::motor::{
-    Calificacion, Clase, Entrada, Esperando, LecturaTarea, Mensaje, Motor, NO_TENGO_TAREA,
+    Calificacion, Clase, Entrada, Esperando, LecturaTarea, Mensaje, Motor, NO_TENGO_TAREA, SEGUIMOS,
 };
 use aule_core::reloj::RelojManual;
 use chrono::NaiveDate;
@@ -564,6 +565,174 @@ fn e202_tres_seguidos_a_la_primera_terminan_la_etapa2() {
     assert_eq!(p.act(), "etapa2:3:5");
     p.responder(true);
     assert_eq!(p.act(), "tarea:1");
+}
+
+/// Un Alumno con nivel 1 y una Tarea de nivel 2, recién empezada la Etapa 1
+/// del nivel 2: lo que el motor dijo al abrirla.
+fn en_la_teoria() -> (Prueba, Vec<Mensaje>) {
+    let mut p = Prueba::new(Some(1), vec![obj(1, TipoObjetivo::Tarea, 5, Some(2))]);
+    p.e(Entrada::Comenzar);
+    let r = p.e(Entrada::Texto("¡Listo, empecemos!".into()));
+    assert_eq!(p.act(), "etapa1:2:teoria");
+    (p, r)
+}
+
+fn charla(p: &mut Prueba, texto: &str) -> Vec<Mensaje> {
+    p.e(Entrada::Chat {
+        texto: texto.into(),
+        intencion: Intencion::Charla,
+    })
+}
+
+const RESPUESTAS_A_SEGUIMOS: [&str; 2] = ["Entendido, sigue", "No entendí"];
+
+/// [PROPUESTA] Por voz no hay un botón «Entendido, sigue»: cada explicación y
+/// cada ejemplo resuelto terminan preguntando «¿Seguimos?», y lo que se puede
+/// tocar son las dos respuestas que el motor ya sugería ahí. Sin la pregunta el
+/// Alumno no sabe que le toca decir que siga (sesiones de voz del 2026-11-26).
+#[test]
+fn e1_cada_explicacion_y_cada_ejemplo_resuelto_preguntan_si_seguimos() {
+    let banco = contenido::cargar_validado().unwrap();
+    let e1 = &banco.nivel(2).etapa1;
+    let (mut p, mut r) = en_la_teoria();
+    let mut vistos = 0;
+    while matches!(p.act().as_str(), "etapa1:2:teoria" | "etapa1:2:no_asistido") {
+        vistos += 1;
+        // Una sola vez, y al final: es lo último que oye.
+        assert_eq!(r.last().unwrap().texto, SEGUIMOS, "{}", texto(&r));
+        assert_eq!(
+            r.iter().filter(|m| m.texto == SEGUIMOS).count(),
+            1,
+            "{}",
+            texto(&r)
+        );
+        assert_eq!(opciones_de(&p, &r), RESPUESTAS_A_SEGUIMOS);
+        r = p.e(Entrada::Texto("Sí".into()));
+    }
+    assert_eq!(vistos, e1.teoria.len() + e1.no_asistidos.len());
+    // El ejemplo acompañado ya trae su propia pregunta: la otra no se añade.
+    assert_eq!(p.act(), "etapa1:2:asistido");
+    assert!(r.iter().all(|m| m.texto != SEGUIMOS), "{}", texto(&r));
+    assert!(p.m.opciones().is_empty());
+}
+
+/// [PROPUESTA] Lo que contesta a «¿Seguimos?» lo toma el motor, dicho como
+/// salga: «sí», «sigamos» o «seguimos» siguen; «no», «no entendí» u «otra vez»
+/// lo explican de nuevo, y se vuelve a preguntar.
+#[test]
+fn e1_lo_que_se_contesta_a_seguimos_lo_toma_el_motor() {
+    let (mut p, inicio) = en_la_teoria();
+    let primera = inicio
+        .iter()
+        .find(|m| m.clase == Clase::Teoria)
+        .unwrap()
+        .texto
+        .clone();
+    for dicho in [
+        "Sí",
+        "sigamos",
+        "Seguimos",
+        "No",
+        "no entendí",
+        "otra vez",
+        "Entendido, sigue",
+    ] {
+        assert!(p.m.texto_es_flujo(dicho), "{dicho}");
+    }
+    // Lo demás es conversación: lo contesta el modelo y no mueve nada.
+    for dicho in ["Tres partes de cuatro", "Cuatro", "no sé qué es eso"] {
+        assert!(!p.m.texto_es_flujo(dicho), "{dicho}");
+    }
+
+    let r = p.e(Entrada::Texto("No".into()));
+    assert_eq!(p.act(), "etapa1:2:teoria");
+    assert_eq!(
+        r[0].texto,
+        format!("Vamos de nuevo, despacito: {primera}"),
+        "{}",
+        texto(&r)
+    );
+    assert_eq!(r.last().unwrap().texto, SEGUIMOS);
+    assert_eq!(opciones_de(&p, &r), RESPUESTAS_A_SEGUIMOS);
+
+    // «Sigamos» pasa a la explicación siguiente, que ya no es la primera.
+    let r = p.e(Entrada::Texto("Sigamos".into()));
+    assert!(r.iter().all(|m| m.texto != primera), "{}", texto(&r));
+    assert_eq!(r.last().unwrap().texto, SEGUIMOS);
+}
+
+/// [PROPUESTA] Conversar sobre una explicación no la hace avanzar: un Alumno
+/// que contesta otra cosa que «sí» se quedaba ahí toda la sesión (59 turnos
+/// sin salir de la teoría, 2026-11-26). A la tercera vez seguida el motor
+/// sigue con lo siguiente por su cuenta, como al esperar la foto de la Tarea.
+#[test]
+fn e1_a_la_tercera_charla_seguida_el_motor_sigue_solo() {
+    let (mut p, inicio) = en_la_teoria();
+    let primera = inicio
+        .iter()
+        .find(|m| m.clase == Clase::Teoria)
+        .unwrap()
+        .texto
+        .clone();
+    assert_eq!(p.m.cfg.charlas_por_explicacion, 3);
+
+    // Dos veces el motor calla (contesta el modelo) y la explicación sigue ahí.
+    assert!(charla(&mut p, "Tres partes de cuatro, ¿no?").is_empty());
+    assert!(charla(&mut p, "Cuatro").is_empty());
+    assert_eq!(p.act(), "etapa1:2:teoria");
+    assert_eq!(p.m.opciones(), RESPUESTAS_A_SEGUIMOS);
+
+    // A la tercera sigue con la explicación siguiente y vuelve a preguntar.
+    let r = charla(&mut p, "¿Y si la pizza es cuadrada?");
+    assert_eq!(
+        r[0].texto,
+        "Sigamos, y lo vas a ver en lo que viene.",
+        "{}",
+        texto(&r)
+    );
+    assert!(
+        r.iter()
+            .any(|m| m.clase == Clase::Teoria && m.texto != primera),
+        "{}",
+        texto(&r)
+    );
+    assert_eq!(r.last().unwrap().texto, SEGUIMOS);
+    assert_eq!(opciones_de(&p, &r), RESPUESTAS_A_SEGUIMOS);
+    assert!(p.registro_tiene("3 turnos de conversación sobre la misma explicación"));
+
+    // La cuenta empieza de nuevo con cada explicación: la que trae el motor
+    // por su cuenta, la que pide el Alumno con «sí» y la que se repite.
+    assert!(charla(&mut p, "uno").is_empty());
+    assert!(charla(&mut p, "dos").is_empty());
+    p.e(Entrada::Texto("Sí".into()));
+    assert!(charla(&mut p, "uno").is_empty());
+    assert!(charla(&mut p, "dos").is_empty());
+    p.e(Entrada::Texto("No entendí".into()));
+    assert!(charla(&mut p, "uno").is_empty());
+    assert!(charla(&mut p, "dos").is_empty());
+    assert!(!charla(&mut p, "tres").is_empty());
+
+    // Así se sale de la teoría y de los ejemplos resueltos aunque nunca diga «sí».
+    let mut turnos = 0;
+    while matches!(p.act().as_str(), "etapa1:2:teoria" | "etapa1:2:no_asistido") {
+        turnos += 1;
+        assert!(turnos < 60, "no sale de la explicación");
+        charla(&mut p, "no sé");
+    }
+    assert_eq!(p.act(), "etapa1:2:asistido");
+    // En el ejemplo acompañado la conversación no se cuenta: ahí hay pistas.
+    for _ in 0..5 {
+        charla(&mut p, "hola");
+    }
+    assert_eq!(p.act(), "etapa1:2:asistido");
+
+    // Con el tope en 0 el motor nunca sigue solo.
+    let (mut q, _) = en_la_teoria();
+    q.m.cfg.charlas_por_explicacion = 0;
+    for _ in 0..8 {
+        assert!(charla(&mut q, "hola").is_empty());
+    }
+    assert_eq!(q.act(), "etapa1:2:teoria");
 }
 
 /// [PROPUESTA] E1-03: si los pasos del primer ejemplo guiado salen bien al

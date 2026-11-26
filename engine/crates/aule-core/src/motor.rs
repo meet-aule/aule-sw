@@ -85,6 +85,10 @@ fn msg(t: impl Into<String>) -> Mensaje {
 /// [PROPUESTA] TAR-06: lo que se toca para seguir sin la foto de la Tarea.
 /// Dicho o tocado, es un «no tengo» (`no_tiene_tarea`).
 pub const NO_TENGO_TAREA: &str = "No tengo mi tarea";
+/// [PROPUESTA] Lo que el motor pregunta al terminar cada explicación y cada
+/// ejemplo resuelto de la Etapa 1: por voz no hay un botón «Entendido, sigue»,
+/// y sin la pregunta el Alumno no sabe que le toca decir que siga.
+pub const SEGUIMOS: &str = "¿Seguimos?";
 
 impl Mensaje {
     fn clase(mut self, c: Clase) -> Self {
@@ -458,6 +462,9 @@ pub struct Motor {
     inicio_ms: u64,
     iniciada: bool,
     pausas_tomadas: u32,
+    /// [PROPUESTA] Turnos de conversación seguidos sobre la explicación o el
+    /// ejemplo resuelto en pantalla (`Config::charlas_por_explicacion`).
+    charlas_explicacion: u8,
     pausa_total_ms: u64,
     e1_lista: Option<u8>,
     remediacion: VecDeque<u8>,
@@ -516,6 +523,7 @@ impl Motor {
             inicio_ms: 0,
             iniciada: false,
             pausas_tomadas: 0,
+            charlas_explicacion: 0,
             pausa_total_ms: 0,
             e1_lista: None,
             remediacion: VecDeque::new(),
@@ -670,6 +678,13 @@ impl Motor {
             }
             // «¿Te parece si seguimos aprendiendo…?»: sí sigue, no cierra.
             Actividad::ElegirTema { .. } => vec!["Sí".into(), "No".into()],
+            // «¿Seguimos?»: las dos respuestas que el motor ya sugería ahí.
+            Actividad::Etapa1(e) if matches!(e.fase, FaseE1::Teoria(_) | FaseE1::NoAsistido(_)) => {
+                match self.esperando() {
+                    Esperando::Conversacion { sugerencias } => sugerencias,
+                    _ => vec![],
+                }
+            }
             _ => vec![],
         }
     }
@@ -2045,12 +2060,46 @@ impl Motor {
         self.presentar(out, true);
     }
 
-    fn texto_e1(&mut self, mut e1: E1, t: &str, out: &mut Vec<Mensaje>) {
+    /// [PROPUESTA] Cierra una explicación o un ejemplo resuelto con la pregunta
+    /// que dice cómo se sigue, y empieza de cero la cuenta de conversación.
+    fn preguntar_si_seguimos(&mut self, out: &mut Vec<Mensaje>) {
+        self.charlas_explicacion = 0;
+        out.push(msg(SEGUIMOS));
+    }
+
+    /// De una explicación o un ejemplo resuelto a lo que sigue: la siguiente
+    /// explicación, el siguiente ejemplo o el primer ejemplo acompañado.
+    fn seguir_e1(&mut self, mut e1: E1, out: &mut Vec<Mensaje>) {
+        let c = self.nivel_c(e1.nivel);
+        e1.fase = match e1.fase {
+            FaseE1::Teoria(i) if i + 1 < c.etapa1.teoria.len() => FaseE1::Teoria(i + 1),
+            FaseE1::Teoria(_) => FaseE1::NoAsistido(0),
+            FaseE1::NoAsistido(i) if i + 1 < c.etapa1.no_asistidos.len() => {
+                FaseE1::NoAsistido(i + 1)
+            }
+            FaseE1::NoAsistido(_) => FaseE1::Asistido {
+                ej: 0,
+                paso: 0,
+                fallos: 0,
+                limpio: true,
+            },
+            otra => otra,
+        };
+        self.act = Actividad::Etapa1(e1);
+        if self.frontera_suave(out) {
+            return;
+        }
+        self.presentar(out, true);
+    }
+
+    fn texto_e1(&mut self, e1: E1, t: &str, out: &mut Vec<Mensaje>) {
         let n = normalizar(t);
         let no_entendi = n.contains("no entend")
             || n.contains("otra vez")
             || n.contains("repite")
-            || n.contains("no comprend");
+            || n.contains("no comprend")
+            // «¿Seguimos?» · «No»: se le explica otra vez.
+            || n == "no";
         let pregunta = t.contains('?')
             || ["que ", "como ", "por que", "porque ", "cual ", "cuando "]
                 .iter()
@@ -2068,6 +2117,7 @@ impl Motor {
                                 b.texto
                             )),
                     );
+                    self.preguntar_si_seguimos(out);
                     self.act = Actividad::Etapa1(e1);
                     return;
                 }
@@ -2079,19 +2129,11 @@ impl Motor {
                                 c.titulo, t
                             )),
                     );
+                    self.preguntar_si_seguimos(out);
                     self.act = Actividad::Etapa1(e1);
                     return;
                 }
-                e1.fase = if i + 1 < c.etapa1.teoria.len() {
-                    FaseE1::Teoria(i + 1)
-                } else {
-                    FaseE1::NoAsistido(0)
-                };
-                self.act = Actividad::Etapa1(e1);
-                if self.frontera_suave(out) {
-                    return;
-                }
-                self.presentar(out, true);
+                self.seguir_e1(e1, out);
             }
             FaseE1::NoAsistido(i) => {
                 if no_entendi || pregunta {
@@ -2105,24 +2147,11 @@ impl Motor {
                                 t
                             )),
                     );
+                    self.preguntar_si_seguimos(out);
                     self.act = Actividad::Etapa1(e1);
                     return;
                 }
-                e1.fase = if i + 1 < c.etapa1.no_asistidos.len() {
-                    FaseE1::NoAsistido(i + 1)
-                } else {
-                    FaseE1::Asistido {
-                        ej: 0,
-                        paso: 0,
-                        fallos: 0,
-                        limpio: true,
-                    }
-                };
-                self.act = Actividad::Etapa1(e1);
-                if self.frontera_suave(out) {
-                    return;
-                }
-                self.presentar(out, true);
+                self.seguir_e1(e1, out);
             }
             FaseE1::Asistido { .. } => {
                 self.act = Actividad::Etapa1(e1);
@@ -3749,6 +3778,7 @@ impl Motor {
                             self.aplicar("E1-02", "Teoría que parte del nivel que ya alcanzó");
                         }
                         out.push(m);
+                        self.preguntar_si_seguimos(out);
                     }
                     FaseE1::NoAsistido(i) => {
                         let ej = &c.etapa1.no_asistidos[i];
@@ -3769,6 +3799,7 @@ impl Motor {
                             pasos: ej.pasos.clone(),
                             grafico: ej.grafico.clone(),
                         }));
+                        self.preguntar_si_seguimos(out);
                     }
                     FaseE1::Asistido { ej, paso, .. } => {
                         let x = &c.etapa1.asistidos[ej];
@@ -3852,6 +3883,8 @@ impl Motor {
         let n = normalizar(t);
         let palabras_avance = [
             "sigue",
+            "sigamos",
+            "seguimos",
             "siguiente",
             "continua",
             "continuemos",
@@ -3886,6 +3919,8 @@ impl Motor {
                     || n.contains("no entend")
                     || n.contains("otra vez")
                     || n.contains("repite")
+                    // «¿Seguimos?» · «No»: lo toma el motor, que explica otra vez.
+                    || n == "no"
             }
             _ => true,
         }
@@ -3977,6 +4012,38 @@ impl Motor {
                 "Aclarar vocabulario del enunciado (pedido por Cesar, 2026-11-15): no cuenta como pista",
             );
         }
+        self.contar_charla_de_explicacion(out);
+    }
+
+    /// [PROPUESTA] Conversar sobre una explicación o un ejemplo resuelto no los
+    /// hace avanzar: quien conteste otra cosa que «sí» se quedaría ahí toda la
+    /// sesión. A la tercera vez seguida (`Config::charlas_por_explicacion`) el
+    /// motor sigue con lo siguiente por su cuenta, como al esperar la foto.
+    fn contar_charla_de_explicacion(&mut self, out: &mut Vec<Mensaje>) {
+        // Si el motor ya contestó este mensaje, no fue conversación libre.
+        if !out.is_empty() {
+            return;
+        }
+        let Actividad::Etapa1(e1) = self.act.clone() else {
+            return;
+        };
+        if !matches!(e1.fase, FaseE1::Teoria(_) | FaseE1::NoAsistido(_)) {
+            return;
+        }
+        self.charlas_explicacion = self.charlas_explicacion.saturating_add(1);
+        let tope = self.cfg.charlas_por_explicacion;
+        if tope == 0 || self.charlas_explicacion < tope {
+            return;
+        }
+        self.aplicar(
+            "E1-06",
+            &format!(
+                "{} turnos de conversación sobre la misma explicación: se sigue con lo siguiente",
+                self.charlas_explicacion
+            ),
+        );
+        out.push(msg("Sigamos, y lo vas a ver en lo que viene."));
+        self.seguir_e1(e1, out);
     }
 
     pub fn esperando(&self) -> Esperando {
