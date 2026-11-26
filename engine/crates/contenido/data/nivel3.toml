@@ -2,6 +2,7 @@
 nivel = 3
 titulo = "Suma y resta con igual denominador; mixtos e impropias"
 subtema = "sumar y restar fracciones con igual denominador y convertir mixtos e impropias"
+nombre_corto = "las sumas y restas con el mismo denominador"
 
 # ---------------------------------------------------------------- Tamizaje
 

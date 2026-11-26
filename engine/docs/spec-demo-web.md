@@ -38,7 +38,7 @@ Next item correctness, Time-to-master.
 - **TAM-04.** Cada pregunta pide respuesta y explicación; es correcta solo si las dos están bien.
 - **TAM-05.** Aule baja la ansiedad ("Tranquilo, con calma", "No pasa nada si fallamos, estamos para aprender", "Tú puedes").
 - **TAM-06.** El Alumno puede salir si se siente abrumado: queda en el último nivel consecutivo correcto y la sesión siguiente retoma desde ese mismo nivel con una pregunta distinta.
-- **TAM-08.** El resultado y el plan van en el Informe.
+- **TAM-08.** El resultado y el plan van en el Informe. **[PROPUESTA]** Con un nivel por debajo del Nivel objetivo, Aule también le cuenta el plan al Alumno: qué va a reforzar antes del objetivo y para qué.
 
 ## 4. Sesión
 

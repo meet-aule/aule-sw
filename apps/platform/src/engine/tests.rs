@@ -152,7 +152,13 @@ fn a_session_runs_from_the_greeting_to_the_report() {
     let last = student.answers(true);
     // Right, then wrong: the student is at level 1 and discovers level 2.
     assert_eq!(student.at(), "etapa1:2:teoria", "{}", said_by_tutor(&last));
-    assert!(last.lines.iter().any(|line| line.reword), "the engine closes the screening in a model's words");
+    // Below the homework's level, the screening closes with the plan, word for
+    // word: what is reinforced before the homework, and why.
+    let plan = "He analizado cómo te fue en los ejercicios, y antes de que hagamos la tarea, te voy a \
+                ayudar a reforzar las fracciones equivalentes, las sumas y restas con el mismo denominador \
+                y las sumas y restas con distinto denominador. Esto es importante para que aprendas a \
+                hacer la tarea por tu cuenta.";
+    assert!(last.lines.iter().any(|line| line.say == plan && !line.reword), "{}", said_by_tutor(&last));
 
     // Discovery: the theory moves on with "sigue"; a worked example is spoken step by step.
     student.until("etapa1:2:no_asistido");

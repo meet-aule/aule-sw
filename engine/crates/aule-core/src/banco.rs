@@ -246,6 +246,10 @@ pub struct NivelContenido {
     pub titulo: String,
     /// Nombre corto para el informe ("sumar fracciones con distinto denominador").
     pub subtema: String,
+    /// [PROPUESTA] Cómo lo dice Aule en voz alta al contar el plan, en pocas
+    /// palabras ("las fracciones equivalentes"): el título y el subtema son
+    /// largos para oírlos en una lista.
+    pub nombre_corto: String,
     pub tamizaje: Vec<Ejercicio>,
     pub etapa1: Etapa1,
     pub ejercicios: Vec<Ejercicio>,

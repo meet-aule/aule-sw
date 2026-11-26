@@ -422,6 +422,9 @@ pub struct Motor {
     e1_vueltas: BTreeMap<u8, u32>,
     /// Pasos de la ruta ya empezados (clave, nombre, detalle).
     ruta_hecha: Vec<(String, String, String)>,
+    /// [PROPUESTA] Niveles del plan que se le contó al Alumno (`decir_plan`),
+    /// hasta que empieza el primero.
+    plan_dicho: Vec<u8>,
 }
 
 impl Motor {
@@ -469,6 +472,7 @@ impl Motor {
             ritmo: vec![],
             e1_vueltas: BTreeMap::new(),
             ruta_hecha: vec![],
+            plan_dicho: vec![],
         }
     }
 
@@ -1496,17 +1500,74 @@ impl Motor {
             }
             self.aplicar("TAM-08", "Resultado y plan van en el Informe");
         }
-        let texto = match nivel {
-            0 => "¡Terminamos el Tamizaje! Ya sé por dónde empezar: vamos a construir las fracciones desde el principio, paso a paso.".to_string(),
-            n if n >= self.cfg.niveles_por_tema => "¡Terminamos el Tamizaje! Resolviste todo muy bien.".to_string(),
-            n => format!(
-                "¡Terminamos el Tamizaje! Ya sé por dónde empezar: lo del nivel {n} ya lo manejas, así que seguimos desde ahí."
+        // [PROPUESTA] Por debajo del Nivel objetivo, el cierre es el plan. Sin
+        // ningún nivel, con el 5 o con el objetivo ya alcanzado, el de siempre.
+        if nivel == 0 || !self.decir_plan(nivel, out) {
+            let texto = match nivel {
+                0 => "¡Terminamos el Tamizaje! Ya sé por dónde empezar: vamos a construir las fracciones desde el principio, paso a paso.".to_string(),
+                n if n >= self.cfg.niveles_por_tema => "¡Terminamos el Tamizaje! Resolviste todo muy bien.".to_string(),
+                n => format!(
+                    "¡Terminamos el Tamizaje! Ya sé por dónde empezar: lo del nivel {n} ya lo manejas, así que seguimos desde ahí."
+                ),
+            };
+            out.push(msg(texto).ia(
+                "Cierra el Tamizaje con calidez en 1 o 2 frases: agradece el esfuerzo y di que ya sabes por dónde empezar. No menciones respuestas correctas ni incorrectas.",
+            ));
+        }
+        self.avanzar(out);
+    }
+
+    /// [PROPUESTA] Le cuenta al Alumno qué vamos a reforzar antes del objetivo,
+    /// en el orden en que lo veremos, y para qué. Devuelve si había algo que
+    /// reforzar. Va aparte para poder decirlo también en otro momento, por
+    /// ejemplo después de ver la Tarea.
+    fn decir_plan(&mut self, nivel: u8, out: &mut Vec<Mensaje>) -> bool {
+        let Some(oi) = self.obj_actual else {
+            return false;
+        };
+        let tipo = self.objetivos[oi].tipo;
+        // Hasta el Nivel objetivo (RUT-03); en extracurricular, el nivel siguiente (RUT-04).
+        let hasta = match tipo {
+            TipoObjetivo::Extracurricular => self
+                .extra_objetivo
+                .unwrap_or(nivel + 1)
+                .min(self.cfg.niveles_por_tema),
+            _ => self.nivel_objetivo(oi),
+        };
+        let niveles: Vec<u8> = ((nivel + 1)..=hasta).collect();
+        if niveles.is_empty() {
+            return false;
+        }
+        let nombres: Vec<String> = niveles
+            .iter()
+            .map(|l| self.banco.nivel(*l).nombre_corto.clone())
+            .collect();
+        let temas = lista(&nombres);
+        let texto = match tipo {
+            TipoObjetivo::Tarea => format!(
+                "He analizado cómo te fue en los ejercicios, y antes de que hagamos la tarea, te voy a ayudar a reforzar {temas}. Esto es importante para que aprendas a hacer la tarea por tu cuenta."
+            ),
+            TipoObjetivo::Preparacion => format!(
+                "He analizado cómo te fue en los ejercicios, y antes de que simulemos tu evaluación, te voy a ayudar a reforzar {temas}. Esto es importante para que en tu evaluación puedas resolver todo por tu cuenta."
+            ),
+            TipoObjetivo::Correccion => format!(
+                "He analizado cómo te fue en los ejercicios, y antes de que revisemos tu evaluación, te voy a ayudar a reforzar {temas}. Esto es importante para que puedas resolver por tu cuenta las preguntas que te salieron mal."
+            ),
+            TipoObjetivo::Extracurricular => format!(
+                "He analizado cómo te fue en los ejercicios, y ya sé desde dónde empezar: te voy a ayudar a aprender {temas}."
             ),
         };
-        out.push(msg(texto).ia(
-            "Cierra el Tamizaje con calidez en 1 o 2 frases: agradece el esfuerzo y di que ya sabes por dónde empezar. No menciones respuestas correctas ni incorrectas.",
-        ));
-        self.avanzar(out);
+        let numeros: Vec<String> = niveles.iter().map(|l| l.to_string()).collect();
+        self.aplicar(
+            "TAM-08",
+            &format!(
+                "Plan contado al Alumno: niveles {} antes del objetivo",
+                lista(&numeros)
+            ),
+        );
+        out.push(msg(texto));
+        self.plan_dicho = niveles;
+        true
     }
 
     fn salir_tamizaje(&mut self, out: &mut Vec<Mensaje>) {
@@ -1625,11 +1686,21 @@ impl Motor {
             self.cerrar(out);
             return;
         }
+        let plan = std::mem::take(&mut self.plan_dicho);
         if vuelta == 1 {
-            out.push(msg(format!(
-                "Etapa 1: Descubrimiento. Vamos a aprender algo nuevo: {}.",
-                n.titulo.to_lowercase()
-            )));
+            // [PROPUESTA] Recién contado el plan, su primer nivel no se presenta
+            // como algo nuevo: se empieza por lo que el Alumno acaba de oír.
+            let texto = match plan.first() {
+                Some(&l) if l == nivel && plan.len() > 1 => {
+                    format!("Etapa 1: Descubrimiento. Empecemos por {}.", n.nombre_corto)
+                }
+                Some(&l) if l == nivel => "Etapa 1: Descubrimiento. ¡Empecemos!".to_string(),
+                _ => format!(
+                    "Etapa 1: Descubrimiento. Vamos a aprender algo nuevo: {}.",
+                    n.titulo.to_lowercase()
+                ),
+            };
+            out.push(msg(texto));
         } else {
             out.push(msg(format!(
                 "Etapa 1: Descubrimiento, otra vez: {}. Esta vez te lo cuento de otra forma.",

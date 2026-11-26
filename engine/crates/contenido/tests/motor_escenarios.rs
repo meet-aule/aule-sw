@@ -237,6 +237,118 @@ fn tam01_el_calentamiento_dice_para_que_es() {
     }
 }
 
+/// Responde las 5 preguntas del Tamizaje; devuelve lo que dijo Aule a la última.
+fn hacer_tamizaje(p: &mut Prueba, respuestas: [bool; 5]) -> Vec<Mensaje> {
+    let mut ultima = vec![];
+    for ok in respuestas {
+        assert!(p.act().starts_with("tamizaje"), "{}", p.act());
+        ultima = p.responder(ok);
+    }
+    ultima
+}
+
+fn textos(ms: &[Mensaje]) -> Vec<&str> {
+    ms.iter().map(|m| m.texto.as_str()).collect()
+}
+
+/// [PROPUESTA] Nivel 1 y tarea de nivel 3: al terminar el Tamizaje, Aule cuenta
+/// qué va a reforzar antes de la tarea y para qué, y empieza por el primero.
+#[test]
+fn tam08_el_plan_se_le_cuenta_al_alumno() {
+    let mut p = Prueba::new(None, vec![obj(1, TipoObjetivo::Tarea, 5, Some(3))]);
+    p.iniciar();
+    let r = hacer_tamizaje(&mut p, [true, false, false, false, false]);
+    assert_eq!(p.m.perfil.niveles["Fracciones"], 1);
+    assert_eq!(p.act(), "etapa1:2:teoria");
+    assert_eq!(
+        textos(&r)[..3],
+        [
+            "¡Gracias! Esa era la última pregunta del Tamizaje.",
+            "He analizado cómo te fue en los ejercicios, y antes de que hagamos la tarea, te voy a ayudar a reforzar las fracciones equivalentes y las sumas y restas con el mismo denominador. Esto es importante para que aprendas a hacer la tarea por tu cuenta.",
+            "Etapa 1: Descubrimiento. Empecemos por las fracciones equivalentes.",
+        ]
+    );
+    assert!(
+        !texto(&r).contains("¡Terminamos el Tamizaje!"),
+        "{}",
+        texto(&r)
+    );
+    assert!(p.registro_tiene("Plan contado al Alumno: niveles 2 y 3"));
+    // El nivel que sigue en el plan se presenta como siempre.
+    p.pasar_e1();
+    p.pasar_e2();
+    assert_eq!(p.act(), "etapa1:3:teoria");
+    assert!(texto(&p.log).contains(
+        "Etapa 1: Descubrimiento. Vamos a aprender algo nuevo: suma y resta con igual denominador; mixtos e impropias."
+    ));
+}
+
+/// [PROPUESTA] El plan según el objetivo; con un solo nivel se empieza sin
+/// repetir su nombre. Sin ningún nivel o con el objetivo ya alcanzado no hay
+/// plan: el cierre de siempre.
+#[test]
+fn tam08_el_plan_segun_el_objetivo_y_solo_si_hay_que_reforzar() {
+    let casos = [
+        (
+            vec![obj(1, TipoObjetivo::Preparacion, 5, Some(4))],
+            "He analizado cómo te fue en los ejercicios, y antes de que simulemos tu evaluación, te voy a ayudar a reforzar las sumas y restas con el mismo denominador y las sumas y restas con distinto denominador. Esto es importante para que en tu evaluación puedas resolver todo por tu cuenta.",
+            "Etapa 1: Descubrimiento. Empecemos por las sumas y restas con el mismo denominador.",
+        ),
+        (
+            // El nivel objetivo es el de las preguntas que falló (4).
+            vec![obj(1, TipoObjetivo::Correccion, -2, None)],
+            "He analizado cómo te fue en los ejercicios, y antes de que revisemos tu evaluación, te voy a ayudar a reforzar las sumas y restas con el mismo denominador y las sumas y restas con distinto denominador. Esto es importante para que puedas resolver por tu cuenta las preguntas que te salieron mal.",
+            "Etapa 1: Descubrimiento. Empecemos por las sumas y restas con el mismo denominador.",
+        ),
+        (
+            vec![obj(1, TipoObjetivo::Tarea, 5, Some(3))],
+            "He analizado cómo te fue en los ejercicios, y antes de que hagamos la tarea, te voy a ayudar a reforzar las sumas y restas con el mismo denominador. Esto es importante para que aprendas a hacer la tarea por tu cuenta.",
+            "Etapa 1: Descubrimiento. ¡Empecemos!",
+        ),
+        (
+            // Extracurricular: solo el nivel siguiente (RUT-04).
+            vec![],
+            "He analizado cómo te fue en los ejercicios, y ya sé desde dónde empezar: te voy a ayudar a aprender las sumas y restas con el mismo denominador.",
+            "Etapa 1: Descubrimiento. ¡Empecemos!",
+        ),
+    ];
+    for (objetivos, plan, empieza) in casos {
+        let elige_tema = objetivos.is_empty();
+        let mut p = Prueba::new(None, objetivos);
+        p.iniciar();
+        if elige_tema {
+            p.e(Entrada::Texto("Sí, fracciones".into()));
+        }
+        let r = hacer_tamizaje(&mut p, [true, true, false, false, false]);
+        assert_eq!(p.act(), "etapa1:3:teoria");
+        assert_eq!(textos(&r)[1..3], [plan, empieza], "{}", texto(&r));
+    }
+
+    // Ningún nivel: se construye desde el principio, sin plan.
+    let mut p = Prueba::new(None, vec![obj(1, TipoObjetivo::Tarea, 5, Some(3))]);
+    p.iniciar();
+    let r = hacer_tamizaje(&mut p, [false; 5]);
+    assert_eq!(p.act(), "etapa1:1:teoria");
+    assert_eq!(
+        textos(&r)[1..3],
+        [
+            "¡Terminamos el Tamizaje! Ya sé por dónde empezar: vamos a construir las fracciones desde el principio, paso a paso.",
+            "Etapa 1: Descubrimiento. Vamos a aprender algo nuevo: leer, escribir y representar fracciones.",
+        ]
+    );
+    // Ya tiene el nivel de la tarea: a la tarea, sin plan.
+    let mut p = Prueba::new(None, vec![obj(1, TipoObjetivo::Tarea, 5, Some(3))]);
+    p.iniciar();
+    let r = hacer_tamizaje(&mut p, [true, true, true, false, false]);
+    assert_eq!(p.act(), "tarea:1");
+    assert!(
+        texto(&r).contains("lo del nivel 3 ya lo manejas"),
+        "{}",
+        texto(&r)
+    );
+    assert!(!texto(&p.log).contains("He analizado"), "{}", texto(&p.log));
+}
+
 /// A12: nivel 3 y tarea de nivel 3: directo a la tarea.
 #[test]
 fn a12_directo_a_la_tarea() {
