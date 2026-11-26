@@ -32,7 +32,7 @@ from aule_agent.tutor import UNCHECKED, OpenExercise, Tutor
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[3]
-TUTOR_MODEL = "claude-sonnet-5-5"
+TUTOR_MODEL = os.environ.get("AULE_EVAL_TUTOR_MODEL", "claude-sonnet-5-5")
 JUDGE_MODEL = "claude-haiku-5-5"
 # Model steps with tools a turn may take: the 100-case benchmark keeps the
 # eval's own 4; the replay takes production's, LiveKit's default.

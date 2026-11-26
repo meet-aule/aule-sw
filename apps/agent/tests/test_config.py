@@ -154,6 +154,14 @@ def test_the_tutor_model_answers_with_text_not_only_thinking(monkeypatch):
     providers.build_llm(Settings.from_env(COMPLETE)).chat(chat_ctx=None)
     assert seen["extra_kwargs"]["thinking"] == {"type": "between_tools"}
 
+    # Haiku 5.5 speaks with no thinking at all, under the same reply ceiling.
+    seen.clear()
+    on_haiku = Settings.from_env({**COMPLETE, "AULE_LLM_MODEL": "claude-haiku-5-5"})
+    haiku = providers.build_llm(on_haiku)
+    haiku.chat(chat_ctx=None)
+    assert seen["extra_kwargs"]["thinking"] == {"type": "disabled"}
+    assert haiku._opts.max_tokens == providers.MAX_REPLY_TOKENS
+
     seen.clear()
     other = Settings.from_env({**COMPLETE, "AULE_LLM_MODEL": "claude-opus-5-5"})
     built = providers.build_llm(other)

@@ -23,9 +23,14 @@ MAX_REPLY_TOKENS = 300
 
 # Models whose thinking is on by default and counts against ``max_tokens``. With
 # a ceiling this low the thinking alone can use all of it and the reply comes
-# back with no text at all, so the tutor says nothing. On these models thinking
-# is limited to between tool calls, which also halves the time to the reply.
-THINKS_BETWEEN_TOOLS = ("claude-sonnet-5-5",)
+# back with no text at all, so the tutor says nothing. Each is told how not to
+# think before it speaks: Sonnet 5.5 refuses "disabled" and thinks only between
+# tool calls, which also halves the time to the reply; Haiku 5.5 takes
+# "disabled" at its default effort.
+SPOKEN_THINKING = {
+    "claude-sonnet-5-5": {"type": "between_tools"},
+    "claude-haiku-5-5": {"type": "disabled"},
+}
 # Any other model keeps its own thinking and gets room for it.
 MAX_TOKENS_WITH_THINKING = 1024
 
@@ -345,14 +350,18 @@ def build_tts(settings: Settings, language: str) -> tts.TTS:
 def build_llm(settings: Settings, *, client: Any = None) -> llm.LLM:
     from livekit.plugins import anthropic
 
-    spoken = settings.llm_model.startswith(THINKS_BETWEEN_TOOLS)
+    thinking = next(
+        (way for name, way in SPOKEN_THINKING.items() if settings.llm_model.startswith(name)),
+        None,
+    )
+    spoken = thinking is not None
 
     class TutorLLM(anthropic.LLM):
         def chat(self, **kwargs: Any) -> llm.LLMStream:
-            if spoken:
+            if thinking is not None:
                 given = kwargs.get("extra_kwargs")
                 extra = dict(given) if isinstance(given, dict) else {}
-                extra.setdefault("thinking", {"type": "between_tools"})
+                extra.setdefault("thinking", dict(thinking))
                 kwargs["extra_kwargs"] = extra
             return super().chat(**kwargs)
 
