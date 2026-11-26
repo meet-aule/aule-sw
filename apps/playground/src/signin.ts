@@ -8,11 +8,14 @@ const COOKIE = "aule_guardian";
 // A platform session token: 32 random bytes in hex.
 const TOKEN = /^[0-9a-f]{64}$/;
 
+/** Whether `value` has the shape of a platform session token. */
+export const isSessionToken = (value: string) => TOKEN.test(value);
+
 /** The signed-in guardian's platform token, or null when nobody is signed in. */
 export function guardianToken(request: IncomingMessage): string | null {
   for (const part of (request.headers.cookie ?? "").split(";")) {
     const [name, value] = part.trim().split("=");
-    if (name === COOKIE && value && TOKEN.test(value)) return value;
+    if (name === COOKIE && value && isSessionToken(value)) return value;
   }
   return null;
 }

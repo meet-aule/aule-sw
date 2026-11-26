@@ -46,6 +46,10 @@ Three kinds of caller use `Authorization: Bearer ...`:
 
 Devices do not use a bearer token: they sign with the key burned into them.
 
+The family app reaches the guardian's routes it calls, and no others, through
+[the playground's pass-through](../playground/README.md#the-family-apps-api),
+which takes a guardian's bearer only.
+
 ### Sign-in and account (guardian)
 
 | Route | What it does |
