@@ -154,6 +154,28 @@ pub enum Esperando {
     Actividad {
         opciones: Vec<String>,
     },
+    /// [PROPUESTA] TAR-05: la foto de la Tarea, que se lee fuera del motor
+    /// (`Entrada::FotoTarea`). Lo que diga el Alumno mientras tanto llega como
+    /// texto: «no tengo» sigue sin ella (TAR-06).
+    FotoTarea,
+}
+
+/// [PROPUESTA] TAR-05: lo que se leyó en una foto de la Tarea, fuera del
+/// motor. Llega solo el nivel, nunca la foto (DAT-03).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "tipo", rename_all = "snake_case")]
+pub enum LecturaTarea {
+    /// Una Tarea del tema: el nivel más alto que se ve en ella, y la confianza
+    /// de la lectura, de 0 a 100.
+    Leida { nivel: u8, confianza: u8 },
+    /// Una Tarea de otro curso o tema.
+    OtroTema,
+    /// En la foto no se ve una Tarea.
+    SinTarea,
+    /// La Tarea no se ve bien.
+    Borrosa,
+    /// No se pudo mirar la foto: quien la lee falló o no respondió.
+    NoDisponible,
 }
 
 /// Resultado de corregir (determinista y/o IA), calculado fuera del motor.
@@ -187,6 +209,8 @@ pub enum Entrada {
         texto: String,
         intencion: crate::conversacion::Intencion,
     },
+    /// [PROPUESTA] TAR-05: lo que se leyó en la foto de la Tarea que el motor pidió.
+    FotoTarea(LecturaTarea),
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -345,6 +369,17 @@ struct Pausa {
     por_cansancio: bool,
 }
 
+/// [PROPUESTA] TAR-05: la foto de la Tarea del objetivo en curso.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum EstadoFoto {
+    /// Todavía no se vio.
+    Pendiente,
+    /// Se leyó su nivel, que es el Nivel objetivo.
+    Leida { nivel: u8 },
+    /// Se sigue sin ella (TAR-07).
+    SinFoto,
+}
+
 #[derive(Clone, Debug)]
 enum Actividad {
     NoIniciada,
@@ -352,6 +387,15 @@ enum Actividad {
     Bienvenida,
     ElegirTema {
         intentos: u8,
+    },
+    /// [PROPUESTA] TAR-05: se espera la foto de la Tarea. `nivel` es el del
+    /// Alumno; `intentos`, las fotos que no se pudieron leer; `charlas`, los
+    /// turnos de conversación sin foto (TAR-06).
+    PedirTarea {
+        nivel: u8,
+        intentos: u8,
+        charlas: u8,
+        tras_tamizaje: bool,
     },
     Tamizaje(Box<Tam>),
     Etapa1(E1),
@@ -438,6 +482,8 @@ pub struct Motor {
     /// TAM-08: el tema y el nivel de un Tamizaje que terminó, hasta que su
     /// resultado y su plan van al Informe (`registrar_plan`).
     plan_pendiente: Option<(String, u8)>,
+    /// [PROPUESTA] TAR-05: la foto de la Tarea del objetivo en curso.
+    foto: EstadoFoto,
 }
 
 impl Motor {
@@ -487,6 +533,7 @@ impl Motor {
             ruta_hecha: vec![],
             plan_dicho: vec![],
             plan_pendiente: None,
+            foto: EstadoFoto::Pendiente,
         }
     }
 
@@ -571,6 +618,7 @@ impl Motor {
             Entrada::Texto(t) => self.texto(t, &mut out),
             Entrada::Calificada(c) => self.calificada(c, &mut out),
             Entrada::Chat { texto, intencion } => self.chat(&texto, intencion, &mut out),
+            Entrada::FotoTarea(lectura) => self.foto_tarea(lectura, &mut out),
         }
         out
     }
@@ -788,6 +836,7 @@ impl Motor {
                 self.avanzar(out);
             }
             Actividad::ElegirTema { intentos } => self.elegir_tema(&t, intentos, out),
+            Actividad::PedirTarea { .. } => self.texto_pedir_tarea(&t, out),
             Actividad::Etapa1(e1) => self.texto_e1(e1, &t, out),
             Actividad::Pausa(p) => {
                 if let Some(k) = self.leer_actividad(&t) {
@@ -879,6 +928,8 @@ impl Motor {
         self.sim_ronda = 0;
         self.sim_errores_informados = false;
         self.aviso_dado = false;
+        // Cada Tarea tiene su foto (TAR-05).
+        self.foto = EstadoFoto::Pendiente;
         let o = self.objetivos[i].clone();
         self.aplicar(
             "OBJ-07",
@@ -1004,6 +1055,12 @@ impl Motor {
                 "RUT-04",
                 &format!("Extracurricular: Etapa 1 y 2 del nivel {}", nivel + 1),
             );
+        }
+
+        // [PROPUESTA] TAR-05: con el nivel del Alumno ya conocido, antes de
+        // decidir la ruta se ve la Tarea, cuyo nivel es el Nivel objetivo.
+        if self.foto_por_pedir(oi) {
+            return self.pedir_foto_tarea(nivel, out);
         }
 
         // PRE-09: remediación de la simulación.
@@ -1479,8 +1536,17 @@ impl Motor {
         );
         if completo {
             self.plan_pendiente = Some((tam.tema.clone(), nivel));
-            self.registrar_plan();
         }
+        // [PROPUESTA] TAR-05: con la foto de la Tarea por ver, el Nivel objetivo
+        // todavía no se conoce: el plan se registra y se cuenta después de verla.
+        if self.obj_actual.is_some_and(|oi| self.foto_por_pedir(oi)) {
+            self.aplicar("TAR-05", "El plan espera a la foto de la Tarea");
+            out.push(msg(
+                "¡Terminamos el calentamiento! Gracias por pensar conmigo.",
+            ));
+            return self.avanzar(out);
+        }
+        self.registrar_plan();
         // [PROPUESTA] Por debajo del Nivel objetivo, el cierre es el plan. Sin
         // ningún nivel, con el 5 o con el objetivo ya alcanzado, el de siempre.
         if nivel == 0 || !self.decir_plan(nivel, out) {
@@ -1504,6 +1570,21 @@ impl Motor {
         let Some((tema, nivel)) = self.plan_pendiente.take() else {
             return;
         };
+        let (hecho, plan) = self.resultado_tamizaje(tema, nivel);
+        if let Some((niveles, sesiones)) = plan {
+            self.estimacion_sesiones = Some(sesiones);
+            self.aplicar(
+                "PRE-02",
+                &format!("Plan: {niveles} niveles → {sesiones} sesiones"),
+            );
+        }
+        self.hechos.push(hecho);
+        self.aplicar("TAM-08", "Resultado y plan van en el Informe");
+    }
+
+    /// TAM-08: lo que dice el Informe de un Tamizaje que dejó al Alumno en
+    /// `nivel`, y el plan (niveles y sesiones, PRE-02) cuando hay que reforzar.
+    fn resultado_tamizaje(&self, tema: String, nivel: u8) -> (Hecho, Option<(u8, u32)>) {
         let curso = self.banco.curso.clone();
         let objetivo = self
             .obj_actual
@@ -1514,28 +1595,21 @@ impl Motor {
                     .unwrap_or(false)
             })
             .unwrap_or(self.cfg.niveles_por_tema);
-        if nivel < objetivo {
-            let faltan: Vec<String> = ((nivel + 1)..=objetivo)
-                .map(|l| self.banco.subtema(l).to_string())
-                .collect();
-            let sesiones = self.estimar_sesiones(objetivo - nivel);
-            self.estimacion_sesiones = Some(sesiones);
-            self.aplicar(
-                "PRE-02",
-                &format!("Plan: {} niveles → {sesiones} sesiones", objetivo - nivel),
-            );
-            self.hechos.push(Hecho::Tamizaje {
-                curso,
-                temas_mejora: faltan,
-                tema,
-                sesiones,
-                comienzo: "hoy mismo".into(),
-            });
-        } else {
-            self.hechos
-                .push(Hecho::TamizajeSinMejora { curso, tema, nivel });
+        if nivel >= objetivo {
+            return (Hecho::TamizajeSinMejora { curso, tema, nivel }, None);
         }
-        self.aplicar("TAM-08", "Resultado y plan van en el Informe");
+        let faltan: Vec<String> = ((nivel + 1)..=objetivo)
+            .map(|l| self.banco.subtema(l).to_string())
+            .collect();
+        let sesiones = self.estimar_sesiones(objetivo - nivel);
+        let hecho = Hecho::Tamizaje {
+            curso,
+            temas_mejora: faltan,
+            tema,
+            sesiones,
+            comienzo: "hoy mismo".into(),
+        };
+        (hecho, Some((objetivo - nivel, sesiones)))
     }
 
     /// [PROPUESTA] Le cuenta al Alumno qué vamos a reforzar antes del objetivo,
@@ -1643,6 +1717,184 @@ impl Motor {
         ((niveles as f64 * por_nivel) / self.cfg.minutos_por_sesion_plan as f64)
             .ceil()
             .max(1.0) as u32
+    }
+
+    // ─────────── foto de la Tarea (TAR-05 a TAR-07) ───────────
+
+    /// [PROPUESTA] TAR-05: hay que ver la Tarea del objetivo `oi` para saber su
+    /// nivel. Si quien presenta ya cargó el Nivel objetivo (OBJ-06), no.
+    fn foto_por_pedir(&self, oi: usize) -> bool {
+        let o = &self.objetivos[oi];
+        self.cfg.foto_tarea
+            && o.tipo == TipoObjetivo::Tarea
+            && o.nivel_objetivo.is_none()
+            && self.foto == EstadoFoto::Pendiente
+    }
+
+    /// [PROPUESTA] TAR-05: pide ver la Tarea a la cámara; `nivel` es el del Alumno.
+    fn pedir_foto_tarea(&mut self, nivel: u8, out: &mut Vec<Mensaje>) {
+        // El Tamizaje de hoy terminó con el plan en espera, o se dejó a medias.
+        let tras_tamizaje = self.plan_pendiente.is_some() || !self.tamizaje_salido_hoy.is_empty();
+        self.aplicar(
+            "TAR-05",
+            "Se pide la foto de la Tarea: su nivel será el Nivel objetivo (OBJ-07)",
+        );
+        self.act = Actividad::PedirTarea {
+            nivel,
+            intentos: 0,
+            charlas: 0,
+            tras_tamizaje,
+        };
+        self.presentar(out, true);
+    }
+
+    /// [PROPUESTA] TAR-06: lo que dice el Alumno mientras se espera la foto.
+    fn texto_pedir_tarea(&mut self, t: &str, out: &mut Vec<Mensaje>) {
+        let Actividad::PedirTarea { nivel, charlas, .. } = self.act else {
+            return;
+        };
+        if no_tiene_tarea(t) {
+            self.aplicar("TAR-06", "Dijo que no tiene la Tarea: se sigue sin la foto");
+            out.push(msg("¡No pasa nada!"));
+            return self.seguir_sin_foto(nivel, out);
+        }
+        let charlas = charlas.saturating_add(1);
+        if charlas >= self.cfg.charlas_sin_foto {
+            self.aplicar(
+                "TAR-06",
+                &format!("{charlas} turnos de conversación sin foto: se sigue sin ella"),
+            );
+            out.push(msg("No te preocupes, seguimos sin la foto."));
+            return self.seguir_sin_foto(nivel, out);
+        }
+        if let Actividad::PedirTarea { charlas: c, .. } = &mut self.act {
+            *c = charlas;
+        }
+        out.push(msg(
+            "Te escucho. Cuando la tengas, muéstrame tu tarea a la cámara; si no la tienes, dime «no tengo».",
+        ));
+    }
+
+    /// [PROPUESTA] TAR-05 y TAR-06: lo que se leyó en la foto de la Tarea.
+    fn foto_tarea(&mut self, lectura: LecturaTarea, out: &mut Vec<Mensaje>) {
+        let Actividad::PedirTarea {
+            nivel, intentos, ..
+        } = self.act
+        else {
+            // Nadie pidió una foto.
+            return;
+        };
+        // Un nivel que el tema no tiene es una lectura que falló; una lectura
+        // poco segura es una foto que no se vio bien.
+        let lectura = match lectura {
+            LecturaTarea::Leida { nivel: n, .. }
+                if !self.banco.niveles.iter().any(|x| x.nivel == n) =>
+            {
+                LecturaTarea::NoDisponible
+            }
+            LecturaTarea::Leida { confianza, .. } if confianza < self.cfg.confianza_minima_foto => {
+                LecturaTarea::Borrosa
+            }
+            otra => otra,
+        };
+        let (otra_vez, por_que) = match lectura {
+            LecturaTarea::Leida { nivel: n, .. } => return self.foto_leida(n, nivel, out),
+            LecturaTarea::OtroTema => {
+                // TAR-07 / OBJ-08: lo que no cubrimos se dice con honestidad y se registra.
+                let tema = self.banco.tema.to_lowercase();
+                self.aplicar(
+                    "TAR-07",
+                    "La Tarea no es del tema: se le cuenta a la familia y se sigue sin la foto",
+                );
+                self.hechos.push(Hecho::TareaOtroTema {
+                    tema: self.banco.tema.clone(),
+                });
+                out.push(msg(format!(
+                    "Esa tarea no es de {tema}, y por ahora yo solo sé enseñar {tema}. Se lo cuento a tu familia."
+                )));
+                return self.seguir_sin_foto(nivel, out);
+            }
+            LecturaTarea::Borrosa => (
+                "Uy, no la pude ver bien. Acércala un poquito a la cámara, con buena luz, y muéstramela otra vez.",
+                "no se ve bien",
+            ),
+            LecturaTarea::SinTarea => (
+                "Mmm, no veo una tarea en la foto. ¿Me la muestras otra vez? Si no la tienes, dime «no tengo».",
+                "no se ve una Tarea",
+            ),
+            LecturaTarea::NoDisponible => (
+                "Uy, no pude mirar la foto. ¿Probamos otra vez?",
+                "no se pudo mirar",
+            ),
+        };
+        let intentos = intentos.saturating_add(1);
+        if intentos >= self.cfg.intentos_foto {
+            self.aplicar(
+                "TAR-06",
+                &format!("{intentos} fotos sin leer ({por_que}): se sigue sin la foto"),
+            );
+            out.push(msg("No te preocupes, seguimos sin la foto."));
+            return self.seguir_sin_foto(nivel, out);
+        }
+        self.aplicar("TAR-06", &format!("La foto {por_que}: se pide otra"));
+        if let Actividad::PedirTarea { intentos: i, .. } = &mut self.act {
+            *i = intentos;
+        }
+        out.push(msg(otra_vez));
+    }
+
+    /// [PROPUESTA] TAR-05: la Tarea es del nivel `n`, que pasa a ser el Nivel
+    /// objetivo. Recién ahora el plan va al Informe y se le cuenta al Alumno,
+    /// que está en `nivel`.
+    fn foto_leida(&mut self, n: u8, nivel: u8, out: &mut Vec<Mensaje>) {
+        let Some(oi) = self.obj_actual else {
+            return;
+        };
+        self.objetivos[oi].nivel_objetivo = Some(n);
+        self.foto = EstadoFoto::Leida { nivel: n };
+        self.aplicar(
+            "TAR-05",
+            &format!("La Tarea de la foto es del nivel {n}: es el Nivel objetivo"),
+        );
+        self.hechos.push(Hecho::TareaVista {
+            curso: self.banco.curso.clone(),
+            subtema: self.banco.subtema(n).to_string(),
+        });
+        out.push(msg(format!(
+            "¡Gracias! Ya vi tu tarea: es de {}.",
+            self.banco.nivel(n).nombre_corto
+        )));
+        self.registrar_plan();
+        if !self.decir_plan(nivel, out) {
+            out.push(msg("¡Eso ya lo sabes hacer! Vamos directo a tu tarea."));
+        }
+        self.avanzar(out);
+    }
+
+    /// [PROPUESTA] TAR-07: sin la foto, como hasta ahora: los ejercicios y el
+    /// nivel de la Tarea del banco. El Alumno está en `nivel`.
+    fn seguir_sin_foto(&mut self, nivel: u8, out: &mut Vec<Mensaje>) {
+        self.foto = EstadoFoto::SinFoto;
+        self.aplicar("TAR-07", "Sin la foto: la Tarea del banco, con su nivel");
+        out.push(msg(format!(
+            "Vamos a practicar con ejercicios míos, como los de una tarea de {}.",
+            self.banco.tema.to_lowercase()
+        )));
+        self.registrar_plan();
+        self.decir_plan(nivel, out);
+        self.avanzar(out);
+    }
+
+    /// [PROPUESTA] TAR-05: lo que se le recuerda al Alumno cuando el motor espera
+    /// algo que no está en pantalla, por ejemplo al volver a conectarse: hoy, la
+    /// foto de su Tarea.
+    pub fn recordatorio(&self) -> Option<String> {
+        match self.act {
+            Actividad::PedirTarea { tras_tamizaje, .. } => {
+                Some(pedir_tarea(tras_tamizaje).to_string())
+            }
+            _ => None,
+        }
     }
 
     // ─────────── Etapa 1 ───────────
@@ -3301,6 +3553,8 @@ impl Motor {
                 proxima: self.perfil.proxima_sesion,
             });
         }
+        // TAM-08: un plan que esperaba la foto de la Tarea va igual al Informe.
+        self.registrar_plan();
         // Objetivo que continúa.
         if let Some(i) = self.obj_actual.take() {
             let o = self.objetivos[i].clone();
@@ -3353,10 +3607,17 @@ impl Motor {
     }
 
     pub fn informe(&self) -> Vec<String> {
+        let mut hechos = self.hechos.clone();
+        // TAM-08: una sesión que se cortó mientras se esperaba la foto de la
+        // Tarea también cuenta el Tamizaje, con el plan hasta el Nivel objetivo
+        // que hay ahora: sin la foto, el de la Tarea del banco.
+        if let Some((tema, nivel)) = &self.plan_pendiente {
+            hechos.push(self.resultado_tamizaje(tema.clone(), *nivel).0);
+        }
         let mut m = informe::generar(
             &self.perfil.nombre_padre,
             &self.perfil.nombre_alumno,
-            &self.hechos,
+            &hechos,
         );
         if let Some(s) = &self.sesion_adicional {
             m.push(format!(
@@ -3474,6 +3735,10 @@ impl Motor {
                     ModoPractica::Correccion => "Pregunta",
                 };
                 out.push(msg(format!("{nombre} {} de {}.", p.idx + 1, p.items.len())));
+            }
+            // También al volver de una pausa: se pide otra vez.
+            Actividad::PedirTarea { tras_tamizaje, .. } => {
+                out.push(msg(pedir_tarea(tras_tamizaje)));
             }
             _ => {}
         }
@@ -3662,6 +3927,7 @@ impl Motor {
                     "Prefiero terminar por hoy".into(),
                 ],
             },
+            Actividad::PedirTarea { .. } => Esperando::FotoTarea,
             Actividad::Tamizaje(t) => resp(
                 &t.actual,
                 t.actual.enunciado_para(interes.as_deref()).into(),
@@ -3876,6 +4142,7 @@ impl Motor {
                 ("Objetivo de la sesión".into(), String::new())
             }
             Actividad::ElegirTema { .. } => ("Aprendizaje extracurricular".into(), String::new()),
+            Actividad::PedirTarea { .. } => ("Tarea".into(), String::new()),
             Actividad::Tamizaje(t) => (
                 "Tamizaje".into(),
                 format!("Pregunta {} de {}", t.nivel, self.cfg.niveles_por_tema),
@@ -3988,6 +4255,7 @@ impl Motor {
             Actividad::PedirFecha(_) => "pedir_fecha".into(),
             Actividad::Bienvenida => "bienvenida".into(),
             Actividad::ElegirTema { .. } => "elegir_tema".into(),
+            Actividad::PedirTarea { .. } => "pedir_tarea".into(),
             Actividad::Tamizaje(t) => format!("tamizaje:{}", t.nivel),
             Actividad::Etapa1(e) => format!(
                 "etapa1:{}:{}",
@@ -4103,6 +4371,42 @@ fn minutos_y_segundos(s: u64) -> String {
     } else {
         format!("{m} min {s} s")
     }
+}
+
+/// [PROPUESTA] TAR-05: cómo se pide la foto de la Tarea: tras el Tamizaje de
+/// hoy, o antes de empezar, con el nivel del Alumno ya conocido.
+fn pedir_tarea(tras_tamizaje: bool) -> &'static str {
+    if tras_tamizaje {
+        "Ahora quiero ver tu tarea, para saber qué practicar. Muéstramela a la cámara, y si no la tienes, dime «no tengo»."
+    } else {
+        "Antes de empezar, quiero ver tu tarea para saber qué practicar. Muéstramela a la cámara, y si no la tienes, dime «no tengo»."
+    }
+}
+
+/// [PROPUESTA] TAR-06: «no tengo», «no la traje», «no quiero»: el Alumno no va
+/// a mostrar su Tarea. Un «no, espera» no lo es.
+fn no_tiene_tarea(t: &str) -> bool {
+    let n = normalizar(t);
+    n == "no"
+        || n == "nop"
+        || [
+            "no tengo",
+            "no la tengo",
+            "no lo tengo",
+            "no traje",
+            "no la traje",
+            "no hay tarea",
+            "no me dejaron",
+            "no nos dejaron",
+            "no quiero",
+            "no la encuentro",
+            "se me olvido",
+            "me olvide",
+            "la olvide",
+            "sin tarea",
+        ]
+        .iter()
+        .any(|p| n.contains(p))
 }
 
 /// "Ya volví", "listo", "sigamos": dicho en la pausa, que quiere seguir.

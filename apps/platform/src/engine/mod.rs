@@ -843,7 +843,10 @@ impl Engine {
                 // The engine only said how long is left: let the model talk instead.
                 self.chat(at_ms, said, intent, out)
             }
-            Esperando::Nada => {
+            // A photo of the homework, which the agent reads. What is said
+            // meanwhile is the engine's to answer: "no tengo" goes on without
+            // the photo, anything else is reminded of the camera.
+            Esperando::FotoTarea | Esperando::Nada => {
                 self.push(at_ms, text(), out);
                 Reply::Scripted
             }

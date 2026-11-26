@@ -86,6 +86,8 @@ impl Student {
                 self.now += 5 * 60_000;
                 turn
             }
+            // This student has no photo of the homework to show.
+            Esperando::FotoTarea => self.says("no tengo"),
             Esperando::Nada => panic!("nothing is awaited at {}", self.engine.motor.actividad()),
         }
     }
