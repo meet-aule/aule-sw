@@ -22,7 +22,7 @@ import aiohttp
 
 from ._version import __version__
 from .config import build_commit
-from .homework import Reading
+from .homework import Course, Reading, course_from
 from .safety import FLAG_ACTIONS, FLAG_CATEGORIES, FLAG_GATES
 from .script import Reply, reply_from
 from .tutor import OpenExercise, Persona, persona_from
@@ -134,6 +134,10 @@ class Platform:
         # which of them it passes on.
         self.student_age: int | None = None
         self.student_grade: str | None = None
+        # What a photo of the homework is read against in this session: the
+        # engine's topic and levels. None when the platform sent none, and
+        # then no photo is read.
+        self.homework_course: Course | None = None
         # Filled by ``start`` when the session engine runs this session: what
         # it wrote for the tutor to open with.
         self._opening = Reply()
@@ -256,6 +260,7 @@ class Platform:
         if isinstance(script, dict):
             self._scripted = True
             self._opening = reply_from(script) or Reply()
+        self.homework_course = course_from(answer.get("homework"))
         instructions = answer.get("instructions")
         return instructions if isinstance(instructions, str) else ""
 

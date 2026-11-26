@@ -528,6 +528,12 @@ pub async fn agent_start(
     // The engine opens its sessions itself: these are the tutor's first lines.
     if engine::runs(&session) {
         start["script"] = engine::open(&state, &session, homework).await?;
+        // An agent that reads photos of the homework is told against what.
+        if homework > 0
+            && let Some(course) = engine::homework_course()
+        {
+            start["homework"] = course;
+        }
     }
     Ok(Json(start))
 }

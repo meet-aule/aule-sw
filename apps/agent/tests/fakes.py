@@ -70,6 +70,24 @@ CHILD_WORDS = "zanahoria azul siete"
 
 # Characters per token, for the prompt sizes the model stand-in bills.
 CHARS_PER_TOKEN = 3.0
+# The course the platform sends when the agent says it reads photos of the
+# homework: the engine's topic, and what each of its levels is about.
+HOMEWORK_COURSE = {
+    "topic": "Fracciones",
+    "levels": [
+        {"level": number, "about": about}
+        for number, about in enumerate(
+            (
+                "Leer, escribir y representar fracciones",
+                "Fracciones equivalentes, simplificar y comparar fracciones",
+                "Suma y resta con igual denominador; mixtos e impropias",
+                "Suma y resta con distinto denominador",
+                "Problemas de varios pasos",
+            ),
+            start=1,
+        )
+    ],
+}
 # What a read of a photo of the homework bills as input: a 1024-px image is
 # about 1,000 to 1,500 tokens, and the question about 250 more.
 PHOTO_TOKENS = 1500
@@ -1419,6 +1437,10 @@ class FakePlatform:
             }
             if world.mix == "engine":
                 answer["script"] = {"lines": self.opening, "awaits": self.opening_awaits}
+                if "homework=" in query:
+                    # Told that the agent reads photos, the platform says
+                    # against which course: the engine's topic and levels.
+                    answer["homework"] = HOMEWORK_COURSE
             return answer
         if path == "/v1/agent/session/turns":
             assert body is not None

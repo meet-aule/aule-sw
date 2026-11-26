@@ -6,7 +6,7 @@ from aiohttp import web
 from aiohttp.test_utils import TestServer
 
 from aule_agent._version import __version__
-from aule_agent.homework import Reading
+from aule_agent.homework import Course, Reading
 from aule_agent.platform import (
     FLAG_COOLDOWN_SECONDS,
     HOMEWORK_TIMEOUT_SECONDS,
@@ -788,6 +788,23 @@ async def test_an_engine_session_with_nothing_to_open_with_is_still_the_engines(
     await platform.start()
 
     assert platform.scripted and platform.opening() == Reply()
+
+
+async def test_the_start_keeps_the_course_a_homework_photo_is_read_against():
+    sent = {
+        "topic": "Fracciones",
+        "levels": [{"level": 1, "about": "Leer fracciones"}, {"level": 2, "about": "Comparar"}],
+    }
+    told = Platform(SESSION, Recorder({"instructions": "Plan", "homework": sent}))
+    untold = Platform(SESSION, Recorder({"instructions": "Plan"}))
+    odd = Platform(SESSION, Recorder({"instructions": "Plan", "homework": {"topic": "Fracciones"}}))
+
+    for platform in (told, untold, odd):
+        assert await platform.start() == "Plan"
+
+    assert told.homework_course == Course("Fracciones", ("Leer fracciones", "Comparar"))
+    # None sent, or not exactly a course: no photo is read in the session.
+    assert untold.homework_course is None and odd.homework_course is None
 
 
 async def test_the_start_says_that_the_agent_reads_homework_photos_only_when_it_does():

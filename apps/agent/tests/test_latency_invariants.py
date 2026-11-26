@@ -1018,7 +1018,7 @@ def test_in_engine_sessions_each_reply_has_its_turns_rules_and_the_prefix_stays(
 # photo of the homework and the child shows it with the button, a 1280 x 720
 # frame. In one the platform takes what it showed; in the other the platform
 # is down, and the child shows it again.
-PHOTO = {"shows": "fractions_homework", "level": 4, "confidence": 0.8125}
+PHOTO = {"shows": "course_homework", "level": 4, "confidence": 0.8125}
 ASKS = (
     "Antes de empezar, quiero ver tu tarea para saber qué practicar. Muéstramela a la "
     "cámara, y si no la tienes, dime «no tengo»."
