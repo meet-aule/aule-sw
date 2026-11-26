@@ -1329,17 +1329,21 @@ class FakePlatform:
         # it offers one with every report until it hears that one was taken.
         self.break_after: str | None = None
         self._break_due = False
+        # The query of each start: what the agent said it can do with homework.
+        self.started_with: list[str] = []
 
     async def send(
         self, method: str, path: str, body: dict[str, Any] | None, timeout: float
     ) -> dict[str, Any] | None:
         world = self._world
         world.platform_calls.append((method, path, body))
+        path, _, query = path.partition("?")
         if path == "/v1/agent/session/answers":
             assert body is not None
             world.answers_heard.append((time.time(), body["said"], self.open))
         await asyncio.sleep(world.delays.scaled(world.delays.platform, world.rng))
         if path == "/v1/agent/session" and method == "GET":
+            self.started_with.append(query)
             answer: dict[str, Any] = {
                 "instructions": STUDENT_CONTEXT,
                 "student_age": 9,

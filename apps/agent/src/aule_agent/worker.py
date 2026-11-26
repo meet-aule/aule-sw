@@ -30,6 +30,7 @@ from . import observability, visuals
 from ._version import __version__
 from .camera import Camera
 from .config import LANGUAGES, ConfigError, Settings, build_commit
+from .homework import HomeworkReader
 from .logs import keep_personal_fields_out
 from .observability import Observability
 from .pace import Pace, says_tired
@@ -410,8 +411,12 @@ async def entrypoint(ctx: JobContext) -> None:
 
     # With a platform, the tutor starts from what is known about the student
     # and reports the conversation; without one it is a tutor with no memory.
+    # It is told that the agent reads a photo of the homework, which is shown
+    # to the camera: the push-to-talk devices have none.
     linked = platform_session(ctx.job.metadata)
-    platform = Platform(linked) if linked else None
+    platform = (
+        Platform(linked, homework_capability=0 if settings.push_to_talk else 1) if linked else None
+    )
 
     admitted = await admit(ctx, settings, audience, language, platform, observer=observer)
     if admitted is None:
@@ -443,6 +448,13 @@ async def entrypoint(ctx: JobContext) -> None:
     usage = Usage()
     voice = build_tts(settings, language)
     voice.on("metrics_collected", usage.spoke)
+    # Only the engine asks for a photo of the homework. What each read uses
+    # is paid like the tutor's own calls and counted with them.
+    reader = (
+        HomeworkReader(counted=usage.looked)
+        if platform and platform.scripted and not settings.push_to_talk
+        else None
+    )
     tutor = Tutor(
         language=language,
         gates=gates,
@@ -456,6 +468,7 @@ async def entrypoint(ctx: JobContext) -> None:
         # model gets no tools to pose or check an exercise by itself.
         checker=platform if platform and not platform.scripted else None,
         engine=platform if platform and platform.scripted else None,
+        reader=reader,
         # The platform offers the breaks of a session, unless the engine runs
         # it and has breaks of its own.
         breaks=bool(platform and not platform.scripted),
@@ -617,6 +630,8 @@ async def entrypoint(ctx: JobContext) -> None:
             logger.info("session early replies", extra=dict(tutor.early_replies))
         logger.info("session voice ahead", extra=dict(tutor.voiced_ahead))
         await gates.close()
+        if reader is not None:
+            await reader.close()
         if platform:
             if not platform.end_reason:
                 platform.end_reason = (

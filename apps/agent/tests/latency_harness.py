@@ -232,10 +232,10 @@ def spy(world: World, gates: Gates) -> None:
     gates.spoken = spoken_spy  # type: ignore[method-assign]
 
 
-def platform_for(linked: Any) -> Platform:
+def platform_for(linked: Any, **options: Any) -> Platform:
     """The session's client of the stand-in platform, kept in its world."""
     world = CURRENT_WORLD.get()
-    world.platform_client = Platform(linked, send=world.platform.send)
+    world.platform_client = Platform(linked, send=world.platform.send, **options)
     return world.platform_client
 
 

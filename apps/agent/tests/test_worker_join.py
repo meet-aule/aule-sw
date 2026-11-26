@@ -179,7 +179,9 @@ def happened(monkeypatch: pytest.MonkeyPatch) -> list[Any]:
     monkeypatch.setattr(
         worker, "build_gates", lambda settings, report=None, observer=None: Gates(happened)
     )
-    monkeypatch.setattr(worker, "Platform", lambda linked: Platform(linked, send=platform))
+    monkeypatch.setattr(
+        worker, "Platform", lambda linked, **options: Platform(linked, send=platform, **options)
+    )
     monkeypatch.setattr(worker, "AgentSession", lambda **options: Session(happened))
     for build in ("build_llm", "build_stt", "build_tts"):
         monkeypatch.setattr(worker, build, lambda *args: Service())
@@ -209,7 +211,8 @@ async def test_nothing_is_started_or_said_before_the_person_is_in_the_room(happe
     ctx.room.emit("participant_active", PERSON)
     await asyncio.wait_for(entrypoint, timeout=5)
 
-    started = ("GET", "/v1/agent/session", None)
+    # Without the talk button the agent says it reads a photo of the homework.
+    started = ("GET", "/v1/agent/session?homework=1", None)
     assert happened[:4] == ["connected", "the person joined", started, "session made"]
     assert "session started" in happened
 
