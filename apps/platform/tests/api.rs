@@ -1503,6 +1503,83 @@ async fn a_guardian_reads_their_childs_latest_sessions_as_facts(pool: PgPool) {
     }
 }
 
+/// How many days a guardian's session has left, and its row's version
+/// (`xmin`), which any write to the row changes.
+async fn session_left(app: &App, token: &str) -> (f64, String) {
+    sqlx::query_as(
+        "select extract(epoch from expires_at - now())::float8 / 86400, xmin::text
+         from guardian_sessions where token_hash = $1",
+    )
+    .bind(aule_platform::auth::token_hash(token))
+    .fetch_one(&app.state.pool)
+    .await
+    .unwrap()
+}
+
+/// Makes a guardian's session end `left` from now (`'28 days 23 hours'`), as
+/// if it had been opened a while ago.
+async fn session_ends_in(app: &App, token: &str, left: &str) {
+    sqlx::query("update guardian_sessions set expires_at = now() + $2::interval where token_hash = $1")
+        .bind(aule_platform::auth::token_hash(token))
+        .bind(left)
+        .execute(&app.state.pool)
+        .await
+        .unwrap();
+}
+
+#[sqlx::test(migrator = "aule_platform::MIGRATOR")]
+async fn a_familys_session_is_renewed_as_it_is_used_once_a_day_at_most(pool: PgPool) {
+    let app = app(pool);
+    let ana = app.sign_in("ana@example.org", "Ana").await;
+    let me = || app.call(Method::GET, "/v1/me", Some(&ana), None);
+
+    // Signed in just now, it has its thirty days: using it writes nothing.
+    let (days, version) = session_left(&app, &ana).await;
+    assert!((29.99..=30.0).contains(&days), "{days}");
+    assert_eq!(me().await.0, StatusCode::OK);
+    assert_eq!(session_left(&app, &ana).await.1, version);
+
+    // With a little more than 29 days left, still nothing.
+    session_ends_in(&app, &ana, "29 days 1 hour").await;
+    let version = session_left(&app, &ana).await.1;
+    assert_eq!(me().await.0, StatusCode::OK);
+    assert_eq!(session_left(&app, &ana).await.1, version);
+
+    // With fewer, the first request sets it to thirty days from now, by any
+    // route a guardian's token reaches, and the ones after it write nothing
+    // more that day.
+    for path in ["/v1/me", "/v1/skills", "/v1/notices"] {
+        session_ends_in(&app, &ana, "28 days 23 hours").await;
+        let version = session_left(&app, &ana).await.1;
+        assert_eq!(app.call(Method::GET, path, Some(&ana), None).await.0, StatusCode::OK, "{path}");
+        let (days, renewed) = session_left(&app, &ana).await;
+        assert_ne!(renewed, version, "{path}");
+        assert!((29.99..=30.0).contains(&days), "{path}: {days}");
+        for _ in 0..3 {
+            assert_eq!(me().await.0, StatusCode::OK);
+        }
+        assert_eq!(session_left(&app, &ana).await.1, renewed, "{path}");
+    }
+
+    // An ended session stays ended.
+    session_ends_in(&app, &ana, "-1 second").await;
+    let version = session_left(&app, &ana).await.1;
+    assert_eq!(me().await.0, StatusCode::UNAUTHORIZED);
+    assert_eq!(session_left(&app, &ana).await.1, version);
+
+    // The team's session of twelve hours keeps its end, and stays the team's.
+    app.sign_in("team@example.org", "Equipo").await;
+    let team = team_token(&app, "team@example.org").await;
+    let version = session_left(&app, &team).await.1;
+    for path in ["/v1/me", "/v1/admin/families"] {
+        assert_eq!(app.call(Method::GET, path, Some(&team), None).await.0, StatusCode::OK, "{path}");
+    }
+    let (days, after) = session_left(&app, &team).await;
+    assert_eq!(after, version);
+    assert!(days <= 0.5, "{days}");
+    passkey_options(&app, &team).await;
+}
+
 #[sqlx::test(migrator = "aule_platform::MIGRATOR")]
 async fn sign_in_codes_are_limited(pool: PgPool) {
     let app = app(pool);

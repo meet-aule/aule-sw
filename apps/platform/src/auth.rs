@@ -81,6 +81,11 @@ impl Caller {
     }
 }
 
+/// A family's session that is used is renewed once fewer than this many days
+/// of its `signin::SESSION_DAYS` are left: a parent who opens the app within a
+/// month never needs a new code, and each session is written once a day at most.
+const RENEW_UNDER_DAYS: i32 = 29;
+
 impl FromRequestParts<AppState> for Caller {
     type Rejection = ApiError;
 
@@ -90,17 +95,42 @@ impl FromRequestParts<AppState> for Caller {
             return Ok(Self::Operator);
         }
         use sea_orm::ConnectionTrait;
+        let hash = token_hash(token);
+        // A session of the team's sign-in is told by its length, as
+        // `TeamMember` tells it: it keeps the end it was given.
         let found = state
             .db
             .query_one_raw(sea_orm::Statement::from_sql_and_values(
                 sea_orm::DbBackend::Postgres,
-                "select guardians.id, guardians.family_id from guardian_sessions
-                 join guardians on guardians.id = guardian_sessions.guardian_id
-                 where guardian_sessions.token_hash = $1 and guardian_sessions.expires_at > now()",
-                [token_hash(token).into()],
+                "select guardians.id, guardians.family_id,
+                        s.expires_at < now() + make_interval(days => $2)
+                          and s.expires_at - s.created_at > make_interval(hours => $3) as renew
+                 from guardian_sessions s join guardians on guardians.id = s.guardian_id
+                 where s.token_hash = $1 and s.expires_at > now()",
+                [hash.clone().into(), RENEW_UNDER_DAYS.into(), crate::signin::TEAM_SESSION_HOURS.into()],
             ))
             .await?;
         let Some(found) = found else { return Err(ApiError::Unauthorized) };
+        if found.try_get::<bool>("", "renew")? {
+            // The same conditions again: of two requests at once, the second
+            // finds the session renewed and writes nothing.
+            state
+                .db
+                .execute_raw(sea_orm::Statement::from_sql_and_values(
+                    sea_orm::DbBackend::Postgres,
+                    "update guardian_sessions set expires_at = now() + make_interval(days => $2)
+                     where token_hash = $1 and expires_at > now()
+                       and expires_at < now() + make_interval(days => $3)
+                       and expires_at - created_at > make_interval(hours => $4)",
+                    [
+                        hash.into(),
+                        crate::signin::SESSION_DAYS.into(),
+                        RENEW_UNDER_DAYS.into(),
+                        crate::signin::TEAM_SESSION_HOURS.into(),
+                    ],
+                ))
+                .await?;
+        }
         Ok(Self::Guardian { id: found.try_get("", "id")?, family_id: found.try_get("", "family_id")? })
     }
 }

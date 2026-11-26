@@ -65,6 +65,12 @@ which takes a guardian's bearer only.
 | `GET /v1/notices`, `POST /v1/notices/{id}/read` | What the family has been told |
 | `PUT`, `DELETE /v1/push/tokens` | The app registers this phone for pushes each time it starts, and forgets it on sign-out. Body: `{"token", "platform"}` with `android`, `ios` or `web` |
 
+A family's token lasts 30 days from its last use: a request with one that has
+fewer than 29 days left sets it to 30 days from then (`auth::Caller`), so a
+session is written once a day at most and a parent who opens the app within a
+month never needs another code. Signing out and erasing the family still end it;
+an ended one stays ended, and the team's sessions of 12 hours keep their end.
+
 Every way of signing in also takes an optional `source`: the code of the link
 a family came from, which the playground passes on from `?src=` on its page. A
 new family keeps it when it is a short code of lower-case letters, digits and
