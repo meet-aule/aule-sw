@@ -13,7 +13,7 @@ fn setup(goal: Goal) -> Setup {
         today: NaiveDate::from_ymd_opt(2026, 11, 14).unwrap(),
         goal,
         due: NaiveDate::from_ymd_opt(2026, 11, 19),
-        start: Start { minutes: 90, kept: Kept::default() },
+        start: Start { minutes: 90, kept: Kept::default(), minute: Some(16 * 60) },
     }
 }
 
@@ -430,6 +430,19 @@ fn in_practice() -> Student {
     }
     student.until("etapa2:2");
     student
+}
+
+#[test]
+fn a_tired_student_at_night_rests_and_the_session_closes() {
+    // At 22:50 where the family lives, "estoy cansado" ends the session kindly
+    // instead of proposing an active break (PAU-07).
+    let mut night = setup(Goal::Homework);
+    night.start.minute = Some(22 * 60 + 50);
+    let mut student = Student::from(night);
+    let turn = student.says("estoy cansado");
+    let said = said_by_tutor(&turn);
+    assert!(said.contains("Ya es tarde") && !said.contains("Pausa activa"), "{turn:?}");
+    assert!(turn.closed && student.engine.closed(), "{turn:?}");
 }
 
 #[test]

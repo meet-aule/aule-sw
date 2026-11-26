@@ -5092,6 +5092,17 @@ async fn an_engine_session_leaves_the_level_and_its_evidence_and_the_next_one_st
 
     // A break is the engine's, and ends on its own; the platform offers none
     // of its own, though the supervisor still read that the student is tired.
+    // The session's start is pinned to the afternoon where the family lives, so
+    // the break does not depend on when the tests run: at night the engine
+    // closes a tired student's session instead (PAU-07).
+    sqlx::query(
+        "update sessions set engine_start = jsonb_set(engine_start, '{minute}', '900') where id = $1::uuid",
+    )
+    .bind(&id)
+    .execute(&app.state.pool)
+    .await
+    .unwrap();
+    app.state.engines.lock().unwrap().clear();
     let tired = second.says(json!({ "said": "estoy cansado" })).await;
     assert!(said_in(&tired).contains("¡Pausa activa!"), "{tired}");
     let mut seq = 0;

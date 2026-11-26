@@ -183,6 +183,11 @@ pub struct Start {
     pub minutes: u32,
     #[serde(default)]
     pub kept: Kept,
+    /// The minute of the day the session was opened where the family lives
+    /// (0 to 1439), so the engine can tell night from day (PAU-07). None for a
+    /// session opened before this was stored.
+    #[serde(default)]
+    pub minute: Option<u16>,
 }
 
 /// The engine's shortest and longest session (SES-01: 30 minutes to an hour
@@ -208,6 +213,7 @@ fn engine(setup: &Setup, bank: Arc<Banco>, clock: Clock) -> Motor {
     profile.time_to_master = kept.minutes_per_level;
     profile.ejercicios_usados = kept.used_exercises;
     profile.numero_sesion = kept.sessions + 1;
+    profile.minuto_inicio = setup.start.minute;
     let objective = |kind: TipoObjetivo| Objetivo {
         id: 1,
         tipo: kind,
@@ -1123,7 +1129,8 @@ async fn setup(state: &AppState, session: &Session) -> ApiResult<Setup> {
     let start: Option<Start> =
         stored.and_then(|row| row.engine_start).and_then(|start| serde_json::from_value(start).ok());
     // A session from before this was stored started from nothing, at the engine's own length.
-    let start = start.unwrap_or(Start { minutes: *ENGINE_MINUTES.end(), kept: Kept::default() });
+    let start =
+        start.unwrap_or(Start { minutes: *ENGINE_MINUTES.end(), kept: Kept::default(), minute: None });
     Ok(Setup {
         student: child.nickname,
         interests: child.interests,
@@ -1286,6 +1293,7 @@ pub async fn start_for(
     db: &impl sea_orm::ConnectionTrait,
     child_id: Uuid,
     minutes: u32,
+    minute: u16,
 ) -> Result<Value, sea_orm::DbErr> {
     let kept: Option<Value> = child::Entity::find_by_id(child_id)
         .select_only()
@@ -1295,7 +1303,8 @@ pub async fn start_for(
         .await?
         .flatten();
     let kept: Kept = kept.and_then(|kept| serde_json::from_value(kept).ok()).unwrap_or_default();
-    serde_json::to_value(Start { minutes, kept }).map_err(|error| sea_orm::DbErr::Custom(error.to_string()))
+    serde_json::to_value(Start { minutes, kept, minute: Some(minute) })
+        .map_err(|error| sea_orm::DbErr::Custom(error.to_string()))
 }
 
 /// What is done with a session the engine ran once it is over, from its

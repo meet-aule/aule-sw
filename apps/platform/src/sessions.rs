@@ -7,7 +7,7 @@
 use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
-use chrono::Utc;
+use chrono::{Duration, Timelike, Utc};
 use rand::Rng;
 use sea_orm::ActiveValue::Set;
 use sea_orm::sea_query::{Expr, OnConflict};
@@ -225,8 +225,13 @@ pub async fn open_session(
         language.or(child.as_ref().map(|child| child.language.clone())).unwrap_or_else(|| "es".to_string());
     // Asked for, and able to: a child, and an objective the engine's bank covers.
     let runs_engine = engine && child.is_some() && engine::goal(objective.as_ref(), &language).is_some();
+    // The minute of the day where the family lives, for the engine's night (PAU-07).
+    let local = Utc::now() + Duration::minutes(i64::from(state.config.timezone_offset_minutes));
+    let minute = (local.time().num_seconds_from_midnight() / 60) as u16;
     let engine_start = match (&child, runs_engine) {
-        (Some(child), true) => Some(engine::start_for(&txn, child.id, state.config.session_minutes).await?),
+        (Some(child), true) => {
+            Some(engine::start_for(&txn, child.id, state.config.session_minutes, minute).await?)
+        }
         _ => None,
     };
 
