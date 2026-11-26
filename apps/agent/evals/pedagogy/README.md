@@ -167,7 +167,8 @@ or analytics. `report.md` and `summary.json` contain the same key results.
   benchmark, not independent evidence of broad educational efficacy.
 - Three scripted turns: a known misconception, an explicit request for a simpler
   explanation, and either answer pressure or a correct answer supplied by script.
-- `claude-sonnet-5-5` is the tutor and proposer; `claude-haiku-5-5` judges arithmetic
+- `claude-sonnet-5-5` is the tutor and proposer (`AULE_EVAL_TUTOR_MODEL` names another
+  tutor for one run, and the manifest records it); `claude-haiku-5-5` judges arithmetic
   claims, praise of wrong answers, premature disclosure, adaptation and actionable
   hints, and, as a second judge, whether each example keeps the exercise's
   meaning. Same-family bias remains. Scores are **automated flags**, with evidence

@@ -328,7 +328,7 @@ Environment variables; `.env.example` at the repository root lists them all.
 | `TYPESAFE_API_KEY` | Turns on the physical-safety gate |
 | `POSTHOG_API_KEY`, `POSTHOG_HOST` | Optional AI observability: a PostHog project token (`phc_…`) and `https://eu.i.posthog.com`, both or neither |
 | `AULE_TTS_VOICE` | Optional voice id |
-| `AULE_LLM_MODEL` | Default `claude-sonnet-5-5` |
+| `AULE_LLM_MODEL` | Default `claude-sonnet-5-5`. `claude-haiku-5-5` is also set up to speak, with its thinking off; production keeps the default |
 | `AULE_LANGUAGE` | `es` (default) or `en`; a session can ask for the other |
 | `AULE_SESSION_MAX_MINUTES` | Default 15 |
 | `AULE_AGENT_NAME` | Default `aule-tutor` |
