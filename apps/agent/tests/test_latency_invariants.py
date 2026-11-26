@@ -9,6 +9,10 @@ time; what LiveKit itself waits for is not scaled.
 4. The physical-safety and refusal flows, their fixed lines and the evals are
    as they were.
 5. The child's words reach no log, and nothing a stopped turn produced is kept.
+6. The exercise checker hears the child's words only after the turn passed
+   every input gate: never for a stopped turn, never early, at most once per
+   turn and exercise. Sessions whose platform opens the exercise the model
+   poses (``EXERCISES``) run that check, with early replies off and on.
 """
 
 import asyncio
@@ -29,6 +33,7 @@ from fakes import (
     TurnPlan,
     World,
     _last_user,
+    answer_of,
     words_of,
 )
 from test_metrics import fits_the_platform
@@ -37,6 +42,7 @@ from aule_agent import moderation, opinion, physical_safety, replies, safety, vi
 from aule_agent.prompts import response_language
 from aule_agent.replies import ADULT_HELP_SEQUENCE, MEANWHILE, REPLIES
 from aule_agent.timing import STAGES
+from aule_agent.tutor import CHECKED_IN_CODE
 
 # The input gates take longer than the model takes to write its whole reply,
 # so with early replies the reply is written, and waiting, when they decide.
@@ -70,6 +76,8 @@ class Spec:
     # and how long the call's arguments are.
     preamble: str = ""
     tool_tokens: int = 12
+    # What the child says, when not the usual synthetic words of the turn.
+    words: str = ""
 
 
 def violence(text: str = "") -> str:
@@ -77,6 +85,8 @@ def violence(text: str = "") -> str:
 
 
 ORDINARY = Spec()
+# The model poses an exercise, 3/4 + 1/8 (``fakes.TOOL_ARGUMENTS``).
+POSE = Spec(tools=("pose_exercise",), reply="Muy bien. ¿Cuánto es tres cuartos más un octavo?")
 # A worked example before its question: every paragraph of a reply is said.
 EXAMPLE = "Imagina dos pizzas cortadas en mitades. ¿Cuántos pedazos hay?"
 # Each session: an ordinary turn first, so that the turn under test is not the
@@ -143,6 +153,54 @@ SESSIONS: dict[str, list[Spec]] = {
     # A reply the output gate stops for its last paragraph, once the voice has
     # made its first sentence.
     "reply_stopped_later": [ORDINARY, Spec(reply=f"{EXAMPLE}\n\n{violence('Y ahora')}")],
+    # The model poses 3/4 + 1/8 and the platform opens it (``EXERCISES``):
+    # what the child says to it then is checked in code after the gates.
+    "checked": [
+        POSE,
+        # An answer in digits: the model reads its check as its own call.
+        Spec(words=answer_of(2), reply="Casi. Mira los octavos otra vez."),
+        # A plain request for help: checked as the fixed "no sé".
+        Spec(words="No entiendo.", reply="Empecemos por los cuartos."),
+        # One of the exercise's own numbers: left to the model, which checks it.
+        Spec(words=answer_of(4), tools=("check_answer",), reply="Dime cómo llegaste ahí."),
+    ],
+    "checked_closed": [
+        POSE,
+        # Checked in code: the model's own check of it gets the same, from no call.
+        Spec(words=answer_of(5), tools=("check_answer",), reply="Revisa los octavos."),
+        # Right: the platform closes the exercise.
+        Spec(words=answer_of(9, TRIGGERS["correct"]), reply="¡Eso es! Lo lograste."),
+        # Nothing open again.
+        ORDINARY,
+    ],
+    "checked_stopped": [
+        POSE,
+        Spec(words=answer_of(2, TRIGGERS["violence"])),
+        # It answers the gate's line, not the exercise: the model reads it whole.
+        Spec(words=answer_of(5), reply="Sigamos con la suma."),
+        Spec(words=answer_of(9), reply="Mira otra vez los octavos."),
+    ],
+    # Homework brought with its answer while nothing is open: checked once the
+    # model poses it.
+    "brought": [
+        ORDINARY,
+        Spec(
+            words=f"{CHILD_WORDS}, estoy haciendo 3/4 + 1/8 y me da 5.",
+            tools=("pose_exercise",),
+            reply="Veamos cómo lo sumaste.",
+        ),
+    ],
+}
+# Sessions whose platform opens the exercise the model poses.
+EXERCISES = ("checked", "checked_closed", "checked_stopped", "brought")
+# What the checker hears in each turn: nothing before the pose; an answer in
+# digits as said; a request for help as the fixed "no sé"; the model's own
+# check of a turn code left to it (``fakes.TOOL_ARGUMENTS``); one call for a
+# turn checked in code that the model checks again; the right answer, which
+# closes the exercise; and nothing once none is open.
+CHECKED = {
+    "checked": [[], [answer_of(2)], ["no sé"], ["me da siete octavos"]],
+    "checked_closed": [[], [answer_of(5)], [answer_of(9, TRIGGERS["correct"])], []],
 }
 # What each session's last turn hears instead of an answer, and the flag it raises.
 STOPPED = {
@@ -179,7 +237,7 @@ REPLY_STOPPED = {
 def scripted(world: World, specs: list[Spec]) -> list[harness.Turn]:
     turns = []
     for number, spec in enumerate(specs, start=1):
-        words = words_of(number, spec.extra)
+        words = spec.words or words_of(number, spec.extra)
         world.plans[words] = TurnPlan(
             reply="" if spec.tools else spec.reply,
             tool=spec.tools[0] if spec.tools else None,
@@ -215,6 +273,12 @@ class Run:
     results: list[harness.TurnResult]
 
 
+def world_for(name: str, seed: int) -> World:
+    world = World(seed=seed, delays=FAST)
+    world.platform.opens_exercises = name in EXERCISES
+    return world
+
+
 async def run_all(env: dict[str, str] | None = None) -> tuple[dict[str, Run], list[str]]:
     records = harness.Records()
     root = logging.getLogger()
@@ -223,7 +287,7 @@ async def run_all(env: dict[str, str] | None = None) -> tuple[dict[str, Run], li
     root.setLevel(logging.INFO)
     try:
         with harness.offline(env):
-            worlds = {name: World(seed=index, delays=FAST) for index, name in enumerate(SESSIONS)}
+            worlds = {name: world_for(name, index) for index, name in enumerate(SESSIONS)}
             runs = await asyncio.gather(
                 *(
                     harness.run_session(world, scripted(world, SESSIONS[name]))
@@ -270,14 +334,14 @@ def kept_words(world: World, words: str) -> list[str]:
 
 
 # With the microphone open, the voice detector ends each turn (``harness.MODES``).
-OPEN_MIC = ("ordinary", "redirect", "meanwhile")
+OPEN_MIC = ("ordinary", "redirect", "meanwhile", "checked")
 
 
 @pytest.fixture(scope="module")
 def open_mic() -> dict[str, Run]:
     async def run() -> dict[str, Run]:
         with harness.offline(mode="open-mic"):
-            worlds = {name: World(seed=index, delays=FAST) for index, name in enumerate(OPEN_MIC)}
+            worlds = {name: world_for(name, index) for index, name in enumerate(OPEN_MIC)}
             runs = await asyncio.gather(
                 *(
                     harness.run_session(world, scripted(world, SESSIONS[name]), mode="open-mic")
@@ -300,8 +364,13 @@ def test_with_the_microphone_open_no_words_reach_the_model_before_the_gates_let_
                     assert result.allowed, (name, result.number)
                     assert call.opened_at >= result.decided_at, (name, result.number)
             assert all(s.started_at >= result.decided_at for s in result.played), name
+            # Nor to the exercise checker.
+            for at, _, _ in result.checks:
+                assert result.allowed and at >= result.decided_at, (name, result.number)
         assert harness.unapproved(run.world) == 0, name
         assert run.world.api_errors == [], name
+    checked = [[said for _, said, _ in r.checks] for r in open_mic["checked"].results]
+    assert checked == CHECKED["checked"]
     stopped = open_mic["redirect"].results[-1]
     assert stopped.allowed is False and stopped.calls == []
     assert heard(stopped.played) == spoken(REPLIES["redirect"]["es"])
@@ -611,7 +680,10 @@ def test_the_tutor_reply_line_is_logged_once_per_answered_turn(sessions):
     tutor_replies = [line for line in lines if json.loads(line).get("message") == "tutor reply"]
     # A turn with tools logs once per step.
     steps = sum(
-        len(SESSIONS["meanwhile"][index].tools) for index in range(len(SESSIONS["meanwhile"]))
+        len(spec.tools)
+        for name, run in runs.items()
+        for spec, result in zip(SESSIONS[name], run.results, strict=True)
+        if result.allowed
     )
     assert len(tutor_replies) == answered + steps
 
@@ -662,11 +734,13 @@ def test_an_answered_turn_asks_the_model_once_per_step_and_a_stopped_one_once_mo
     on, _ = modes["early_on"]
     for name in SESSIONS:
         for before, after in zip(off[name].results, on[name].results, strict=True):
-            extra = 0 if before.allowed else 1
+            # Asked early, a stopped turn's request is one more. Not while an
+            # exercise is open: nothing is asked early then.
+            extra = 0 if before.allowed or before.open_before else 1
             assert len(after.calls) == len(before.calls) + extra, (name, before.number)
         # The dropped call is paid, and counted as a call and as one dropped;
         # it is no turn.
-        stopped = sum(1 for r in off[name].results if r.allowed is False)
+        stopped = sum(1 for r in off[name].results if r.allowed is False and not r.open_before)
         metrics_off, metrics_on = off[name].world.metrics, on[name].world.metrics
         assert metrics_on["llm_calls"] == metrics_off["llm_calls"] + stopped, name
         assert metrics_on["early_calls_dropped"] == stopped, name
@@ -675,6 +749,93 @@ def test_an_answered_turn_asks_the_model_once_per_step_and_a_stopped_one_once_mo
             assert metrics_on.get(key) == metrics_off.get(key), (name, key)
         used = on[name].world.tutor.early_replies
         assert used["dropped"] == stopped, name
+
+
+def said_to_the_checker(result: harness.TurnResult) -> list[str]:
+    return [said for _, said, _ in result.checks]
+
+
+def test_the_checker_hears_a_turn_only_after_every_input_gate_let_it_through(sessions):
+    runs, _ = sessions
+    for name, run in runs.items():
+        for result in run.results:
+            for at, _, _ in result.checks:
+                assert result.allowed and at >= result.decided_at, (name, result.number)
+            # At most once per turn and exercise.
+            exercises = [exercise for _, _, exercise in result.checks]
+            assert len(exercises) == len(set(exercises)), (name, result.number)
+    # Not vacuous: the sessions with an exercise open check seven turns.
+    assert sum(len(r.checks) for name in EXERCISES for r in runs[name].results) == 7
+
+
+def test_answers_to_an_open_exercise_are_checked_in_code_and_read_as_the_models_own_call(modes):
+    for mode, (runs, _) in modes.items():
+        for name, expected in CHECKED.items():
+            results = runs[name].results
+            assert [said_to_the_checker(result) for result in results] == expected, mode
+            assert all(result.allowed for result in results), mode
+        results = runs["checked"].results
+        assert [result.open_before for result in results] == [False, True, True, True], mode
+        closed = runs["checked_closed"].results
+        assert [result.open_before for result in closed] == [False, True, True, False], mode
+        for result, said in ((results[1], answer_of(2)), (results[2], "no sé")):
+            # The turn's one request holds the child's words, then the check
+            # as the model's own tool_use and its tool_result.
+            (request,) = [call.kwargs for call in result.calls]
+            *_, words, call, output = [m for m in request["messages"] if m["role"] != "system"]
+            assert [block["text"] for block in words["content"]] == [result.words], mode
+            (used,) = call["content"]
+            assert used["type"] == "tool_use" and used["name"] == "check_answer", mode
+            assert used["id"].startswith(CHECKED_IN_CODE) and used["input"] == {"said": said}
+            (answered,) = output["content"]
+            assert answered["type"] == "tool_result" and answered["tool_use_id"] == used["id"]
+        # The model checked an answer checked in code again itself: answered,
+        # from no call.
+        assert [call.tool_calls for call in closed[1].calls] == [["check_answer"], []], mode
+
+
+def test_with_early_replies_nothing_is_asked_before_the_gates_while_an_exercise_is_open(modes):
+    for mode, (runs, _) in modes.items():
+        asked_early = 0
+        for name in EXERCISES:
+            for result in runs[name].results:
+                early = [call for call in result.calls if call.opened_at < result.decided_at]
+                if result.open_before:
+                    assert early == [], (mode, name, result.number)
+                else:
+                    asked_early += len(early)
+        # With nothing open, a reply is asked early as before: in each turn
+        # that poses, the turn before the homework and the one that brought
+        # it, and the one after the exercise closed.
+        assert asked_early == (6 if mode == "early_on" else 0), mode
+
+
+def test_a_turn_stopped_while_an_exercise_is_open_reaches_neither_checker_nor_model(modes):
+    for mode, (runs, _) in modes.items():
+        run = runs["checked_stopped"]
+        _, stopped, after, again = run.results
+        assert stopped.allowed is False and stopped.open_before, mode
+        assert stopped.calls == [] and stopped.checks == [], mode
+        assert heard(stopped.played) == spoken(REPLIES["redirect"]["es"]), mode
+        assert kept_words(run.world, stopped.words) == [], mode
+        # The turn after it answers the gate's line, not the exercise: left to
+        # the model whole. The one after that is checked again.
+        assert after.allowed and after.checks == [], mode
+        assert said_to_the_checker(again) == [answer_of(9)], mode
+
+
+def test_homework_brought_with_its_answer_is_checked_once_posed_after_the_gates(modes):
+    for mode, (runs, _) in modes.items():
+        brought = runs["brought"].results[1]
+        assert brought.allowed and not brought.open_before, mode
+        ((at, said, exercise),) = brought.checks
+        # Its words without the exercise, against the exercise just opened.
+        assert said == f"{CHILD_WORDS}, estoy haciendo y me da 5." and exercise == 1, mode
+        assert at >= brought.decided_at, mode
+        if mode == "early_on":
+            # The model began the pose before the gates decided; its tool, and
+            # so the check, ran only once they let the turn through.
+            assert brought.calls[0].opened_at < brought.decided_at
 
 
 def _blocks(request: dict) -> list[str]:
@@ -921,12 +1082,21 @@ EVALS = {
     "evals/pedagogy/budget.py": (
         "62b7d87916ee2e2b4744176686895b2193f6629674e9ef2520712174bfe98048"
     ),
-    "evals/pedagogy/cases.py": ("ce4d7bfc4f3fd6027eb298f6f3394996157ce5f4cc529f65d0b4264b1202a916"),
+    "evals/pedagogy/calibrate.py": (
+        "264aceffb3b2f9a5828aaf62b4e934b5a4c4bbf5e74d3d3a1bc3fd6eb4d9372e"
+    ),
+    "evals/pedagogy/cases.py": ("5bff946b879ab883ccc7208fb8e1c6fa2422f16fd1e509d5eb020426c0a636c3"),
     "evals/pedagogy/evaluate.py": (
-        "2e8880662e1bd56f735ec3fc2b40841f546d5d744512fa710aae40b7c13f54db"
+        "ffe96ac9a7058cccb12df1da897704fc58516e72999d088a821861f1adfec1fa"
+    ),
+    "evals/pedagogy/fixtures/examples-calibration.json": (
+        "e7f3d772e42519ceb007cf35ff679cce034be6c7968560341609375483743014"
+    ),
+    "evals/pedagogy/meaning.py": (
+        "d3dceb368d194bf9d11bfa45ea36598e6f9935f0c36e2349984ca638b86ca9a1"
     ),
     "evals/pedagogy/report.py": (
-        "9a4c88c3c27b82ca64b60eae543d222d34946262c8cb366e8032c163a97af366"
+        "f11b38f99b5a4dbef860cc979954ef906c2c086d93b75e6e5e0c5809581e8827"
     ),
     "evals/pedagogy/test_budget.py": (
         "f2a9c61ea8785de0f7c6849806e299d5d8b9e37c3fd6f580cadddd7e120b3904"
@@ -938,7 +1108,7 @@ EVALS = {
         "9e15c50158309e5359d26f7ec7c4452e888ca7ebc6356abae61a9a564c460a3d"
     ),
     "evals/pedagogy/checker/src/main.rs": (
-        "f821e624051f1dba06f7492b465c4290ff91bb2eb471db9f3f859de93c23a619"
+        "12a4856d8d8245281c5326f3418d35b12152437131a567ab052778852abbc97c"
     ),
 }
 

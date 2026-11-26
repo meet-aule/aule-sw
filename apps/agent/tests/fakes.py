@@ -37,6 +37,7 @@ from livekit.agents.voice import io
 
 from aule_agent.moderation import THRESHOLDS
 from aule_agent.physical_safety import MODEL as TYPESAFE_MODEL
+from aule_agent.tutor import CHECKED_IN_CODE
 
 # The world of the session being set up or driven: what the stand-ins built
 # by patched constructors belong to.
@@ -57,6 +58,8 @@ TRIGGERS = {
     "moderation_slow": "TRIGGER_MODERATION_SLOW",
     "typesafe_down": "TRIGGER_TYPESAFE_DOWN",
     "reader_slow": "TRIGGER_READER_SLOW",
+    # The platform takes the answer it is in for right, and closes the exercise.
+    "correct": "TRIGGER_CORRECT",
 }
 
 # What the child says in every turn, so that its absence from the logs and
@@ -218,6 +221,9 @@ class World:
         # Requests that only open a connection (lists of models), by client.
         self.warmups = {"typesafe": 0, "reader": 0, "model": 0}
         self.platform_calls: list[tuple[str, str, Any]] = []
+        # Each answer the platform was asked to check: when the request came,
+        # what was said and the exercise it was checked against.
+        self.answers_heard: list[tuple[float, str, int | None]] = []
         self.flags: list[tuple[str, str, list[str]]] = []
         self.reported_turns: list[dict[str, Any]] = []
         self.metrics: dict[str, float] = {}
@@ -244,6 +250,8 @@ class World:
         self.moderation_client = FakeModeration(self)
         self.typesafe = FakeTypeSafe(self)
         self.platform = FakePlatform(self)
+        # The session's own client of the platform (``aule_agent.platform``).
+        self.platform_client: Any = None
         self.session: Any = None
         self.tutor: Any = None
         self.rpcs: dict[str, Any] = {}
@@ -986,17 +994,22 @@ def _check_request(kwargs: dict[str, Any]) -> None:
 
 
 def _last_user(kwargs: dict[str, Any]) -> tuple[str, int]:
-    """The child's last words in a request, and how many tool results came since."""
+    """The child's last words in a request, and how many results of the
+    model's own tool calls came since. A check made in code after the gates
+    (``tutor.CHECKED_IN_CODE``) is no step of the model's."""
     answered = 0
     for message in reversed(kwargs.get("messages") or []):
         if message["role"] != "user":
             continue
         content = message["content"]
         blocks = [{"type": "text", "text": content}] if isinstance(content, str) else content
-        if any(block.get("type") == "tool_result" for block in blocks):
+        results = [block for block in blocks if block.get("type") == "tool_result"]
+        if any(not str(block["tool_use_id"]).startswith(CHECKED_IN_CODE) for block in results):
             answered += 1
             continue
         texts = [block.get("text", "") for block in blocks if block.get("type") == "text"]
+        if results and not texts:
+            continue
         return " ".join(texts), answered
     return "", answered
 
@@ -1300,6 +1313,12 @@ class FakePlatform:
         self._reports = 0
         self._guidance = 0
         self.scripted_turns: dict[str, dict[str, Any]] = {}
+        # Whether a pose opens an exercise, with an id as the platform gives
+        # one, so that the agent checks answers to it in code; and which one is
+        # open, by expression. Off, a pose only says what to do, as before.
+        self.opens_exercises = False
+        self.open: int | None = None
+        self._exercises: dict[str, int] = {}
         # Every so many reports the supervisor has new guidance, and once a
         # late plan. How often is not known: this cadence makes the share of
         # input read from the cache today about what production measured.
@@ -1316,6 +1335,9 @@ class FakePlatform:
     ) -> dict[str, Any] | None:
         world = self._world
         world.platform_calls.append((method, path, body))
+        if path == "/v1/agent/session/answers":
+            assert body is not None
+            world.answers_heard.append((time.time(), body["said"], self.open))
         await asyncio.sleep(world.delays.scaled(world.delays.platform, world.rng))
         if path == "/v1/agent/session" and method == "GET":
             answer: dict[str, Any] = {
@@ -1364,7 +1386,18 @@ class FakePlatform:
             world.metrics = dict((body or {}).get("metrics") or {})
             return {}
         if path in ("/v1/agent/session/exercises", "/v1/agent/session/answers"):
-            return {"say": "Pídele que explique cómo lo pensó."}
+            answer = {"say": "Pídele que explique cómo lo pensó."}
+            if not self.opens_exercises:
+                return answer
+            assert body is not None
+            if path == "/v1/agent/session/exercises":
+                expression = " ".join(str(body["expression"]).split())
+                self.open = self._exercises.setdefault(expression, len(self._exercises) + 1)
+                return {**answer, "exercise": self.open}
+            closed = self.open is not None and _has(str(body["said"]), "correct")
+            if closed:
+                self.open = None
+            return {**answer, "closed": closed}
         return {}
 
 
@@ -1420,6 +1453,14 @@ def words_of(turn: int, extra: str = "") -> str:
     """What the child says in one turn: the synthetic words, a number that
     makes the turn unique, and whatever a test adds."""
     return f"{CHILD_WORDS} respuesta {turn} {extra}".strip()
+
+
+def answer_of(turn: int, extra: str = "") -> str:
+    """A turn that answers the exercise open in digits, as the platform's
+    reader takes them: the synthetic words, then the turn's number, which
+    makes it unique, as the answer. The tutor checks it in code after the
+    gates, unless the number is one of the exercise's own."""
+    return f"{CHILD_WORDS}, me da {turn}. {extra}".strip()
 
 
 def reply_for(rng: random.Random, turn: int) -> str:

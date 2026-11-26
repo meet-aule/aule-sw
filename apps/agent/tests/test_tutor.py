@@ -37,6 +37,7 @@ from aule_agent.tutor import (
     UNCHECKED,
     UNCUT_WAIT_SECONDS,
     NoReplyInTime,
+    OpenExercise,
     Persona,
     Tutor,
     VoiceAhead,
@@ -117,9 +118,12 @@ class ScriptedGates:
         self.decisions = list(decisions)
         self.heard_texts = []
         self.spoken_texts = []
+        # What happened, in order; a test may share it with the checker.
+        self.order = []
 
     async def heard(self, context, message):
         self.heard_texts.append(message.text_content)
+        self.order.append("heard")
         return self.decisions.pop(0)
 
     async def spoken(self, text):
@@ -152,8 +156,12 @@ class Session:
         return done()
 
     def generate_reply(self, *, user_input):
-        self.replies_to = [*getattr(self, "replies_to", []), user_input]
+        # A typed turn hands over its own message, the button its fixed words.
+        self.inputs = [*getattr(self, "inputs", []), user_input]
+        text = user_input.text_content if isinstance(user_input, llm.ChatMessage) else user_input
+        self.replies_to = [*getattr(self, "replies_to", []), text]
         self.order.append("reply")
+        return f"reply {len(self.replies_to)}"
 
     def say(self, text, *, add_to_chat_ctx, allow_interruptions):
         self.said.append((text, add_to_chat_ctx, allow_interruptions))
@@ -419,17 +427,30 @@ async def test_an_empty_typed_message_is_ignored_and_a_long_one_is_cut():
 
 
 class ScriptedChecker:
-    """Stands in for the platform's exercise checker."""
+    """Stands in for the platform's exercise checker. A pose it can check
+    opens a new exercise, unless it is the one open; an answer that closes
+    it leaves none open. ``judged`` may be an error to raise."""
 
-    def __init__(self, posed=None, judged=None):
+    def __init__(self, posed=None, judged=None, *, exercise=None, closes=False, order=None):
         self.posed, self.judged, self.calls = posed, judged, []
+        self.exercise, self.closes = exercise, closes
+        self.order = [] if order is None else order
 
     async def pose(self, expression, skill_id, form):
         self.calls.append(("pose", expression, skill_id, form))
+        self.order.append("pose")
+        if self.posed is not None and getattr(self.exercise, "expression", None) != expression:
+            number = self.exercise.id + 1 if self.exercise is not None else 1
+            self.exercise = OpenExercise(number, expression)
         return self.posed
 
     async def answer(self, said):
         self.calls.append(("answer", said))
+        self.order.append("answer")
+        if isinstance(self.judged, Exception):
+            raise self.judged
+        if self.closes:
+            self.exercise = None
         return self.judged
 
 
@@ -500,6 +521,35 @@ async def test_a_checking_call_without_its_text_is_not_sent_to_the_platform():
     assert await tool(tutor, "pose_exercise")({"skill_id": "a.b"}) == UNCHECKED
     assert await tool(tutor, "check_answer")({"said": 7}) == UNCHECKED
     assert checker.calls == []
+
+
+async def test_an_answer_checked_in_the_step_that_poses_its_exercise_reaches_the_checker_after():
+    posed = asyncio.Event()
+    sent = []
+
+    class SlowPlatform(ScriptedChecker):
+        async def pose(self, expression, skill_id, form):
+            sent.append("pose")
+            await posed.wait()
+            sent.append("posed")
+            return "Ask it and wait."
+
+        async def answer(self, said):
+            sent.append("answer")
+            return "Correct."
+
+    tutor = Tutor(language="es", gates=ScriptedGates(), checker=SlowPlatform())
+
+    # As LiveKit runs the calls of one step: each in its own task, in the order written.
+    posing = asyncio.create_task(tool(tutor, "pose_exercise")({"expression": "3/4 + 1/8"}))
+    checking = asyncio.create_task(tool(tutor, "check_answer")({"said": "7/8"}))
+    for _ in range(5):
+        await asyncio.sleep(0)
+    assert sent == ["pose"]
+
+    posed.set()
+    assert await asyncio.gather(posing, checking) == ["Ask it and wait.", "Correct."]
+    assert sent == ["pose", "posed", "answer"]
 
 
 async def test_an_accepted_turn_without_a_reply_is_reported(caplog):

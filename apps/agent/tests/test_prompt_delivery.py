@@ -16,22 +16,44 @@ from aule_agent.moderation import Action, Decision
 from aule_agent.prompts import CHECKING, INSTRUCTIONS, PACED, SCREEN, response_language
 from aule_agent.providers import build_llm
 from aule_agent.script import Reply
-from aule_agent.tutor import Persona, Tutor, persona_notes
+from aule_agent.tutor import CHECKED_IN_CODE, OpenExercise, Persona, Tutor, persona_notes
 
 
 class Gates:
     checks_spoken = True
+
+    async def heard(self, context: object, message: object) -> Decision:
+        return Decision(Action.ALLOW)
 
     async def spoken(self, text: str) -> Decision:
         return Decision(Action.ALLOW)
 
 
 class Checker:
+    # Nothing open: no turn is checked in code.
+    exercise = None
+
     async def pose(self, *args: object) -> str:
         raise AssertionError("the transport fixture must not request tools")
 
     async def answer(self, said: str) -> str:
         raise AssertionError("the transport fixture must not request tools")
+
+
+class OpenChecker:
+    """An exercise open, as the platform says once it was posed."""
+
+    exercise = OpenExercise(7, "25 + 3 * 2")
+
+    def __init__(self) -> None:
+        self.heard: list[str] = []
+
+    async def pose(self, *args: object) -> str:
+        raise AssertionError("the transport fixture must not request tools")
+
+    async def answer(self, said: str) -> str:
+        self.heard.append(said)
+        return "Incorrect. Give one hint."
 
 
 class Engine:
@@ -161,6 +183,69 @@ async def test_every_applicable_block_reaches_the_provider_after_every_update(
                 "Late plan: compare fractions.",
                 absent="No hints: this is a measurement.",
             )
+
+
+def blocks_of(message: dict) -> list[dict]:
+    """A message's content blocks as they are sent, without cache markers."""
+    content = message["content"]
+    blocks = [{"type": "text", "text": content}] if isinstance(content, str) else content
+    return [{k: v for k, v in block.items() if k != "cache_control"} for block in blocks]
+
+
+@pytest.mark.parametrize("language", ["es", "en"])
+async def test_a_check_made_in_code_reaches_the_provider_as_the_models_own_call(
+    language: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "synthetic-test-key")
+    requests: list[dict] = []
+
+    def send(request: httpx.Request) -> httpx.Response:
+        requests.append(json.loads(request.content))
+        return httpx.Response(
+            200, headers={"content-type": "text/event-stream"}, content=response()
+        )
+
+    checker = OpenChecker()
+    tutor = Tutor(language=language, gates=Gates(), checker=checker)
+    async with AsyncAnthropic(
+        api_key="synthetic-test-key",
+        max_retries=0,
+        http_client=httpx.AsyncClient(transport=httpx.MockTransport(send)),
+    ) as client:
+        model = build_llm(SimpleNamespace(llm_model="claude-sonnet-5-5"), client=client)
+        options = SessionConnectOptions(llm_conn_options=APIConnectOptions(max_retry=0))
+        async with AgentSession(llm=model, user_away_timeout=None, conn_options=options) as session:
+            await session.start(agent=tutor, session_host=False)
+            handle = await tutor.typed("Me salió 56")
+            assert handle is not None
+            await handle
+
+    # One request: the child's message, then the check as the model's own
+    # tool_use and its tool_result, which the turn ends with.
+    (wire,) = requests
+    *_, words, call, result = wire["messages"]
+    assert (words["role"], blocks_of(words)) == ("user", [{"type": "text", "text": "Me salió 56"}])
+    (used,) = blocks_of(call)
+    assert call["role"] == "assistant" and used["id"].startswith(CHECKED_IN_CODE)
+    assert (used["type"], used["name"], used["input"]) == (
+        "tool_use",
+        "check_answer",
+        {"said": "Me salió 56"},
+    )
+    assert result["role"] == "user" and blocks_of(result) == [
+        {
+            "tool_use_id": used["id"],
+            "type": "tool_result",
+            "content": "Incorrect. Give one hint.",
+            "is_error": False,
+        }
+    ]
+    assert checker.heard == ["Me salió 56"]
+    # The check is conversation, not instructions: the system prompt is as
+    # before, with the language rule last.
+    sent = "\n\n".join(block["text"] for block in wire["system"])
+    assert sent == tutor.instructions and sent.endswith(response_language(language))
+    assert sent.count(CHECKING) == 1 and "Incorrect. Give one hint." not in sent
 
 
 def test_family_text_cannot_insert_unquoted_policy_blocks() -> None:

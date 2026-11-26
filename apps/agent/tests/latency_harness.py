@@ -22,7 +22,10 @@ connections the providers keep open time out as they would; by default audio
 plays ten times faster and the next press follows within a second.
 ``--second-reader 0.05,0.02`` is the share of the child's turns and of the
 tutor's replies that moderation is unsure of, so that the second reader reads
-them (the default).
+them (the default). ``--exercises 0.5`` is the share of free sessions whose
+platform opens the exercise the model poses, so that the child's answers to it
+are checked in code after the gates (the default); the session's first turn
+then poses one.
 """
 
 from __future__ import annotations
@@ -229,6 +232,13 @@ def spy(world: World, gates: Gates) -> None:
     gates.spoken = spoken_spy  # type: ignore[method-assign]
 
 
+def platform_for(linked: Any) -> Platform:
+    """The session's client of the stand-in platform, kept in its world."""
+    world = CURRENT_WORLD.get()
+    world.platform_client = Platform(linked, send=world.platform.send)
+    return world.platform_client
+
+
 @contextlib.contextmanager
 def offline(extra_env: dict[str, str] | None = None, mode: str = "push-to-talk") -> Iterator[None]:
     """The worker's providers, session and platform stood in for, for every
@@ -249,11 +259,7 @@ def offline(extra_env: dict[str, str] | None = None, mode: str = "push-to-talk")
                 CURRENT_WORLD.get(), report, observer
             ),
         ),
-        (
-            worker,
-            "Platform",
-            lambda linked: Platform(linked, send=CURRENT_WORLD.get().platform.send),
-        ),
+        (worker, "Platform", platform_for),
         (worker, "AgentSession", OfflineSession),
         (worker, "build_stt", lambda settings, language: CURRENT_WORLD.get().stt),
         (worker, "build_tts", lambda settings, language: CURRENT_WORLD.get().voice),
@@ -321,6 +327,11 @@ class TurnResult:
     played: list[fakes.Played] = field(default_factory=list)
     shown: list[str] = field(default_factory=list)
     calls: list[fakes.ModelCall] = field(default_factory=list)
+    # Whether the platform's client had an exercise open when the turn began,
+    # and each answer the platform was asked to check during it: when, what,
+    # and against which exercise.
+    open_before: bool = False
+    checks: list[tuple[float, str, int | None]] = field(default_factory=list)
     # The machine slept during the turn: its times are not measurements.
     slept: bool = False
 
@@ -346,7 +357,10 @@ def plan_turns(
     turns = []
     for offset in range(count):
         number = start + offset
-        words = words_of(number, UNSURE if readers.random() < unsure[0] else "")
+        extra = UNSURE if readers.random() < unsure[0] else ""
+        # Once an exercise is open, the child answers it.
+        answers = world.platform.opens_exercises and offset > 0
+        words = fakes.answer_of(number, extra) if answers else words_of(number, extra)
         unsure_reply = f" {UNSURE}" if readers.random() < unsure[1] else ""
         speech = rng.uniform(0.8, 2.5)
         quick = holds == "quick" or (holds == "mixed" and rng.random() < 0.5)
@@ -368,6 +382,9 @@ def plan_turns(
             )
             weights = (1,) if world.mix == "engine" else (0.45, 0.25, 0.30)
             tool = rng.choices(tools, weights)[0]
+        if offset == 0 and world.platform.opens_exercises:
+            # A session whose platform opens exercises starts by posing one.
+            tool = "pose_exercise"
         tokens = {
             "check_answer": fakes.Spread(25, 40),
             "pose_exercise": fakes.Spread(35, 50),
@@ -433,6 +450,7 @@ async def drive(world: World, turn: Turn) -> TurnResult:
     clocks = time.time() - time.monotonic()
     await asyncio.sleep(fakes.Spread(0.05, 0.10).draw(rng))
     played, shown, calls = len(world.played), len(world.shown), len(world.model_calls)
+    checks, open_before = len(world.answers_heard), exercise_open(world)
     streams = len(world.stt.streams)
     speaker.unmute()
     await world.rpcs["start_turn"](RPC)
@@ -468,9 +486,10 @@ async def drive(world: World, turn: Turn) -> TurnResult:
         released_at=released,
         rpc_at=time.time(),
         words=turn.words,
+        open_before=open_before,
     )
     await world.rpcs["end_turn"](RPC)
-    return await _answered(world, result, (played, shown, calls, decided), clocks)
+    return await _answered(world, result, (played, shown, calls, decided, checks), clocks)
 
 
 async def talk(world: World, turn: Turn) -> TurnResult:
@@ -480,6 +499,7 @@ async def talk(world: World, turn: Turn) -> TurnResult:
     clocks = time.time() - time.monotonic()
     await asyncio.sleep(fakes.Spread(0.05, 0.10).draw(rng))
     played, shown, calls = len(world.played), len(world.shown), len(world.model_calls)
+    checks, open_before = len(world.answers_heard), exercise_open(world)
     start = time.time() + TALK_AFTER_PRESS_SECONDS
     end = start + turn.speech
     final = delays.final_after_speech.draw(rng) if turn.final else None
@@ -487,16 +507,29 @@ async def talk(world: World, turn: Turn) -> TurnResult:
     speaker.say(turn.words, start, end, final_delay=final)
     await _sleep_until(end)
     result = TurnResult(
-        turn.number, turn.kind, turn.tool, 0.0, released_at=end, rpc_at=end, words=turn.words
+        turn.number,
+        turn.kind,
+        turn.tool,
+        0.0,
+        released_at=end,
+        rpc_at=end,
+        words=turn.words,
+        open_before=open_before,
     )
-    return await _answered(world, result, (played, shown, calls, decided), clocks)
+    return await _answered(world, result, (played, shown, calls, decided, checks), clocks)
+
+
+def exercise_open(world: World) -> bool:
+    """Whether the session's client of the platform has an exercise open."""
+    client = world.platform_client
+    return client is not None and client.exercise is not None
 
 
 async def _answered(
-    world: World, result: TurnResult, before: tuple[int, int, int, int], clocks: float
+    world: World, result: TurnResult, before: tuple[int, int, int, int, int], clocks: float
 ) -> TurnResult:
     """The turn's answer, once the tutor has said all of it."""
-    played, shown, calls, decided = before
+    played, shown, calls, decided, checks = before
     released = result.released_at
     await _until(lambda: len(world.played) > played, timeout=20.0)
     await quiet(world)
@@ -507,6 +540,7 @@ async def _answered(
     result.played = world.played[played:]
     result.shown = [text for _, text in world.shown[shown:]]
     result.calls = world.model_calls[calls:]
+    result.checks = world.answers_heard[checks:]
     answers = [segment for segment in result.played if segment.started_at > released]
     if answers:
         result.first_audio = answers[0].started_at - released
@@ -654,6 +688,15 @@ def summarize(
         and call.opened_at < r.decided_at
         and r.words in json.dumps(call.kwargs.get("messages"), ensure_ascii=False)
     )
+    # Requests made before the input gates decided a turn that began with an
+    # exercise open: none, early replies or not, since such a turn may be
+    # checked after its gates and its reply must hold the check.
+    asked_early_while_open = sum(
+        1
+        for r in results
+        for call in r.calls
+        if r.open_before and r.decided_at is not None and call.opened_at < r.decided_at
+    )
     return {
         "turns": len(results),
         "turns_left_out_because_the_machine_slept": len(every) - len(results),
@@ -686,10 +729,35 @@ def summarize(
             for kind in ("sentences_said", "sentences_dropped", "lines_said")
         },
         "model_requests_before_the_input_gates": asked_early,
+        "checks": {
+            "turns_with_an_exercise_open": sum(1 for r in results if r.open_before),
+            "turns_checked": sum(1 for r in results if r.checks),
+            "checker_calls": sum(len(r.checks) for r in results),
+            # A check made in code comes before the turn's first model request.
+            "release_to_first_audio_checked_in_code": spread(
+                [
+                    r.first_audio  # type: ignore[misc]
+                    for r in answered
+                    if r.checks and r.calls and r.checks[0][0] < r.calls[0].opened_at
+                ]
+            ),
+        },
         "second_reader_calls": sum(len(run.world.reader_calls) for run in runs),
         "zero_counters": {
             "api_errors": sum(len(run.world.api_errors) for run in runs),
             "audio_before_the_input_gates": before_gates,
+            # The checker hears a turn only once every input gate let it through.
+            "checks_before_the_input_gates": sum(
+                1
+                for r in results
+                for at, _, _ in r.checks
+                if r.decided_at is None or at < r.decided_at
+            ),
+            "checks_of_stopped_turns": sum(len(r.checks) for r in results if r.allowed is False),
+            "turns_checked_twice_against_one_exercise": sum(
+                1 for r in results if len({exercise for _, _, exercise in r.checks}) < len(r.checks)
+            ),
+            "model_requests_before_the_input_gates_with_an_exercise_open": asked_early_while_open,
             "heard_without_the_output_gate": sum(unapproved(run.world) for run in runs),
             "log_lines_with_the_childs_words": sum(CHILD_WORDS in line for line in records.lines),
             "unanswered_turns": len(results) - len(answered),
@@ -724,9 +792,11 @@ async def measure(
     mode: str = "push-to-talk",
     gap: tuple[float, float] = (0.3, 0.8),
     unsure: tuple[float, float] = (0.05, 0.02),
+    exercises: float = 0.5,
 ) -> dict[str, Any]:
     """Runs ``turns`` turns over ``sessions`` concurrent sessions and says how
-    they went."""
+    they went. ``exercises`` is the share of free sessions whose platform
+    opens the exercise the model poses (their first turn poses one)."""
     delays = delays or Delays()
     per_session = max(1, math.ceil(turns / sessions))
     records = Records()
@@ -743,6 +813,10 @@ async def measure(
             worlds = [
                 World(seed=seed * 1000 + index, delays=delays, mix=mix) for index in range(sessions)
             ]
+            for index, world in enumerate(worlds):
+                world.platform.opens_exercises = mix == "free" and index < round(
+                    sessions * exercises
+                )
             plans = [
                 plan_turns(world, per_session, 1, holds=holds, unsure=unsure) for world in worlds
             ]
@@ -767,6 +841,7 @@ async def measure(
         "mode": mode,
         "gap_seconds": list(gap),
         "second_reader_shares": list(unsure),
+        "exercise_share": exercises if mix == "free" else 0.0,
         "env": {key: value for key, value in (env or {}).items()},
         "delays": {key: str(value) for key, value in asdict(delays).items()},
     }
@@ -785,6 +860,12 @@ def main() -> None:
     parser.add_argument("--gap", default="0.3,0.8", help="seconds between turns: MIN,MAX")
     parser.add_argument(
         "--second-reader", default="0.05,0.02", help="shares read again: INPUT,OUTPUT"
+    )
+    parser.add_argument(
+        "--exercises",
+        type=float,
+        default=0.5,
+        help="share of free sessions whose platform opens the exercise the model poses",
     )
     parser.add_argument("--env", action="append", default=[], help="NAME=value for Settings")
     arguments = parser.parse_args()
@@ -806,6 +887,7 @@ def main() -> None:
             mode=arguments.mode,
             gap=(low, high),
             unsure=(heard, spoken),
+            exercises=arguments.exercises,
         )
     )
     json.dump(summary, sys.stdout, indent=2, ensure_ascii=False)

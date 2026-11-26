@@ -2,6 +2,7 @@
 
 import asyncio
 import contextlib
+import contextvars
 import itertools
 import json
 import logging
@@ -15,7 +16,7 @@ from collections.abc import (
     Callable,
     Coroutine,
 )
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Protocol
 
 import numpy as np
@@ -36,17 +37,18 @@ from livekit.agents import (
     utils,
 )
 from livekit.agents.types import USERDATA_TIMED_TRANSCRIPT
+from livekit.agents.voice import SpeechHandle
 from livekit.agents.voice.generation import (
     INSTRUCTIONS_MESSAGE_ID,
     mark_instructions_cache_boundary,
 )
 
-from . import comparison, drill, farewell, visuals
+from . import answers, comparison, drill, farewell, visuals
 from .greetings import greeting as written_greeting
 from .observability import new_turn
 from .prompts import CHECKING, INSTRUCTIONS, PACED, SCREEN, response_language
 from .providers import EARLY, REQUEST, TOOL_STARTED, WARMING, Early, Prompt
-from .replies import ADULT_HELP_SEQUENCE, ANSWERABLE, MEANWHILE, reply
+from .replies import ADULT_HELP_SEQUENCE, ANSWERABLE, MEANWHILE, REPLIES, reply
 from .safety import Gates
 from .script import Engine, Line, Reply
 from .timing import Timing
@@ -57,8 +59,24 @@ logger = logging.getLogger("aule.agent.tutor")
 Show = Callable[[dict[str, Any]], Awaitable[None]]
 
 
+@dataclass(frozen=True)
+class OpenExercise:
+    """The exercise the checker has open: its id there, the expression as
+    the tutor posed it, and whether the tutor is set to work on something
+    else first: a worked example with other numbers, which the platform asks
+    for after the last hint. What the student says meanwhile answers that,
+    until the exercise is posed again."""
+
+    id: int
+    expression: str
+    aside: bool = False
+
+
 class Checker(Protocol):
     """Checks the student's answers without the model: the platform."""
+
+    # The exercise open now, as the checker last said; None when none is.
+    exercise: OpenExercise | None
 
     async def pose(self, expression: str, skill_id: str | None, form: str | None) -> str | None: ...
 
@@ -120,6 +138,59 @@ CHECK_ANSWER: dict[str, Any] = {
 
 # What the model reads when an exercise or an answer could not be checked.
 UNCHECKED = "Not checked: carry on by yourself."
+# How a check made in code starts its call id, to tell it from the model's own.
+CHECKED_IN_CODE = "aule_check_"
+
+
+@dataclass(frozen=True)
+class TurnCheck:
+    """How the student's turn was checked, never with their words.
+
+    ``kind`` is how code read the turn against the exercise open once it
+    passed the gates (see ``answers``); None when none was open. ``told`` is
+    what the checker said, None while nobody asked it. ``by`` says who asked
+    it: "code" after the gates, "pose" right after the exercise the turn
+    brought was posed, "model" with its own call, and "reused" for each
+    later call of the model that got the same answer back.
+    """
+
+    kind: answers.Kind | None = None
+    exercise: int | None = None
+    told: str | None = None
+    by: tuple[str, ...] = ()
+
+
+@dataclass
+class _Turn:
+    """One turn of the student, as far as checking it goes: in memory only,
+    and each turn its own, so a turn that overlaps the next one (a message
+    typed while a spoken turn is checked) never writes into it."""
+
+    # The turn before it never reached the model, or the tutor's last line was
+    # a fixed one: what the student says now answers that, not the exercise.
+    after_a_stop: bool = False
+    # Whether it passed every input gate.
+    passed: bool = False
+    # Its words, once they passed every gate, when they may be checked.
+    words: str = ""
+    check: TurnCheck | None = None
+
+
+# The student's turn that the reply running now answers, with the tutor it
+# belongs to. Set as each turn begins (``Tutor._starts_a_turn``): LiveKit asks
+# a spoken turn's reply in the task that awaited ``on_user_turn_completed``,
+# and a typed turn's or the button's where ``generate_reply`` is called, and
+# the tasks of that reply and of its tools start from a copy of that context.
+# So a reply's tools read its own turn, however many turns begin after it.
+_ANSWERING: contextvars.ContextVar[tuple[object, _Turn] | None] = contextvars.ContextVar(
+    "aule_answering", default=None
+)
+
+
+# The fixed lines that are not part of the work: a gate's reply, the clock, a
+# break, the pace of the session. "No sé" after one of them answers that line.
+_NOT_THE_WORK = tuple(key for key in REPLIES if key not in (*MEANWHILE, "look_at_screen"))
+
 
 # How long after an accepted turn a missing reply is reported. A reply normally
 # starts within four seconds; the model may have begun it before the turn was
@@ -831,6 +902,20 @@ async def _replayed(frames: list[rtc.AudioFrame]) -> AsyncIterable[rtc.AudioFram
         )
 
 
+def _check_pair(said: str, told: str) -> list[llm.ChatItem]:
+    """A check made in code, as the model would have made it: its
+    check_answer call and the checker's answer to it."""
+    call = llm.FunctionCall(
+        call_id=utils.shortuuid(CHECKED_IN_CODE),
+        name="check_answer",
+        arguments=json.dumps({"said": said}, ensure_ascii=False),
+    )
+    output = llm.FunctionCallOutput(
+        call_id=call.call_id, name="check_answer", output=told, is_error=False
+    )
+    return [call, output]
+
+
 async def present(visual: object, gates: Gates, show: Show) -> str:
     """Puts a visual on the student's screen, if it can be drawn and may be read.
 
@@ -884,6 +969,19 @@ class Tutor(Agent):
         # family note; the default leaves the prompt exactly as written.
         persona = persona or Persona()
         instructions = INSTRUCTIONS
+        # The checker hears one thing at a time. LiveKit runs the calls of one
+        # step side by side, so without it an answer checked in the same step
+        # as its exercise is posed could reach the platform first, and be
+        # judged against the exercise before, or against none.
+        self._checking = asyncio.Lock()
+        self._checker = checker
+        # The student's turn now. Before the first nothing was stopped.
+        self._turn = _Turn(passed=True)
+        # The open exercise the tutor stepped off with a pose the checker did not
+        # take (not arithmetic it can check, or a call that failed): the tutor
+        # asks something else, and the exercise stays open behind it.
+        self._posed_elsewhere: int | None = None
+        self._fixed_lines = frozenset(reply(key, language) for key in _NOT_THE_WORK)
 
         @function_tool(raw_schema=comparison.SCHEMA)
         async def compare_numbers(raw_arguments: dict[str, object]) -> str:
@@ -912,21 +1010,26 @@ class Tutor(Agent):
                 )
                 if not isinstance(expression, str) or not expression.strip():
                     return UNCHECKED
-                return (
-                    await checker.pose(
+                async with self._checking:
+                    before = checker.exercise
+                    told = await checker.pose(
                         expression,
                         skill_id if isinstance(skill_id, str) else None,
                         form if isinstance(form, str) else None,
                     )
-                    or UNCHECKED
-                )
+                    # Not taken, the tutor asks something else now, and the
+                    # exercise before stays open behind it until it is posed again.
+                    self._posed_elsewhere = (
+                        before.id if told is None and before is not None else None
+                    )
+                    return await self._checked_after_a_pose(checker, before, told or UNCHECKED)
 
             @function_tool(raw_schema=CHECK_ANSWER)
             async def check_answer(raw_arguments: dict[str, object]) -> str:
                 said = raw_arguments.get("said")
                 if not isinstance(said, str) or not said.strip():
                     return UNCHECKED
-                return await checker.answer(said) or UNCHECKED
+                return await self._checked_by_the_model(checker, said)
 
             tools += [pose_exercise, check_answer]
 
@@ -1020,6 +1123,187 @@ class Tutor(Agent):
             return False
         self.on_goodbye()
         return True
+
+    @property
+    def turn_check(self) -> TurnCheck | None:
+        """How the student's turn now was checked; None while it was not."""
+        return self._turn.check
+
+    def _starts_a_turn(self, *, passed: bool = False) -> _Turn:
+        """A new turn of the student. Nothing of the turn before is checked with
+        it; whether that turn was stopped is kept with it."""
+        self._turn = _Turn(after_a_stop=not self._turn.passed, passed=passed)
+        _ANSWERING.set((self, self._turn))
+        return self._turn
+
+    def _turn_answered(self) -> _Turn:
+        """The student's turn that the reply running now answers: the one it
+        was asked for, though newer turns may have begun since. A reply asked
+        for no turn of this tutor's answers none: it reuses no check, and
+        checks none of the student's words."""
+        answering = _ANSWERING.get()
+        if answering is not None and answering[0] is self:
+            return answering[1]
+        return _Turn(passed=True)
+
+    def _after_a_fixed_line(self) -> bool:
+        """Whether the tutor's last line was a fixed one that is not part of the
+        work: a gate's reply, the output gate's in place of a reply included."""
+        for item in reversed(self.chat_ctx.items):
+            if item.type == "message" and item.role == "assistant":
+                return (item.text_content or "").strip() in self._fixed_lines
+        return False
+
+    async def _check_after_the_gates(self, turn: _Turn, words: str) -> list[llm.ChatItem]:
+        """Checks the student's answer, or their "no sé", to the exercise open,
+        in code: after the turn passed every input gate, before the model is
+        asked, so that no answer goes unchecked because the model forgot.
+
+        The model reads the check in the conversation as if it had made it:
+        a check_answer call and its output, saved in the history and returned
+        for this turn's request. Nothing is checked when no exercise is open,
+        and only what ``answers`` sends; the model checks the rest itself. A
+        turn after one the gates stopped, or after a fixed line, answers that
+        line and is left to the model whole, and so is a turn that answers
+        something else the tutor asked while the exercise stays open
+        (``_asked_something_else``). Never raises: a check that cannot be made
+        leaves the turn as before.
+        """
+        turn.passed = True
+        if self._checker is None:
+            return []
+        answers_a_line = turn.after_a_stop or self._after_a_fixed_line()
+        if not answers_a_line:
+            turn.words = words
+        try:
+            async with self._checking:
+                exercise = self._checker.exercise
+                if exercise is None:
+                    return []
+                reading = (
+                    answers.Reading(None, "left", False)
+                    if answers_a_line or self._asked_something_else(exercise)
+                    else answers.to_check(words, exercise.expression, self._language)
+                )
+                check = TurnCheck(kind=reading.kind, exercise=exercise.id)
+                turn.check = check
+                if reading.said is None:
+                    return []
+                started = time.monotonic()
+                told = await self._told(self._checker, reading.said)
+                turn.check = replace(check, told=told, by=("code",))
+            # Kinds and time only: never the words, nor what the checker said.
+            logger.info(
+                "answer checked after the gates",
+                extra={
+                    "kind": reading.kind,
+                    "restated": reading.restated,
+                    "checked": told != UNCHECKED,
+                    "seconds": round(time.monotonic() - started, 2),
+                },
+            )
+            # Saved even when a newer turn has begun since: the checker heard it.
+            checked = _check_pair(reading.said, told)
+            context = self.chat_ctx.copy()
+            context.insert(checked)
+            await self.update_chat_ctx(context)
+            return checked
+        except asyncio.CancelledError:
+            raise
+        except Exception as error:
+            logger.warning(
+                "answer not checked after the gates", extra={"error": type(error).__name__}
+            )
+            return []
+
+    def _asked_something_else(self, exercise: OpenExercise) -> bool:
+        """Whether what the tutor asked last is not ``exercise``, though it
+        stays open: a worked example with other numbers comes first, as the
+        platform asked, or a pose of something else was not taken, both until
+        the exercise is posed again; or what the tutor said and showed since
+        the student's last message names numbers other than the exercise's
+        own and its steps' (``answers.names_other_numbers``). The student's
+        reply answers that, and is left to the model, whose own check still
+        works."""
+        return (
+            exercise.aside
+            or exercise.id == self._posed_elsewhere
+            or answers.names_other_numbers(
+                self._said_since_the_student(), exercise.expression, self._language
+            )
+        )
+
+    def _said_since_the_student(self) -> str:
+        """What the tutor said since the student's last message, and the text
+        of what it put on the screen meanwhile, which it does not read aloud."""
+        said: list[str] = []
+        for item in reversed(self.chat_ctx.items):
+            if item.type == "message" and item.role == "user":
+                break
+            if item.type == "message" and item.role == "assistant":
+                said.append(item.text_content or "")
+            elif item.type == "function_call" and item.name == "show":
+                with contextlib.suppress(ValueError):
+                    visual = json.loads(item.arguments)
+                    if isinstance(visual, dict):
+                        said.append(visuals.text_of(visual))
+        return " ".join(reversed(said))
+
+    async def _checked_by_the_model(self, checker: Checker, said: str) -> str:
+        """The model's own check_answer: one call to the checker per turn and
+        exercise. The turn is the one this reply answers, even when a newer
+        one has begun: already checked against the exercise open now, or
+        against the one its check closed, it gets the same answer back."""
+        async with self._checking:
+            exercise = checker.exercise
+            open_now = exercise.id if exercise is not None else None
+            turn = self._turn_answered()
+            done = turn.check
+            if done is not None and done.told is not None and open_now in (done.exercise, None):
+                turn.check = replace(done, by=(*done.by, "reused"))
+                return done.told
+            told = await self._told(checker, said)
+            kind = done.kind if done is not None else None
+            turn.check = TurnCheck(kind=kind, exercise=open_now, told=told, by=("model",))
+            return told
+
+    async def _checked_after_a_pose(
+        self, checker: Checker, before: OpenExercise | None, told: str
+    ) -> str:
+        """What the model reads after posing an exercise. When the student's
+        turn this reply answers brought that exercise with their answer
+        ("Estoy haciendo 25 + 3 × 2. Me salió 56"), nothing was open to check
+        it against after the gates: it is checked now, against the exercise
+        just opened. Only when their words say it again as posed, or an answer
+        to the exercise before, or "tengo 10 años", would be taken for an
+        answer to it. Called with the checker's lock held."""
+        posed, turn = checker.exercise, self._turn_answered()
+        if (
+            posed is None
+            or (before is not None and posed.id == before.id)
+            or (turn.check is not None and turn.check.told is not None)
+        ):
+            return told
+        reading = answers.to_check(turn.words, posed.expression, self._language)
+        if not reading.restated or reading.said is None:
+            return told
+        answer = await self._told(checker, reading.said)
+        turn.check = TurnCheck(kind=reading.kind, exercise=posed.id, told=answer, by=("pose",))
+        # The kind only: never the words, nor what the checker said.
+        logger.info("answer checked after a pose", extra={"kind": reading.kind})
+        return f"{told} Their answer in this turn, checked: {answer}"
+
+    async def _told(self, checker: Checker, said: str) -> str:
+        """What the checker says of ``said``; UNCHECKED when it could not tell.
+        Not tried again: a call that timed out may still have been counted."""
+        try:
+            return await checker.answer(said) or UNCHECKED
+        except asyncio.CancelledError:
+            raise
+        except Exception as error:
+            # The type only: an error may quote what was sent.
+            logger.warning("answer not checked", extra={"error": type(error).__name__})
+            return UNCHECKED
 
     async def advise(self, guidance: str) -> None:
         """Applies the supervisor's latest guidance to the turns that follow.
@@ -1214,6 +1498,7 @@ class Tutor(Agent):
             self._timing.traced(trace)
         self._meanwhile_due = self._hold_on_due = True
         self._drew = False
+        turn = self._starts_a_turn()
         # A spoken turn during a drill is the student's try (a typed one never comes here).
         self._drill.took()
         self._drop_voice()
@@ -1234,6 +1519,12 @@ class Tutor(Agent):
                 turn_ctx.items.append(new_message)
                 await self.update_chat_ctx(turn_ctx)
                 raise StopResponse()
+            checked = await self._check_after_the_gates(turn, new_message.text_content or "")
+            if checked:
+                # A reply asked before the check cannot hold it: it is dropped
+                # unseen, and the reply is asked again with the check in it.
+                self._drop_early_reply()
+                turn_ctx.insert(checked)
         except BaseException:
             self._drop_early_reply()
             raise
@@ -1260,30 +1551,37 @@ class Tutor(Agent):
                 extra={"seconds": NO_REPLY_SECONDS, "model_answered": answered, "state": state},
             )
 
-    async def typed(self, text: str) -> None:
+    async def typed(self, text: str) -> SpeechHandle | None:
         """A message typed instead of spoken.
 
         It is judged like a spoken turn before the model sees it. Without this
         a typed message would go straight to the model, past both input gates.
+        Returns the reply asked for it, or None when the model is not asked.
         """
         text = text.strip()[:MAX_TYPED_CHARS]
         if not text:
-            return
+            return None
         new_turn()
         self._meanwhile_due = self._hold_on_due = True
         self._drew = False
+        turn = self._starts_a_turn()
         await self._interrupt()
         message = llm.ChatMessage(role="user", content=[text])
         if not await self._may_answer(self.chat_ctx.copy(), message):
-            return
+            return None
         if self._goodbye(text):
-            return
+            return None
         if await self._scripted(text):
             context = self.chat_ctx.copy()
             context.items.append(message)
             await self.update_chat_ctx(context)
-            return
-        self.session.generate_reply(user_input=text)
+            return None
+        await self._check_after_the_gates(turn, text)
+        # The message the gates judged, under an id of its own: as with a reply
+        # asked with the text, the gates' history keeps theirs and the
+        # conversation another. Made before the gates, it goes before the check.
+        written = message.model_copy(deep=True, update={"id": utils.shortuuid("item_")})
+        return self.session.generate_reply(user_input=written)
 
     def _meanwhile(self) -> str:
         if not self._meanwhile_due:
@@ -1332,6 +1630,8 @@ class Tutor(Agent):
         new_turn()
         self._meanwhile_due = self._hold_on_due = True
         self._drew = False
+        # A turn of its own, with no words to check: a button is never stopped.
+        self._starts_a_turn(passed=True)
         # The page is waiting for this answer: a long line that cannot be cut is
         # not waited for to its end, and the reply is said after it instead.
         await self._interrupt(wait=UNCUT_WAIT_SECONDS)
@@ -1382,9 +1682,18 @@ class Tutor(Agent):
         as the tutor holds them, and the tutor's tools and prompt. Not with
         the session engine, which reads the turn first and may change the
         rules, and not for a turn that takes a camera frame: no image goes to
-        the model before the gates let its turn through."""
+        the model before the gates let its turn through.
+
+        Nor while an exercise is open. An answer to it is checked once the
+        gates let the turn through (``_check_after_the_gates``), never
+        before, and the reply is then asked with the check in it: a request
+        made now could not hold it, and would be paid for and dropped. Whether
+        one is open is the checker's own state; the turn's words are not read
+        for it."""
         self._drop_early_reply()
         if not self._asks_early or self._engine is not None or self._given_up:
+            return
+        if self._checker is not None and self._checker.exercise is not None:
             return
         chat_ctx = turn_ctx.copy()
         chat_ctx.insert(new_message)
