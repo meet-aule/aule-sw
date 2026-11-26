@@ -4,8 +4,8 @@
 // empezó, or A16 Hola, soy Aule on a first run): Aule's face on a stage, which
 // a drawing or the camera takes while it shows (D30, D31).
 
-import { firstRun, purposeAsked, sessionRequest } from "./home.js";
-import { back, current, getAccount, go, need, onAccount, onHide, onShow } from "./screens.js";
+import { firstRun, openedSession, purposeAsked, sessionRequest } from "./home.js";
+import { addressFor, back, current, getAccount, go, need, onAccount, onHide, onShow, readdress, sessionAddress } from "./screens.js";
 import { TOPIC as VISUAL_TOPIC, renderVisual } from "./visuals.js";
 import { endedMessage, languageOf, recoveryMessage } from "./session-messages.js";
 import { COACH_HOLD_MS, HINTS_MS, VOICE, WINDOW_MS, cameraProblem, heard, isTap, levelOf, micProblem, words } from "./first-steps.js";
@@ -136,7 +136,8 @@ let stepTimer = null;
 let cardShown = "";
 // The platform's id for the session being shown, when there is one.
 let sessionId = null;
-// A session a reload left open, as api/session/recovery offers it; null when there is none.
+// A session a reload left open, as api/session/recovery offers it; null when
+// there is none, undefined while A05 asks.
 let recoverable = null;
 // Whether A05's devices have answered and can be used.
 let mediaReady = false;
@@ -187,7 +188,7 @@ async function sessionAction(action, body) {
  */
 function showRecoverable(answer) {
   recoverable = answer;
-  const open = answer !== null;
+  const open = Boolean(answer);
   if (open) write($("a05-title"), recoveryText("resume_title"));
   else writeWords($("a05-title"), "a05_title");
   $("a05-text").hidden = open;
@@ -198,11 +199,12 @@ function showRecoverable(answer) {
   $("join").hidden = open;
   $("resume").hidden = !open;
   $("restart").hidden = !open;
+  readdress();
 }
 
 async function offerRecovery() {
   const student = sessionRequest()?.student_id;
-  showRecoverable(null);
+  showRecoverable(undefined);
   write($("join"), recoveryText("start"));
   write($("resume"), recoveryText("resume"));
   write($("restart"), recoveryText("restart"));
@@ -226,12 +228,30 @@ async function offerRecovery() {
         title.blur();
         title.focus({ preventScroll: true });
       }
+      return;
     }
   } catch {
     if (stale()) return;
     write($("recovery-note"), recoveryText("check_failed"));
   }
+  // None to carry on, or no way to know: the session page's own address.
+  recoverable = null;
+  readdress();
 }
+
+/**
+ * Each screen's address (FIGMA.md D41): a session's own while it shows, and
+ * while A05 offers to carry it on; the session page's own everywhere else, the
+ * end screen too. It stays as it is while A05 asks whether a session is open,
+ * and while the home asks about the one the page was opened at.
+ */
+function screenAddress(screen) {
+  if (screen === "session") return sessionAddress(sessionId);
+  if (screen === "a05") return recoverable === undefined ? undefined : sessionAddress(recoverable?.session_id);
+  if (screen === "home" && openedSession()) return undefined;
+  return sessionAddress(null);
+}
+addressFor(screenAddress);
 
 // Why a session that was not ended here ended, or whether it can still go on.
 // A session the platform did not start has nothing to ask about.
@@ -1386,7 +1406,8 @@ async function join(session, { resumed = false } = {}) {
   sessionId = session.session_id ?? null;
   startClock(session.expiresInSeconds);
   if (session.session_id && session.engine === true) followSteps(session.session_id, resumed);
-  // A15: «La sesión empezó.» (A16 on a first run), with the microphone as A05 left it.
+  // A15: «La sesión empezó.» (A16 on a first run), with the microphone as A05
+  // left it, at the session's own address (screenAddress).
   go("session");
   if (inkMode) showInk();
   play(hello);

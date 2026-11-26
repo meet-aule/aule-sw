@@ -133,6 +133,10 @@ const MAX_FORM_BYTES = 8_000;
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const SIGN_IN_PATH = /^\/api\/signin\/(github|meta|apple)\/(start|callback)$/;
 const ID = /^[0-9a-f-]{36}$/i;
+// A session's own address, <base path>/<its id> (FIGMA.md D41): the page, as at
+// "/". Only an id as the platform writes it, a UUID in lower case, is one. Nothing
+// here looks it up: which session the page may carry on is still the sign-in's.
+const SESSION_PAGE = /^\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 // What a student writes in the two boxes of an exercise.
 const MAX_ANSWER_CHARS = 200;
 const MAX_EXPLANATION_CHARS = 600;
@@ -754,7 +758,7 @@ export function createPlayground(
         if (path === "/api/session" && guardianToken(request)) return signedIn(path, request, response);
         return session(path, request, response);
       }
-      const asset = reading ? await assetFor(path) : undefined;
+      const asset = reading ? await assetFor(SESSION_PAGE.test(path) ? "/" : path) : undefined;
       if (asset) {
         // A fingerprinted address is kept for a year and any other file is
         // checked against its ETag on every load. A page is never kept, so it

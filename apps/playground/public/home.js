@@ -7,7 +7,7 @@
 
 import { $, SUBJECTS, call, clearEditor, describe, editingStudent, openEditor } from "./students.js";
 import { DATED, KINDS, OWN_SUBJECT, REVIEW, defaultSubject, kindKey, objectiveFor, planLine } from "./steps.js";
-import { back, current, getAccount, go, landing, need, onAccount, onShow, setAccount } from "./screens.js";
+import { back, current, getAccount, go, landing, need, onAccount, onShow, readdress, sessionNamed, setAccount } from "./screens.js";
 import { languageOf, words } from "./first-steps.js";
 import { homeWords, sessionLine } from "./summaries.js";
 
@@ -28,6 +28,14 @@ let resumable = null;
 let handoff = null;
 // Whether a child said «Sí, soy yo» on a02 in this visit. Page memory only.
 let confirmed = false;
+// The session the page's address named as it loaded (FIGMA.md D41), until the
+// home has asked whether this family can carry it on; null then, or with none.
+let opened = sessionNamed(location.pathname);
+
+/** The session the home is asking about for the page's address, or null; meanwhile the address stays. */
+export function openedSession() {
+  return opened;
+}
 
 need("student", () => chosen !== null);
 need("objective", () => chosen !== null && Boolean(kind));
@@ -231,12 +239,20 @@ async function readAgain() {
 
 async function findResumable() {
   resumable = null;
+  const named = opened;
   try {
     const answer = await call("api/session/recovery");
     if (answer.available) resumable = answer.student_id;
+    // Opened at the address of this family's open session: straight to A05 to
+    // carry it on, as choosing its student after a reload does (D22).
+    if (named && answer.available && answer.session_id === named && current() === "home") study(answer.student_id);
   } catch {
     // A05 asks again when it shows.
   }
+  if (!named) return;
+  // Asked once: from here on the page is as at its own address.
+  opened = null;
+  readdress();
 }
 
 for (const id of ["add-student", "add-first"]) $(id).addEventListener("click", () => go("p04"));
@@ -454,6 +470,7 @@ onAccount((account) => {
   resumable = null;
   handoff = null;
   confirmed = false;
+  opened = null;
   detailsOf = "";
   // a02 and A04 named the child.
   $("a02-lead").textContent = "";

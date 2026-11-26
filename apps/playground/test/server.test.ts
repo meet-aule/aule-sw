@@ -191,6 +191,52 @@ test("the family guide's aliases keep the query, a link's ?src= with it, and rea
   }
 });
 
+// A session's id as the platform writes it (FIGMA.md D41).
+const SESSION = "01a215c0-9f37-718e-b5cf-bb3c99184cdd";
+
+test("a session's own address is the page, as the bare one is, and anything else in its place goes home (D41)", async () => {
+  const origin = new URL(base).origin;
+  const headers = { Accept: "text/html,application/xhtml+xml" };
+  const page = await (await fetch(`${base}/`)).text();
+  for (const method of ["GET", "HEAD"]) {
+    const response = await fetch(`${base}/${SESSION}?src=feria`, { method, headers, redirect: "manual" });
+    assert.equal(response.status, 200, method);
+    assert.equal(response.headers.get("content-type"), "text/html; charset=utf-8");
+    // Never kept, and the address with the id in it goes to no other site in a Referer.
+    assert.equal(response.headers.get("cache-control"), "no-store");
+    assert.equal(response.headers.get("referrer-policy"), "no-referrer");
+    assert.match(response.headers.get("content-security-policy") ?? "", /default-src 'none'/);
+    // No family is sent a session's address with a link's code: a ?src= there keeps nothing.
+    assert.equal(response.headers.get("set-cookie"), null);
+    assert.equal(await response.text(), method === "GET" ? page : "");
+  }
+  // Anything else where the id goes is no id: a visit lands on the session page's own address...
+  for (const junk of [
+    `${SESSION}/`,
+    SESSION.toUpperCase(),
+    `${SESSION}0`,
+    SESSION.slice(0, -1),
+    SESSION.replaceAll("-", ""),
+    `${SESSION}/${SESSION}`,
+    "01a215c0-9f37-718e-b5cf-bb3c99184cdg",
+    "session",
+  ]) {
+    const response = await fetch(`${base}/${junk}`, { headers, redirect: "manual" });
+    assert.equal(response.status, 302, junk);
+    assert.equal(response.headers.get("location"), "/playground/", junk);
+  }
+  // ...while a file, an API route or a write there stays an error, and outside the base path it is nothing.
+  for (const path of [`/${SESSION}/app.js`, `/${SESSION}.js`, `/api/${SESSION}`]) {
+    const response = await fetch(`${base}${path}`, { headers, redirect: "manual" });
+    assert.equal(response.status, 404, path);
+    await response.arrayBuffer();
+  }
+  assert.equal((await fetch(`${base}/${SESSION}`, { method: "POST", headers, redirect: "manual" })).status, 404);
+  const outside = await fetch(`${origin}/${SESSION}`, { headers, redirect: "manual" });
+  assert.equal(outside.status, 302);
+  assert.equal(outside.headers.get("location"), "/playground/");
+});
+
 test("missing page visits return home, while API, file and write errors stay errors", async () => {
   const origin = new URL(base).origin;
   const headers = { Accept: "text/html,application/xhtml+xml" };
@@ -388,6 +434,7 @@ test("served at the root, the page and its health probe still answer", async () 
     const guide = await fetch(`${origin}/guia/?src=cesar`, { redirect: "manual" });
     assert.equal(guide.headers.get("location"), "/guia?src=cesar");
     assert.equal((await fetch(`${origin}/guia`)).status, 200);
+    assert.equal((await fetch(`${origin}/${SESSION}`)).status, 200, "a session's own address");
     const missing = await fetch(`${origin}/old-page`, { headers: { Accept: "text/html" }, redirect: "manual" });
     assert.equal(missing.headers.get("location"), "/");
   } finally {
