@@ -2033,7 +2033,7 @@ impl Motor {
         // E2-01: 5 ejercicios desde diferentes ángulos (uno por ángulo).
         let n = self.banco.nivel(nivel);
         let mut lista = vec![];
-        for a in crate::banco::Angulo::TODOS {
+        for a in crate::banco::Angulo::ORDEN_PRACTICA {
             let cands: Vec<&Ejercicio> = n
                 .ejercicios
                 .iter()

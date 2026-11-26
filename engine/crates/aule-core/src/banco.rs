@@ -28,6 +28,17 @@ impl Angulo {
         Angulo::Error,
         Angulo::Inverso,
     ];
+
+    /// [PROPUESTA] El orden de la práctica (Etapa 2): el error y el inverso
+    /// justo después de la gráfica. Quien acierta 3 seguidos a la primera
+    /// termina antes del cuarto ejercicio (E2-02) y, si no, nunca los vería.
+    pub const ORDEN_PRACTICA: [Angulo; 5] = [
+        Angulo::Grafica,
+        Angulo::Error,
+        Angulo::Inverso,
+        Angulo::Calculo,
+        Angulo::Contexto,
+    ];
 }
 
 /// Forma en que se acepta la respuesta.
