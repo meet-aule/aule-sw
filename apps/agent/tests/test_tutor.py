@@ -812,10 +812,15 @@ def test_greetings_are_taken_in_turn_carry_the_tutors_name_and_exist_in_every_la
 
 
 class ScriptedEngine:
-    """Stands in for the session engine."""
+    """Stands in for the session engine: what it opens with and what it waits
+    for then, its answers to what is said, and its answer to every photo of
+    the homework it is told about (None: it could not be told)."""
 
-    def __init__(self, opening=(), *replies):
-        self._opening, self.replies, self.heard = tuple(opening), list(replies), []
+    def __init__(self, opening=(), *replies, awaits=None, photo=None):
+        self._opening = Reply(lines=tuple(opening), awaits=awaits)
+        self.replies, self.photo = list(replies), photo
+        # What it heard, in order: the student's words, and each photo's reading.
+        self.heard = []
 
     def opening(self):
         return self._opening
@@ -823,6 +828,10 @@ class ScriptedEngine:
     async def said(self, text):
         self.heard.append(text)
         return self.replies.pop(0) if self.replies else None
+
+    async def homework(self, report):
+        self.heard.append(report)
+        return self.photo
 
 
 async def scripted_turn(tutor, session, text="tres cuartos"):

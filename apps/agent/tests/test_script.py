@@ -60,6 +60,18 @@ def test_the_engine_can_close_the_session_with_or_without_last_words():
     assert reply_from({"lines": [], "closed": "yes"}) is None
 
 
+def test_what_the_engine_waits_for_comes_with_what_it_says_and_only_known_values_count():
+    line = [{"say": "Muéstrame tu tarea a la cámara.", "echoes": False}]
+
+    assert reply_from({"lines": line, "awaits": "homework_photo"}).awaits == "homework_photo"
+    assert reply_from({"converse": "Rules.", "awaits": "homework"}).awaits == "homework"
+    assert reply_from({"lines": line}).awaits is None
+    for odd in (None, "", "photo", "HOMEWORK_PHOTO", 1, ["homework"]):
+        assert reply_from({"lines": line, "awaits": odd}).awaits is None
+    # Nothing to say is no reply, whatever it waits for: the turn is the model's.
+    assert reply_from({"lines": [], "awaits": "homework_photo"}) is None
+
+
 def test_a_long_answer_fits_whole():
     # A worked example step by step and the next question after it.
     assert MAX_LINES >= 20

@@ -1365,9 +1365,9 @@ class Tutor(Agent):
     async def on_enter(self) -> None:
         # The engine's own opening when it runs the session; otherwise a
         # written greeting. Either way no model writes the first words.
-        opening = self._engine.opening() if self._engine is not None else ()
-        if opening:
-            await self._say(opening)
+        opening = self._engine.opening() if self._engine is not None else Reply()
+        if opening.lines:
+            await self._say(opening.lines)
             self._voice_the_lines_ahead()
             return
         # A written greeting, said at once. The name is a family's own text, so
