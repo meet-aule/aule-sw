@@ -13,10 +13,16 @@ time; what LiveKit itself waits for is not scaled.
    every input gate: never for a stopped turn, never early, at most once per
    turn and exercise. Sessions whose platform opens the exercise the model
    poses (``EXERCISES``) run that check, with early replies off and on.
+7. A photo of the homework the engine waits for reaches the model that reads
+   it and nothing else: not the platform, the tutor's model or a log. The
+   child hears only fixed lines and the engine's, and the log has the
+   outcome of the read and its time, never the level.
 """
 
 import asyncio
+import base64
 import hashlib
+import io
 import json
 import logging
 from dataclasses import dataclass
@@ -26,6 +32,7 @@ import latency_harness as harness
 import pytest
 from fakes import (
     CHILD_WORDS,
+    PHOTO_TOKENS,
     TRIGGERS,
     Delays,
     Played,
@@ -36,6 +43,9 @@ from fakes import (
     answer_of,
     words_of,
 )
+from livekit import rtc
+from livekit.agents.cli.log import JsonFormatter
+from PIL import Image
 from test_metrics import fits_the_platform
 
 from aule_agent import moderation, opinion, physical_safety, replies, safety, visuals
@@ -970,6 +980,153 @@ def test_in_engine_sessions_each_reply_has_its_turns_rules_and_the_prefix_stays(
     # Not vacuous: four replies in each session, each to a turn whose rules
     # had just changed (one a tool's two steps).
     assert answered == 16 and pairs == 12, (answered, pairs)
+
+
+# Homework sessions without the talk button: the engine opens asking for a
+# photo of the homework and the child shows it with the button, a 1280 x 720
+# frame. In one the platform takes what it showed; in the other the platform
+# is down, and the child shows it again.
+PHOTO = {"shows": "fractions_homework", "level": 4, "confidence": 0.8125}
+ASKS = (
+    "Antes de empezar, quiero ver tu tarea para saber qué practicar. Muéstramela a la "
+    "cámara, y si no la tienes, dime «no tengo»."
+)
+THANKS = "¡Gracias! Ya vi tu tarea: es de las sumas y restas con distinto denominador."
+PRESSES = {"photo_taken": 1, "photo_not_taken": 2}
+
+
+def photo_world(name: str, seed: int) -> World:
+    world = World(seed=seed, delays=FAST, mix="engine")
+    world.camera_frame = rtc.VideoFrame(1280, 720, rtc.VideoBufferType.RGBA, bytes(1280 * 720 * 4))
+    world.photo_reading = PHOTO
+    world.platform.opening = [{"say": ASKS, "echoes": False}]
+    world.platform.opening_awaits = "homework_photo"
+    if name == "photo_taken":
+        world.platform.homework_answer = {"lines": [{"say": THANKS, "echoes": False}]}
+    else:
+        world.platform.homework_down = True
+    return world
+
+
+@pytest.fixture(scope="module")
+def photo_sessions() -> tuple[dict[str, Run], list[str]]:
+    async def run() -> tuple[dict[str, Run], list[str]]:
+        records = harness.Records()
+        root = logging.getLogger()
+        level = root.level
+        root.addHandler(records)
+        root.setLevel(logging.INFO)
+        try:
+            with harness.offline(mode="open-mic"):
+                worlds = {name: photo_world(name, index) for index, name in enumerate(PRESSES)}
+                runs = await asyncio.gather(
+                    *(
+                        harness.run_session(
+                            world,
+                            [harness.Turn(n, "show", "", 0.0, 0.0) for n in range(PRESSES[name])],
+                            mode="open-mic",
+                        )
+                        for name, world in worlds.items()
+                    )
+                )
+        finally:
+            root.removeHandler(records)
+            root.setLevel(level)
+        done = {name: Run(run.world, run.results) for name, run in zip(worlds, runs, strict=True)}
+        return done, records.lines
+
+    return asyncio.run(run())
+
+
+def photo_of(request: dict) -> str:
+    (message,) = request["messages"]
+    (block,) = message["content"]
+    return block["source"]["data"]
+
+
+def test_a_photo_of_the_homework_reaches_the_reader_alone_and_its_level_the_engine(
+    photo_sessions,
+):
+    runs, lines = photo_sessions
+    world = runs["photo_taken"].world
+    (pressed,) = runs["photo_taken"].results
+
+    # The platform heard that the agent reads photos, and what this one showed.
+    assert world.platform.started_with == ["homework=1"]
+    assert world.platform.homework_reports == [
+        {"outcome": "read", "level": 4, "confidence": 0.8125}
+    ]
+    # The page got its answer; the child heard «Veamos.» and then the engine.
+    assert pressed.rpc_answer == "ok"
+    assert heard(pressed.played) == spoken(f"{REPLIES['meanwhile_look']['es']} {THANKS}")
+    # The tutor's model was asked nothing but its warm-up.
+    assert [call.kwargs["stream"] for call in world.model_calls] == [False]
+    # One read, of a JPEG no larger than 1024 px, sent once and never cached.
+    (read,) = world.photos_read
+    photo = photo_of(read)
+    image = Image.open(io.BytesIO(base64.standard_b64decode(photo)))
+    assert (image.format, image.size) == ("JPEG", (1024, 576))
+    assert read["model"] == "claude-sonnet-5-5" and read["thinking"] == {"type": "between_tools"}
+    assert "cache_control" not in json.dumps(read)
+    # Nowhere else: not the platform, the tutor's model or the log.
+    assert photo not in json.dumps(world.platform_calls, ensure_ascii=False)
+    assert all(photo not in json.dumps(call.kwargs) for call in world.model_calls)
+    assert not [line for line in lines if photo[:400] in line]
+    assert world.api_errors == []
+
+
+def test_a_photo_the_platform_does_not_take_is_asked_for_again_and_read_again(photo_sessions):
+    runs, _ = photo_sessions
+    run = runs["photo_not_taken"]
+    again = f"{REPLIES['meanwhile_look']['es']} {REPLIES['homework_unreachable']['es']}"
+
+    assert [result.rpc_answer for result in run.results] == ["ok", "ok"]
+    assert [heard(result.played) for result in run.results] == [spoken(again)] * 2
+    assert len(run.world.photos_read) == 2
+    assert (
+        run.world.platform.homework_reports
+        == [{"outcome": "read", "level": 4, "confidence": 0.8125}] * 2
+    )
+    assert [call.kwargs["stream"] for call in run.world.model_calls] == [False]
+
+
+def test_a_read_logs_its_outcome_and_time_and_never_the_level(photo_sessions):
+    _, lines = photo_sessions
+    plain = logging.LogRecord("aule.agent.homework", logging.INFO, __file__, 1, "x", (), None)
+    standard = set(json.loads(JsonFormatter().format(plain)))
+    reads = [json.loads(line) for line in lines if json.loads(line)["message"] == "homework read"]
+
+    assert len(reads) == sum(PRESSES.values())
+    assert all(set(read) - standard == {"outcome", "duration_ms"} for read in reads)
+    # The formatter writes the record's own level under "level": a reading's
+    # level sent with the record would take its place.
+    assert all(read["level"] == "INFO" for read in reads)
+    assert all(read["outcome"] == "read" for read in reads)
+    assert not [line for line in lines if "0.8125" in line]
+
+
+def test_a_read_is_counted_with_the_sessions_model_calls_and_the_counters_stay_at_zero(
+    photo_sessions,
+):
+    runs, lines = photo_sessions
+    for name, run in runs.items():
+        metrics = run.world.metrics
+        fits_the_platform(metrics)
+        # The warm-up and each read, paid at the tutor's model's price.
+        assert metrics["llm_calls"] == 1 + PRESSES[name], name
+        assert metrics["input_tokens"] >= PRESSES[name] * PHOTO_TOKENS, name
+    records = harness.Records()
+    records.lines = lines
+    summary = harness.summarize(
+        [
+            harness.SessionRun(run.world, run.results, dict(run.world.metrics))
+            for run in runs.values()
+        ],
+        records,
+        [],
+        [],
+    )
+    assert summary["zero_counters"] == dict.fromkeys(summary["zero_counters"], 0)
 
 
 def _digest(value: object) -> str:

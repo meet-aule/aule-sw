@@ -28,6 +28,7 @@ from typing import Any
 import anthropic
 import httpx2
 import numpy as np
+from anthropic import transform_schema
 from anthropic import types as wire
 from livekit import rtc
 from livekit.agents import APIConnectOptions, stt, tokenize, tts, utils, vad
@@ -68,6 +69,9 @@ CHILD_WORDS = "zanahoria azul siete"
 
 # Characters per token, for the prompt sizes the model stand-in bills.
 CHARS_PER_TOKEN = 3.0
+# What a read of a photo of the homework bills as input: a 1024-px image is
+# about 1,000 to 1,500 tokens, and the question about 250 more.
+PHOTO_TOKENS = 1500
 
 
 @dataclass(frozen=True)
@@ -100,6 +104,8 @@ class Delays:
     # TypeSafe: about 80 ms (physical_safety.py).
     typesafe: Spread = Spread(0.08, 0.15)
     second_reader: Spread = Spread(0.8, 1.6)
+    # The model that reads a photo of the homework: not measured yet.
+    photo: Spread = Spread(1.8, 3.0)
     platform: Spread = Spread(0.05, 0.15)
     # The tutor's model: time to the first token with nothing to read, then
     # what each thousand tokens of uncached input adds.
@@ -250,6 +256,12 @@ class World:
         self.moderation_client = FakeModeration(self)
         self.typesafe = FakeTypeSafe(self)
         self.platform = FakePlatform(self)
+        # What the child holds up to the camera when they press the button
+        # that shows their work, what the model that reads a photo of the
+        # homework answers, and every request it got.
+        self.camera_frame: rtc.VideoFrame | None = None
+        self.photo_reading: dict[str, Any] | None = None
+        self.photos_read: list[dict[str, Any]] = []
         # The session's own client of the platform (``aule_agent.platform``).
         self.platform_client: Any = None
         self.session: Any = None
@@ -991,6 +1003,20 @@ def _check_request(kwargs: dict[str, Any]) -> None:
             # The plugin does not replay thinking blocks; a history edit with
             # one in it is a 400 on new accounts (between_tools).
             raise FakeAPIError("a thinking block was replayed")
+    output = kwargs.get("output_config")
+    if isinstance(output, dict):
+        if (
+            isinstance(thinking, dict)
+            and thinking.get("type") == "between_tools"
+            and output.get("effort") in ("xhigh", "max")
+        ):
+            raise FakeAPIError("between_tools above effort high")
+        form = output.get("format")
+        # A schema the SDK would rewrite has keywords the API does not take.
+        if isinstance(form, dict) and (
+            form.get("type") != "json_schema" or transform_schema(form["schema"]) != form["schema"]
+        ):
+            raise FakeAPIError("a JSON schema the API does not take")
 
 
 def _last_user(kwargs: dict[str, Any]) -> tuple[str, int]:
@@ -1102,6 +1128,8 @@ class FakeAnthropic:
         except FakeAPIError as error:
             self._world.api_errors.append(str(error))
             raise
+        if kwargs.get("output_config") is not None:
+            return await self._look(kwargs)
         if self._world.model_trouble is not None:
             await self._world.model_trouble(kwargs)
         call = ModelCall(
@@ -1266,6 +1294,30 @@ class FakeAnthropic:
         finally:
             self._connections.give_back()
 
+    async def _look(self, kwargs: dict[str, Any]) -> Any:
+        """A photo of the homework read: what the world says it shows, as
+        JSON, on a connection of its own (a read is rare)."""
+        world = self._world
+        world.photos_read.append(kwargs)
+        await asyncio.sleep(
+            world.delays.scaled(world.delays.photo, world.rng)
+            + world.delays.scaled(world.delays.new_connection, world.rng)
+        )
+        text = json.dumps(world.photo_reading)
+        return wire.Message(
+            id=f"msg_photo_{len(world.photos_read)}",
+            type="message",
+            role="assistant",
+            content=[wire.TextBlock(type="text", text=text)],
+            model=str(kwargs["model"]),
+            stop_reason="end_turn",
+            stop_sequence=None,
+            usage=wire.Usage(
+                input_tokens=PHOTO_TOKENS,
+                output_tokens=max(1, round(len(text) / CHARS_PER_TOKEN)),
+            ),
+        )
+
     async def _read(self, kwargs: dict[str, Any]) -> Any:
         """The second reader: one word."""
         world = self._world
@@ -1331,6 +1383,14 @@ class FakePlatform:
         self._break_due = False
         # The query of each start: what the agent said it can do with homework.
         self.started_with: list[str] = []
+        # What the engine opens with, in an engine session, and what it waits
+        # for then; what it answers each photo of the homework it is told
+        # about, unless the platform is down; and every such report.
+        self.opening: list[dict[str, Any]] = [{"say": "¡Hola! Empezamos.", "echoes": False}]
+        self.opening_awaits: str | None = None
+        self.homework_answer: dict[str, Any] = {}
+        self.homework_down = False
+        self.homework_reports: list[dict[str, Any]] = []
 
     async def send(
         self, method: str, path: str, body: dict[str, Any] | None, timeout: float
@@ -1351,7 +1411,7 @@ class FakePlatform:
                 "session_number": 3,
             }
             if world.mix == "engine":
-                answer["script"] = {"lines": [{"say": "¡Hola! Empezamos.", "echoes": False}]}
+                answer["script"] = {"lines": self.opening, "awaits": self.opening_awaits}
             return answer
         if path == "/v1/agent/session/turns":
             assert body is not None
@@ -1382,6 +1442,12 @@ class FakePlatform:
                 if words in body["said"]:
                     return reply
             return {}
+        if path == "/v1/agent/session/homework":
+            assert body is not None
+            self.homework_reports.append(body)
+            if self.homework_down:
+                raise RuntimeError("the platform is down")
+            return self.homework_answer
         if path == "/v1/agent/session/flags":
             assert body is not None
             world.flags.append((body["gate"], body["action"], body["categories"]))
@@ -1403,6 +1469,27 @@ class FakePlatform:
                 self.open = None
             return {**answer, "closed": closed}
         return {}
+
+
+class FakeCamera:
+    """Stands in for ``camera.Camera``: what the child holds up when they
+    press the button that shows their work (``World.camera_frame``), and
+    nothing they did not show."""
+
+    def __init__(self, room: Any) -> None:
+        self._world = CURRENT_WORLD.get()
+
+    def start(self) -> None:
+        return None
+
+    def stop(self) -> None:
+        return None
+
+    def latest(self) -> rtc.VideoFrame | None:
+        return None
+
+    async def fresh(self, timeout: float) -> rtc.VideoFrame | None:
+        return self._world.camera_frame
 
 
 # --- Patching: no network, and the SDK clients stood in for ------------------

@@ -263,6 +263,7 @@ def offline(extra_env: dict[str, str] | None = None, mode: str = "push-to-talk")
         (worker, "AgentSession", OfflineSession),
         (worker, "build_stt", lambda settings, language: CURRENT_WORLD.get().stt),
         (worker, "build_tts", lambda settings, language: CURRENT_WORLD.get().voice),
+        (worker, "Camera", fakes.FakeCamera),
         (anthropic, "AsyncClient", fakes.anthropic_client),
         (anthropic, "AsyncAnthropic", fakes.anthropic_client),
     ]
@@ -290,7 +291,9 @@ def offline(extra_env: dict[str, str] | None = None, mode: str = "push-to-talk")
 @dataclass
 class Turn:
     number: int
-    kind: str  # reply, tool, scripted, off_script
+    # reply, tool, scripted, off_script; or show, a press of the button that
+    # shows the child's work to the camera
+    kind: str
     words: str
     speech: float
     hold: float
@@ -334,6 +337,8 @@ class TurnResult:
     checks: list[tuple[float, str, int | None]] = field(default_factory=list)
     # The machine slept during the turn: its times are not measurements.
     slept: bool = False
+    # What the page got back from the button that shows the child's work.
+    rpc_answer: str | None = None
 
     def heard(self) -> str:
         return " ".join(text for segment in self.played for text in segment.texts)
@@ -519,6 +524,28 @@ async def talk(world: World, turn: Turn) -> TurnResult:
     return await _answered(world, result, (played, shown, calls, decided, checks), clocks)
 
 
+async def show(world: World, turn: Turn) -> TurnResult:
+    """The child presses the button that shows their work to the camera.
+    When the engine waits for a photo of the homework, the tutor reads it in
+    the background: its answer comes once the engine has heard of it."""
+    clocks = time.time() - time.monotonic()
+    await asyncio.sleep(fakes.Spread(0.05, 0.10).draw(world.rng))
+    played, shown, calls = len(world.played), len(world.shown), len(world.model_calls)
+    checks, decided = len(world.answers_heard), len(world.decided)
+    pressed = time.time()
+    result = TurnResult(
+        turn.number, turn.kind, None, 0.0, released_at=pressed, rpc_at=pressed, words=turn.words
+    )
+    result.rpc_answer = await world.rpcs["show_work"](RPC)
+    await _until(lambda: _no_photo_in_flight(world), timeout=20.0)
+    return await _answered(world, result, (played, shown, calls, decided, checks), clocks)
+
+
+def _no_photo_in_flight(world: World) -> bool:
+    reading = world.tutor._reading
+    return reading is None or reading.is_set()
+
+
 def exercise_open(world: World) -> bool:
     """Whether the session's client of the platform has an exercise open."""
     client = world.platform_client
@@ -588,7 +615,7 @@ async def run_session(
         )
         await quiet(world)
         for turn in turns:
-            results.append(await take(world, turn))
+            results.append(await (show if turn.kind == "show" else take)(world, turn))
             await asyncio.sleep(world.rng.uniform(*gap))
         if until is not None:
             await _until(until, timeout=10.0)
@@ -646,8 +673,9 @@ def unapproved(world: World) -> int:
 
 
 def _engine_lines(world: World) -> list[str]:
-    lines = ["¡Hola! Empezamos."]
-    for reply in world.platform.scripted_turns.values():
+    platform = world.platform
+    lines = [line["say"] for line in platform.opening]
+    for reply in [*platform.scripted_turns.values(), platform.homework_answer]:
         lines += [line["say"] for line in reply.get("lines", [])]
     return lines
 
