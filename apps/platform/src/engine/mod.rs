@@ -1169,7 +1169,14 @@ impl Engine {
             }
             // Read again by the platform, word for word: no model needed.
             Intencion::RepetirEnunciado => {
+                let lines = out.len();
                 self.push(at_ms, chat, out);
+                // The engine went on by itself (talk on one explanation has a
+                // limit): what it said is the whole turn, and the statement on
+                // the screen is no longer the one that was asked about.
+                if out.len() > lines {
+                    return Reply::Scripted;
+                }
                 match self.card() {
                     Some(card) => {
                         out.push(card_line(&card));

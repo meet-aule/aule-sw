@@ -5174,9 +5174,14 @@ async fn the_session_engine_runs_a_session_from_the_greeting_to_the_family_repor
     }
     let last = pupil.answers(true).await;
     assert!(said_in(&last).contains("Etapa 1: Descubrimiento"), "{last}");
+    // The explanation ends with the engine's own question, and its two answers can be tapped.
+    let asked = last["lines"].as_array().unwrap().last().unwrap();
+    let go_on = json!({ "options": ["Entendido, sigue", "No entendí"], "multiple": false });
+    assert_eq!((asked["say"].as_str(), &asked["choices"]), (Some("¿Seguimos?"), &go_on), "{last}");
 
     // A question about a word is the model's to answer, under the engine's rules.
     let step = pupil.step().await;
+    assert_eq!(step["choices"], go_on, "{step}");
     assert_eq!(
         (step["stage"].as_str(), step["card"]["mode"].as_str()),
         (Some("Etapa 1: Descubrimiento"), Some("teoria"))
