@@ -1,21 +1,16 @@
-// The screens before an account (Figma «Login-Aule» v8, page 160:1345): whether
-// there is an account already (C01), the ways in (P01, and P13 for a family
-// coming back), the emailed code (P02, P03, and a name the first time), and the
-// help when it does not arrive (P14, P15). Also the first look at who is signed
-// in, where the page starts, signing out and erasing the account. The page
-// never holds the session itself: the server keeps it in a cookie it alone reads.
+// One entry for new and returning families (FIGMA.md D42). A verified code
+// asks for a name only when the platform needs one to create the account.
+// The server keeps the authenticated session in a cookie it alone reads.
 
 import { $, call, say } from "./students.js";
-import { codeDigits, greeting, maskEmail } from "./steps.js";
-import { current, flowNow, getAccount, go, landing, need, onShow, setAccount } from "./screens.js";
+import { codeDigits, maskEmail } from "./steps.js";
+import { current, getAccount, go, landing, need, onShow, setAccount } from "./screens.js";
 
 const GOOGLE_SCRIPT = "https://accounts.google.com/gsi/client";
 // Sign-ins that leave the page for the provider's and come back with a code.
 const CODE_PROVIDERS = ["github", "meta", "apple"];
-// This browser has signed in before: P13 then says welcome back (Nota · P13 · Saludo).
+// This browser has signed in before: the entry then says welcome back.
 const RETURNING = "aule.returning";
-// The screen a person left from for GitHub, Facebook or Apple, to come back to it.
-const FROM = "aule.from";
 // An address that looks like one; the platform checks it properly.
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 // «Reenviar» rests this long after a code is sent again.
@@ -24,6 +19,50 @@ const RESEND_REST_MS = 30_000;
 const WRONG_CODE = "Ese código no es correcto o ya venció. Pide uno nuevo si hace falta.";
 const NOT_SENT = "No se pudo enviar el código. Inténtalo otra vez en un momento.";
 const NOT_CHECKED = "No se pudo revisar el código. Inténtalo otra vez en un momento.";
+
+const ENTRY_WORDS = {
+  es: {
+    title: "Entra a Aule",
+    greeting: "Te damos la bienvenida",
+    returning: "¡Qué bueno que estés de vuelta!",
+    help: "Entra o crea tu cuenta, sin contraseña.",
+    email: "Tu correo",
+    send: "Enviarme un código",
+    name: "Tu nombre",
+    name_error: "Escribe tu nombre para crear tu cuenta.",
+    code_title: "Escribe el código que te enviamos",
+    code_help: "Puedes pegarlo. Llega en un minuto.",
+    name_help: "Código correcto. Para crear tu cuenta, dinos cómo te llamas.",
+    continue: "Continuar",
+    provider_failed: "No se pudo entrar con esa cuenta. Inténtalo otra vez o usa otra.",
+  },
+  en: {
+    title: "Sign in to Aule",
+    greeting: "Welcome",
+    returning: "Welcome back!",
+    help: "Sign in or create your account, without a password.",
+    email: "Your email",
+    send: "Send me a code",
+    name: "Your name",
+    name_error: "Enter your name to create your account.",
+    code_title: "Enter the code we sent you",
+    code_help: "You can paste it. It should arrive within a minute.",
+    name_help: "Code confirmed. Tell us your name to create your account.",
+    continue: "Continue",
+    provider_failed: "We could not sign you in with that account. Try again or use another.",
+  },
+};
+
+const entryText = (key) => ENTRY_WORDS[document.documentElement.lang === "en" ? "en" : "es"][key];
+
+function entryWords() {
+  for (const [id, key] of [
+    ["p01-title", "title"], ["entry-help", "help"], ["email-label", "email"],
+    ["email-send", "send"], ["email-name-label", "name"], ["email-name-error", "name_error"],
+    ["p03-title", "code_title"], ["code-help", "code_help"], ["code-continue", "continue"],
+  ]) $(id).textContent = entryText(key);
+  $("entry-greeting").textContent = entryText(recall(local, RETURNING) === "1" ? "returning" : "greeting");
+}
 
 // What the browser keeps for the page, read and written where it may refuse.
 function recall(store, key) {
@@ -51,30 +90,20 @@ function forget(store, key) {
 }
 
 const local = () => localStorage;
-const tab = () => sessionStorage;
 
 // The address the code goes to, held in memory only, for P03, P14 and P15.
 let emailAddress = "";
 need("email", () => Boolean(emailAddress));
-// A new family's name, written on P02 with the address, in memory only; sent with the code (D34).
-let newName = "";
 
-/** Forgets the address and the name, and P02's fields that held them: signed in they are not needed, signed out they are not to be left behind. */
+/** Forgets the address and the name, and the fields that held them: signed in they are not needed, signed out they are not to be left behind. */
 function forgetAddress() {
   emailAddress = "";
-  newName = "";
   $("email-address").value = "";
-  $("email-name-new").value = "";
+  $("email-name").value = "";
+  $("email-name-field").hidden = true;
 }
 
-// --- C01 ¿Ya tienes cuenta? ---------------------------------------------------
-// The first question of a signed-out visit. C00 «¿Quién eres?» was retired on
-// 24 Nov: the student no longer comes in by the web, only after the parent.
-
-$("c01-new").addEventListener("click", () => go("p01", { flow: "new" }));
-$("c01-back").addEventListener("click", () => go("p13", { flow: "back" }));
-
-// --- P01 and P13: the ways in --------------------------------------------------
+// --- One entry: email and the configured providers ----------------------------
 
 /** Shows each way in only where the server has it set up; GitHub, Facebook and Apple fold away under «Otras formas de entrar». */
 function showWays(account) {
@@ -83,7 +112,7 @@ function showWays(account) {
   const email = providers.includes("email");
   const others = CODE_PROVIDERS.filter((provider) => providers.includes(provider));
   for (const slot of document.querySelectorAll("[data-google]")) slot.hidden = !google;
-  for (const button of document.querySelectorAll('[data-way="email"]')) button.hidden = !email;
+  $("email-start").hidden = !email;
   for (const details of document.querySelectorAll(".other-ways")) {
     details.hidden = others.length === 0;
     // When they are the only ways in, they show open.
@@ -92,18 +121,6 @@ function showWays(account) {
   }
   // Their own cookies are said where they are offered, not in the cookie notice.
   for (const note of document.querySelectorAll(".ways-note")) note.hidden = !google && others.length === 0;
-}
-
-for (const button of document.querySelectorAll('[data-way="email"]')) {
-  button.addEventListener("click", () => {
-    $("email-address").value = emailAddress;
-    go("p02");
-  });
-}
-
-// Coming back from the provider, the page returns to the screen the person left.
-for (const link of document.querySelectorAll("[data-provider]")) {
-  link.addEventListener("click", () => remember(tab, FROM, current() ?? "p13"));
 }
 
 let googleReady = false;
@@ -124,7 +141,7 @@ function renderGoogle(id) {
     text: "continue_with",
     shape: "rectangular",
     logo_alignment: "center",
-    locale: "es",
+    locale: document.documentElement.lang === "en" ? "en" : "es",
     width,
   });
 }
@@ -134,15 +151,9 @@ function googleTrouble() {
 }
 
 onShow("p01", () => {
+  entryWords();
   needGoogle();
   renderGoogle("google-p01");
-  googleTrouble();
-});
-
-onShow("p13", () => {
-  $("p13-greeting").textContent = greeting(recall(local, RETURNING) === "1");
-  needGoogle();
-  renderGoogle("google-p13");
   googleTrouble();
 });
 
@@ -157,11 +168,7 @@ function loadGoogleScript() {
   });
 }
 
-// Google's script is fetched only where a guardian signs in (P01 and P13),
-// once, the first time one of those screens shows: the landing (C01), a
-// student's screens and a family already signed in never load it, so a visit
-// that only looks at the first question asks Google for nothing. The button is
-// drawn once it is in.
+// Google loads only on the signed-out entry, never for a family already signed in.
 function needGoogle() {
   const account = getAccount();
   if (googleScript || account.signed_in || !account.google_client_id) return;
@@ -170,7 +177,7 @@ function needGoogle() {
     () => {
       googleFailed = true;
       showWays(getAccount());
-      if (["p01", "p13"].includes(current())) googleTrouble();
+      if (current() === "p01") googleTrouble();
     },
   );
 }
@@ -190,17 +197,6 @@ function drawGoogle(clientId) {
   });
   googleReady = true;
   if (current() === "p01") renderGoogle("google-p01");
-  if (current() === "p13") renderGoogle("google-p13");
-}
-
-/**
- * Where a signed-out visit starts: P13 «¡Qué bueno que estés de vuelta!» for
- * a browser that signed in before (Nota · P13 · Saludo), else C01. P13's
- * «← Atrás» still reaches C01.
- */
-function firstScreen() {
-  const land = landing();
-  return land === "c01" && recall(local, RETURNING) === "1" ? "p13" : land;
 }
 
 /** Signed in, by any way: a family with students goes to them, a new one starts by adding one. */
@@ -214,13 +210,7 @@ function entered(account) {
   go(account.students?.length ? "home" : "p04", { replace: true, fresh: true });
 }
 
-// --- P02 Tu correo ------------------------------------------------------------
-
-// A family signing up writes its name here too: the platform makes the account
-// with it, so P03 needs no screen after it. A family coming back does not.
-onShow("p02", () => {
-  $("email-name-field").hidden = flowNow() !== "new";
-});
+// --- The email field on the entry --------------------------------------------
 
 function emailError(on) {
   $("email-address").setAttribute("aria-invalid", String(on));
@@ -229,17 +219,17 @@ function emailError(on) {
 }
 
 function nameError(on) {
-  $("email-name-new").setAttribute("aria-invalid", String(on));
-  $("email-name-new-error").hidden = !on;
-  if (on) $("email-name-new").focus();
+  $("email-name").setAttribute("aria-invalid", String(on));
+  $("email-name-error").hidden = !on;
+  if (on) $("email-name").focus();
 }
 
 $("email-address").addEventListener("input", () => {
   if ($("email-address").getAttribute("aria-invalid") === "true") emailError(false);
 });
 
-$("email-name-new").addEventListener("input", () => {
-  if ($("email-name-new").getAttribute("aria-invalid") === "true") nameError(false);
+$("email-name").addEventListener("input", () => {
+  if ($("email-name").getAttribute("aria-invalid") === "true") nameError(false);
 });
 
 $("email-start").addEventListener("submit", async (event) => {
@@ -247,10 +237,6 @@ $("email-start").addEventListener("submit", async (event) => {
   const address = $("email-address").value.trim();
   if (!EMAIL.test(address) || address.length > 254) return emailError(true);
   emailError(false);
-  const asking = !$("email-name-field").hidden;
-  const name = $("email-name-new").value.trim();
-  if (asking && !name) return nameError(true);
-  nameError(false);
   say("");
   const send = event.submitter ?? $("email-start").querySelector("[type=submit]");
   send.disabled = true;
@@ -263,7 +249,6 @@ $("email-start").addEventListener("submit", async (event) => {
     send.disabled = false;
   }
   emailAddress = address;
-  newName = asking ? name.slice(0, 120) : "";
   clearCode();
   go("p03");
 });
@@ -287,6 +272,10 @@ function drawDigits() {
 
 function clearCode() {
   codeInput.value = "";
+  $("email-name").value = "";
+  $("email-name-field").hidden = true;
+  nameError(false);
+  $("code-help").textContent = entryText("code_help");
   drawDigits();
 }
 
@@ -304,13 +293,13 @@ codeInput.addEventListener("input", () => {
   const digits = codeDigits(codeInput.value);
   if (codeInput.value !== digits) codeInput.value = digits;
   drawDigits();
-  if (digits.length === 6) verify();
+  if (digits.length === 6 && $("email-name-field").hidden) verify();
 });
 codeInput.addEventListener("focus", drawDigits);
 codeInput.addEventListener("blur", drawDigits);
 
-/** P03's code, with a new family's name: the one written on P02, or on p03-name (`name`). */
-async function verify(name) {
+/** The code is checked before asking for a name, and checked again when creating the account. */
+async function verify() {
   if (verifying) return;
   const code = codeDigits(codeInput.value);
   if (code.length !== 6) {
@@ -318,14 +307,17 @@ async function verify(name) {
     codeInput.focus();
     return;
   }
+  const asking = !$("email-name-field").hidden;
+  const name = $("email-name").value.trim();
+  if (asking && !name) return nameError(true);
+  nameError(false);
   verifying = true;
   waiting(true);
   say("");
   let account = null;
   let failure = null;
   try {
-    const named = name || newName;
-    account = await call("api/signin/email/verify", { email: emailAddress, code, ...(named ? { name: named } : {}) });
+    account = await call("api/signin/email/verify", { email: emailAddress, code, ...(asking ? { name: name.slice(0, 120) } : {}) });
   } catch (error) {
     failure = error.message;
   } finally {
@@ -333,11 +325,12 @@ async function verify(name) {
     waiting(false);
   }
   if (account) return entered(account);
-  // A new address with no name written yet (a family coming back): its name first (the code is not used up by asking).
-  if (failure === "name_needed") return go("p03-name");
-  if (current() === "p03-name") {
-    clearCode();
-    return go("p03", { replace: true, direction: "back", message: WRONG_CODE });
+  // No account-existence check before proof of the address. Asking does not consume the code.
+  if (failure === "name_needed") {
+    $("email-name-field").hidden = false;
+    $("code-help").textContent = entryText("name_help");
+    $("email-name").focus();
+    return;
   }
   say(failure === "wrong_code" ? WRONG_CODE : NOT_CHECKED);
   clearCode();
@@ -364,18 +357,6 @@ $("code-resend").addEventListener("click", async () => {
 
 $("code-missing").addEventListener("click", () => go("p14"));
 
-// --- P03 · Tu nombre (web-only): the platform needs it for a new family --------
-
-$("email-name-form").addEventListener("submit", (event) => {
-  event.preventDefault();
-  const name = $("email-name").value.trim();
-  const empty = !name;
-  $("email-name").setAttribute("aria-invalid", String(empty));
-  $("email-name-error").hidden = !empty;
-  if (empty) return $("email-name").focus();
-  verify(name.slice(0, 120));
-});
-
 // --- P14 Revisa tu correo and P15 Escríbenos -----------------------------------
 
 onShow("p14", () => {
@@ -387,7 +368,8 @@ $("write-us-go").addEventListener("click", () => go("p15"));
 $("other-email").addEventListener("click", () => {
   emailAddress = "";
   $("email-address").value = "";
-  go("p02");
+  clearCode();
+  go("p01");
 });
 
 // Help by email, with the address that was tried already written in.
@@ -407,8 +389,7 @@ async function signedOut(message) {
   // Each module forgets what it drew about the family before the first question shows.
   setAccount(account);
   showWays(account);
-  const first = firstScreen();
-  go(first, { replace: true, fresh: true, message, tone: "info", ...(first === "p13" ? { flow: "back" } : {}) });
+  go(landing(), { replace: true, fresh: true, message, tone: "info" });
 }
 
 $("sign-out").addEventListener("click", async () => {
@@ -436,10 +417,8 @@ $("erase").addEventListener("submit", async (event) => {
     );
   }
   $("erase-email").value = "";
-  // The account is gone: this browser no longer greets it as coming back
-  // (signing out keeps that, as P13's note asks), nor returns to a provider's screen.
+  // The account is gone: this browser no longer greets it as coming back.
   forget(local, RETURNING);
-  forget(tab, FROM);
   await signedOut("Tu cuenta y tus datos se borraron.");
 });
 
@@ -490,12 +469,10 @@ function start(account) {
     return go(account.students?.length ? "home" : "p04", { fresh: true });
   }
   if (outcome && landing()) {
-    const from = recall(tab, FROM) === "p01" ? "p01" : "p13";
-    const message = outcome === "failed" ? "No se pudo entrar con esa cuenta. Inténtalo otra vez o usa otra." : "";
-    return go(from, { flow: from === "p01" ? "new" : "back", message });
+    const message = outcome === "failed" ? entryText("provider_failed") : "";
+    return go("p01", { message });
   }
-  const first = firstScreen();
-  go(first, first === "p13" ? { flow: "back" } : {});
+  go(landing());
 }
 
 call("api/account")

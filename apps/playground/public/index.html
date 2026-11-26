@@ -18,7 +18,7 @@
     <link rel="preload" as="font" type="font/woff2" href="fonts/serif.woff2" crossorigin />
     <!-- Signing in comes first: its scripts are fetched at once. Google's is
          not: signin.js fetches it only on the screens where a guardian signs in
-         (P01 and P13), never on the landing (C01) or a student's screens. -->
+         (P01), never on a student's screens. -->
     <link rel="modulepreload" href="students.js" />
     <link rel="modulepreload" href="steps.js" />
     <link rel="modulepreload" href="screens.js" />
@@ -35,49 +35,33 @@
       the same table and FIGMA.md maps screens, components and tokens to the code.
     -->
     <main>
-      <!-- Figma: C01 ¿Ya tienes cuenta? · Móvil 160:1661 / Escritorio 160:1741 -->
-      <section class="screen" data-screen="c01" data-surface="paper" hidden aria-labelledby="c01-title">
-        <div class="frame">
-          <header class="screen-head">
-            <!-- Encabezado/Base · Atrás=No 160:1352: a signed-out visit starts here, since C00 was retired (24 Nov). -->
-            <div class="head-row"><p class="wordmark">Aule</p></div>
-            <ol class="progress plain" aria-hidden="true"></ol>
-          </header>
-          <div class="screen-body">
-            <div class="question">
-              <p class="question-step">Empezar</p>
-              <h2 class="question-title" id="c01-title" tabindex="-1">¿Ya tienes una cuenta en Aule?</h2>
-            </div>
-            <div class="controls">
-              <div class="options">
-                <button type="button" class="option" id="c01-new">No, es mi primera vez</button>
-                <button type="button" class="option" id="c01-back">Sí, ya tengo cuenta</button>
-              </div>
-            </div>
-          </div>
-          <div class="screen-foot"></div>
-        </div>
-      </section>
-
-      <!-- Figma: P01 ¿Cómo quieres entrar? · Móvil 160:1636 / Escritorio 160:1455 -->
+      <!-- Figma: P01 ¿Cómo quieres entrar? · Móvil 160:1636 / Escritorio 160:1455, with P02 160:1624 / 160:1755 (D42) -->
       <section class="screen" data-screen="p01" data-surface="paper" hidden aria-labelledby="p01-title">
         <div class="frame">
           <header class="screen-head">
             <div class="head-row">
               <p class="wordmark">Aule</p>
-              <button type="button" class="link back" data-back><span aria-hidden="true">←</span> Atrás</button>
             </div>
             <ol class="progress" aria-label="Avance"></ol>
           </header>
           <div class="screen-body">
             <div class="question">
-              <h2 class="question-title" id="p01-title" tabindex="-1">¿Cómo quieres entrar?</h2>
-              <p class="question-help">No necesitas crear ninguna contraseña.</p>
+              <p class="question-step" id="entry-greeting">Te damos la bienvenida</p>
+              <h2 class="question-title" id="p01-title" tabindex="-1">Entra a Aule</h2>
+              <p class="question-help" id="entry-help">Entra o crea tu cuenta, sin contraseña.</p>
             </div>
             <div class="controls ways">
               <!-- Figma: Botón/Google 168:991. Google draws its own button here. -->
               <div class="google-slot" id="google-p01" data-google hidden></div>
-              <button type="button" class="option" data-way="email" hidden>Con mi correo (te enviamos un código)</button>
+              <!-- P02's email field and action, on the same screen as the other ways in (D42). -->
+              <form id="email-start" class="email-entry" novalidate autocomplete="on" hidden>
+                <div class="field">
+                  <label id="email-label" for="email-address">Tu correo</label>
+                  <input id="email-address" type="email" autocomplete="email" inputmode="email" placeholder="nombre@correo.com" maxlength="254" aria-describedby="email-error" />
+                  <p class="field-error" id="email-error" role="alert" hidden>Revisa el correo: no parece una dirección válida.</p>
+                </div>
+                <button type="submit" class="primary" id="email-send">Enviarme un código</button>
+              </form>
               <details class="other-ways" hidden>
                 <summary class="link">Otras formas de entrar</summary>
                 <div class="providers">
@@ -103,43 +87,6 @@
         </div>
       </section>
 
-      <!-- Figma: P02 Tu correo · Móvil 160:1624 / Escritorio 160:1755 -->
-      <section class="screen" data-screen="p02" data-surface="paper" hidden aria-labelledby="p02-title">
-        <form class="frame" id="email-start" novalidate autocomplete="on">
-          <header class="screen-head">
-            <div class="head-row">
-              <p class="wordmark">Aule</p>
-              <button type="button" class="link back" data-back><span aria-hidden="true">←</span> Atrás</button>
-            </div>
-            <ol class="progress" aria-label="Avance"></ol>
-          </header>
-          <div class="screen-body">
-            <div class="question">
-              <h2 class="question-title" id="p02-title" tabindex="-1">¿Cuál es tu correo?</h2>
-              <p class="question-help">Te enviaremos un código para entrar.</p>
-            </div>
-            <div class="controls">
-              <!-- Figma: Campo/Línea 160:1355 (Vacío 160:1356, Lleno 160:1362, Error 160:1368) -->
-              <div class="field">
-                <label class="sr-only" for="email-address">Tu correo</label>
-                <input id="email-address" type="email" autocomplete="email" inputmode="email" placeholder="nombre@correo.com" maxlength="254" aria-describedby="email-error" />
-                <p class="field-error" id="email-error" role="alert" hidden>Revisa el correo: no parece una dirección válida.</p>
-              </div>
-              <!-- A new family's name, with the address (D34): the platform needs it to make the account, and P03
-                   then needs no screen after it. In page memory only; hidden for a family coming back. -->
-              <div class="field" id="email-name-field" hidden>
-                <label for="email-name-new">Tu nombre</label>
-                <input id="email-name-new" type="text" autocomplete="name" maxlength="120" placeholder="Ej.: Ana" aria-describedby="email-name-new-error" />
-                <p class="field-error" id="email-name-new-error" role="alert" hidden>Escribe tu nombre para crear tu cuenta.</p>
-              </div>
-            </div>
-          </div>
-          <div class="screen-foot">
-            <button type="submit" class="primary">Enviarme un código</button>
-          </div>
-        </form>
-      </section>
-
       <!-- Figma: P03 Código · Móvil 160:1604 / Escritorio 160:1768 -->
       <section class="screen" data-screen="p03" data-surface="paper" hidden aria-labelledby="p03-title">
         <form class="frame" id="email-verify" novalidate autocomplete="off">
@@ -153,7 +100,7 @@
           <div class="screen-body">
             <div class="question">
               <h2 class="question-title" id="p03-title" tabindex="-1">Escribe el código que te enviamos</h2>
-              <p class="question-help">Puedes pegarlo. Llega en un minuto.</p>
+              <p class="question-help" id="code-help">Puedes pegarlo. Llega en un minuto.</p>
             </div>
             <div class="controls">
               <!-- Figma: Dígito/Base 160:1405 (Vacío 160:1406, Foco 160:1408, Lleno 160:1410): one real field over six boxes. -->
@@ -161,6 +108,12 @@
                 <label class="sr-only" for="email-code">Código de 6 dígitos</label>
                 <input id="email-code" class="digits-input" inputmode="numeric" autocomplete="one-time-code" enterkeyhint="go" spellcheck="false" />
                 <div class="digit-boxes" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span><span></span></div>
+              </div>
+              <!-- Only a valid code for a new account reveals this field. The platform rechecks the code when it is sent (D42). -->
+              <div class="field" id="email-name-field" hidden>
+                <label id="email-name-label" for="email-name">Tu nombre</label>
+                <input id="email-name" type="text" autocomplete="name" maxlength="120" placeholder="Ej.: Ana" aria-describedby="code-help email-name-error" />
+                <p class="field-error" id="email-name-error" role="alert" hidden>Escribe tu nombre para crear tu cuenta.</p>
               </div>
               <p class="wait" id="code-wait" role="status" hidden>Revisando tu código. Suele tardar unos segundos; si no avanza, pide uno nuevo.</p>
               <div class="links">
@@ -171,35 +124,6 @@
           </div>
           <div class="screen-foot">
             <button type="submit" class="primary" id="code-continue">Continuar</button>
-          </div>
-        </form>
-      </section>
-
-      <!-- Figma: web-only, after P03 Código (160:1604); built from Pregunta/Base 161:2101, Campo/Línea 160:1355, Botón/Principal 160:1392 -->
-      <section class="screen" data-screen="p03-name" data-surface="paper" hidden aria-labelledby="p03-name-title">
-        <form class="frame" id="email-name-form" novalidate autocomplete="on">
-          <header class="screen-head">
-            <div class="head-row">
-              <p class="wordmark">Aule</p>
-              <button type="button" class="link back" data-back><span aria-hidden="true">←</span> Atrás</button>
-            </div>
-            <ol class="progress" aria-label="Avance"></ol>
-          </header>
-          <div class="screen-body">
-            <div class="question">
-              <h2 class="question-title" id="p03-name-title" tabindex="-1">¿Cómo te llamas?</h2>
-              <p class="question-help">Es la primera vez que entras con este correo. Con tu nombre creamos tu cuenta.</p>
-            </div>
-            <div class="controls">
-              <div class="field">
-                <label for="email-name">Tu nombre</label>
-                <input id="email-name" type="text" autocomplete="name" maxlength="120" placeholder="Ej.: Ana" aria-describedby="email-name-error" />
-                <p class="field-error" id="email-name-error" role="alert" hidden>Escribe tu nombre para crear tu cuenta.</p>
-              </div>
-            </div>
-          </div>
-          <div class="screen-foot">
-            <button type="submit" class="primary">Crear mi cuenta</button>
           </div>
         </form>
       </section>
@@ -405,50 +329,6 @@
         </form>
       </section>
 
-      <!-- Figma: P13 Entra a tu cuenta · Móvil 160:1674 / Escritorio 160:1920; P13 · De vuelta · Móvil 160:1711 / Escritorio 160:1934 -->
-      <section class="screen" data-screen="p13" data-surface="paper" hidden aria-labelledby="p13-title">
-        <div class="frame">
-          <header class="screen-head">
-            <div class="head-row">
-              <p class="wordmark">Aule</p>
-              <button type="button" class="link back" data-back><span aria-hidden="true">←</span> Atrás</button>
-            </div>
-            <ol class="progress plain" aria-hidden="true"></ol>
-          </header>
-          <div class="screen-body">
-            <div class="question">
-              <!-- Figma: P13 · De vuelta 160:1711 / 160:1934 when this browser signed in before -->
-              <p class="question-step" id="p13-greeting">Te damos la bienvenida</p>
-              <h2 class="question-title" id="p13-title" tabindex="-1">Entra a tu cuenta</h2>
-            </div>
-            <div class="controls ways">
-              <!-- Figma: Botón/Google 168:991. Google draws its own button here. -->
-              <div class="google-slot" id="google-p13" data-google hidden></div>
-              <button type="button" class="option" data-way="email" hidden>Con mi correo (te enviamos un código)</button>
-              <details class="other-ways" hidden>
-                <summary class="link">Otras formas de entrar</summary>
-                <div class="providers">
-                  <a class="provider" data-provider="github" href="api/signin/github/start" hidden>
-                    <svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/></svg>
-                    <span>Continuar con GitHub</span>
-                  </a>
-                  <a class="provider" data-provider="meta" href="api/signin/meta/start" hidden>
-                    <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#0866FF" d="M24 12.073C24 5.405 18.627 0 12 0S0 5.405 0 12.073C0 18.1 4.388 23.094 10.125 24v-8.437H7.078v-3.49h3.047V9.413c0-3.026 1.792-4.697 4.533-4.697 1.312 0 2.686.236 2.686.236v2.971H15.83c-1.491 0-1.956.93-1.956 1.886v2.264h3.328l-.532 3.49h-2.796V24C19.612 23.094 24 18.1 24 12.073z"/></svg>
-                    <span>Continuar con Facebook</span>
-                  </a>
-                  <a class="provider" data-provider="apple" href="api/signin/apple/start" hidden>
-                    <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"/></svg>
-                    <span>Continuar con Apple</span>
-                  </a>
-                </div>
-              </details>
-              <p class="small-help ways-note" hidden>Google, GitHub, Facebook y Apple usan sus propias cookies cuando entras con ellos.</p>
-            </div>
-          </div>
-          <div class="screen-foot"></div>
-        </div>
-      </section>
-
       <!-- Figma: P14 Revisa tu correo · Móvil 160:1688 / Escritorio 160:1948 -->
       <section class="screen" data-screen="p14" data-surface="paper" hidden aria-labelledby="p14-title">
         <div class="frame">
@@ -515,7 +395,7 @@
             <div class="controls">
               <!-- Figma: Fila/Alumno 161:2110, one per student. Under each, web-only and built from it, ul.student-sessions:
                    the student's latest sessions as facts (summaries.js), and the link «Ver resúmenes» (Enlace/Base) to the
-                   review's summaries in Configurar (D35). -->
+                   review's summaries on their own screen (D43). -->
               <ul class="student-list" id="student-list" aria-label="Tus alumnos"></ul>
               <p class="question-help" id="no-students" hidden>Todavía no hay alumnos en tu cuenta. Agrega al primero para empezar.</p>
               <button type="button" class="link" id="add-student">+ Agregar un alumno</button>
@@ -543,6 +423,31 @@
           <div class="screen-foot">
             <button type="button" class="primary" id="add-first" hidden>Agregar un alumno</button>
           </div>
+        </div>
+      </section>
+
+      <!-- Figma: web-only summaries (D43), built from Pregunta/Base 161:2101 and Enlace/Base 161:2096. -->
+      <section class="screen" data-screen="summaries" data-surface="paper" hidden aria-labelledby="summaries-title">
+        <div class="frame">
+          <header class="screen-head">
+            <div class="head-row">
+              <p class="wordmark">Aule</p>
+              <button type="button" class="link back" id="summaries-back" data-back>Volver al inicio</button>
+            </div>
+            <ol class="progress plain" aria-hidden="true"></ol>
+          </header>
+          <div class="screen-body">
+            <div class="question">
+              <h2 class="question-title" id="summaries-title" tabindex="-1">Resúmenes</h2>
+              <p class="question-help" id="summaries-help">Lo que practicó y qué puede trabajar después.</p>
+            </div>
+            <div class="controls">
+              <p class="small-help" id="summaries-status" role="status"></p>
+              <ul class="review-list" id="summary-list" aria-label="Últimos resúmenes"></ul>
+              <button type="button" class="link" id="summaries-retry" hidden>Intentar otra vez</button>
+            </div>
+          </div>
+          <div class="screen-foot"></div>
         </div>
       </section>
 
@@ -618,12 +523,9 @@
 
               <!-- What is kept about a student who already has sessions, to read and to prune. -->
               <section id="known" class="known" hidden>
-                <!-- The home's «Ver resúmenes» opens the editor here (D35): these titles take the focus. -->
                 <h3 id="known-title" tabindex="-1"></h3>
                 <p id="progress-known" class="small-help"></p>
                 <ul id="memories" aria-label="Lo que Aule recuerda"></ul>
-                <h3 id="past-title" tabindex="-1" hidden>Últimas sesiones</h3>
-                <ul id="past" aria-label="Últimas sesiones"></ul>
               </section>
 
               <button type="button" class="link danger" id="remove-student">Quitar a este alumno</button>

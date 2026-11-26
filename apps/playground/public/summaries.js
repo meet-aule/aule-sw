@@ -2,7 +2,7 @@
 // (FIGMA.md D35): a line a session, built from the facts the server sends
 // (src/students.ts latestSessions) and nothing else. Never what was said or
 // typed, the topic written on A04 · Detalles, nor the review's words: those
-// stay in Configurar, behind «Ver resúmenes». Nor how many exercises were
+// stay on their own screen, behind «Ver resúmenes». Nor how many exercises were
 // right: the home is the screen a child lands on, with brothers and sisters,
 // so it says how many were practised. Pure: nothing here touches the page, so
 // the tests import it as it is.
@@ -37,6 +37,18 @@ const WORDS = {
     see_summaries: "Ver resúmenes",
     // Its name starts with the words it shows, for whoever says them to reach it (WCAG 2.5.3).
     see_summaries_of: "Ver resúmenes de {name}",
+    start_with: "Empezar con {name}",
+    summaries_title: "Resúmenes de {name}",
+    summaries_help: "Lo que practicó y qué puede trabajar después.",
+    summary_list: "Últimos resúmenes",
+    summary: "Resumen",
+    next_session: "Para la próxima sesión",
+    summaries_loading: "Cargando los resúmenes…",
+    summaries_empty: "Todavía no hay resúmenes. Si la sesión acaba de terminar, espera un momento y vuelve a actualizar.",
+    summaries_failed: "No pudimos cargar los resúmenes. Inténtalo otra vez.",
+    back_home: "Volver al inicio",
+    refresh: "Actualizar",
+    retry: "Intentar otra vez",
   },
   en: {
     today: "Today",
@@ -65,6 +77,18 @@ const WORDS = {
     list: "{name}'s latest sessions",
     see_summaries: "See summaries",
     see_summaries_of: "See summaries for {name}",
+    start_with: "Start with {name}",
+    summaries_title: "Summaries for {name}",
+    summaries_help: "What they practised and what they can work on next.",
+    summary_list: "Latest summaries",
+    summary: "Summary",
+    next_session: "For the next session",
+    summaries_loading: "Loading summaries…",
+    summaries_empty: "There are no summaries yet. If the session just ended, wait a moment and refresh.",
+    summaries_failed: "We could not load the summaries. Please try again.",
+    back_home: "Back to home",
+    refresh: "Refresh",
+    retry: "Try again",
   },
 };
 

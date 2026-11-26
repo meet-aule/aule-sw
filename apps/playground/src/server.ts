@@ -99,6 +99,7 @@ const STATIC: Record<string, { file: string | URL; type: string }> = {
   "/first-steps.js": { file: new URL("first-steps.js", publicDir), type: "text/javascript; charset=utf-8" },
   // The lines the family's home says about each student's latest sessions.
   "/summaries.js": { file: new URL("summaries.js", publicDir), type: "text/javascript; charset=utf-8" },
+  "/reviews.js": { file: new URL("reviews.js", publicDir), type: "text/javascript; charset=utf-8" },
   "/visuals.js": { file: new URL("visuals.js", publicDir), type: "text/javascript; charset=utf-8" },
   // Aule's face: the cuy the mascot's engine draws, and the arithmetic that shows it in pixel art.
   "/cuy.js": { file: new URL("cuy.js", publicDir), type: "text/javascript; charset=utf-8" },
@@ -227,6 +228,7 @@ const OWN_SCRIPTS = new Set([
   "/session-messages.js",
   "/first-steps.js",
   "/summaries.js",
+  "/reviews.js",
   "/visuals.js",
   "/cuy.js",
   "/pixels.js",

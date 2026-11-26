@@ -162,7 +162,7 @@ $("child-name-form").addEventListener("submit", async (event) => {
     if (error.message === "not_signed_in") {
       const account = await call("api/account").catch(() => ({ signed_in: false }));
       setAccount(account);
-      return go(landing() === "c01" ? "p13" : landing(), { replace: true, fresh: true, flow: "back", message: "Tu sesión se cerró. Vuelve a entrar." });
+      return go(landing(), { replace: true, fresh: true, flow: "back", message: "Tu sesión se cerró. Vuelve a entrar." });
     }
     return say("No se pudo guardar. Inténtalo otra vez.");
   }

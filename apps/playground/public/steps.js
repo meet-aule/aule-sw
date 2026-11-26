@@ -12,7 +12,7 @@ export const FIGMA_FILE = "yOAIYJNl5nZ7NgWtESN0Fo";
  * onboarding: the interview is offered on the home, after the first session (D34).
  */
 export const SEGMENTS = [
-  { name: "Tu cuenta", steps: 3 },
+  { name: "Tu cuenta", steps: 2 },
   { name: "Su perfil", steps: 2 },
 ];
 
@@ -29,13 +29,9 @@ export const SEGMENTS = [
  * - needs: what the page must hold for the screen to make sense (see screens.js).
  */
 export const SCREENS = {
-  // A signed-out visit starts here: César retired C00 «¿Quién eres?» on 24 Nov, since the student no longer comes in by the web.
-  c01: { code: "C01", name: "¿Ya tienes cuenta?", nodes: ["160:1661", "160:1741"], surface: "paper", auth: "out", progress: null, back: null },
-  p01: { code: "P01", name: "¿Cómo quieres entrar?", nodes: ["160:1636", "160:1455"], surface: "paper", auth: "out", progress: [0, 1], back: "c01" },
-  // A new family writes its name here with its address, so P03 needs no second screen (D34).
-  p02: { code: "P02", name: "Tu correo", nodes: ["160:1624", "160:1755"], surface: "paper", auth: "out", progress: [0, 2], plainComingBack: true, back: "p01" },
-  p03: { code: "P03", name: "Código", nodes: ["160:1604", "160:1768"], surface: "paper", auth: "out", progress: [0, 3], plainComingBack: true, back: "p02", needs: "email" },
-  "p03-name": { code: "", name: "Tu nombre", nodes: ["160:1604", "161:2101", "160:1355", "160:1392"], surface: "paper", auth: "out", progress: [0, 3], plainComingBack: true, back: "p03", needs: "email" },
+  // One entry for every family, with email and providers together (D42).
+  p01: { code: "P01", name: "Entra a Aule", nodes: ["160:1636", "160:1455", "160:1624", "160:1755"], surface: "paper", auth: "out", progress: null, back: null },
+  p03: { code: "P03", name: "Código", nodes: ["160:1604", "160:1768"], surface: "paper", auth: "out", progress: null, back: "p01", needs: "email" },
   p04: { code: "P04", name: "Tu autorización", nodes: ["160:1592", "160:1442", "160:1994"], surface: "paper", auth: "in", progress: [1, 1], back: "home" },
   // The interview, offered on the home after the first session, for a child the family has (D34);
   // the grade first, the one answer the next session uses.
@@ -45,10 +41,10 @@ export const SCREENS = {
   p07: { code: "P07", name: "Entrevista · gustos", nodes: ["160:1547", "160:1815"], surface: "paper", auth: "in", progress: null, back: "p06", needs: "interview" },
   // The name, an optional grade, and the first session: P12's «Empezar su primera sesión» is folded in (D34).
   "p10-name": { code: "", name: "¿Cómo lo llamamos?", nodes: ["160:1493", "160:1877", "161:2101", "160:1355", "160:1392"], surface: "paper", auth: "in", progress: [1, 2], back: "p04", needs: "consent" },
-  p13: { code: "P13", name: "Entra a tu cuenta", nodes: ["160:1674", "160:1920", "160:1711", "160:1934"], surface: "paper", auth: "out", progress: null, back: "c01" },
   p14: { code: "P14", name: "Revisa tu correo", nodes: ["160:1688", "160:1948"], surface: "paper", auth: "out", progress: null, back: "p03", needs: "email" },
   p15: { code: "P15", name: "Escríbenos", nodes: ["160:1701", "160:1962"], surface: "paper", auth: "out", progress: null, back: "p14" },
   home: { code: "", name: "Tus alumnos", nodes: ["161:2101", "161:2110", "161:2104", "161:2096"], surface: "paper", auth: "in", progress: null, back: null },
+  summaries: { code: "", name: "Resúmenes", nodes: ["161:2101", "161:2096"], surface: "paper", auth: "in", progress: null, back: "home", needs: "summaries" },
   editor: { code: "", name: "Configurar", nodes: ["161:2101", "160:1355", "160:1374", "160:1397", "160:1392", "161:2104"], surface: "paper", auth: "in", progress: null, back: "home", needs: "editing" },
   // The hand-off from p10-name's «Empezar su primera sesión»: the parent's browser becomes the child's screen.
   a02: { code: "A02", name: "¿Eres tú?", nodes: ["410:629"], surface: "ink", auth: "in", progress: null, back: "home", needs: "handoff" },

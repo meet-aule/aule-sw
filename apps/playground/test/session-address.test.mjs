@@ -186,7 +186,7 @@ test("at any other session's address, or a malformed one, the page is as at /ses
   }
   const signedOut = page(`https://playground.meetaule.com/session/${SESSION}`);
   signedOut.setAccount({ signed_in: false, providers: ["email"] });
-  signedOut.go("c01");
+  signedOut.go("p01");
   assert.equal(signedOut.address(), "/session/", "signed out");
   for (const junk of [SESSION.toUpperCase(), `${SESSION}x`, "not-a-session"]) {
     const browser = page(`https://playground.meetaule.com/session/${junk}`);

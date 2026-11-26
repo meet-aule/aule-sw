@@ -10,6 +10,7 @@ import { DATED, KINDS, OWN_SUBJECT, REVIEW, defaultSubject, kindKey, objectiveFo
 import { back, current, getAccount, go, landing, need, onAccount, onShow, readdress, sessionNamed, setAccount } from "./screens.js";
 import { languageOf, words } from "./first-steps.js";
 import { homeWords, sessionLine } from "./summaries.js";
+import { openSummaries } from "./reviews.js";
 
 // The student a session is for, and what for: undefined until a tile is
 // chosen, "" when it is left to Aule, else the kind.
@@ -88,17 +89,17 @@ const asked = (objective) => ({
 // --- The home: who studies today --------------------------------------------------------
 
 function row(student, open) {
+  const language = document.documentElement.lang;
   const item = document.createElement("li");
   item.className = "student-row";
   const start = document.createElement("button");
   start.type = "button";
   start.className = "student-go";
   const name = document.createElement("b");
-  name.textContent = student.name;
+  name.textContent = homeWords("start_with", language, { name: student.name });
   const about = document.createElement("small");
   about.textContent = describe(student) || "Sin configurar todavía";
   start.append(name, about);
-  start.setAttribute("aria-label", `${student.name}: empezar una sesión`);
   // With no session left, the plan line says why; the settings still open.
   if (!open) start.setAttribute("aria-disabled", "true");
   start.addEventListener("click", () => {
@@ -110,10 +111,7 @@ function row(student, open) {
   configure.textContent = "Configurar";
   configure.setAttribute("aria-label", `Configurar a ${student.name}`);
   configure.addEventListener("click", () => edit(student));
-  // Their latest sessions, as facts, once they are read (drawSessions), and under
-  // them the way to the summaries the review wrote, in Configurar, once it has
-  // written one (D35).
-  const language = document.documentElement.lang;
+  // Facts on the home (D35); the review's words on their own screen (D43).
   const sessions = document.createElement("ul");
   sessions.className = "student-sessions";
   sessions.setAttribute("aria-label", homeWords("list", language, { name: student.name }));
@@ -123,8 +121,7 @@ function row(student, open) {
   summaries.className = "link student-summaries";
   summaries.textContent = homeWords("see_summaries", language);
   summaries.setAttribute("aria-label", homeWords("see_summaries_of", language, { name: student.name }));
-  summaries.hidden = true;
-  summaries.addEventListener("click", () => edit(student, false, "past"));
+  summaries.addEventListener("click", () => openSummaries(student));
   item.dataset.student = student.id;
   item.append(start, configure, sessions, summaries);
   // The interview the onboarding no longer asks (D34), while the family has told
@@ -143,8 +140,8 @@ function row(student, open) {
 /**
  * Each student's latest sessions under their row (D35): when, how long, what
  * for, the exercises, the breaks and an unusual ending, never what was said;
- * and «Ver resúmenes» once the review has a summary for Configurar to show
- * (right after a session it has none yet). They are asked for together, and
+ * and «Ver resúmenes» to a separate screen with an empty state while the
+ * review has written none yet (D43). The facts are asked for together, and
  * drawn while the home still shows that row; a read that fails leaves the row
  * as it is.
  */
@@ -167,7 +164,6 @@ function drawSessions() {
         const list = item.querySelector(".student-sessions");
         list.replaceChildren(...lines);
         list.hidden = lines.length === 0;
-        item.querySelector(".student-summaries").hidden = !(answer.summaries > 0);
       },
       () => undefined,
     );
@@ -226,7 +222,7 @@ async function readAgain() {
     // Each module forgets what it drew about the family before signing in shows.
     setAccount(latest);
     const land = landing();
-    go(land === "c01" ? "p13" : land, { replace: true, fresh: true, flow: "back", message: "Tu sesión se cerró. Vuelve a entrar." });
+    go(land, { replace: true, fresh: true, flow: "back", message: "Tu sesión se cerró. Vuelve a entrar." });
     return false;
   }
   const drawn = (account) => JSON.stringify([account.name, account.team, account.plan, account.students]);
@@ -327,10 +323,9 @@ $("a02-no").addEventListener("click", () => {
 
 /**
  * Opens Configurar for a student; from a02 (`handingOver`), saving goes back to
- * it. `at`: "past" for the home's «Ver resúmenes», which opens it at the
- * summaries of the latest sessions.
+ * it. Summaries have their own screen.
  */
-function edit(student, handingOver = false, at = null) {
+function edit(student, handingOver = false) {
   openEditor(student, subjectsKept(), async (saved) => {
     // Saved or removed: the family's students are read again, then the screen before.
     try {
@@ -344,7 +339,7 @@ function edit(student, handingOver = false, at = null) {
       return go("home", { replace: true, fresh: true });
     }
     back();
-  }, { at });
+  });
   go("editor");
 }
 

@@ -11,7 +11,7 @@ const read = (name) => readFile(new URL(name, pub), "utf8");
 const html = await read("index.html");
 const css = await read("style.css");
 const guides = { es: await read("guia.html"), en: await read("guide.html") };
-const ownScripts = ["app.js", "students.js", "signin.js", "steps.js", "screens.js", "onboarding.js", "home.js", "session-messages.js", "first-steps.js", "summaries.js", "visuals.js", "cuy.js", "pixels.js"];
+const ownScripts = ["app.js", "students.js", "signin.js", "steps.js", "screens.js", "onboarding.js", "home.js", "session-messages.js", "first-steps.js", "summaries.js", "reviews.js", "visuals.js", "cuy.js", "pixels.js"];
 const scripts = Object.fromEntries(await Promise.all(ownScripts.map(async (name) => [name, await read(name)])));
 
 /** The body of every block that starts with `opening`, braces and all. */
@@ -110,7 +110,7 @@ test("the page's own modules import each other without a cycle, as the plan draw
   assert.deepEqual([...graph["signin.js"]].sort(), ["screens.js", "steps.js", "students.js"]);
   // The name screen hands the browser to the child as the home does (home.js handOff).
   assert.deepEqual([...graph["onboarding.js"]].sort(), ["home.js", "screens.js", "steps.js", "students.js"]);
-  assert.deepEqual([...graph["home.js"]].sort(), ["first-steps.js", "screens.js", "steps.js", "students.js", "summaries.js"]);
+  assert.deepEqual([...graph["home.js"]].sort(), ["first-steps.js", "reviews.js", "screens.js", "steps.js", "students.js", "summaries.js"]);
   // Aule's face, the cuy and its pixels, is data and arithmetic: the session's page is all that takes them.
   assert.deepEqual(graph["cuy.js"], []);
   assert.deepEqual(graph["pixels.js"], []);
@@ -134,15 +134,15 @@ test("only signin.js touches the browser's storage, and only where a refusal is 
     if (name !== "signin.js") assert.doesNotMatch(text, /localStorage|sessionStorage/, name);
   }
   const signin = scripts["signin.js"];
-  // The two stores are named once each, and read, written and cleared in one place each.
-  assert.equal(signin.match(/localStorage|sessionStorage/g).length, 2);
+  // Only local storage remains, accessed through guarded helpers; no identity is persisted.
+  assert.equal(signin.match(/localStorage|sessionStorage/g).length, 1);
   for (const use of [/\.getItem\(/g, /\.setItem\(/g, /\.removeItem\(/g]) assert.equal(signin.match(use).length, 1, String(use));
   assert.match(signin, /try \{\s*return store\(\)\.getItem\(key\);\s*\} catch/);
   assert.match(signin, /try \{\s*store\(\)\.setItem\(key, value\);\s*\} catch/);
   assert.match(signin, /try \{\s*store\(\)\.removeItem\(key\);\s*\} catch/);
 });
 
-test("Google's sign-in script is fetched only where a guardian signs in, never with the page or its landing", () => {
+test("Google's sign-in script is fetched only where a guardian signs in, never on signed-in family or student screens", () => {
   // Not preloaded and not loaded by the page: a student's session never asks Google for anything.
   assert.doesNotMatch(html, /accounts\.google\.com|gsi\/client/);
   for (const [name, text] of Object.entries(scripts)) {
@@ -152,12 +152,11 @@ test("Google's sign-in script is fetched only where a guardian signs in, never w
   // One function fetches it, and nothing at the top of the module does.
   assert.equal(signin.match(/\bloadGoogleScript\(\)/g).length, 2, "its definition and one call");
   assert.match(blocks(signin, "function needGoogle()")[0], /\bloadGoogleScript\(\)/);
-  // That function is called where a guardian signs in only: P01 and P13. Not on C01, the
-  // landing: a visit that only looks at the first question asks Google for nothing.
+  // The shared entry is now the sign-in screen; the provider-cookie notice stays beside it (D42).
   const asked = (text) => (text.match(/\bneedGoogle\b/g) ?? []).length;
-  const guardian = asked(blocks(signin, 'onShow("p01"')[0]) + asked(blocks(signin, 'onShow("p13"')[0]);
-  assert.equal(guardian, 2);
-  assert.equal(asked(signin), guardian + 1, "the definition and those two, nothing else");
+  const guardian = asked(blocks(signin, 'onShow("p01"')[0]);
+  assert.equal(guardian, 1);
+  assert.equal(asked(signin), guardian + 1, "the definition and the shared entry, nothing else");
   assert.doesNotMatch(signin, /onShow\("c01"/);
   // And it does nothing for a family that is already signed in.
   assert.match(blocks(signin, "function needGoogle()")[0], /account\.signed_in/);
@@ -343,7 +342,7 @@ test("every «…» a guide quotes is the page's own words, and the English guid
     assert.ok(quoted.length >= 6, lang);
     for (const words of quoted) assert.ok(page.includes(words), `${lang}: «${words}» is on the page`);
   }
-  for (const words of ["¿Ya tienes una cuenta en Aule?", "No, es mi primera vez", "¡Qué bueno que estés de vuelta!", "Sí, ya tengo cuenta"]) {
+  for (const words of ["¡Qué bueno que estés de vuelta!", "Ver resúmenes"]) {
     assert.ok(guides.es.includes(`«${words}»`) && guides.en.includes(`<span lang="es">«${words}»</span>`), words);
   }
   const english = guides.en.replace(/<!--[\s\S]*?-->/g, "").replace(/<span lang="es">«[^«»]+»<\/span>/g, "");
@@ -402,8 +401,7 @@ test("the page's words for an ended trial and a used week are the plan's, and th
   // The sign-in providers' own cookies are said beside their buttons, not here (D36).
   assert.doesNotMatch(said, /Google|GitHub|Facebook|Apple/);
   for (const [id, next] of [
-    ["p01", "p02"],
-    ["p13", "p14"],
+    ["p01", "p03"],
   ]) {
     const screen = html.slice(html.indexOf(`data-screen="${id}"`), html.indexOf(`data-screen="${next}"`));
     const line = screen.match(/<p class="small-help ways-note"[^>]*>([^<]*)<\/p>/);
@@ -641,16 +639,14 @@ test("the home reads the family's account again each time it shows", () => {
   assert.match(again, /catch \{\s*return current\(\) === "home" && getAccount\(\)\.signed_in === true;\s*\}/);
 });
 
-test("a signed-out visit starts on C01, or on P13 for a browser that signed in before; C00 is gone", () => {
-  const signin = scripts["signin.js"];
-  assert.match(bodyOf(signin, "firstScreen"), /return land === "c01" && recall\(local, RETURNING\) === "1" \? "p13" : land;/);
-  for (const name of ["start", "signedOut"]) assert.match(bodyOf(signin, name), /const first = firstScreen\(\);\s*go\(first,/, name);
-  assert.match(bodyOf(scripts["screens.js"], "landing"), /"c01" : null/);
-  for (const [name, text] of Object.entries(scripts)) assert.doesNotMatch(text, /"c00/, name);
-  assert.doesNotMatch(html, /data-screen="c00|id="c00-/);
-  // C01 is the first question: it has no way back (Encabezado/Base · Atrás=No).
-  const c01 = html.slice(html.indexOf('data-screen="c01"'), html.indexOf('data-screen="p01"'));
-  assert.doesNotMatch(c01, /data-back/);
+test("every signed-out visit uses the shared entry, with the email field beside providers (D42)", () => {
+  for (const retired of ["c00", "c01", "p02", "p03-name", "p13"]) {
+    assert.ok(!html.includes(`data-screen="${retired}"`), retired);
+  }
+  assert.match(bodyOf(scripts["screens.js"], "landing"), /"p01" : null/);
+  const entry = html.slice(html.indexOf('data-screen="p01"'), html.indexOf('data-screen="p03"'));
+  assert.doesNotMatch(entry, /data-back/);
+  assert.ok(entry.includes('id="email-start"') && entry.includes('data-google'));
 });
 
 test("a02 hands the browser to the child: first-steps.js's words in the child's language, the name as the parent wrote it", () => {
@@ -744,7 +740,7 @@ test("A04, A04 · Detalles and A05 speak the student's language, marked on each 
   assert.match(blocks(home, "onAccount((account) =>").join("\n"), /\$\("a04-hello"\)\.textContent = "";/);
 });
 
-test("the home says what each child did in their latest sessions, facts only, and links the summaries in Configurar (D35)", () => {
+test("the home says what each child did in their latest sessions, facts only, and links a separate reading screen (D35, D43)", () => {
   const home = scripts["home.js"];
   // Asked for each student together, once the account is read again and the rows drawn for it (a
   // session just changed it, so the rows are drawn twice), and drawn only while that row still shows.
@@ -759,23 +755,19 @@ test("the home says what each child did in their latest sessions, facts only, an
   assert.match(draw, /\(\) => undefined,\s*\);/);
   // Text only: nothing the platform sent becomes markup.
   assert.doesNotMatch(draw, /innerHTML/);
-  // The list and the link are the row's own, hidden until there is a session to show.
+  // The facts and summaries link belong to the row; the link also reaches an empty state.
   const row = bodyOf(home, "row");
   assert.match(row, /sessions\.className = "student-sessions";/);
   assert.match(row, /sessions\.setAttribute\("aria-label", homeWords\("list", language, \{ name: student\.name \}\)\);/);
   assert.match(row, /summaries\.className = "link student-summaries";/);
-  assert.match(row, /summaries\.addEventListener\("click", \(\) => edit\(student, false, "past"\)\);/);
-  // «Ver resúmenes» shows once the review has a summary to open on, not with the first line: right
-  // after a session it has none, and the editor would open on another section (the review of 24 Nov).
-  assert.match(draw, /item\.querySelector\("\.student-summaries"\)\.hidden = !\(answer\.summaries > 0\);/);
+  assert.ok(row.includes('summaries.addEventListener("click", () => openSummaries(student))'));
+  assert.doesNotMatch(row + draw, /summaries\.hidden|\.student-summaries.*\.hidden/);
   // Its name starts with its visible words (WCAG 2.5.3), and it is a whole 44 px target.
   assert.match(row, /summaries\.setAttribute\("aria-label", homeWords\("see_summaries_of", language, \{ name: student\.name \}\)\);/);
   assert.match(rules(css).find(([selector]) => selector.replace(/\/\*[\s\S]*?\*\//g, "").trim() === ".student-summaries")?.[1] ?? "", /min-height: 44px;/);
-  // «Ver resúmenes» opens Configurar at «Últimas sesiones», where the review's words already were.
-  assert.match(bodyOf(home, "edit"), /\}, \{ at \}\);/);
-  const known = bodyOf(scripts["students.js"], "showKnown");
-  assert.match(known, /if \(at === "past"\) \{\s*const heading = known\.sessions\.length \? \$\("past-title"\) : \$\("known-title"\);/);
-  assert.match(html, /<h3 id="past-title" tabindex="-1" hidden>Últimas sesiones<\/h3>/);
+  const editor = html.slice(html.indexOf('data-screen="editor"'), html.indexOf('data-screen="a02"'));
+  assert.doesNotMatch(editor, /id="past"|id="past-title"/);
+  assert.ok(html.includes('data-screen="summaries"'));
   // The home itself never shows a review's words, a topic or what was said.
   for (const text of [home, scripts["summaries.js"]]) assert.doesNotMatch(text, /guardian_summary|next_step|\.summary\b|\.topic\b|transcript/);
   assert.match(html, /web-only and built from it, ul\.student-sessions/);
@@ -798,7 +790,7 @@ test("consent leads to the name, which starts the first session: P12 is folded i
   assert.doesNotMatch(html, /data-screen="p12"|id="p12-/);
   // Two ways out of the name: the first session (handed to the child) only from «Empezar su
   // primera sesión», and only while the plan has a session; else the home says the child is made.
-  const name = html.slice(html.indexOf('data-screen="p10-name"'), html.indexOf('data-screen="p13"'));
+  const name = html.slice(html.indexOf('data-screen="p10-name"'), html.indexOf('data-screen="p14"'));
   assert.match(name, /<button type="submit" class="link" id="child-later">Empezar más tarde<\/button>\s*<button type="submit" class="primary" id="child-start">Empezar su primera sesión<\/button>/);
   const [submit] = blocks(onboarding, '$("child-name-form").addEventListener("submit"');
   assert.match(submit, /const starting = event\.submitter\?\.id === "child-start";/);
@@ -828,22 +820,11 @@ test("consent leads to the name, which starts the first session: P12 is folded i
   assert.ok(html.indexOf('data-screen="p04"') < html.indexOf('data-screen="p10-name"'));
 });
 
-test("a new family writes its name on P02, which is sent with the code; a family coming back is not asked", () => {
-  const field = html.match(/<div class="field" id="email-name-field"[^>]*>/)?.[0] ?? "";
-  assert.match(field, /\bhidden\b/, "hidden in the markup");
-  assert.match(html, /<input id="email-name-new" type="text" autocomplete="name" maxlength="120"/);
-  assert.match(html, /<p class="field-error" id="email-name-new-error" role="alert" hidden>Escribe tu nombre para crear tu cuenta\.<\/p>/);
-  const signin = scripts["signin.js"];
-  assert.match(blocks(signin, 'onShow("p02"')[0], /\$\("email-name-field"\)\.hidden = flowNow\(\) !== "new";/);
-  assert.match(scripts["screens.js"], /export function flowNow\(\) \{\s*return flow;\s*\}/);
-  const verify = bodyOf(signin, "verify");
-  assert.match(verify, /const named = name \|\| newName;/);
-  assert.match(verify, /\.\.\.\(named \? \{ name: named \} : \{\}\)/);
-  // In page memory only, and forgotten with the address.
-  assert.match(bodyOf(signin, "forgetAddress"), /newName = "";/);
-  assert.match(bodyOf(signin, "forgetAddress"), /\$\("email-name-new"\)\.value = "";/);
-  // p03-name stays for a family coming back with a new address.
-  assert.match(verify, /if \(failure === "name_needed"\) return go\("p03-name"\);/);
+test("the name is inline on the code screen and never stored on the device (D42)", () => {
+  const code = html.slice(html.indexOf('data-screen="p03"'), html.indexOf('data-screen="p04"'));
+  assert.match(code, /id="email-name-field" hidden/);
+  assert.match(code, /id="email-name" type="text" autocomplete="name" maxlength="120"/);
+  assert.ok(bodyOf(scripts["signin.js"], "forgetAddress").includes('$("email-name").value = ""'));
 });
 
 test("the interview is offered on the home after the first session, and its save keeps the consents as they were", () => {
