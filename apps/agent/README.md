@@ -16,6 +16,7 @@ Aule's voice tutor: a [LiveKit Agents](https://github.com/livekit/agents) worker
 | `physical_safety` | The physical-safety gate: whether what the person said needs a nearby adult |
 | `replies` | The fixed replies a person hears when a gate stops a turn, in Spanish and English |
 | `visuals` | What the tutor can show on the student's screen, checked against the shared contract before it is sent |
+| `choices` | Answers the student can tap under the tutor's question, checked against the shared contract and sent once the question has been heard |
 | `camera` | The latest camera frame, held in memory and never stored |
 | `homework` | What a photo of the homework shows, read by a model for the session engine; nothing it writes is said, and the photo is never kept |
 | `prosody` | Whether the voice went up or down at the end of an utterance, measured from the audio by rule, for pronunciation drills |
@@ -191,6 +192,13 @@ When the session engine waits for a photo of the child's homework (`awaits: "hom
 Nothing the model writes is said or shown. The platform is told the outcome, and for a read the level and the confidence (`POST /v1/agent/session/homework`, 3 seconds), and the tutor says the engine's lines; when the platform does not take it, the fixed «No pude mirar tu tarea. ¿Me la muestras otra vez?», and the child can show it again. The frame is dropped once read. What the child says meanwhile waits for the engine to hear of the photo, up to 11 seconds. The log has each read's outcome and time, never the level, the confidence or the image, and the read's tokens are counted with the tutor's model calls, at the same price.
 
 The agent tells the platform it reads photos (`GET /v1/agent/session?homework=1`) unless the talk button is on: the push-to-talk devices have no camera. The platform caps what it is told (`AULE_ENGINE_HOMEWORK`, 0 by default), and an older platform ignores it, so nothing changes until the platform asks for a photo. The five levels are described twice, in `homework.QUESTION` and in the engine's level files. Before it is turned on: one real call to the model, and an evaluation of about 50 labelled photos for accuracy, latency and the engine's threshold of 70.
+
+## Answers to tap
+
+Under a question with a few possible answers the page can show them as buttons ([`contracts/choices`](../../contracts/README.md), on the text-stream topic `aule.choices`). Tapping one is the student's turn: the page sends its words as a typed message, so it passes both input gates like anything typed (`Tutor.typed`) and reaches the session engine or the model as typed words do; several marked go as one turn, joined by commas («1/2, 2/4»).
+
+- **The session engine's** come with its lines (`script.Line.choices`): its fixed words, like the lines themselves, so they are not judged. They are sent once their line has been said to its end, and never for a line that was cut off, that the gate replaced (one that may repeat the student) or that belongs to an answer of the engine that is over.
+Only counts and kinds are logged: never an option.
 
 ## Pedagogy regression experiment
 

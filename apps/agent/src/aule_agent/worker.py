@@ -26,7 +26,7 @@ from livekit.agents import (
 )
 from livekit.plugins import silero
 
-from . import observability, visuals
+from . import choices, observability, visuals
 from ._version import __version__
 from .camera import Camera
 from .config import LANGUAGES, ConfigError, Settings, build_commit
@@ -431,6 +431,12 @@ async def entrypoint(ctx: JobContext) -> None:
             json.dumps(visual, ensure_ascii=False), topic=visuals.TOPIC
         )
 
+    async def offer(options: dict[str, Any]) -> None:
+        # A screen with a conversation puts them under the line just said.
+        await ctx.room.local_participant.send_text(
+            json.dumps(options, ensure_ascii=False), topic=choices.TOPIC
+        )
+
     # The persona: the dispatch metadata is always present; the platform's GET
     # body wins when it set one (it is read from the database). The family note
     # is moderated once here and dropped if it is unsafe or the gate is down, so
@@ -461,6 +467,7 @@ async def entrypoint(ctx: JobContext) -> None:
         camera=camera,
         context=context,
         show=show,
+        offer=offer,
         persona=persona,
         student_name=platform.student_name if platform else None,
         session_number=platform.session_number if platform else None,

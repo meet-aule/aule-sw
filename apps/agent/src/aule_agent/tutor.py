@@ -58,6 +58,8 @@ logger = logging.getLogger("aule.agent.tutor")
 
 # Sends one visual to the student's screen.
 Show = Callable[[dict[str, Any]], Awaitable[None]]
+# Puts answers the student can tap under the question just asked (``choices``).
+Offer = Callable[[dict[str, Any]], Coroutine[Any, Any, None]]
 
 
 @dataclass(frozen=True)
@@ -966,10 +968,12 @@ class Tutor(Agent):
         early_reply: bool = False,
         voice: tts.TTS | None = None,
         voice_ahead: bool = False,
+        offer: Offer | None = None,
     ) -> None:
         # `context` is what the platform knows about this student and the
         # supervisor's plan for the session; empty when there is no platform.
-        # `show` is given when the student has a screen to draw on.
+        # `show` is given when the student has a screen to draw on, and
+        # `offer` when it can put answers to tap under a question (``choices``).
         # `voice` is the session's voice: the short lines said while a tool
         # works are voiced with it once, and with `voice_ahead` the first
         # sentence of a reply while the output gate judges it (``HeldVoice``).
@@ -1126,6 +1130,8 @@ class Tutor(Agent):
         self._reader = reader
         self._reading: asyncio.Event | None = None
         self._show = show
+        # Where answers to tap go (``choices``).
+        self._offer = offer
         self._model_done_at = 0.0
         self._watches: set[asyncio.Task[None]] = set()
         self._tutor_name = persona.name
@@ -1431,6 +1437,17 @@ class Tutor(Agent):
         self._watches.add(task)
         task.add_done_callback(self._watches.discard)
 
+    async def _put_up(self, offered: dict[str, Any]) -> None:
+        """Sends answers to tap to the screen. A failure costs only the buttons:
+        the student can still say or type the answer."""
+        if self._offer is None:
+            return
+        try:
+            await self._offer(offered)
+        except Exception as error:
+            # The type only, and no options: counts and kinds are what is logged.
+            logger.info("choices not sent", extra={"error": type(error).__name__})
+
     async def _say(self, lines: tuple[Line, ...]) -> None:
         """Says lines of the script as they are written, each with its drawing.
 
@@ -1451,8 +1468,13 @@ class Tutor(Agent):
             if line.show is not None and self._show is not None:
                 await self._show(line.show)
             # One after the other: a drawing goes up with the line it belongs to.
-            await self.session.say(line.say, add_to_chat_ctx=True, allow_interruptions=True)
+            played = await self.session.say(
+                line.say, add_to_chat_ctx=True, allow_interruptions=True
+            )
             said += 1
+            if line.choices is not None and turn == self._script_turn and not played.interrupted:
+                # What can be tapped goes under its question once it has been heard.
+                await self._put_up(line.choices)
         # Counts only: what is said is never logged.
         logger.info("said from the script", extra={"lines": said, "left_out": len(lines) - said})
 
