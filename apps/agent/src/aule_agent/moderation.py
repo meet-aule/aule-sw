@@ -188,6 +188,12 @@ class Finding:
     # me"), so such a sentence is read once more (see ``opinion``). Anything
     # stronger, or found with anything else, is never in doubt.
     faint_self_harm: bool = False
+    # True when the provider itself flagged the text, but only as harassment or
+    # hate without threats, where a child's ordinary words land too: the
+    # Spanish for black ("negro", "negrito") names the shaded part of a drawing
+    # (2026-11-25, a co-founder's explanation was cut off twice). Said by a
+    # child, a second reader may settle it; said by the tutor, never.
+    heard_rereadable: bool = False
 
     @property
     def flagged(self) -> bool:
@@ -219,6 +225,20 @@ def local_category(text: str) -> str | None:
 # about minors and illicit acts are never in doubt, and neither is self-harm,
 # except for the faint scores described in ``Finding``.
 SECOND_READING = frozenset({"sexual", "harassment", "hate", "violence"})
+
+
+# What the provider flags in a child's words that a second reader may still
+# clear: insults and contempt read out of context. Threats never.
+REREAD_WHEN_HEARD = frozenset({"harassment", "hate"})
+
+
+def provider_flags_only_insults(response: Any) -> bool:
+    """Whether the provider flagged the text and all it found is harassment or
+    hate without threats. Call after ``provider_categories`` accepted the
+    response."""
+    result = response.results[0]
+    found = provider_categories(response)
+    return bool(found) and set(found) <= REREAD_WHEN_HEARD and result.flagged is True
 
 
 def provider_is_unsure(response: Any) -> bool:
@@ -294,6 +314,7 @@ class Moderator:
         available = False
         unsure = False
         faint = False
+        rereadable = False
         # A local match never skips the provider: swearing must not hide a
         # graver category in the same sentence.
         if len(text) <= MAX_CHARS:
@@ -305,6 +326,7 @@ class Moderator:
                 categories = provider_categories(response)
                 unsure = provider_is_unsure(response)
                 faint = provider_finds_faint_self_harm(response)
+                rereadable = provider_flags_only_insults(response)
                 available = True
             except asyncio.CancelledError:
                 raise
@@ -319,6 +341,7 @@ class Moderator:
             # A word of our own list is a finding of its own: nothing to be unsure about.
             unsure=unsure and local is None,
             faint_self_harm=faint and local is None,
+            heard_rereadable=rereadable and local is None,
         )
         if finding.flagged or not finding.available:
             logger.info(

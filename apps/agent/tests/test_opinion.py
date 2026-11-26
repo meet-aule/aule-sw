@@ -96,9 +96,21 @@ async def test_the_reader_gets_the_childs_words_with_the_tutors_line_before_them
 
 async def test_a_reader_that_is_late_or_down_settles_nothing(monkeypatch):
     monkeypatch.setattr("aule_agent.opinion.TIMEOUT_SECONDS", 0.01)
+    monkeypatch.setattr("aule_agent.opinion.HEARD_TIMEOUT_SECONDS", 0.01)
 
     assert await SecondOpinion(client=FakeClient("ORDINARY", delay=1)).ordinary("", "x") is None
     assert await SecondOpinion(client=FakeClient(RuntimeError("down"))).ordinary("", "x") is None
+
+
+async def test_a_childs_words_wait_longer_for_their_reading_than_a_reply(monkeypatch):
+    # The small model thinks before it answers: a child is not cut off by a
+    # reading that came a little late, a reply of the tutor still is.
+    monkeypatch.setattr("aule_agent.opinion.TIMEOUT_SECONDS", 0.01)
+    monkeypatch.setattr("aule_agent.opinion.HEARD_TIMEOUT_SECONDS", 1.0)
+    heard = FakeClient("ORDINARY", delay=0.05)
+    assert await SecondOpinion(client=heard).ordinary("", "son tres negritos de cuatro") is True
+    assert heard.calls[0]["timeout"] == 1.0
+    assert not await SecondOpinion(client=FakeClient("SAFE", delay=0.05)).safe("x")
 
 
 async def test_a_warm_up_lists_models_and_asks_no_model_anything():

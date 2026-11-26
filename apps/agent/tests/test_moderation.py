@@ -415,6 +415,25 @@ async def test_only_scores_the_provider_did_not_act_on_in_settled_categories_are
         assert not (await guard.check("x")).unsure
 
 
+async def test_only_harassment_or_hate_the_provider_flagged_may_be_read_again_when_heard():
+    # "El negrito es la parte pintada": the Spanish for black names the shaded part.
+    for scores in ({"harassment": 0.9, "hate": 0.8}, {"hate": 0.7}, {"harassment": 0.6}):
+        guard, _ = moderator(provider_response(flagged=True, **scores))
+        finding = await guard.check("el negrito es la parte pintada")
+        assert finding.heard_rereadable and not finding.unsure, scores
+    for answer in (
+        provider_response(flagged=True, harassment=0.9, harassment_threatening=0.6),
+        provider_response(flagged=True, hate=0.9, sexual=0.7),
+        provider_response(harassment=0.4),
+        provider_response(),
+    ):
+        guard, _ = moderator(answer)
+        assert not (await guard.check("cuenta con el dedo")).heard_rereadable
+    # A word of our own list is a finding of its own, never read again.
+    guard, _ = moderator(provider_response(flagged=True, harassment=0.9))
+    assert not (await guard.check("te odio")).heard_rereadable
+
+
 async def test_self_harm_is_faint_when_low_alone_and_not_acted_on_by_the_provider():
     for scores in (
         # Over our thresholds, faintly.

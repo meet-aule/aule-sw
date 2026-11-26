@@ -260,7 +260,9 @@ class Gates:
 
         A sentence is read again when the provider did not act on it and all
         it found is either a faint self-harm score or one of the categories
-        where ordinary words score high (see ``Finding``). Over our thresholds,
+        where ordinary words score high (see ``Finding``), and also when the
+        provider flagged it only as harassment or hate, which a child's word
+        for the shaded part of a drawing ("negrito") is. Over our thresholds,
         only a clear "ordinary" lets it through. Under them, two readers are
         asked at once, and a "concern" that the other reader does not contradict
         stops it with the line for a child in distress. Otherwise the
@@ -269,7 +271,10 @@ class Gates:
         going to stick a fork in the socket" scores as faint self-harm too);
         one it could not judge at all is stopped anyway. Neither is read again.
         """
-        if not (finding.faint_self_harm or finding.unsure) or self._second_opinion is None:
+        if (
+            not (finding.faint_self_harm or finding.unsure or finding.heard_rereadable)
+            or self._second_opinion is None
+        ):
             return finding
         if verdict not in (None, Verdict.ALLOW, Verdict.UNCERTAIN):
             return finding
