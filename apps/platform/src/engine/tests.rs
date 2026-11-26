@@ -37,9 +37,14 @@ impl Student {
     }
 
     fn from(setup: Setup) -> Self {
+        Self::opened(setup, 0)
+    }
+
+    /// A student whose tutor can do `homework` with a photo of the homework.
+    fn opened(setup: Setup, homework: u8) -> Self {
         let engine = Engine::new(setup, bank().unwrap());
         let mut student = Self { engine, now: 0, records: Vec::new(), turns: Vec::new() };
-        let opening = student.engine.open(0);
+        let opening = student.engine.open(0, homework);
         student.keep(opening);
         student
     }
@@ -261,7 +266,7 @@ fn an_engine_rebuilt_from_its_inputs_is_the_same_engine() {
         let stored = serde_json::to_value(&record.input).unwrap();
         assert_eq!(serde_json::from_value::<Input>(stored).unwrap(), record.input);
     }
-    assert_eq!(serde_json::to_value(Input::Start).unwrap(), json!({ "kind": "start" }));
+    assert_eq!(serde_json::to_value(Input::Start { homework: 0 }).unwrap(), json!({ "kind": "start" }));
     assert_eq!(
         serde_json::to_value(Input::Chat { text: "hola".into(), intent: Intencion::Charla }).unwrap(),
         json!({ "kind": "chat", "text": "hola", "intent": "charla" })
@@ -728,7 +733,7 @@ fn only_what_the_bank_covers_is_run_by_the_engine() {
         (Goal::ExamPrep, "prepararnos para tu Evaluación de Fracciones"),
         (Goal::Explore, "aprender algo nuevo de Fracciones"),
     ] {
-        let opening = engine(kind).open(0);
+        let opening = engine(kind).open(0, 0);
         assert!(said_by_tutor(&opening).contains(said), "{opening:?}");
     }
 }
@@ -736,17 +741,17 @@ fn only_what_the_bank_covers_is_run_by_the_engine() {
 #[test]
 fn the_opening_is_the_same_until_something_happens() {
     let mut engine = engine(Goal::Homework);
-    let opening = engine.open(0);
-    assert_eq!(engine.unsaved(), [Record { at_ms: 0, input: Input::Start }]);
+    let opening = engine.open(0, 0);
+    assert_eq!(engine.unsaved(), [Record { at_ms: 0, input: Input::Start { homework: 0 } }]);
     engine.saved();
     // A tutor that asks again gets the same lines, and the engine is not started twice.
-    assert_eq!(engine.open(5000), opening);
+    assert_eq!(engine.open(5000, 0), opening);
     assert!(engine.unsaved().is_empty());
 
     // Later, a tutor that reconnects is told where the session is.
     engine.said(6000, "sí", None, false);
     engine.saved();
-    let again = engine.open(9000);
+    let again = engine.open(9000, 0);
     assert_eq!(again.lines.len(), 1);
     assert_eq!(again.lines[0].say, engine.card().unwrap().enunciado);
     assert!(engine.unsaved().is_empty());
@@ -1025,4 +1030,67 @@ fn the_engines_session_is_as_long_as_the_platforms() {
     assert!((31..=46).contains(&length) && breaks == 1, "{length} minutes, {breaks} breaks");
     let (length, breaks, done) = length_and_breaks(90);
     assert!((47..=60).contains(&length) && breaks == 1 && done, "{length} minutes, {breaks} breaks, {done}");
+}
+
+/// The engine's lines while it waits for a photo of the homework.
+const ASK_FOR_THE_PHOTO: &str = "Ahora quiero ver tu tarea, para saber qué practicar. Muéstramela a la cámara, y si no la tienes, dime «no tengo».";
+
+/// A homework session whose tutor can read a photo of the homework, at the
+/// end of a screening that leaves the student at level 1.
+fn waiting_for_the_photo() -> Student {
+    let mut student = Student::opened(setup(Goal::Homework), HOMEWORK_LEVEL);
+    student.says("sí");
+    student.answers(true);
+    for _ in 0..4 {
+        student.answers(false);
+    }
+    assert_eq!(student.at(), "pedir_tarea");
+    student
+}
+
+#[test]
+fn without_a_photo_the_session_goes_on_with_the_banks_homework() {
+    let mut student = waiting_for_the_photo();
+    assert_eq!(student.records[0].input, Input::Start { homework: 1 });
+    assert_eq!(
+        serde_json::to_value(&student.records[0].input).unwrap(),
+        json!({ "kind": "start", "homework": 1 })
+    );
+    // The screening closes without the plan: the homework's level comes first.
+    let said = said_by_tutor(student.turns.last().unwrap());
+    let expected = format!("¡Terminamos el calentamiento! Gracias por pensar conmigo. | {ASK_FOR_THE_PHOTO}");
+    assert!(said.ends_with(&expected), "{said}");
+    assert!(!said.contains("He analizado"), "{said}");
+
+    let none = student.says("no tengo");
+    let said = said_by_tutor(&none);
+    let expected = "¡No pasa nada! | Vamos a practicar con ejercicios míos, como los de una tarea de fracciones. | \
+                    He analizado cómo te fue en los ejercicios, y antes de que hagamos la tarea, te voy a ayudar a \
+                    reforzar las fracciones equivalentes, las sumas y restas con el mismo denominador y las sumas \
+                    y restas con distinto denominador.";
+    assert!(said.starts_with(expected), "{said}");
+    assert_eq!(none.converse, None);
+    assert_eq!(student.at(), "etapa1:2:teoria");
+
+    // Rebuilt from its inputs, the same session: the capability is one of them.
+    let rebuilt = Engine::replay(setup(Goal::Homework), bank().unwrap(), &student.records);
+    assert_eq!(rebuilt.step(student.now), student.engine.step(student.now));
+}
+
+#[test]
+fn a_tutor_that_cannot_read_a_photo_gets_the_session_as_before() {
+    let mut student = Student::new(Goal::Homework);
+    assert_eq!(serde_json::to_value(&student.records[0].input).unwrap(), json!({ "kind": "start" }));
+    // An input stored before the capability existed reads as none.
+    assert_eq!(
+        serde_json::from_value::<Input>(json!({ "kind": "start" })).unwrap(),
+        Input::Start { homework: 0 }
+    );
+    student.says("sí");
+    student.answers(true);
+    for _ in 0..4 {
+        student.answers(false);
+    }
+    assert_eq!(student.at(), "etapa1:2:teoria");
+    assert!(!student.turns.iter().flat_map(|turn| &turn.lines).any(|line| line.say.contains("a la cámara")));
 }

@@ -227,6 +227,7 @@ fn app_with(pool: PgPool, events_webhook: Option<EventsWebhook>) -> App {
         session_minutes: 20,
         break_every_minutes: 30,
         transcript_hours: 24,
+        engine_homework: 0,
         supervisor: None,
         embeddings: None,
         mail: None,

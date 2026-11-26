@@ -247,7 +247,13 @@ fn engine(setup: &Setup, bank: Arc<Banco>, clock: Clock) -> Motor {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Input {
-    Start,
+    /// `homework` is what the engine may do with a photo of the homework for
+    /// the whole session (see [`HOMEWORK_LEVEL`]). Inputs stored before it
+    /// existed read as 0, and 0 is stored as they were.
+    Start {
+        #[serde(default, skip_serializing_if = "is_zero")]
+        homework: u8,
+    },
     Text {
         text: String,
     },
@@ -273,6 +279,18 @@ pub enum Input {
         said: String,
     },
 }
+
+fn is_zero(value: &u8) -> bool {
+    *value == 0
+}
+
+/// The most the agent can say it does with a photo of the homework when it
+/// starts a session: 1, the photo sets the homework's level (the engine's
+/// TAR-05); 2, it can also work through the homework itself, which the engine
+/// does not do yet. `AULE_ENGINE_HOMEWORK` caps what a session gets.
+pub const HOMEWORK_MAX: u8 = 2;
+/// From here on, the engine asks for a photo of the homework.
+pub const HOMEWORK_LEVEL: u8 = 1;
 
 /// An input and the engine's clock when it was applied.
 #[derive(Clone, Debug, PartialEq)]
@@ -411,6 +429,8 @@ pub struct Engine {
     held: Option<Held>,
     working: Option<Working>,
     outcomes: Vec<Outcome>,
+    /// What the session started with (`Input::Start`).
+    homework: u8,
 }
 
 fn has_long_number(text: &str) -> bool {
@@ -501,6 +521,7 @@ impl Engine {
             held: None,
             working: None,
             outcomes: Vec::new(),
+            homework: 0,
         }
     }
 
@@ -609,7 +630,12 @@ impl Engine {
 
     fn hand(&mut self, input: &Input) -> Vec<Mensaje> {
         let entry = match input.clone() {
-            Input::Start => Entrada::Comenzar,
+            Input::Start { homework } => {
+                self.homework = homework;
+                // The engine asks for a photo of the homework only when the tutor can read one.
+                self.motor.cfg.foto_tarea = homework >= HOMEWORK_LEVEL;
+                Entrada::Comenzar
+            }
             Input::Text { text } => Entrada::Texto(text),
             Input::Graded { read, correct, wrong_form, explained, unreadable } => {
                 self.held = None;
@@ -704,15 +730,19 @@ impl Engine {
     /// Starts the engine and returns its opening lines. Asked again before
     /// anything else happened, it returns the same opening; later, where the
     /// session is, so a tutor that reconnects has something to pick up from.
-    pub fn open(&mut self, at_ms: u64) -> Turn {
+    ///
+    /// `homework` is what the tutor can do with a photo of the homework, as
+    /// the platform allows it. It counts when the session starts and stays
+    /// for the whole session: a tutor that reconnects does not change it.
+    pub fn open(&mut self, at_ms: u64, homework: u8) -> Turn {
         if !self.started() {
             let mut lines = Vec::new();
-            self.push(at_ms, Input::Start, &mut lines);
+            self.push(at_ms, Input::Start { homework }, &mut lines);
             self.present(None, &mut lines);
             return self.turn(lines, Reply::Scripted);
         }
         if self.stored + self.unsaved.len() == 1 {
-            return Engine::new(self.setup.clone(), self.bank.clone()).open(0);
+            return Engine::new(self.setup.clone(), self.bank.clone()).open(0, self.homework);
         }
         let lines = self.card().iter().map(card_line).collect();
         self.turn(lines, Reply::Scripted)
@@ -1251,10 +1281,12 @@ fn script(lines: &[Line], closed: bool) -> Value {
     json!({ "lines": lines, "closed": closed })
 }
 
-/// The engine's opening lines, for the tutor that just joined.
-pub async fn open(state: &AppState, session: &Session) -> ApiResult<Value> {
+/// The engine's opening lines, for the tutor that just joined. `homework` is
+/// what the tutor can do with a photo of the homework, as the platform allows
+/// it; it counts for the session only the first time.
+pub async fn open(state: &AppState, session: &Session, homework: u8) -> ApiResult<Value> {
     with_engine(state, session, |engine, at_ms| {
-        let turn = engine.open(at_ms);
+        let turn = engine.open(at_ms, homework);
         Ok((script(&turn.lines, turn.closed), None))
     })
     .await
@@ -1425,8 +1457,9 @@ pub async fn said(
         }
         // A tutor that reports speech before asking for the opening gets the
         // opening: what was said came before the engine had asked anything.
+        // It said nothing about the homework, so the engine asks for no photo.
         if !engine.started() {
-            return Ok((engine.open(at_ms), None));
+            return Ok((engine.open(at_ms, 0), None));
         }
         Ok((engine.said(at_ms, &body.said, body.explanation.as_deref(), false), None))
     })

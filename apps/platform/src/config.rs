@@ -20,6 +20,10 @@ pub struct Config {
     pub break_every_minutes: u32,
     /// Hours a transcript is kept when the guardian agreed to keep it.
     pub transcript_hours: u32,
+    /// What a session the engine runs may do with a photo of the homework, at
+    /// most: 0 nothing, 1 the photo sets the homework's level. The agent says
+    /// what it can do when it starts the session, and gets the lesser.
+    pub engine_homework: u8,
     pub supervisor: Option<Supervisor>,
     pub embeddings: Option<Embeddings>,
     pub mail: Option<Mail>,
@@ -193,6 +197,7 @@ impl Config {
         let session_minutes = whole("AULE_SESSION_MINUTES", 20, 1, 120);
         let break_every_minutes = whole("AULE_BREAK_EVERY_MINUTES", 30, 5, 120);
         let transcript_hours = whole("AULE_TRANSCRIPT_HOURS", 24, 1, 24);
+        let engine_homework = whole("AULE_ENGINE_HOMEWORK", 0, 0, 1) as u8;
         let free_access = match get("AULE_FREE_ACCESS") {
             None | Some("0") => false,
             Some("1") => true,
@@ -396,6 +401,7 @@ impl Config {
             session_minutes,
             break_every_minutes,
             transcript_hours,
+            engine_homework,
             supervisor,
             embeddings,
             mail,
@@ -440,6 +446,7 @@ mod tests {
         assert!(config.github.is_none() && config.meta.is_none() && config.apple.is_none());
         assert!(config.admin_emails.is_empty());
         assert!(!config.free_access);
+        assert_eq!(config.engine_homework, 0);
 
         let mut env = complete();
         env.insert("AULE_FREE_ACCESS".into(), "1".into());
@@ -456,6 +463,24 @@ mod tests {
         env.insert("AULE_ADMIN_EMAILS".into(), "admin@example.org; nobody".into());
         assert!(Config::from_map(&env).unwrap_err().to_string().contains("AULE_ADMIN_EMAILS"));
         assert_eq!(config.timezone_offset_minutes, -300);
+    }
+
+    #[test]
+    fn the_engine_reads_a_photo_of_the_homework_only_when_told_to() {
+        let mut env = complete();
+        env.insert("AULE_ENGINE_HOMEWORK".into(), "1".into());
+        assert_eq!(Config::from_map(&env).unwrap().engine_homework, 1);
+        env.insert("AULE_ENGINE_HOMEWORK".into(), "0".into());
+        assert_eq!(Config::from_map(&env).unwrap().engine_homework, 0);
+        // Working through the homework itself is not there yet.
+        for odd in ["2", "-1", "yes"] {
+            env.insert("AULE_ENGINE_HOMEWORK".into(), odd.into());
+            let message = Config::from_map(&env).unwrap_err().to_string();
+            assert!(
+                message.contains("AULE_ENGINE_HOMEWORK must be a whole number from 0 to 1"),
+                "{odd}: {message}"
+            );
+        }
     }
 
     #[test]

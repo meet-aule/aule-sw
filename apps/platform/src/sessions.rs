@@ -5,7 +5,8 @@
 //! later says about it is checked against the token of that one session.
 
 use axum::Json;
-use axum::extract::{Path, State};
+use axum::extract::rejection::QueryRejection;
+use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use chrono::{Duration, Timelike, Utc};
 use rand::Rng;
@@ -444,13 +445,37 @@ fn student_line(child: &Child) -> String {
     line
 }
 
+#[derive(Deserialize)]
+pub struct StartQuery {
+    /// What the agent can do with a photo of the homework, from 0 to
+    /// `engine::HOMEWORK_MAX`; nothing said is 0.
+    #[serde(default)]
+    homework: u8,
+}
+
 /// The agent's first call: marks the session as running and returns what the
 /// tutor should know before it says hello. The plan is included when it is
 /// already written; otherwise it follows in the answer to the turns.
-pub async fn agent_start(Agent(session): Agent, State(state): State<AppState>) -> ApiResult<Json<Value>> {
+pub async fn agent_start(
+    Agent(session): Agent,
+    State(state): State<AppState>,
+    query: Result<Query<StartQuery>, QueryRejection>,
+) -> ApiResult<Json<Value>> {
     if session.status == "ended" {
         return Err(ApiError::Conflict("the session has ended"));
     }
+    // What the agent can do with the homework, as far as the platform allows it.
+    let homework = match query {
+        Ok(Query(query)) if query.homework <= engine::HOMEWORK_MAX => {
+            query.homework.min(state.config.engine_homework)
+        }
+        _ => {
+            return Err(ApiError::bad_request(format!(
+                "homework must be from 0 to {}",
+                engine::HOMEWORK_MAX
+            )));
+        }
+    };
     session_row::Entity::update_many()
         .col_expr(session_row::Column::Status, Expr::value("active"))
         .col_expr(session_row::Column::StartedAt, Expr::current_timestamp())
@@ -502,7 +527,7 @@ pub async fn agent_start(Agent(session): Agent, State(state): State<AppState>) -
     });
     // The engine opens its sessions itself: these are the tutor's first lines.
     if engine::runs(&session) {
-        start["script"] = engine::open(&state, &session).await?;
+        start["script"] = engine::open(&state, &session, homework).await?;
     }
     Ok(Json(start))
 }
