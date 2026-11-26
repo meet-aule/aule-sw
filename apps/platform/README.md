@@ -195,9 +195,10 @@ delete their rows in `team_passkeys`.
 
 | Route | What it does |
 |---|---|
-| `GET /v1/agent/session` | Marks the session as running; returns the student's profile as `instructions`, with the plan when it is already written, `student_name` and `session_number` (how many sessions the student had started before this one) for written lines, `student_age` (from the year of birth) and `student_grade` for the physical-safety gate, which judges for the child's age, and `tutor` (`name`, `persona`, `note`): how the tutor presents itself to this child. The same three travel in the dispatch metadata as `tutor_name`, `tutor_persona`, `tutor_persona_note`, with the agent's token as `platform_token`; the platform hands that metadata to LiveKit when it opens the room, and LiveKit gives it to the agent's job only. In a session the engine runs it also starts the engine and returns `script`: its opening lines |
+| `GET /v1/agent/session` | Marks the session as running; returns the student's profile as `instructions`, with the plan when it is already written, `student_name` and `session_number` (how many sessions the student had started before this one) for written lines, `student_age` (from the year of birth) and `student_grade` for the physical-safety gate, which judges for the child's age, and `tutor` (`name`, `persona`, `note`): how the tutor presents itself to this child. The same three travel in the dispatch metadata as `tutor_name`, `tutor_persona`, `tutor_persona_note`, with the agent's token as `platform_token`; the platform hands that metadata to LiveKit when it opens the room, and LiveKit gives it to the agent's job only. In a session the engine runs it also starts the engine and returns `script`: its opening lines. Optional `?homework=` (0 to 2): what the agent can do with a photo of the homework; see [below](#a-photo-of-the-homework) |
 | `POST /v1/agent/session/turns` | Reports turns; returns guidance written since the last call, and `plan` (text for the tutor, or null) when the plan was finished after the tutor started. `stop` is `"warn"` after 2 turns in a row in which the student is plainly not working, `"end"` after 4: the tutor says a fixed line for each, once, and on `"end"` closes the session with `end_reason: "not_working"`. The family gets a notice when the close is asked for. `pause` is `"offer"` when a break is due: `AULE_BREAK_EVERY_MINUTES` of work have passed (default 30) or the supervisor read tiredness, no exercise is open and more than 10 minutes remain; the request's optional `breaks_taken` tells the platform a break happened, and an offer not taken in 2 minutes counts as declined. In a session the engine runs, `guidance` stays empty, `pause` stays null (the engine gives its own breaks), and `script` is present when an answer was typed on the page since the last report |
 | `POST /v1/agent/session/said` | Only in a session the engine runs: what the student said, and what the tutor does next. See [below](#sessions-run-by-the-session-engine) |
+| `POST /v1/agent/session/homework` | Only while the engine waits for a photo of the homework: what the agent read in it. See [below](#a-photo-of-the-homework) |
 | `POST /v1/agent/session/flags` | Reports that a safety gate stopped a turn: the gate, what it did, fixed categories |
 | `POST /v1/agent/session/exercises` | The tutor states the exercise it is about to ask, as arithmetic (`expression`: `"3/4 + 1/8"`, optional `skill_id` and `form`: `any`, `simplified` or `mixed`) or as secondary-school algebra: an equation in one unknown of the first or second degree (`"2x + 3 = 11"`), two linear equations (`"x + y = 10; x - y = 2"`), a polynomial to expand (`"(x + 2)(x - 3)"`) or, when it is already expanded, to factor (`"x^2 - 5x + 6"`), or a value (`"3x^2 - 1 para x = 2"`). The platform works out the answer exactly and keeps it; the response says whether this one is to find out what the student can do (`probe`) and what to do (`say`). 400 when it is nothing it can check, such as an irrational root. 409 in a session the engine runs, as is the next route: the engine poses and checks its own exercises |
 | `POST /v1/agent/session/answers` | What the student answered (`said`, their words). Returns `verdict` (`correct`, `wrong_form`, `incorrect`, `dont_know`, `unreadable`, or `not_an_answer` when the words are about another calculation or a question of the student's own, which counts as no try), the number that was `read`, a named `misconception` when the mistake is a known one, and what to do next (`stage`, `next`, `say`). `reveal` carries the answer only once the exercise is closed and has to be worked out together |
@@ -324,7 +325,7 @@ The engine runs a session only when all of this holds; otherwise the session is 
 
 | The objective's `kind` | The engine's objective (`TipoObjetivo`) |
 |---|---|
-| `homework` | `Tarea`, with `due` as its date. The exercises are the bank's own homework, not the student's |
+| `homework` | `Tarea`, with `due` as its date. The exercises are the bank's own homework, not the student's; with a [photo of the homework](#a-photo-of-the-homework), only those up to its level |
 | `exam_prep` | `Preparacion`, with `due` as the date of the exam: the engine simulates it |
 | `explore` | none: the engine's `Extracurricular`, with the topic as the family's suggestion |
 | `exam_review` | not run by the engine: its `Correccion` needs the exam the student sat (the questions they missed, what they answered), which the platform does not have |
@@ -354,6 +355,7 @@ The platform adds lines the engine only puts on a page: the statement of each ne
 - `closed` is true once the engine has finished the session; the lines are then its goodbye. The agent closes the session as always.
 - An empty `said` means that only time has passed: the engine's clock is applied and any line that is due comes back (a hint for an exercise that is taking long, the end of a break, the warning before the last exercises), with `converse: null`. It is never an answer and it stores nothing when nothing was due. The agent may call it on a timer; a line due while nobody speaks is otherwise said with the next thing the student says.
 - 409 when the session has ended or the engine does not run it. Reported before the opening was asked for, it returns the opening and does not read what was said.
+- `awaits` is there only while the engine waits for something the agent has to act on, and says what: `"homework_photo"` (see [below](#a-photo-of-the-homework)). The same goes for every `script`. Without it, the answer is as above.
 
 `POST /v1/agent/session/turns` keeps working: turns are stored and reviewed, and `stop` is decided as before. `pause` is always null: breaks are the engine's, at 30 and 60 minutes of a session long enough to have them and when the student says they are tired, and they arrive as lines. The supervisor still reads the session, but its advice is not written, since the engine decides what the tutor does next. When an answer was typed on the page, the answer to the next report carries `"script": {"lines": [...], "closed": bool}`, once.
 
@@ -388,7 +390,27 @@ An answer typed on the page is only ever an answer: rules 1 and 5 do not apply t
 }
 ```
 
-`state` is `done`, `current` or `pending`; `card` is `null` between exercises. The step never carries the expected answer, the key words of an explanation or its criteria: it is built field by field from what the engine shows a student.
+`state` is `done`, `current` or `pending`; `card` is `null` between exercises. The step never carries the expected answer, the key words of an explanation or its criteria: it is built field by field from what the engine shows a student. While the engine waits for a photo of the homework the step also has `"awaits": "homework_photo"`, so the page can point at the camera.
+
+### A photo of the homework
+
+Off unless the setting `AULE_ENGINE_HOMEWORK` is 1 and the agent says it can read a photo when it starts the session: `GET /v1/agent/session?homework=1`. Nothing, or 0, is no photo; 2 is for also working through the homework itself, which the engine does not do yet, so today it counts as 1. The session gets the lesser of what the agent says and the setting, fixed when the engine starts: a tutor that reconnects does not change it.
+
+In a homework session the engine then asks to see the homework at the camera once it knows the student's level: after the screening, which closes without the plan, or at the start when the level is already known. While it waits, `awaits` is `"homework_photo"`, and everything the student says goes to the engine, which answers it itself: «no tengo» goes on without the photo, anything else is reminded of the camera, and the third turn without a photo goes on without it. A tutor that reconnects is given that reminder as its script.
+
+`POST /v1/agent/session/homework` takes what the agent read, and returns what `said` returns:
+
+```json
+{ "outcome": "read", "level": 3, "confidence": 0.82 }
+```
+
+- `outcome` is `read`, `other_subject`, `no_homework`, `unreadable`, `unavailable` or `shown`. `level` (1 to 5, the highest in sight) and `confidence` (0 to 1) go with `read`, and only with it.
+- Any other field is a 400, so the photo itself never reaches the platform. What is stored, as an input of the engine, is the outcome, the level and the confidence in percent.
+- A photo that cannot be read, read with a confidence under 70%, or without a homework in it is asked for again; at the second one the session goes on without it, with the bank's homework as before. So does a homework that is not fractions, which the student and the family are told.
+- A level is the homework's target: the plan is told and reported then, and the bank's homework keeps only its exercises at that level or below. When none is left, the engine says the homework is ready to do and the objective is complete.
+- 409 when the session has ended, the engine does not run it, or it does not wait for a photo; `shown` is a 409 for now, since no session works through the homework yet.
+
+To turn it off, set `AULE_ENGINE_HOMEWORK=0`. To go back to an image from before it, set 0 and wait for the open sessions to end first: an older image cannot rebuild a session that stored a `homework` input.
 
 ### What is stored, and for how long
 

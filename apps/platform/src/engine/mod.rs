@@ -28,7 +28,7 @@ use aule_core::conversacion::{self, Intencion};
 use aule_core::correccion::{self, Clave, Veredicto};
 use aule_core::modelo::{EstadoObjetivo, Objetivo, Perfil, TamizajeParcial, TipoObjetivo};
 use aule_core::motor::{
-    Adjunto, Calificacion, Clase, Entrada, Esperando, Mensaje, Modo, Motor, Redaccion, Tarjeta,
+    Adjunto, Calificacion, Clase, Entrada, Esperando, LecturaTarea, Mensaje, Modo, Motor, Redaccion, Tarjeta,
 };
 use aule_core::reloj::Reloj;
 use aule_core::texto;
@@ -278,6 +278,16 @@ pub enum Input {
     Hold {
         said: String,
     },
+    /// What the agent read in a photo of the homework the engine asked for:
+    /// for a homework that was read, its level and how sure the reading is,
+    /// in percent. Never the photo.
+    Homework {
+        outcome: Reading,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        level: Option<u8>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        confidence: Option<u8>,
+    },
 }
 
 fn is_zero(value: &u8) -> bool {
@@ -291,6 +301,40 @@ fn is_zero(value: &u8) -> bool {
 pub const HOMEWORK_MAX: u8 = 2;
 /// From here on, the engine asks for a photo of the homework.
 pub const HOMEWORK_LEVEL: u8 = 1;
+/// `awaits` while the engine waits for a photo of the homework.
+const AWAITS_PHOTO: &str = "homework_photo";
+
+/// What the agent read in a photo of the homework.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Reading {
+    /// A homework of the bank's topic, with its level: the highest in sight.
+    Read,
+    /// A homework of another subject or topic.
+    OtherSubject,
+    /// No homework in the photo.
+    NoHomework,
+    /// A homework that cannot be read: blurry, too far, too dark.
+    Unreadable,
+    /// The photo could not be read: the reader failed or did not answer.
+    Unavailable,
+    /// An exercise of the homework, shown while the student works through
+    /// it. No session does that yet, so nothing awaits it.
+    Shown,
+}
+
+/// The engine's reading of what the agent read, or nothing for what no
+/// engine stage takes.
+fn reading(outcome: Reading, level: Option<u8>, confidence: Option<u8>) -> Option<LecturaTarea> {
+    Some(match outcome {
+        Reading::Read => LecturaTarea::Leida { nivel: level?, confianza: confidence? },
+        Reading::OtherSubject => LecturaTarea::OtroTema,
+        Reading::NoHomework => LecturaTarea::SinTarea,
+        Reading::Unreadable => LecturaTarea::Borrosa,
+        Reading::Unavailable => LecturaTarea::NoDisponible,
+        Reading::Shown => return None,
+    })
+}
 
 /// An input and the engine's clock when it was applied.
 #[derive(Clone, Debug, PartialEq)]
@@ -326,6 +370,30 @@ pub struct Turn {
     /// engine leaves this turn free. Nothing when the lines are the whole turn.
     pub converse: Option<String>,
     pub closed: bool,
+    /// What the engine waits for that the agent has to act on: a photo of the
+    /// homework (`"homework_photo"`). Nothing otherwise.
+    pub awaits: Option<&'static str>,
+}
+
+impl Turn {
+    /// The turn as the agent gets it: `awaits` is there only while the engine
+    /// waits for something, so a session that never does answers as before.
+    fn reply(&self) -> Value {
+        let mut reply = json!({ "lines": self.lines, "converse": self.converse, "closed": self.closed });
+        if let Some(awaits) = self.awaits {
+            reply["awaits"] = json!(awaits);
+        }
+        reply
+    }
+
+    /// The lines alone, for the agent to say when it next asks.
+    fn script(&self) -> Value {
+        let mut script = json!({ "lines": self.lines, "closed": self.closed });
+        if let Some(awaits) = self.awaits {
+            script["awaits"] = json!(awaits);
+        }
+        script
+    }
 }
 
 struct Held {
@@ -660,6 +728,10 @@ impl Engine {
                 self.held = self.card().map(|card| Held { card: card_key(&card), said });
                 return Vec::new();
             }
+            Input::Homework { outcome, level, confidence } => match reading(outcome, level, confidence) {
+                Some(reading) => Entrada::FotoTarea(reading),
+                None => return Vec::new(),
+            },
         };
         self.motor.entrada(entry)
     }
@@ -715,7 +787,18 @@ impl Engine {
     }
 
     fn turn(&self, lines: Vec<Line>, reply: Reply) -> Turn {
-        Turn { lines, converse: (reply == Reply::Free).then(|| self.rules()), closed: self.closed() }
+        Turn {
+            lines,
+            converse: (reply == Reply::Free).then(|| self.rules()),
+            closed: self.closed(),
+            awaits: self.awaits(),
+        }
+    }
+
+    /// What the engine waits for that the agent has to do something about,
+    /// besides passing on what is said: a photo of the homework.
+    fn awaits(&self) -> Option<&'static str> {
+        matches!(self.motor.esperando(), Esperando::FotoTarea).then_some(AWAITS_PHOTO)
     }
 
     /// What the tutor's model may and may not say now, from the engine.
@@ -744,7 +827,12 @@ impl Engine {
         if self.stored + self.unsaved.len() == 1 {
             return Engine::new(self.setup.clone(), self.bank.clone()).open(0, self.homework);
         }
-        let lines = self.card().iter().map(card_line).collect();
+        // The exercise on the screen, or what the engine waits for that is
+        // not on it: the homework at the camera.
+        let lines = match self.motor.recordatorio() {
+            Some(reminder) => vec![Line::fixed(&reminder, None)],
+            None => self.card().iter().map(card_line).collect(),
+        };
         self.turn(lines, Reply::Scripted)
     }
 
@@ -801,6 +889,29 @@ impl Engine {
         };
         self.present(before, &mut lines);
         self.turn(lines, reply)
+    }
+
+    /// What the tutor read in a photo of the homework, which the engine asked
+    /// for, and what the tutor says next. A reading nobody is waiting for is
+    /// refused, and stores nothing.
+    pub fn homework(
+        &mut self,
+        at_ms: u64,
+        outcome: Reading,
+        level: Option<u8>,
+        confidence: Option<u8>,
+    ) -> ApiResult<Turn> {
+        if outcome == Reading::Shown {
+            return Err(ApiError::Conflict("the session is not working through its homework"));
+        }
+        if self.awaits() != Some(AWAITS_PHOTO) {
+            return Err(ApiError::Conflict("the session is not waiting for a photo of the homework"));
+        }
+        let before = self.card().as_ref().map(card_key);
+        let mut lines = Vec::new();
+        self.push(at_ms, Input::Homework { outcome, level, confidence }, &mut lines);
+        self.present(before, &mut lines);
+        Ok(self.turn(lines, Reply::Scripted))
     }
 
     fn hear(
@@ -1045,14 +1156,19 @@ impl Engine {
                 "format_help": card.ayuda_formato,
             })
         });
-        json!({
+        let mut step = json!({
             "stage": view.etapa,
             "progress": view.progreso,
             "route": route,
             "card": card,
             "elapsed_seconds": view.transcurrido_s,
             "closed": view.terminada,
-        })
+        });
+        // The page may point at the camera while the engine waits for the homework.
+        if let Some(awaits) = self.awaits() {
+            step["awaits"] = json!(awaits);
+        }
+        step
     }
 
     /// The family's report in the engine's words, one paragraph per message.
@@ -1277,19 +1393,11 @@ async fn with_engine<T>(
     Ok(result)
 }
 
-fn script(lines: &[Line], closed: bool) -> Value {
-    json!({ "lines": lines, "closed": closed })
-}
-
 /// The engine's opening lines, for the tutor that just joined. `homework` is
 /// what the tutor can do with a photo of the homework, as the platform allows
 /// it; it counts for the session only the first time.
 pub async fn open(state: &AppState, session: &Session, homework: u8) -> ApiResult<Value> {
-    with_engine(state, session, |engine, at_ms| {
-        let turn = engine.open(at_ms, homework);
-        Ok((script(&turn.lines, turn.closed), None))
-    })
-    .await
+    with_engine(state, session, |engine, at_ms| Ok((engine.open(at_ms, homework).script(), None))).await
 }
 
 /// Lines from answers typed on the page since the tutor last asked, in
@@ -1315,11 +1423,18 @@ pub async fn queued(db: &DatabaseConnection, session_id: Uuid) -> Result<Option<
     }
     let mut lines = Vec::new();
     let mut closed = false;
+    let mut awaits = None;
     for part in queued {
         lines.extend(part["lines"].as_array().cloned().unwrap_or_default());
         closed |= part["closed"] == true;
+        // What the engine waits for after the last of them.
+        awaits = part.get("awaits").cloned();
     }
-    Ok(Some(json!({ "lines": lines, "closed": closed })))
+    let mut script = json!({ "lines": lines, "closed": closed });
+    if let Some(awaits) = awaits {
+        script["awaits"] = awaits;
+    }
+    Ok(Some(script))
 }
 
 /// What a child's next engine session starts from, as it is now, for a
@@ -1464,7 +1579,56 @@ pub async fn said(
         Ok((engine.said(at_ms, &body.said, body.explanation.as_deref(), false), None))
     })
     .await?;
-    Ok(Json(json!({ "lines": turn.lines, "converse": turn.converse, "closed": turn.closed })))
+    Ok(Json(turn.reply()))
+}
+
+/// What the agent read in a photo of the homework: the outcome and, for a
+/// homework that was read, its level and the reading's confidence, from 0 to
+/// 1. Anything else, such as the photo itself, is refused.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HomeworkInput {
+    outcome: Reading,
+    #[serde(default)]
+    level: Option<u8>,
+    #[serde(default)]
+    confidence: Option<f64>,
+}
+
+/// The agent reports what it read in a photo of the homework, while the
+/// engine waits for one, and gets what the tutor says next.
+pub async fn homework(
+    Agent(session): Agent,
+    State(state): State<AppState>,
+    Body(body): Body<HomeworkInput>,
+) -> ApiResult<Json<Value>> {
+    if session.status == "ended" {
+        return Err(ApiError::Conflict("the session has ended"));
+    }
+    by_engine(&session)?;
+    let levels = aule_core::config::Config::default().niveles_por_tema;
+    let (level, confidence) = match (body.outcome, body.level, body.confidence) {
+        (Reading::Read, Some(level), Some(confidence)) => {
+            if !(1..=levels).contains(&level) {
+                return Err(ApiError::bad_request(format!("level must be from 1 to {levels}")));
+            }
+            if !(0.0..=1.0).contains(&confidence) {
+                return Err(ApiError::bad_request("confidence must be from 0 to 1"));
+            }
+            // The engine's threshold is in percent.
+            (Some(level), Some((confidence * 100.0).round() as u8))
+        }
+        (Reading::Read, ..) => {
+            return Err(ApiError::bad_request("a homework that was read needs its level and confidence"));
+        }
+        (_, None, None) => (None, None),
+        _ => return Err(ApiError::bad_request("only a homework that was read has a level and a confidence")),
+    };
+    let turn = with_engine(&state, &session, |engine, at_ms| {
+        Ok((engine.homework(at_ms, body.outcome, level, confidence)?, None))
+    })
+    .await?;
+    Ok(Json(turn.reply()))
 }
 
 /// The session, for the operator or a guardian of its child.
@@ -1525,7 +1689,7 @@ pub async fn typed(
             return Err(ApiError::Conflict("the session has not started"));
         }
         let turn = engine.said(at_ms, &body.answer, body.explanation.as_deref(), true);
-        Ok((engine.step(at_ms), Some(script(&turn.lines, turn.closed))))
+        Ok((engine.step(at_ms), Some(turn.script())))
     })
     .await?;
     Ok(Json(step))

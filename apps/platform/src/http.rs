@@ -102,6 +102,7 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/agent/session/exercises", post(practice::pose))
         .route("/v1/agent/session/answers", post(practice::answer))
         .route("/v1/agent/session/said", post(engine::said))
+        .route("/v1/agent/session/homework", post(engine::homework))
         .with_state(state)
 }
 
