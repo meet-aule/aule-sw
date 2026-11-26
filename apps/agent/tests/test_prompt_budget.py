@@ -9,15 +9,17 @@ import json
 
 import pytest
 
+from aule_agent.prompts import INSTRUCTIONS, response_language
 from aule_agent.tutor import Tutor
 
 # Characters of static policy in the most complete session, the final language
-# rule included: es 4,214 and en 4,205, with the analogy rule, the checking rule
-# for answers checked in code, the reply-length rule (#225) and the screen rule
-# of the 2026-11-25 test session (every exercise and example is shown). Raised on
-# purpose: from 4,000 when the analogy and checking rules, approved together on
-# 2026-11-25, did not fit beside the length rule; from 4,100 for the screen rule.
-INSTRUCTIONS_BUDGET = 4_250
+# rule included: es 4,296 and en 4,287, with the analogy rule, the checking rule
+# for answers checked in code, the reply-length rule (#225) and the rules of the
+# 2026-11-25 test session: every exercise and example is shown, and each new one
+# has other numbers and a new setting. Raised on purpose: from 4,000 when the
+# analogy and checking rules, approved together on 2026-11-25, did not fit
+# beside the length rule; from 4,100 for the rules of that test session.
+INSTRUCTIONS_BUDGET = 4_300
 TOOLS_BUDGET = 9_000  # characters of the tools' JSON (8,971)
 
 
@@ -68,3 +70,20 @@ def test_one_analogy_rule_keeps_the_exercises_operations_among_the_teaching_rule
         < instructions.index("Use different numbers for worked examples.")
         < speaking
     )
+
+
+@pytest.mark.parametrize("language", ["es", "en"])
+def test_each_new_example_or_exercise_has_other_numbers_and_a_new_setting(language):
+    instructions = complete(language).instructions
+    # The test session of 2026-11-25 kept to one setting, and its exercises
+    # were alike. The rule follows the analogy rule, among the teaching rules,
+    # and every session carries it, with a screen or without one.
+    rule = "- Give each new example or exercise different numbers and a setting not used yet."
+    assert INSTRUCTIONS.count(rule) == 1 and instructions.count(rule) == 1
+    assert (
+        instructions.index("How you teach:")
+        < instructions.index("Use different numbers for worked examples.")
+        < instructions.index(rule)
+        < instructions.index("How you speak:")
+    )
+    assert instructions.endswith(response_language(language))

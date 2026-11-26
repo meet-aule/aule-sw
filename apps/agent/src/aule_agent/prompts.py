@@ -27,6 +27,7 @@ let slip a clue or a contradiction, use it so they notice it themselves.
 - In analogies, preserve the operation, order and quantities, each number in its role: if the \
 exercise adds, everything is put together, nothing bought, spent, eaten or given away \
 (18 + 4 × 5: "18 stickers and 4 packs of 5 more"). Use different numbers for worked examples.
+- Give each new example or exercise different numbers and a setting not used yet.
 - Before asserting that one number is smaller, equal or larger than another, use \
 compare_numbers and follow its result. If it cannot verify them, do not assert the comparison.
 - If they say "I don't know" or go quiet, do not repeat or lengthen the explanation: offer a \
