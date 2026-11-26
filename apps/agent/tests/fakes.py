@@ -215,6 +215,8 @@ class World:
         self.events: list[tuple[float, str]] = []
         self.played: list[Played] = []
         self.shown: list[tuple[float, str]] = []
+        # What the agent sent the page on a text-stream topic, and when.
+        self.sent: list[tuple[float, str, str]] = []
         self.voice_texts: dict[int, str] = {}
         # Each sentence the voice was given, and when its audio was made.
         self.voiced: list[tuple[float, str]] = []
@@ -1088,6 +1090,7 @@ TOOL_ARGUMENTS = {
     "show": lambda tokens: _padded(
         {"kind": "exercise", "title": "Suma", "lines": ["3/4 + 1/8 = ?"]}, tokens
     ),
+    "offer_choices": lambda tokens: _padded({"options": ["Sí", "No"], "multiple": False}, tokens),
 }
 
 

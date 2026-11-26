@@ -21,7 +21,10 @@ from aule_agent.tutor import Tutor
 # and checking rules, approved together on 2026-11-25, did not fit beside the
 # length rule; from 4,100 for the three rules of that test session.
 INSTRUCTIONS_BUDGET = 4_450
-TOOLS_BUDGET = 9_000  # characters of the tools' JSON (8,971)
+# Characters of the tools' JSON: 9,542. Raised on purpose from 9,000 (8,971
+# then) for offer_choices, the answers a student can tap under a question,
+# whose description the owner approved; no sentence of the prompt was added.
+TOOLS_BUDGET = 9_600
 
 
 class Gates:
@@ -35,7 +38,14 @@ async def screen(visual): ...
 
 
 def complete(language):
-    return Tutor(language=language, gates=Gates(), show=screen, checker=Checker(), breaks=True)
+    return Tutor(
+        language=language,
+        gates=Gates(),
+        show=screen,
+        offer=screen,
+        checker=Checker(),
+        breaks=True,
+    )
 
 
 @pytest.mark.parametrize("language", ["es", "en"])

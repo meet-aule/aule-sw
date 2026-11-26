@@ -127,6 +127,7 @@ class Local:
 
     async def send_text(self, text: str, *, topic: str = "") -> None:
         self._world.mark(f"sent {topic}")
+        self._world.sent.append((time.time(), topic, text))
 
 
 class Room:

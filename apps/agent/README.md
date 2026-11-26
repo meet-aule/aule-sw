@@ -198,6 +198,8 @@ The agent tells the platform it reads photos (`GET /v1/agent/session?homework=1`
 Under a question with a few possible answers the page can show them as buttons ([`contracts/choices`](../../contracts/README.md), on the text-stream topic `aule.choices`). Tapping one is the student's turn: the page sends its words as a typed message, so it passes both input gates like anything typed (`Tutor.typed`) and reaches the session engine or the model as typed words do; several marked go as one turn, joined by commas («1/2, 2/4»).
 
 - **The session engine's** come with its lines (`script.Line.choices`): its fixed words, like the lines themselves, so they are not judged. They are sent once their line has been said to its end, and never for a line that was cut off, that the gate replaced (one that may repeat the student) or that belongs to an answer of the engine that is over.
+- **The model's** come from its `offer_choices` tool (two to four short options, and `multiple`), in free sessions and in the turns the engine leaves to the model. They are checked as a visual is: against the contract, then by the gate on what the tutor says, before anything goes to the page; a refusal tells the model why. They are kept until that reply is over, and sent only if the reply passed the output gate with words in it and was heard to its end: a question the gate replaced with a fixed line, one the student cut off or a reply with no words gets none.
+
 Only counts and kinds are logged: never an option.
 
 ## Pedagogy regression experiment
