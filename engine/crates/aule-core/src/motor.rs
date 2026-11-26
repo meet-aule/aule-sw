@@ -331,6 +331,8 @@ struct Pausa {
     previa: Box<Actividad>,
     inicio_ms: u64,
     eleccion: Option<usize>,
+    /// Si empezó porque el Alumno dijo que está cansado (PAU-05).
+    por_cansancio: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -778,7 +780,7 @@ impl Motor {
                     self.aplicar("PAU-06", "El Alumno dijo que ya volvió");
                     self.terminar_pausa(out);
                 } else if p.eleccion.is_none() {
-                    // [PROPUESTA] Sin elegir una, se le propone la siguiente de la lista.
+                    // [PROPUESTA] Sin elegir una, se le propone una (`actividad_propuesta`).
                     // Si dice que ya volvió sin haber hecho ninguna, primero se le responde.
                     if dice_que_volvio(&t) {
                         out.push(
@@ -786,8 +788,7 @@ impl Motor {
                                 .clase(Clase::Calma),
                         );
                     }
-                    let k = (self.pausas_tomadas as usize).saturating_sub(1)
-                        % self.cfg.actividades_pausa.len().max(1);
+                    let k = self.actividad_propuesta(p.por_cansancio);
                     self.elegir_actividad(k, out);
                 } else {
                     let r = self.pausa_restante_s(&p);
@@ -2632,12 +2633,12 @@ impl Motor {
             _ => {
                 self.aplicar("PAU-05", "Dijo que está cansado: Pausa activa ahora");
                 out.push(msg("Gracias por decirme. Hagamos una Pausa activa y luego seguimos donde nos quedamos.").clase(Clase::Calma));
-                self.entrar_pausa(out);
+                self.entrar_pausa(true, out);
             }
         }
     }
 
-    fn entrar_pausa(&mut self, out: &mut Vec<Mensaje>) {
+    fn entrar_pausa(&mut self, por_cansancio: bool, out: &mut Vec<Mensaje>) {
         let previa = std::mem::replace(&mut self.act, Actividad::Siguiente);
         self.pausas_tomadas += 1;
         let acts = self.cfg.actividades_pausa.clone();
@@ -2652,7 +2653,29 @@ impl Motor {
             previa: Box::new(previa),
             inicio_ms: self.ahora(),
             eleccion: None,
+            por_cansancio,
         }));
+    }
+
+    /// [PROPUESTA] La actividad que se le propone a quien no eligió una: la
+    /// siguiente de la lista y, a quien dijo que está cansado, la siguiente de
+    /// las relajantes. A un Alumno cansado no se le venden unos saltos de
+    /// estrella (sesión de prueba del 2026-11-25).
+    fn actividad_propuesta(&self, por_cansancio: bool) -> usize {
+        let acts = &self.cfg.actividades_pausa;
+        let vuelta = (self.pausas_tomadas as usize).saturating_sub(1);
+        if por_cansancio {
+            let relajantes: Vec<usize> = acts
+                .iter()
+                .enumerate()
+                .filter(|(_, a)| a.tipo == "relajante")
+                .map(|(k, _)| k)
+                .collect();
+            if !relajantes.is_empty() {
+                return relajantes[vuelta % relajantes.len()];
+            }
+        }
+        vuelta % acts.len().max(1)
     }
 
     fn leer_actividad(&self, t: &str) -> Option<usize> {
@@ -2762,7 +2785,7 @@ impl Motor {
                     id,
                     &format!("Minuto {m}: Pausa activa al terminar el ejercicio en curso (PAU-04)"),
                 );
-                self.entrar_pausa(out);
+                self.entrar_pausa(false, out);
                 return true;
             }
         }
