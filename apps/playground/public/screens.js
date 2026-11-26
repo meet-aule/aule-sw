@@ -7,6 +7,9 @@
 //
 // The account the page read from api/account is kept here too, so the
 // modules that draw the screens share it without importing each other.
+//
+// Each entry has the address of the screen it shows: the session page's own,
+// or a session's while it shows (FIGMA.md D41). app.js says which.
 
 import { SCREENS, progressAt } from "./steps.js";
 
@@ -42,6 +45,36 @@ let floor = 1;
 
 const ours = (state) => (state?.visit === visit ? state : null);
 const signedIn = () => account.signed_in === true;
+
+// A session's id as the platform writes it, a UUID: anything else in its place is no id.
+const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+// The session page's own address, whatever the base path: where the page was loaded from.
+const PAGE = new URL(".", location.href).pathname;
+// The address of each screen (addressFor); undefined leaves the address as it is.
+let addressOf = () => undefined;
+
+/** The session an address names, its last part when that is an id; null otherwise. */
+export function sessionNamed(path) {
+  const id = path.startsWith(PAGE) ? path.slice(PAGE.length) : "";
+  return SESSION_ID.test(id) ? id : null;
+}
+
+/** The address of the session `id`, or the session page's own for anything that is no id; the query and the hash stay. */
+export function sessionAddress(id) {
+  return `${PAGE}${SESSION_ID.test(id ?? "") ? id : ""}${location.search}${location.hash}`;
+}
+
+/** Says what each screen's address is: `of(id)` gives it, or undefined to leave the address as it is. */
+export function addressFor(of) {
+  addressOf = of;
+}
+
+/** Writes the address of the screen showing in place of its entry's, so no entry is added. */
+export function readdress() {
+  const next = addressOf(showing);
+  if (next === undefined || next === `${location.pathname}${location.search}${location.hash}`) return;
+  history.replaceState(history.state, "", next);
+}
 
 /** Whether a screen can show now: the right side of signing in, and what it needs is held. */
 function allowed(id) {
@@ -141,6 +174,7 @@ function show(id, direction) {
   if (message) (section.querySelector("[data-message]") ?? section.querySelector(".screen-body, .ink-body") ?? section).append(message);
   shownAt = performance.now();
   for (const handler of shownHandlers.get(id) ?? []) handler();
+  readdress();
   animate(section, direction);
   window.scrollTo(0, 0);
   // Each screen change puts the focus on its title, as a page change would.
@@ -177,9 +211,9 @@ export function back() {
 
 addEventListener("popstate", (event) => {
   const state = ours(event.state);
-  // A session stays where it is: its entry goes back on top.
+  // A session stays where it is: its entry goes back on top, at its address.
   if (showing === "session" && allowed("session")) {
-    history.pushState({ visit, screen: "session", n: (state?.n ?? shownN - 1) + 1, flow }, "");
+    history.pushState({ visit, screen: "session", n: (state?.n ?? shownN - 1) + 1, flow }, "", addressOf("session"));
     return;
   }
   const n = state?.n ?? 0;
