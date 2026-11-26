@@ -1377,12 +1377,17 @@ impl Motor {
             }
         }
         if !self.final_hecho {
-            v.push(match o.tipo {
-                TipoObjetivo::Tarea => ("Tarea".into(), "5 ejercicios".into()),
-                TipoObjetivo::Preparacion => ("Simulación".into(), "como un examen".into()),
-                TipoObjetivo::Correccion => ("Corrección".into(), "lo que salió mal".into()),
+            let paso = match o.tipo {
+                // [PROPUESTA] TAR-08: sin ejercicios hasta el nivel de la foto, no hay paso.
+                TipoObjetivo::Tarea => match self.items_tarea(oi).len() {
+                    0 => None,
+                    n => Some(("Tarea".into(), format!("{n} ejercicios"))),
+                },
+                TipoObjetivo::Preparacion => Some(("Simulación".into(), "como un examen".into())),
+                TipoObjetivo::Correccion => Some(("Corrección".into(), "lo que salió mal".into())),
                 TipoObjetivo::Extracurricular => unreachable!(),
-            });
+            };
+            v.extend(paso);
         }
         v
     }
@@ -1865,7 +1870,9 @@ impl Motor {
             self.banco.nivel(n).nombre_corto
         )));
         self.registrar_plan();
-        if !self.decir_plan(nivel, out) {
+        // Sin nada que reforzar, a la Tarea; si la del banco no tiene ejercicios
+        // hasta ese nivel, no hay a dónde ir directo (TAR-08).
+        if !self.decir_plan(nivel, out) && !self.items_tarea(oi).is_empty() {
             out.push(msg("¡Eso ya lo sabes hacer! Vamos directo a tu tarea."));
         }
         self.avanzar(out);
@@ -2532,23 +2539,7 @@ impl Motor {
         };
         let o = self.objetivos[oi].clone();
         let items: Vec<Item> = match modo {
-            ModoPractica::Tarea => {
-                let t = o
-                    .tarea_id
-                    .as_ref()
-                    .and_then(|id| self.banco.tareas.iter().find(|t| &t.id == id))
-                    .or(self.banco.tareas.first());
-                t.map(|t| {
-                    t.ejercicios
-                        .iter()
-                        .map(|e| Item {
-                            ej: e.clone(),
-                            nota: None,
-                        })
-                        .collect()
-                })
-                .unwrap_or_default()
-            }
+            ModoPractica::Tarea => self.items_tarea(oi),
             ModoPractica::Correccion => {
                 let ev = o
                     .evaluacion_id
@@ -2598,6 +2589,12 @@ impl Motor {
                 v
             }
         };
+        if items.is_empty()
+            && modo == ModoPractica::Tarea
+            && matches!(self.foto, EstadoFoto::Leida { .. })
+        {
+            return self.tarea_preparada(oi, out);
+        }
         let (clave, nombre, detalle) = match modo {
             ModoPractica::Tarea => ("tarea", "Tarea", format!("{} ejercicios", items.len())),
             ModoPractica::Simulacion => (
@@ -2667,6 +2664,52 @@ impl Motor {
             marcados: vec![],
         }));
         self.presentar(out, true);
+    }
+
+    /// TAR-01: los ejercicios de la Tarea del objetivo `oi`, que son los de la
+    /// Tarea del banco. [PROPUESTA] TAR-08: con el nivel de la foto de su Tarea,
+    /// solo los de ese nivel o uno menor.
+    fn items_tarea(&self, oi: usize) -> Vec<Item> {
+        let Some(t) = self.objetivos[oi]
+            .tarea_id
+            .as_ref()
+            .and_then(|id| self.banco.tareas.iter().find(|t| &t.id == id))
+            .or(self.banco.tareas.first())
+        else {
+            return vec![];
+        };
+        let hasta = match self.foto {
+            EstadoFoto::Leida { nivel } if self.obj_actual == Some(oi) => nivel,
+            _ => u8::MAX,
+        };
+        t.ejercicios
+            .iter()
+            .filter(|e| e.nivel <= hasta)
+            .map(|e| Item {
+                ej: e.clone(),
+                nota: None,
+            })
+            .collect()
+    }
+
+    /// [PROPUESTA] TAR-08: la Tarea del banco no tiene ejercicios hasta el nivel
+    /// de la foto: lo que pide su Tarea ya se practicó, y el objetivo se cumple.
+    fn tarea_preparada(&mut self, oi: usize, out: &mut Vec<Mensaje>) {
+        self.aplicar(
+            "TAR-08",
+            "La Tarea del banco no tiene ejercicios hasta el nivel de la foto: ya se practicó lo que pide",
+        );
+        out.push(
+            msg("¡Listo! Ya practicaste lo que pide tu tarea, así que ahora la puedes hacer por tu cuenta.")
+                .clase(Clase::Exito),
+        );
+        self.hechos.push(Hecho::TareaPreparada {
+            curso: self.banco.curso.clone(),
+            fecha: self.objetivos[oi].fecha,
+            subtema: self.banco.subtema(self.nivel_objetivo(oi)).to_string(),
+        });
+        self.final_hecho = true;
+        self.objetivo_completado(out);
     }
 
     fn calificar_practica(&mut self, mut p: Box<Prac>, c: Calificacion, out: &mut Vec<Mensaje>) {
@@ -3368,15 +3411,8 @@ impl Motor {
         if !self.final_hecho && !practica_en_curso {
             match o.tipo {
                 TipoObjetivo::Tarea => {
-                    let t = o
-                        .tarea_id
-                        .as_ref()
-                        .and_then(|id| self.banco.tareas.iter().find(|t| &t.id == id))
-                        .or(self.banco.tareas.first());
-                    if let Some(t) = t {
-                        for e in &t.ejercicios {
-                            v.push(Unidad::Ejercicio(e.tiempo_s as f64 * f));
-                        }
+                    for it in self.items_tarea(oi) {
+                        v.push(Unidad::Ejercicio(it.ej.tiempo_s as f64 * f));
                     }
                 }
                 TipoObjetivo::Preparacion => {

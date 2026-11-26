@@ -1409,3 +1409,100 @@ fn tar05_sesiones_completas_con_la_foto_de_la_tarea() {
         }
     }
 }
+
+/// [PROPUESTA] TAR-08: con el nivel de la foto, la Tarea del banco queda en
+/// sus ejercicios de ese nivel o menos, y la ruta dice cuántos son.
+#[test]
+fn tar08_la_tarea_del_banco_llega_hasta_el_nivel_de_la_foto() {
+    let tarea = |p: &Prueba| {
+        p.m.ruta()
+            .into_iter()
+            .find(|paso| paso.nombre == "Tarea")
+            .map(|paso| paso.detalle)
+    };
+    // Sin la foto, la del banco entera.
+    let mut p = con_foto(Some(2));
+    assert_eq!(tarea(&p), Some("5 ejercicios".to_string()));
+    p.iniciar();
+    p.e(leida(3, 90));
+    assert_eq!(p.act(), "etapa1:3:teoria");
+    assert_eq!(tarea(&p), Some("2 ejercicios".to_string()));
+    p.pasar_e1();
+    p.pasar_e2();
+    let r = textos(&p.log).join("\n");
+    assert!(
+        r.contains("Ahora hagamos tu Tarea: son 2 ejercicios."),
+        "{r}"
+    );
+    let mut niveles = vec![];
+    while p.act().starts_with("tarea") {
+        niveles.push(p.m.ejercicio_actual().unwrap().nivel);
+        p.responder(true);
+    }
+    assert_eq!(niveles, [3, 3]);
+    assert!(p
+        .m
+        .informe()
+        .iter()
+        .any(|m| m.contains("hemos hecho la tarea de Matemáticas")));
+
+    // Ya tiene el nivel: directo a esos ejercicios.
+    let mut p = con_foto(Some(3));
+    p.iniciar();
+    let r = p.e(leida(3, 90));
+    assert_eq!(
+        textos(&r)[..3],
+        [
+            "¡Gracias! Ya vi tu tarea: es de las sumas y restas con el mismo denominador.",
+            "¡Eso ya lo sabes hacer! Vamos directo a tu tarea.",
+            "¡Ya tienes el nivel! Ahora hagamos tu Tarea: son 2 ejercicios. Hazlos tú solo; yo reviso cada respuesta y te ayudo si te trabas.",
+        ]
+    );
+}
+
+/// [PROPUESTA] TAR-08: si la Tarea del banco no tiene ejercicios hasta el nivel
+/// de la foto, lo que pide la Tarea ya se practicó: se dice, va al Informe y
+/// el objetivo se cumple.
+#[test]
+fn tar08_sin_ejercicios_hasta_ese_nivel_la_tarea_ya_esta_preparada() {
+    let preparada =
+        "¡Listo! Ya practicaste lo que pide tu tarea, así que ahora la puedes hacer por tu cuenta.";
+    let informe = "Liam ya domina lo que pide su tarea de Matemáticas para el día jueves 19 de noviembre: fracciones equivalentes, simplificar y comparar. Ya la puede hacer por su cuenta. ¡Felicidades!";
+    // Primero se refuerza su nivel; luego no queda nada de la Tarea del banco.
+    let mut p = con_foto(Some(1));
+    p.iniciar();
+    p.e(leida(2, 90));
+    assert_eq!(p.act(), "etapa1:2:teoria");
+    assert_eq!(
+        p.m.ruta()
+            .iter()
+            .filter(|paso| paso.nombre == "Tarea")
+            .count(),
+        0
+    );
+    p.pasar_e1();
+    p.pasar_e2();
+    assert!(textos(&p.log).contains(&preparada), "{}", texto(&p.log));
+    assert!(!p.act().starts_with("tarea"), "{}", p.act());
+    assert_eq!(p.m.objetivos[0].estado, EstadoObjetivo::Completado);
+    assert!(p.registro_tiene("TAR-08"));
+    assert!(
+        p.m.informe().contains(&informe.to_string()),
+        "{:?}",
+        p.m.informe()
+    );
+
+    // Ya lo sabe: no se le dice que va directo a una Tarea que no hay.
+    let mut p = con_foto(Some(3));
+    p.iniciar();
+    let r = p.e(leida(2, 90));
+    assert_eq!(
+        textos(&r)[..2],
+        [
+            "¡Gracias! Ya vi tu tarea: es de las fracciones equivalentes.",
+            preparada
+        ]
+    );
+    assert!(!texto(&r).contains("Vamos directo"), "{}", texto(&r));
+    assert!(p.m.informe().contains(&informe.to_string()));
+}
