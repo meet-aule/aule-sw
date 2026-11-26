@@ -36,6 +36,7 @@ from livekit.agents.language import LanguageCode
 from livekit.agents.types import DEFAULT_API_CONNECT_OPTIONS
 from livekit.agents.voice import io
 
+from aule_agent import opinion
 from aule_agent.moderation import THRESHOLDS
 from aule_agent.physical_safety import MODEL as TYPESAFE_MODEL
 from aule_agent.tutor import CHECKED_IN_CODE
@@ -1328,7 +1329,10 @@ class FakeAnthropic:
         if not warm:
             delay += world.delays.scaled(world.delays.new_connection, world.rng)
         if _has(text, "reader_slow"):
-            delay = 3.0
+            # Later than the reader is waited for, which is longer for a
+            # child's words than for a reply of the tutor.
+            waited = opinion.HEARD_TIMEOUT_SECONDS if "Child:" in text else opinion.TIMEOUT_SECONDS
+            delay = waited + 1.0
         try:
             await asyncio.sleep(delay)
         finally:

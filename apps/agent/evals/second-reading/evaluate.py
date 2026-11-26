@@ -80,6 +80,9 @@ async def evaluate(args: argparse.Namespace) -> int:
             )
             faint = moderation.provider_finds_faint_self_harm(response) and local is None
             unsure = moderation.provider_is_unsure(response) and local is None
+            # Flagged by the provider only as harassment or hate: read again too,
+            # when a child says it (Finding.heard_rereadable).
+            insult = moderation.provider_flags_only_insults(response) and local is None
             clean = not found and local in (None, "profanity")
             # The reader is asked about every case, read or not, to measure it.
             reads = [
@@ -87,7 +90,7 @@ async def evaluate(args: argparse.Namespace) -> int:
             ]
 
             def through(
-                read: bool | None, read_again: bool = faint or unsure, clean: bool = clean
+                read: bool | None, read_again: bool = faint or unsure or insult, clean: bool = clean
             ) -> bool:
                 if not read_again:
                     return clean
@@ -107,7 +110,7 @@ async def evaluate(args: argparse.Namespace) -> int:
                 "provider_flagged": result.flagged,
                 "found": list(found),
                 "local": local,
-                "read": faint or unsure,
+                "read": faint or unsure or insult,
                 "reader_ordinary": sum(read is True for read in reads),
                 "reader_concern": sum(read is False for read in reads),
                 "through_before": clean,

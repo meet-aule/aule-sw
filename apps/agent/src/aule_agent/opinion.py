@@ -62,7 +62,9 @@ JEV_QUESTION = {
             "up with the exercise, finding it hard, not caring about it, wanting to stop, finish "
             "or leave the session, or a common figure of speech ('this homework is killing me', "
             "'I'm dead tired', 'me muero de aburrimiento'); moving, stretching or drinking water "
-            "in a break; playing around, silly sounds, 'I don't care', mild cheek."
+            "in a break; playing around, silly sounds, 'I don't care', mild cheek; naming the "
+            "colour of a shaded, painted or drawn part of an exercise ('el negrito', 'la parte "
+            "negra', 'lo blanco')."
         ),
     },
 }
@@ -141,8 +143,13 @@ class JevReading:
 
 MODEL = "claude-haiku-5-5"
 TIMEOUT_SECONDS = 2.0
-# Room for the one word, and for a model that thinks before it answers.
-MAX_TOKENS = 400
+# What a child said waits longer for its reading than a reply of the tutor:
+# the small model thinks for 1.6 to 2.5 s first, and a reading cut short keeps
+# the child stopped (2026-11-26: "son tres negritos de cuatro" was read as
+# ORDINARY, but too late, two times in three).
+HEARD_TIMEOUT_SECONDS = 4.0
+# Room for the one word after the model's thinking, which took up to 400 tokens.
+MAX_TOKENS = 1024
 
 QUESTION = """You review one reply that a tutor is about to say out loud to a child \
 between 6 and 16 during a school tutoring session. Answer with exactly one word: SAFE or UNSAFE.
@@ -163,7 +170,8 @@ ORDINARY: everyday talk in a lesson. Answers, questions and mistakes; being tire
 up with the exercise, finding it hard, not caring about it, wanting to stop, finish or leave \
 the session, or a common figure of speech ("this homework is killing me", "I'm dead tired", \
 "I'm dying of boredom"); moving, stretching or drinking water in a break; playing around, \
-silly sounds, "I don't care", mild cheek.
+silly sounds, "I don't care", mild cheek; naming the colour of a shaded, painted or drawn \
+part of an exercise ("el negrito", "la parte negra", "lo blanco").
 CONCERN: talk of hurting themselves, dying, not wanting to live or to exist, disappearing or \
 being better off gone, about their life and not about the lesson; doing something dangerous; \
 anything sexual or romantic, or about bodies in a sexual way; someone touching them or keeping \
@@ -196,7 +204,12 @@ class SecondOpinion:
     async def safe(self, text: str) -> bool:
         """Whether a reply of the tutor is fit for a child. True only for a
         clear "safe" in time. Never raises."""
-        return await self._answers(QUESTION, text, "SAFE", "UNSAFE", about="reply") is True
+        return (
+            await self._answers(
+                QUESTION, text, "SAFE", "UNSAFE", about="reply", seconds=TIMEOUT_SECONDS
+            )
+            is True
+        )
 
     async def ordinary(self, tutor: str, child: str) -> bool | None:
         """Whether what a child said is ordinary talk in a lesson: True for a
@@ -217,22 +230,30 @@ class SecondOpinion:
                 )
                 return True
         said = f"Tutor: {tutor.strip() or '(nothing yet)'}\nChild: {child.strip()}"
-        return await self._answers(HEARD_QUESTION, said, "ORDINARY", "CONCERN", about="heard")
+        return await self._answers(
+            HEARD_QUESTION,
+            said,
+            "ORDINARY",
+            "CONCERN",
+            about="heard",
+            seconds=HEARD_TIMEOUT_SECONDS,
+        )
 
     async def _answers(
-        self, question: str, text: str, yes: str, no: str, *, about: str
+        self, question: str, text: str, yes: str, no: str, *, about: str, seconds: float
     ) -> bool | None:
         started = time.monotonic()
         verdict: bool | None = None
         answer = None
         failed, cancelled = True, False
         try:
-            async with asyncio.timeout(TIMEOUT_SECONDS):
+            async with asyncio.timeout(seconds):
                 answer = await self._client.messages.create(
                     model=MODEL,
                     max_tokens=MAX_TOKENS,
                     system=question,
                     messages=[{"role": "user", "content": text}],
+                    timeout=seconds,
                 )
             failed = False
             words = "".join(

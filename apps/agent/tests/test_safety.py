@@ -699,6 +699,43 @@ async def test_unsure_words_the_reader_does_not_clear_stay_stopped(answer):
     assert [flag[:2] for flag in flags] == [("moderation_input", "redirect")]
 
 
+async def test_words_the_provider_flagged_only_as_insults_are_read_again_when_a_child_says_them():
+    # "El negrito es la parte pintada" was flagged as harassment and hate, out of context.
+    insult = Finding(categories=("harassment", "hate"), heard_rereadable=True)
+    reader = Opinion(True)
+    built, flags = unsure_gates(reader, insult)
+
+    decision = await built.heard(
+        after("¿Qué parte del círculo está pintada?"), said("el negrito es la parte pintada")
+    )
+
+    assert decision.allowed and flags == []
+    assert reader.read == [
+        ("¿Qué parte del círculo está pintada?", "el negrito es la parte pintada")
+    ]
+
+
+@pytest.mark.parametrize("answer", [False, None])
+async def test_an_insult_the_reader_does_not_clear_stays_stopped(answer):
+    insult = Finding(categories=("harassment", "hate"), heard_rereadable=True)
+    built, flags = unsure_gates(Opinion(answer), insult)
+
+    decision = await built.heard(after("¿Seguimos?"), said("x"))
+
+    assert decision.reply == "redirect"
+    assert [flag[:2] for flag in flags] == [("moderation_input", "redirect")]
+
+
+async def test_what_the_tutor_says_is_never_read_again_for_an_insult():
+    reader = Opinion(True)
+    built, _ = unsure_gates(
+        reader, Finding(categories=("harassment", "hate"), heard_rereadable=True)
+    )
+
+    assert not (await built.spoken("x")).allowed
+    assert reader.read == []
+
+
 async def test_the_second_reader_is_closed_with_the_gates():
     opinion = Opinion(True)
     built, _ = unsure_gates(opinion)

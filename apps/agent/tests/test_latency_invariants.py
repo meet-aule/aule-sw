@@ -1171,14 +1171,21 @@ VERDICTS = {
             physical_safety.NAME_STANDIN,
         ],
     ),
+    # Changed on purpose: a child's words wait longer for their reading
+    # (HEARD_TIMEOUT_SECONDS), the reading has room after the model's thinking
+    # (MAX_TOKENS), and both readers know that naming the colour of a shaded
+    # part ("el negrito") is ordinary talk. Jev's question and the new wait are
+    # pinned too.
     "opinion": (
-        "b19c5e7688bc1e8951ceef455da9b4b08bdbe792f444e1ea640fbec22a64c75e",
+        "f5e08ad9f8a8d31560f317e4e2813e6a6c82a1a92d3703a78068ccbf69a0fc30",
         lambda: [
             opinion.MODEL,
             opinion.TIMEOUT_SECONDS,
+            opinion.HEARD_TIMEOUT_SECONDS,
             opinion.MAX_TOKENS,
             opinion.QUESTION,
             opinion.HEARD_QUESTION,
+            opinion.JEV_QUESTION,
         ],
     ),
     # Changed on purpose: the line said when the platform does not take what
@@ -1226,11 +1233,15 @@ EVALS = {
     ),
     # Changed on purpose: AULE_JEV_FIRST_READING=1 also evaluates Jev's first
     # reading; without it the evaluation runs as before.
+    # Changed on purpose again: a child's words the provider flagged only as
+    # harassment or hate are read again too (Finding.heard_rereadable).
     "evals/second-reading/evaluate.py": (
-        "978563b9cef8789b4cea18ff9df214f2b42f20881dc24d2a332ec8316e373178"
+        "94e71ef1457b83a60c85e3e4aa2c5ff1256dfa06caf6804f3c83269afc5116cd"
     ),
+    # Changed on purpose: five cases for the Spanish for black, as a child names
+    # the shaded part of a drawing (ordinary) and as contempt (stop).
     "evals/second-reading/cases.json": (
-        "d14f404557888ee2c7aa4140fab7acc8eae18bd6c1222be871376c975299e415"
+        "236c17db7b61a59bd3617ee1e8a92bf1482570ac35ee27220e89a1b17900894a"
     ),
     # The tutoring evaluation, which runs the real tutor, its tools and both gates.
     "evals/pedagogy/autonomous.py": (
