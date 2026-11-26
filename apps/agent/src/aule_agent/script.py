@@ -10,7 +10,7 @@ ask something or to talk.
 from dataclasses import dataclass
 from typing import Any, Literal, Protocol
 
-from . import visuals
+from . import choices, visuals
 from .homework import Reading
 
 # The longest line that is said. A line of the script is a sentence or two.
@@ -34,6 +34,9 @@ class Line:
     # The line may repeat the student's own words. Those are not the engine's,
     # so it is judged before it is said, like anything a model writes.
     echoes: bool = False
+    # What the student can tap under it once it has been said (``choices``):
+    # the engine's own words, as its lines are.
+    choices: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -77,12 +80,15 @@ def lines_from(value: object) -> tuple[Line, ...]:
             continue
         show = item.get("show")
         drawable = isinstance(show, dict) and not visuals.problems(show)
+        offered = item.get("choices")
+        tappable = isinstance(offered, dict) and not choices.problems(offered)
         lines.append(
             Line(
                 say=say.strip(),
                 show=show if drawable else None,
                 # Anything but a plain "no" is taken as "it may".
                 echoes=item.get("echoes") is not False,
+                choices=offered if tappable else None,
             )
         )
     return tuple(lines)

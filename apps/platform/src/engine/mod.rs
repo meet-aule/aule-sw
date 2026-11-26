@@ -354,12 +354,41 @@ pub struct Line {
     /// The line answers something the student said in their own words, so it
     /// is not treated as fixed text.
     pub echoes: bool,
+    /// What the student can tap under the line to answer it. Left out when
+    /// the line asks nothing whose answers are known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub choices: Option<Choices>,
 }
 
 impl Line {
     fn fixed(say: &str, show: Option<Value>) -> Self {
-        Self { say: say.to_string(), show, reword: false, echoes: false }
+        Self { say: say.to_string(), show, reword: false, echoes: false, choices: None }
     }
+}
+
+/// Answers the student can tap under a line, as `contracts/choices` has them.
+/// Tapping one is the student's turn: the page sends its words to the tutor as
+/// typed, they pass the input gates, and they reach the engine as `said` does.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Choices {
+    pub options: Vec<String>,
+    /// Several may be marked and sent together. The engine's questions take one.
+    #[serde(default)]
+    pub multiple: bool,
+}
+
+// The contract's limits. Options outside them are not offered, never cut down.
+const MAX_CHOICES: usize = 4;
+const MAX_CHOICE_CHARS: usize = 40;
+
+/// Options as a screen can show them, or nothing: none, more than it takes,
+/// a blank or a long one, or the same one twice.
+fn choices(options: &[String]) -> Option<Choices> {
+    let distinct = options.iter().collect::<BTreeSet<_>>().len() == options.len();
+    let fit =
+        options.iter().all(|option| !option.trim().is_empty() && option.chars().count() <= MAX_CHOICE_CHARS);
+    (!options.is_empty() && options.len() <= MAX_CHOICES && distinct && fit)
+        .then(|| Choices { options: options.to_vec(), multiple: false })
 }
 
 /// What the tutor does with one thing the student said.
@@ -563,6 +592,8 @@ fn lines_of(messages: Vec<Mensaje>, echoes: bool, out: &mut Vec<Line>) {
         out.push(Line {
             show: message.adjunto.as_ref().and_then(visuals::attachment),
             reword: matches!(message.redaccion, Redaccion::Ia { .. }),
+            // What the engine asks with known answers: they are its own words.
+            choices: choices(&message.opciones),
             say: message.texto,
             echoes,
         });
@@ -786,13 +817,35 @@ impl Engine {
         }
     }
 
-    fn turn(&self, lines: Vec<Line>, reply: Reply) -> Turn {
+    fn turn(&self, mut lines: Vec<Line>, reply: Reply) -> Turn {
+        // The exercise in hand has its options under the last line the engine
+        // says while it waits for one of them: its statement, or a hint after
+        // a wrong one, so the student can tap again.
+        if reply == Reply::Scripted
+            && let Some(options) = self.card_choices()
+            && let Some(last) = lines.last_mut()
+            && last.choices.is_none()
+        {
+            last.choices = Some(options);
+        }
         Turn {
             lines,
             converse: (reply == Reply::Free).then(|| self.rules()),
             closed: self.closed(),
             awaits: self.awaits(),
         }
+    }
+
+    /// The options of the exercise on the card, while it waits for its
+    /// answer. Not while an answer is held for how it was worked out: that is
+    /// said, not tapped.
+    fn card_choices(&self) -> Option<Choices> {
+        let card = self.card()?;
+        let held = self.held.as_ref().is_some_and(|held| held.card == card_key(&card));
+        if !card.pide_respuesta || held {
+            return None;
+        }
+        choices(&card.opciones)
     }
 
     /// What the engine waits for that the agent has to do something about,
@@ -828,9 +881,11 @@ impl Engine {
             return Engine::new(self.setup.clone(), self.bank.clone()).open(0, self.homework);
         }
         // The exercise on the screen, or what the engine waits for that is
-        // not on it: the homework at the camera.
+        // not on it: the homework at the camera, with what can be tapped instead.
         let lines = match self.motor.recordatorio() {
-            Some(reminder) => vec![Line::fixed(&reminder, None)],
+            Some(reminder) => {
+                vec![Line { choices: choices(&self.motor.opciones()), ..Line::fixed(&reminder, None) }]
+            }
             None => self.card().iter().map(card_line).collect(),
         };
         self.turn(lines, Reply::Scripted)
@@ -1167,6 +1222,11 @@ impl Engine {
         // The page may point at the camera while the engine waits for the homework.
         if let Some(awaits) = self.awaits() {
             step["awaits"] = json!(awaits);
+        }
+        // What can be tapped to answer what the engine has just asked, as its
+        // line offered it. An exercise's options are on its card.
+        if let Some(offered) = choices(&self.motor.opciones()) {
+            step["choices"] = json!(offered);
         }
         step
     }

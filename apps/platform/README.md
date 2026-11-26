@@ -351,6 +351,7 @@ A line is `{"say", "show", "reword", "echoes"}`:
 - `show` is a visual of [`contracts/visuals`](../../contracts/README.md), or `null`. Each drawing of the engine is translated to the closest kind (bars, circles, counters, a table for the activities of a break, the statement as an `exercise`); one with no faithful kind, such as a number line cut into fractions, is not approximated. A bar or a circle the engine draws without a label is sent with `labelled: false`, because a screen would otherwise write the fraction next to it, and that is often the answer.
 - `reword` is true when the engine would have a model word the line; `say` is then its scripted fallback.
 - `echoes` is true for lines that answer something the student said in their own words (text and conversation, as opposed to a graded answer, a hint or a break). The engine does not repeat those words today, but the agent should not treat such a line as fixed text.
+- `choices`, only on a line that asks something whose answers are known, is what the student can tap under it, as [`contracts/choices`](../../contracts/README.md) has it: `{"options": ["Sí"], "multiple": false}`. They are the engine's own words: its questions' (`Motor::opciones`: «Sí» to «¿Empezamos?», a break's four activities, «No tengo mi tarea» while it waits for the homework's photo, «Sí, fracciones» and «Sí» or «No» when it proposes the topic), and an exercise's options, under the last line of each turn the engine says while that exercise waits for one of them (its statement, a hint after a wrong one), but not while an answer is held for how it was worked out. Only the last line of a turn has them. A tapped option comes back as `said`, as if the student had said it.
 
 The platform adds lines the engine only puts on a page: the statement of each new exercise (with its drawing), and the statement and steps of a worked example.
 
@@ -401,7 +402,7 @@ An answer typed on the page is only ever an answer: rules 1 and 5 do not apply t
 }
 ```
 
-`state` is `done`, `current` or `pending`; `card` is `null` between exercises. The step never carries the expected answer, the key words of an explanation or its criteria: it is built field by field from what the engine shows a student. While the engine waits for a photo of the homework the step also has `"awaits": "homework_photo"`, so the page can point at the camera.
+`state` is `done`, `current` or `pending`; `card` is `null` between exercises. The step never carries the expected answer, the key words of an explanation or its criteria: it is built field by field from what the engine shows a student. While the engine waits for a photo of the homework the step also has `"awaits": "homework_photo"`, so the page can point at the camera. While it waits for the answer to one of its own questions, the step has what its line offered to tap, `"choices": {"options": [...], "multiple": false}`; an exercise's options stay on its card.
 
 ### A photo of the homework
 

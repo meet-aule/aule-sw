@@ -6,7 +6,7 @@
 mod authenticator;
 
 use std::collections::{HashMap, HashSet};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, LazyLock, Mutex};
 
 use async_trait::async_trait;
 use aule_platform::config::{AdminPasskeys, Config, EventsWebhook, LiveKit};
@@ -4906,12 +4906,35 @@ fn visual_contract() -> jsonschema::Validator {
     jsonschema::validator_for(&schema).unwrap()
 }
 
-/// Lines as the agent expects them: exactly these four fields, and a screen
-/// that follows the visual contract.
+/// The contract of the answers a student can tap, compiled once.
+static CHOICES_CONTRACT: LazyLock<jsonschema::Validator> = LazyLock::new(|| {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../contracts/choices/choices.v1.schema.json");
+    let schema: Value = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+    jsonschema::validator_for(&schema).unwrap()
+});
+
+/// Answers to tap, where there are some, follow their contract.
+fn assert_choices(holder: &Value) {
+    if let Some(choices) = holder.get("choices") {
+        assert!(CHOICES_CONTRACT.is_valid(choices), "{holder}");
+    }
+}
+
+/// Lines as the agent expects them: exactly these four fields, with the
+/// answers to tap where a line asks something whose answers are known, a
+/// screen that follows the visual contract and choices that follow theirs.
 fn assert_lines(contract: &jsonschema::Validator, lines: &Value) {
     for line in lines.as_array().expect("lines is a list") {
-        let fields: Vec<&str> = line.as_object().unwrap().keys().map(String::as_str).collect();
+        let fields: Vec<&str> = line
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .filter(|field| *field != "choices")
+            .collect();
         assert_eq!(fields, ["echoes", "reword", "say", "show"], "{line}");
+        assert_choices(line);
         assert!(!line["say"].as_str().unwrap().trim().is_empty(), "{line}");
         assert!(line["reword"].is_boolean() && line["echoes"].is_boolean(), "{line}");
         if !line["show"].is_null() {
@@ -4991,9 +5014,16 @@ impl Pupil<'_> {
         let (status, step) =
             self.app.admin(Method::GET, &format!("/v1/sessions/{}/step", self.session), None).await;
         assert_eq!(status, StatusCode::OK, "{step}");
-        let fields: Vec<&str> =
-            step.as_object().unwrap().keys().map(String::as_str).filter(|field| *field != "awaits").collect();
+        let fields: Vec<&str> = step
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .filter(|field| !["awaits", "choices"].contains(field))
+            .collect();
         assert_eq!(fields, ["card", "closed", "elapsed_seconds", "progress", "route", "stage"], "{step}");
+        // Only for a question of the engine's own whose answers are known.
+        assert_choices(&step);
         // Only while the engine waits for a photo of the homework.
         assert!(step.get("awaits").is_none_or(|awaits| awaits == "homework_photo"), "{step}");
         step
@@ -5107,6 +5137,10 @@ async fn the_session_engine_runs_a_session_from_the_greeting_to_the_family_repor
     let opening = said_in(script);
     assert!(opening.contains("¡Hola, Mateo!") && opening.contains("Tarea de Fracciones"), "{opening}");
     assert_eq!(script["lines"][0]["reword"], true);
+    // «¿Empezamos?» can be answered with a tap, and only the line that asks carries it.
+    let asked = script["lines"].as_array().unwrap().last().unwrap();
+    assert_eq!(asked["choices"], json!({ "options": ["Sí"], "multiple": false }), "{script}");
+    assert!(script["lines"][0].get("choices").is_none(), "{script}");
     // Asked again before anything was said: the same opening, started once.
     let (_, again) = app.call(Method::GET, "/v1/agent/session", agent, None).await;
     assert_eq!(again["script"], start["script"]);
@@ -5538,6 +5572,10 @@ async fn an_engine_session_leaves_the_level_and_its_evidence_and_the_next_one_st
     app.state.engines.lock().unwrap().clear();
     let tired = second.says(json!({ "said": "estoy cansado" })).await;
     assert!(said_in(&tired).contains("¡Pausa activa!"), "{tired}");
+    // The break's activities can be tapped, by their names.
+    let offered = tired["lines"].as_array().unwrap().last().unwrap();
+    assert_eq!(offered["choices"]["options"].as_array().map(Vec::len), Some(4), "{tired}");
+    assert_eq!(offered["choices"]["options"][2], "Respiración del globo", "{tired}");
     let mut seq = 0;
     let mut report = async |content: &str| {
         let turns = json!({ "turns": [{ "seq": seq, "role": "child", "content": content }] });

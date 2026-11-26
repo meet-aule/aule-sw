@@ -48,7 +48,7 @@ from livekit.agents.cli.log import JsonFormatter
 from PIL import Image
 from test_metrics import fits_the_platform
 
-from aule_agent import moderation, opinion, physical_safety, replies, safety, visuals
+from aule_agent import choices, moderation, opinion, physical_safety, replies, safety, visuals
 from aule_agent.prompts import response_language
 from aule_agent.replies import ADULT_HELP_SEQUENCE, MEANWHILE, REPLIES
 from aule_agent.timing import STAGES
@@ -99,6 +99,8 @@ ORDINARY = Spec()
 POSE = Spec(tools=("pose_exercise",), reply="Muy bien. ¿Cuánto es tres cuartos más un octavo?")
 # A worked example before its question: every paragraph of a reply is said.
 EXAMPLE = "Imagina dos pizzas cortadas en mitades. ¿Cuántos pedazos hay?"
+# The question the model asks with answers to tap.
+OFFERED_WITH = "¿Seguimos con otra?"
 # Each session: an ordinary turn first, so that the turn under test is not the
 # session's first check (which waits longer for a new connection).
 SESSIONS: dict[str, list[Spec]] = {
@@ -189,6 +191,14 @@ SESSIONS: dict[str, list[Spec]] = {
         # It answers the gate's line, not the exercise: the model reads it whole.
         Spec(words=answer_of(5), reply="Sigamos con la suma."),
         Spec(words=answer_of(9), reply="Mira otra vez los octavos."),
+    ],
+    # The model offers answers to tap with its question (``fakes.TOOL_ARGUMENTS``):
+    # they go up once that question passed the output gate and was heard; a
+    # question the gate stops gets none.
+    "choices": [
+        ORDINARY,
+        Spec(tools=("offer_choices",), reply=OFFERED_WITH),
+        Spec(tools=("offer_choices",), reply=violence("¿Seguimos?")),
     ],
     # Homework brought with its answer while nothing is open: checked once the
     # model poses it.
@@ -462,6 +472,28 @@ def test_nothing_is_heard_before_the_output_gate_approved_it_voiced_ahead_or_not
                 approvals = [at for at, said, allowed in world.judged if allowed and text in said]
                 # The sentence played was part of a text the gate had approved by then.
                 assert approvals and min(approvals) <= segment.started_at, (name, text)
+
+
+def test_answers_to_tap_go_up_only_under_a_question_approved_and_heard(sessions):
+    runs, _ = sessions
+    run = runs["choices"]
+    world = run.world
+    sent = [(at, json.loads(text)) for at, topic, text in world.sent if topic == choices.TOPIC]
+    # The question the output gate approved gets them; the one it stopped, none.
+    assert [offered for _, offered in sent] == [{"options": ["Sí", "No"], "multiple": False}]
+    ((at, _),) = sent
+    # The gate read the options, then the question, before the page got them.
+    options = [when for when, text, allowed in world.judged if text == "Sí\nNo" and allowed]
+    question = [when for when, text, allowed in world.judged if text == OFFERED_WITH and allowed]
+    assert len(options) == 2 and len(question) == 1, world.judged
+    assert options[0] < question[0] < at
+    # And the student had heard the question.
+    asked = run.results[1]
+    heard_at = [s.started_at for s in asked.played if any(OFFERED_WITH in t for t in s.texts)]
+    assert heard_at and heard_at[0] < at
+    assert spoken(OFFERED_WITH) in heard(asked.played)
+    # The stopped question was replaced by its fixed line, and nothing else was said.
+    assert heard(run.results[2].played).endswith(spoken(REPLIES["redirect"]["es"]))
 
 
 def voiced_before(world: World, sentence: str, moment: float) -> bool:

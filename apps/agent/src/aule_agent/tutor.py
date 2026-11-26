@@ -28,6 +28,7 @@ from livekit.agents import (
     APIStatusError,
     FlushSentinel,
     ModelSettings,
+    RunContext,
     StopResponse,
     function_tool,
     llm,
@@ -43,7 +44,7 @@ from livekit.agents.voice.generation import (
     mark_instructions_cache_boundary,
 )
 
-from . import answers, comparison, drill, farewell, visuals
+from . import answers, choices, comparison, drill, farewell, visuals
 from .greetings import greeting as written_greeting
 from .homework import Reading
 from .observability import new_turn
@@ -58,6 +59,8 @@ logger = logging.getLogger("aule.agent.tutor")
 
 # Sends one visual to the student's screen.
 Show = Callable[[dict[str, Any]], Awaitable[None]]
+# Puts answers the student can tap under the question just asked (``choices``).
+Offer = Callable[[dict[str, Any]], Coroutine[Any, Any, None]]
 
 
 @dataclass(frozen=True)
@@ -670,6 +673,7 @@ async def checked(
     took: Took | None = None,
     ahead: VoiceAhead | None = None,
     tool_began: asyncio.Event | None = None,
+    approved: Callable[[str], None] | None = None,
 ) -> AsyncIterable[Any]:
     """What reaches the voice from one step of the model.
 
@@ -694,6 +698,9 @@ async def checked(
     step is over and has called no tool, while the gate judges the whole
     reply. What the voice makes of it stays unheard until the gate has
     approved the whole reply, and is dropped when the gate says no.
+
+    ``approved`` is told the reply once nothing stands between it and the
+    voice: the gate approved it, or there is no gate. Never a fixed reply.
     """
     chunks: list[Any] = []
     line_said = False
@@ -733,6 +740,8 @@ async def checked(
             return
         written = "".join(_text_of(chunk) for chunk in chunks)
         if not gates.checks_spoken:
+            if approved is not None:
+                approved(written)
             for chunk in chunks:
                 yield chunk
             return
@@ -757,6 +766,8 @@ async def checked(
         if held is not None:
             held.approve(written)
             held = None
+        if approved is not None:
+            approved(written)
         for chunk in chunks:
             yield chunk
     finally:
@@ -966,10 +977,12 @@ class Tutor(Agent):
         early_reply: bool = False,
         voice: tts.TTS | None = None,
         voice_ahead: bool = False,
+        offer: Offer | None = None,
     ) -> None:
         # `context` is what the platform knows about this student and the
         # supervisor's plan for the session; empty when there is no platform.
-        # `show` is given when the student has a screen to draw on.
+        # `show` is given when the student has a screen to draw on, and
+        # `offer` when it can put answers to tap under a question (``choices``).
         # `voice` is the session's voice: the short lines said while a tool
         # works are voiced with it once, and with `voice_ahead` the first
         # sentence of a reply while the output gate judges it (``HeldVoice``).
@@ -1012,6 +1025,13 @@ class Tutor(Agent):
                 return told
 
             tools.append(show_tool)
+        if offer is not None:
+
+            @function_tool(raw_schema=choices.TOOL)
+            async def offer_choices(context: RunContext, raw_arguments: dict[str, object]) -> str:
+                return await self._offered(raw_arguments, context.speech_handle)
+
+            tools.append(offer_choices)
         if breaks:
             instructions = with_notes(instructions, PACED)
         if checker is not None:
@@ -1126,6 +1146,10 @@ class Tutor(Agent):
         self._reader = reader
         self._reading: asyncio.Event | None = None
         self._show = show
+        # Where answers to tap go, and those the model offered for the question
+        # it is about to ask, until that reply is over (``_after_the_question``).
+        self._offer = offer
+        self._asked: choices.Asked | None = None
         self._model_done_at = 0.0
         self._watches: set[asyncio.Task[None]] = set()
         self._tutor_name = persona.name
@@ -1431,6 +1455,48 @@ class Tutor(Agent):
         self._watches.add(task)
         task.add_done_callback(self._watches.discard)
 
+    async def _offered(self, arguments: object, speech: SpeechHandle) -> str:
+        """The model offered answers to tap under the question it is about to
+        ask. They are checked as a visual is, against the contract and by the
+        gate on what is spoken, and kept until that reply is over."""
+        try:
+            offered = choices.from_tool(arguments)
+        except ValueError as why:
+            return f"Not offered: {why}"
+        # What is read on the screen passes the same gate as what is spoken.
+        if not (await self._gates.spoken(choices.text_of(offered))).allowed:
+            return "Not offered: those options cannot be put on the screen."
+        asked = choices.Asked(offered)
+        self._asked = asked
+        speech.add_done_callback(lambda done: self._after_the_question(asked, done))
+        return choices.OFFERED
+
+    def _question_approved(self, reply: str) -> None:
+        """A reply passed the output gate (``checked``): what the model offered
+        for it goes under it, if it asked something in words."""
+        if self._asked is not None and reply.strip():
+            self._asked.approved = True
+
+    def _after_the_question(self, asked: choices.Asked, speech: SpeechHandle) -> None:
+        """The reply the choices were offered with is over. They go up under a
+        question the output gate approved and the student heard to its end; a
+        reply cut off, or replaced by a fixed line, gets none."""
+        if self._asked is asked:
+            self._asked = None
+        if asked.approved and not speech.interrupted:
+            self._in_background(self._put_up(asked.choices))
+
+    async def _put_up(self, offered: dict[str, Any]) -> None:
+        """Sends answers to tap to the screen. A failure costs only the buttons:
+        the student can still say or type the answer."""
+        if self._offer is None:
+            return
+        try:
+            await self._offer(offered)
+        except Exception as error:
+            # The type only, and no options: counts and kinds are what is logged.
+            logger.info("choices not sent", extra={"error": type(error).__name__})
+
     async def _say(self, lines: tuple[Line, ...]) -> None:
         """Says lines of the script as they are written, each with its drawing.
 
@@ -1451,8 +1517,13 @@ class Tutor(Agent):
             if line.show is not None and self._show is not None:
                 await self._show(line.show)
             # One after the other: a drawing goes up with the line it belongs to.
-            await self.session.say(line.say, add_to_chat_ctx=True, allow_interruptions=True)
+            played = await self.session.say(
+                line.say, add_to_chat_ctx=True, allow_interruptions=True
+            )
             said += 1
+            if line.choices is not None and turn == self._script_turn and not played.interrupted:
+                # What can be tapped goes under its question once it has been heard.
+                await self._put_up(line.choices)
         # Counts only: what is said is never logged.
         logger.info("said from the script", extra={"lines": said, "left_out": len(lines) - said})
 
@@ -2103,6 +2174,7 @@ class Tutor(Agent):
                 took=took,
                 ahead=self._ahead,
                 tool_began=tool_began,
+                approved=self._question_approved,
             )
         started = time.monotonic()
         chars, called = 0, []

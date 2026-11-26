@@ -4,6 +4,7 @@
 
 use super::visuals::tests::{assert_follows, contract};
 use super::*;
+use aule_core::motor::NO_TENGO_TAREA;
 
 fn setup(goal: Goal) -> Setup {
     Setup {
@@ -326,6 +327,8 @@ fn assert_no_answer(student: &Student) {
         "hints_allowed",
         "format_help",
         "awaits",
+        "choices",
+        "multiple",
         // inside a visual
         "kind",
         "fractions",
@@ -1202,4 +1205,163 @@ fn a_tutor_that_cannot_read_a_photo_gets_the_session_as_before() {
     let last = student.turns.last().unwrap();
     assert_eq!(fields(last.reply()), ["closed", "converse", "lines"]);
     assert_eq!(fields(last.script()), ["closed", "lines"]);
+}
+
+// ---------------------------------------------------- what can be tapped
+
+/// The contract of what a student can tap under a line.
+fn choices_contract() -> jsonschema::Validator {
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../contracts/choices/choices.v1.schema.json");
+    let schema: Value = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+    jsonschema::validator_for(&schema).unwrap()
+}
+
+/// What a turn offers to tap, under its last line: no line above it offers anything.
+fn tappable(turn: &Turn) -> Option<Vec<String>> {
+    let (last, before) = turn.lines.split_last()?;
+    assert!(before.iter().all(|line| line.choices.is_none()), "{turn:?}");
+    last.choices.as_ref().map(|choices| choices.options.clone())
+}
+
+#[test]
+fn the_engines_questions_offer_what_can_be_tapped_and_a_tap_is_said() {
+    // «¿Empezamos?»: «Sí», as the agent gets it and on the step.
+    let mut student = Student::new(Goal::Homework);
+    let opening = student.turns[0].clone();
+    assert!(opening.lines.last().unwrap().say.ends_with("¿Empezamos?"), "{opening:?}");
+    assert_eq!(tappable(&opening), Some(vec!["Sí".to_string()]));
+    let yes = json!({ "options": ["Sí"], "multiple": false });
+    assert_eq!(opening.script()["lines"].as_array().unwrap().last().unwrap()["choices"], yes);
+    assert_eq!(student.engine.step(student.now)["choices"], yes);
+    assert_no_answer(&student);
+    // Tapped, it is what the student said: the screening starts. A line that
+    // offers nothing leaves the field out.
+    let started = student.says("Sí");
+    assert_eq!(student.at(), "tamizaje:1");
+    assert_eq!(tappable(&started), None);
+    assert!(started.reply()["lines"].as_array().unwrap().iter().all(|line| line.get("choices").is_none()));
+    assert!(student.engine.step(student.now).get("choices").is_none());
+
+    // A break: its four activities under «Elige una:». Tapped, one is chosen
+    // as when it is said, and nothing more is offered.
+    let names: Vec<String> =
+        aule_core::config::actividades_propuestas().into_iter().map(|activity| activity.nombre).collect();
+    let mut student = in_practice();
+    let tired = student.says("estoy cansado");
+    assert!(tired.lines.last().unwrap().say.ends_with("Elige una:"), "{tired:?}");
+    assert_eq!(tappable(&tired), Some(names.clone()));
+    assert_eq!(student.engine.step(student.now)["choices"]["options"], json!(names));
+    let chosen = student.says(&names[1]);
+    assert!(said_by_tutor(&chosen).starts_with(&format!("¡{}!", names[1])), "{chosen:?}");
+    assert_eq!(tappable(&chosen), None);
+    assert!(student.engine.step(student.now).get("choices").is_none());
+
+    // The homework's photo: «No tengo mi tarea» whenever it is asked for, to
+    // a tutor that reconnects too. Tapped, the session goes on without it.
+    let mut student = waiting_for_the_photo();
+    let no = Some(vec![NO_TENGO_TAREA.to_string()]);
+    assert_eq!(tappable(student.turns.last().unwrap()), no);
+    assert_eq!(tappable(&student.says("espera, la estoy buscando")), no);
+    assert_eq!(tappable(&student.engine.open(student.now + 1000, 0)), no);
+    let none = student.says(NO_TENGO_TAREA);
+    assert!(
+        said_by_tutor(&none).starts_with("¡No pasa nada! | Vamos a practicar con ejercicios míos"),
+        "{none:?}"
+    );
+    assert_eq!(none.awaits, None);
+}
+
+#[test]
+fn an_exercises_options_are_offered_while_it_waits_for_one_and_not_while_it_is_explained() {
+    let contract = choices_contract();
+    // A true-or-false that asks how it was worked out.
+    let mut student = in_practice();
+    for _ in 0..40 {
+        if student.engine.card().is_some_and(|card| card.pide_explicacion && !card.opciones.is_empty()) {
+            break;
+        }
+        student.answers(true);
+    }
+    let card = student.engine.card().unwrap();
+    assert!(card.pide_respuesta && card.pide_explicacion && !card.opciones.is_empty(), "at {}", student.at());
+    // Its options under the line that brought it, and on its card as before.
+    let brought = student.turns.last().unwrap().clone();
+    assert_eq!(tappable(&brought), Some(card.opciones.clone()), "{brought:?}");
+    assert_follows(&contract, &brought.script()["lines"].as_array().unwrap().last().unwrap()["choices"]);
+    let step = student.engine.step(student.now);
+    assert_eq!(step["card"]["options"], json!(card.opciones));
+    assert!(step.get("choices").is_none());
+    assert_no_answer(&student);
+    // Tapped alone, an option is an answer without its reasons: they are
+    // asked for, and nothing is offered while they are said.
+    let Esperando::Respuesta { respuesta, .. } = student.engine.motor.esperando() else { panic!() };
+    let wrong = card.opciones.iter().find(|option| **option != respuesta).unwrap().clone();
+    let at = student.at();
+    let how = student.says(&wrong);
+    assert_eq!(said_by_tutor(&how), ASK_HOW);
+    assert_eq!(tappable(&how), None);
+    // Wrong, with them: the hint that follows offers the options again.
+    let hint = student.says("lo pensé mirando el dibujo");
+    assert_eq!(student.at(), at, "{hint:?}");
+    assert_eq!(tappable(&hint), Some(card.opciones.clone()), "{hint:?}");
+}
+
+#[test]
+fn what_a_whole_session_offers_is_the_engines_or_the_exercises_and_follows_the_contract() {
+    let contract = choices_contract();
+    let mut student = Student::new(Goal::Homework);
+    let (mut exercises, mut questions) = (0, 0);
+    for turn in 0..800 {
+        if student.engine.closed() {
+            break;
+        }
+        let said = student.answers(turn % 3 != 1);
+        let Some(options) = tappable(&said) else { continue };
+        assert_follows(
+            &contract,
+            &serde_json::to_value(said.lines.last().unwrap().choices.as_ref()).unwrap(),
+        );
+        match student.engine.card().filter(|card| card.pide_respuesta && !card.opciones.is_empty()) {
+            Some(card) => {
+                assert_eq!(options, card.opciones, "at {}", student.at());
+                exercises += 1;
+            }
+            None => {
+                assert_eq!(options, student.engine.motor.opciones(), "at {}", student.at());
+                questions += 1;
+            }
+        }
+    }
+    assert!(student.engine.closed());
+    assert!(exercises > 0 && questions > 0, "exercises {exercises}, questions {questions}");
+}
+
+#[test]
+fn every_option_of_the_bank_can_be_offered() {
+    let contract = choices_contract();
+    let bank = bank().unwrap();
+    let mut all: Vec<&Vec<String>> = Vec::new();
+    for level in &bank.niveles {
+        let exercises = level.tamizaje.iter().chain(&level.ejercicios).chain(&level.simulacion);
+        all.extend(exercises.map(|exercise| &exercise.opciones));
+        all.extend(
+            level.etapa1.asistidos.iter().flat_map(|example| &example.pasos).map(|step| &step.opciones),
+        );
+    }
+    for homework in &bank.tareas {
+        all.extend(homework.ejercicios.iter().map(|exercise| &exercise.opciones));
+    }
+    let with_options: Vec<&Vec<String>> = all.into_iter().filter(|options| !options.is_empty()).collect();
+    assert!(with_options.len() >= 10, "{}", with_options.len());
+    for options in with_options {
+        let offered = choices(options).unwrap_or_else(|| panic!("{options:?} cannot be offered"));
+        assert_follows(&contract, &serde_json::to_value(&offered).unwrap());
+    }
+    // Outside the contract, nothing is offered: never options cut down.
+    let five: Vec<String> = ["a", "b", "c", "d", "e"].map(String::from).to_vec();
+    assert_eq!(choices(&five), None);
+    assert_eq!(choices(&["Sí".to_string(), "Sí".to_string()]), None);
+    assert_eq!(choices(&["x".repeat(41)]), None);
+    assert_eq!(choices(&[" ".to_string()]), None);
+    assert_eq!(choices(&[]), None);
 }
