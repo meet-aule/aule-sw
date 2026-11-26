@@ -435,6 +435,9 @@ pub struct Motor {
     /// [PROPUESTA] Niveles del plan que se le contó al Alumno (`decir_plan`),
     /// hasta que empieza el primero.
     plan_dicho: Vec<u8>,
+    /// TAM-08: el tema y el nivel de un Tamizaje que terminó, hasta que su
+    /// resultado y su plan van al Informe (`registrar_plan`).
+    plan_pendiente: Option<(String, u8)>,
 }
 
 impl Motor {
@@ -483,6 +486,7 @@ impl Motor {
             e1_vueltas: BTreeMap::new(),
             ruta_hecha: vec![],
             plan_dicho: vec![],
+            plan_pendiente: None,
         }
     }
 
@@ -1473,42 +1477,9 @@ impl Motor {
             "TAM-03",
             &format!("Queda en el último nivel consecutivo correcto: {nivel}"),
         );
-        let curso = self.banco.curso.clone();
         if completo {
-            let objetivo = self
-                .obj_actual
-                .map(|i| self.nivel_objetivo(i))
-                .filter(|_| {
-                    self.obj_actual
-                        .map(|i| self.objetivos[i].tipo != TipoObjetivo::Extracurricular)
-                        .unwrap_or(false)
-                })
-                .unwrap_or(self.cfg.niveles_por_tema);
-            if nivel < objetivo {
-                let faltan: Vec<String> = ((nivel + 1)..=objetivo)
-                    .map(|l| self.banco.subtema(l).to_string())
-                    .collect();
-                let sesiones = self.estimar_sesiones(objetivo - nivel);
-                self.estimacion_sesiones = Some(sesiones);
-                self.aplicar(
-                    "PRE-02",
-                    &format!("Plan: {} niveles → {sesiones} sesiones", objetivo - nivel),
-                );
-                self.hechos.push(Hecho::Tamizaje {
-                    curso,
-                    temas_mejora: faltan,
-                    tema: tam.tema.clone(),
-                    sesiones,
-                    comienzo: "hoy mismo".into(),
-                });
-            } else {
-                self.hechos.push(Hecho::TamizajeSinMejora {
-                    curso,
-                    tema: tam.tema.clone(),
-                    nivel,
-                });
-            }
-            self.aplicar("TAM-08", "Resultado y plan van en el Informe");
+            self.plan_pendiente = Some((tam.tema.clone(), nivel));
+            self.registrar_plan();
         }
         // [PROPUESTA] Por debajo del Nivel objetivo, el cierre es el plan. Sin
         // ningún nivel, con el 5 o con el objetivo ya alcanzado, el de siempre.
@@ -1525,6 +1496,46 @@ impl Motor {
             ));
         }
         self.avanzar(out);
+    }
+
+    /// TAM-08 / PRE-02: el resultado del Tamizaje que terminó y el plan hasta el
+    /// Nivel objetivo van en el Informe.
+    fn registrar_plan(&mut self) {
+        let Some((tema, nivel)) = self.plan_pendiente.take() else {
+            return;
+        };
+        let curso = self.banco.curso.clone();
+        let objetivo = self
+            .obj_actual
+            .map(|i| self.nivel_objetivo(i))
+            .filter(|_| {
+                self.obj_actual
+                    .map(|i| self.objetivos[i].tipo != TipoObjetivo::Extracurricular)
+                    .unwrap_or(false)
+            })
+            .unwrap_or(self.cfg.niveles_por_tema);
+        if nivel < objetivo {
+            let faltan: Vec<String> = ((nivel + 1)..=objetivo)
+                .map(|l| self.banco.subtema(l).to_string())
+                .collect();
+            let sesiones = self.estimar_sesiones(objetivo - nivel);
+            self.estimacion_sesiones = Some(sesiones);
+            self.aplicar(
+                "PRE-02",
+                &format!("Plan: {} niveles → {sesiones} sesiones", objetivo - nivel),
+            );
+            self.hechos.push(Hecho::Tamizaje {
+                curso,
+                temas_mejora: faltan,
+                tema,
+                sesiones,
+                comienzo: "hoy mismo".into(),
+            });
+        } else {
+            self.hechos
+                .push(Hecho::TamizajeSinMejora { curso, tema, nivel });
+        }
+        self.aplicar("TAM-08", "Resultado y plan van en el Informe");
     }
 
     /// [PROPUESTA] Le cuenta al Alumno qué vamos a reforzar antes del objetivo,
