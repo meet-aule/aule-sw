@@ -233,6 +233,8 @@ fn sesion(conducta: Conducta, con_fecha: bool) -> Medida {
                 reloj.avanzar_s(4 * 60);
                 Entrada::Texto("Ya volví.".into())
             }
+            // Ninguno lee fotos: sin el ajuste `foto_tarea` no se pide la Tarea.
+            Esperando::FotoTarea => Entrada::Texto("No tengo.".into()),
             Esperando::Nada => Entrada::Tick,
         };
         if std::env::var("VER").is_ok_and(|v| v == conducta.nombre()) {

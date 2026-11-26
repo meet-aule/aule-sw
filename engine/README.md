@@ -26,6 +26,12 @@ and assisted examples, the student explains it back) then **Etapa 2: Refuerzo**
 at the first try; hints, then a step-by-step of a similar exercise)
 → the **Tarea**, the simulation of an evaluation or its correction → the report.
 
+With the setting `foto_tarea` on, a homework objective whose level nobody
+loaded asks to see the homework at the camera once the student's level is
+known, and the level read in the photo, outside the engine, becomes the
+target. Without a photo the bank's homework is used, as before (TAR-05 to
+TAR-07).
+
 ## Language
 
 The code, its comments and its rules are in Spanish, unlike the rest of this

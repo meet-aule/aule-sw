@@ -3,8 +3,9 @@
 
 use aule_core::banco::Angulo;
 use aule_core::config::Config;
+use aule_core::informe::Hecho;
 use aule_core::modelo::{EstadoObjetivo, Objetivo, Perfil, TipoObjetivo};
-use aule_core::motor::{Calificacion, Clase, Entrada, Esperando, Mensaje, Motor};
+use aule_core::motor::{Calificacion, Clase, Entrada, Esperando, LecturaTarea, Mensaje, Motor};
 use aule_core::reloj::RelojManual;
 use chrono::NaiveDate;
 use std::sync::Arc;
@@ -964,7 +965,19 @@ fn correcto(a: Alumno, k: usize) -> bool {
 }
 
 fn sesion_completa(objetivos: Vec<Objetivo>, nivel: Option<u8>, a: Alumno, etiqueta: &str) {
+    sesion_con_foto(objetivos, nivel, a, etiqueta, None);
+}
+
+/// Con `foto`, el ajuste `foto_tarea` encendido y cada foto de la Tarea leída así.
+fn sesion_con_foto(
+    objetivos: Vec<Objetivo>,
+    nivel: Option<u8>,
+    a: Alumno,
+    etiqueta: &str,
+    foto: Option<LecturaTarea>,
+) {
     let mut p = Prueba::new(nivel, objetivos);
+    p.m.cfg.foto_tarea = foto.is_some();
     p.e(Entrada::Comenzar);
     let mut k = 0usize;
     let mut pasos = 0;
@@ -996,6 +1009,13 @@ fn sesion_completa(objetivos: Vec<Objetivo>, nivel: Option<u8>, a: Alumno, etiqu
                 p.e(Entrada::Actividad(0));
                 p.reloj.avanzar_s(300);
                 p.e(Entrada::Tick);
+            }
+            Esperando::FotoTarea => {
+                p.reloj.avanzar_s(25);
+                match foto {
+                    Some(lectura) => p.e(Entrada::FotoTarea(lectura)),
+                    None => p.e(Entrada::Texto("no tengo".into())),
+                };
             }
             Esperando::Nada => panic!("{etiqueta}: estado sin salida en {}", p.act()),
         }
@@ -1078,4 +1098,435 @@ fn pausa_se_vuelve_diciendolo_y_una_pregunta_no_la_termina() {
     let r = p.e(Entrada::Texto("ya volví".into()));
     assert_ne!(p.act(), "pausa", "{}", texto(&r));
     assert!(texto(&r).contains("seguimos"), "{}", texto(&r));
+}
+
+// ───────────── La foto de la Tarea (TAR-05 a TAR-07) ─────────────
+
+const PIDE_FOTO: &str = "Ahora quiero ver tu tarea, para saber qué practicar. Muéstramela a la cámara, y si no la tienes, dime «no tengo».";
+const PIDE_FOTO_ANTES: &str = "Antes de empezar, quiero ver tu tarea para saber qué practicar. Muéstramela a la cámara, y si no la tienes, dime «no tengo».";
+const RECUERDA_FOTO: &str = "Te escucho. Cuando la tengas, muéstrame tu tarea a la cámara; si no la tienes, dime «no tengo».";
+const SIGUE_SIN_FOTO: &str = "No te preocupes, seguimos sin la foto.";
+const SIN_FOTO: &str =
+    "Vamos a practicar con ejercicios míos, como los de una tarea de fracciones.";
+/// El plan de quien está en el nivel 2 hasta el nivel 4 de la Tarea del banco.
+const PLAN_DEL_2_AL_4: &str = "He analizado cómo te fue en los ejercicios, y antes de que hagamos la tarea, te voy a ayudar a reforzar las sumas y restas con el mismo denominador y las sumas y restas con distinto denominador. Esto es importante para que aprendas a hacer la tarea por tu cuenta.";
+
+/// [PROPUESTA] Una Tarea sin Nivel objetivo, como la que carga la plataforma,
+/// con el ajuste que pide verla en una foto.
+fn con_foto(nivel: Option<u8>) -> Prueba {
+    let mut p = Prueba::new(nivel, vec![obj(1, TipoObjetivo::Tarea, 5, None)]);
+    p.m.cfg.foto_tarea = true;
+    p
+}
+
+fn leida(nivel: u8, confianza: u8) -> Entrada {
+    Entrada::FotoTarea(LecturaTarea::Leida { nivel, confianza })
+}
+
+/// [PROPUESTA] TAR-05: tras el calentamiento se ve la Tarea, y recién con su
+/// nivel se cuenta y se registra el plan, hasta ese nivel.
+#[test]
+fn tar05_tras_el_calentamiento_se_ve_la_tarea_y_luego_se_cuenta_el_plan() {
+    let mut p = con_foto(None);
+    p.iniciar();
+    let r = hacer_tamizaje(&mut p, [true, false, false, false, false]);
+    assert_eq!(p.m.perfil.niveles["Fracciones"], 1);
+    assert_eq!(
+        textos(&r),
+        [
+            "¡Gracias! Esa era la última pregunta del Tamizaje.",
+            "¡Terminamos el calentamiento! Gracias por pensar conmigo.",
+            PIDE_FOTO,
+        ]
+    );
+    assert_eq!(p.act(), "pedir_tarea");
+    assert!(matches!(p.m.esperando(), Esperando::FotoTarea));
+    assert_eq!(p.m.recordatorio().as_deref(), Some(PIDE_FOTO));
+    assert!(!p
+        .m
+        .hechos
+        .iter()
+        .any(|h| matches!(h, Hecho::Tamizaje { .. })));
+
+    let r = p.e(leida(3, 82));
+    assert_eq!(
+        textos(&r)[..3],
+        [
+            "¡Gracias! Ya vi tu tarea: es de las sumas y restas con el mismo denominador.",
+            "He analizado cómo te fue en los ejercicios, y antes de que hagamos la tarea, te voy a ayudar a reforzar las fracciones equivalentes y las sumas y restas con el mismo denominador. Esto es importante para que aprendas a hacer la tarea por tu cuenta.",
+            "Etapa 1: Descubrimiento. Empecemos por las fracciones equivalentes.",
+        ]
+    );
+    assert_eq!(p.act(), "etapa1:2:teoria");
+    assert_eq!(p.m.objetivos[0].nivel_objetivo, Some(3));
+    assert_eq!(p.m.recordatorio(), None);
+    assert!(p.registro_tiene("TAR-05"));
+    // El Informe: la Tarea que se vio, y el plan hasta su nivel (no hasta el 4 del banco), una vez.
+    let inf = p.m.informe();
+    assert!(inf.contains(&"Liam nos mostró su tarea de Matemáticas: es sobre sumar y restar fracciones con igual denominador y convertir mixtos e impropias.".to_string()), "{inf:?}");
+    assert!(inf.contains(&"El día de hoy hemos evaluado cómo le va en Matemáticas, y hemos encontrado una oportunidad de mejora específicamente en fracciones equivalentes, simplificar y comparar y sumar y restar fracciones con igual denominador y convertir mixtos e impropias.".to_string()), "{inf:?}");
+    assert_eq!(
+        inf.iter().filter(|m| m.contains("hemos evaluado")).count(),
+        1
+    );
+    // La ruta llega hasta el nivel de la foto, y luego la Tarea.
+    for _ in 0..2 {
+        p.pasar_e1();
+        p.pasar_e2();
+    }
+    assert_eq!(p.act(), "tarea:1");
+
+    // Sin el ajuste, como siempre: el plan hasta el nivel de la Tarea del banco, sin foto.
+    let mut p = Prueba::new(None, vec![obj(1, TipoObjetivo::Tarea, 5, None)]);
+    p.iniciar();
+    let r = hacer_tamizaje(&mut p, [true, false, false, false, false]);
+    assert!(texto(&r).contains("te voy a ayudar a reforzar las fracciones equivalentes, las sumas y restas con el mismo denominador y las sumas y restas con distinto denominador."), "{}", texto(&r));
+    assert!(!texto(&p.log).contains("a la cámara"), "{}", texto(&p.log));
+}
+
+/// [PROPUESTA] TAR-05: con el nivel ya conocido se pide antes de empezar; sin
+/// nada que reforzar, directo a la Tarea.
+#[test]
+fn tar05_con_el_nivel_ya_conocido_se_pide_antes_de_empezar() {
+    let mut p = con_foto(Some(4));
+    p.iniciar();
+    assert_eq!(p.act(), "pedir_tarea");
+    assert_eq!(p.log.last().unwrap().texto, PIDE_FOTO_ANTES);
+    assert_eq!(p.m.recordatorio().as_deref(), Some(PIDE_FOTO_ANTES));
+    let r = p.e(leida(4, 90));
+    assert_eq!(
+        textos(&r)[..2],
+        [
+            "¡Gracias! Ya vi tu tarea: es de las sumas y restas con distinto denominador.",
+            "¡Eso ya lo sabes hacer! Vamos directo a tu tarea.",
+        ]
+    );
+    assert_eq!(p.act(), "tarea:1");
+    // Hoy no hubo Tamizaje: el Informe dice que se vio la Tarea, y nada de un Tamizaje.
+    let inf = p.m.informe();
+    assert!(inf.iter().any(|m| m.contains("nos mostró su tarea")));
+    assert!(!inf.iter().any(|m| m.contains("hemos evaluado")), "{inf:?}");
+
+    // Quien presenta ya cargó el Nivel objetivo (OBJ-06): no se pide la foto.
+    let mut p = Prueba::new(Some(4), vec![obj(1, TipoObjetivo::Tarea, 5, Some(4))]);
+    p.m.cfg.foto_tarea = true;
+    p.iniciar();
+    assert_eq!(p.act(), "tarea:1");
+}
+
+/// [PROPUESTA] TAR-06: una foto que no se lee se pide otra vez, con lo que
+/// pasó; a la segunda se sigue sin ella, con la Tarea del banco.
+#[test]
+fn tar06_una_foto_que_no_se_lee_se_pide_otra_vez_y_a_la_segunda_se_sigue_sin_ella() {
+    let borrosa = "Uy, no la pude ver bien. Acércala un poquito a la cámara, con buena luz, y muéstramela otra vez.";
+    let no_disponible = "Uy, no pude mirar la foto. ¿Probamos otra vez?";
+    for (lectura, linea) in [
+        (LecturaTarea::Borrosa, borrosa),
+        // Una lectura poco segura es una foto que no se vio bien.
+        (
+            LecturaTarea::Leida {
+                nivel: 3,
+                confianza: 69,
+            },
+            borrosa,
+        ),
+        (
+            LecturaTarea::SinTarea,
+            "Mmm, no veo una tarea en la foto. ¿Me la muestras otra vez? Si no la tienes, dime «no tengo».",
+        ),
+        (LecturaTarea::NoDisponible, no_disponible),
+        // Un nivel que el tema no tiene es una lectura que falló.
+        (
+            LecturaTarea::Leida {
+                nivel: 6,
+                confianza: 95,
+            },
+            no_disponible,
+        ),
+        (
+            LecturaTarea::Leida {
+                nivel: 0,
+                confianza: 95,
+            },
+            no_disponible,
+        ),
+    ] {
+        let mut p = con_foto(Some(2));
+        p.iniciar();
+        let r = p.e(Entrada::FotoTarea(lectura));
+        assert_eq!(textos(&r), [linea], "{lectura:?}");
+        assert_eq!(p.act(), "pedir_tarea");
+        let r = p.e(Entrada::FotoTarea(LecturaTarea::NoDisponible));
+        assert_eq!(
+            textos(&r)[..3],
+            [SIGUE_SIN_FOTO, SIN_FOTO, PLAN_DEL_2_AL_4],
+            "{lectura:?}"
+        );
+        assert_eq!(p.act(), "etapa1:3:teoria");
+        assert_eq!(p.m.objetivos[0].nivel_objetivo, None);
+        assert!(p.registro_tiene("TAR-06") && p.registro_tiene("TAR-07"));
+    }
+    // Con la confianza justo en el mínimo, se lee.
+    let mut p = con_foto(Some(2));
+    p.iniciar();
+    p.e(leida(3, 70));
+    assert_eq!(p.m.objetivos[0].nivel_objetivo, Some(3));
+}
+
+/// [PROPUESTA] TAR-06: «no tengo» sigue sin la foto; otra cosa recibe un
+/// recordatorio de la cámara, y al tercer turno sin foto se sigue sin ella.
+#[test]
+fn tar06_no_tengo_o_tres_turnos_sin_foto_siguen_sin_ella() {
+    for dicho in [
+        "no tengo",
+        "No la traje, se me olvidó",
+        "no",
+        "no quiero",
+        "hoy no me dejaron tarea",
+    ] {
+        let mut p = con_foto(Some(2));
+        p.iniciar();
+        let r = p.e(Entrada::Texto(dicho.into()));
+        assert_eq!(
+            textos(&r)[..3],
+            ["¡No pasa nada!", SIN_FOTO, PLAN_DEL_2_AL_4],
+            "{dicho}"
+        );
+        assert_eq!(p.act(), "etapa1:3:teoria", "{dicho}");
+    }
+    let mut p = con_foto(Some(2));
+    p.iniciar();
+    for dicho in ["no, espera, ya la busco", "¿dónde la dejé?"] {
+        let r = p.e(Entrada::Texto(dicho.into()));
+        assert_eq!(textos(&r), [RECUERDA_FOTO], "{dicho}");
+        assert_eq!(p.act(), "pedir_tarea");
+    }
+    let r = p.e(Entrada::Texto("mi perro se llama Rocky".into()));
+    assert_eq!(textos(&r)[..3], [SIGUE_SIN_FOTO, SIN_FOTO, PLAN_DEL_2_AL_4]);
+    assert_eq!(p.act(), "etapa1:3:teoria");
+}
+
+/// [PROPUESTA] TAR-07: una Tarea que no es de fracciones se le cuenta a la
+/// familia (OBJ-08) y se practica con la Tarea del banco.
+#[test]
+fn tar07_una_tarea_de_otro_tema_se_le_cuenta_a_la_familia() {
+    let mut p = con_foto(Some(2));
+    p.iniciar();
+    let r = p.e(Entrada::FotoTarea(LecturaTarea::OtroTema));
+    assert_eq!(
+        textos(&r)[..3],
+        [
+            "Esa tarea no es de fracciones, y por ahora yo solo sé enseñar fracciones. Se lo cuento a tu familia.",
+            SIN_FOTO,
+            PLAN_DEL_2_AL_4,
+        ]
+    );
+    assert_eq!(p.act(), "etapa1:3:teoria");
+    assert_eq!(p.m.objetivos[0].nivel_objetivo, None);
+    assert!(p.m.informe().contains(&"Liam nos mostró una tarea que no es del tema de Fracciones. Todavía no cubrimos ese tema, así que no la trabajamos hoy; te recomendamos revisarla con su Docente.".to_string()));
+}
+
+/// [PROPUESTA] TAR-05: al volver de una pausa se pide otra vez; una foto que
+/// nadie pidió no cambia nada.
+#[test]
+fn tar05_tras_una_pausa_se_pide_otra_vez_y_una_foto_sin_pedir_no_cambia_nada() {
+    let mut p = con_foto(None);
+    p.iniciar();
+    hacer_tamizaje(&mut p, [true, true, false, false, false]);
+    assert_eq!(p.act(), "pedir_tarea");
+    p.e(Entrada::Cansado);
+    assert_eq!(p.act(), "pausa");
+    assert!(p.e(leida(3, 90)).is_empty());
+    assert_eq!(p.act(), "pausa");
+    let r = p.e(Entrada::SaltarPausa);
+    assert_eq!(textos(&r), ["¡Listo, seguimos!", PIDE_FOTO]);
+    assert_eq!(p.act(), "pedir_tarea");
+
+    let mut p = Prueba::new(Some(3), vec![obj(1, TipoObjetivo::Tarea, 5, None)]);
+    p.iniciar();
+    let antes = p.act();
+    assert!(p.e(leida(1, 99)).is_empty());
+    assert_eq!(p.act(), antes);
+    assert_eq!(p.m.recordatorio(), None);
+}
+
+/// [PROPUESTA] TAM-08: el Tamizaje llega al Informe aunque la sesión se corte
+/// mientras se espera la foto, o se cierre por tiempo antes de pedirla.
+#[test]
+fn tam08_el_tamizaje_llega_al_informe_aunque_no_se_vea_la_tarea() {
+    let mut p = con_foto(None);
+    p.iniciar();
+    hacer_tamizaje(&mut p, [true, false, false, false, false]);
+    assert_eq!(p.act(), "pedir_tarea");
+    // La plataforma cierra la sesión sin pasar por el motor.
+    let inf = p.m.informe();
+    assert!(inf.contains(&"El día de hoy hemos evaluado cómo le va en Matemáticas, y hemos encontrado una oportunidad de mejora específicamente en fracciones equivalentes, simplificar y comparar, sumar y restar fracciones con igual denominador y convertir mixtos e impropias y sumar y restar fracciones con distinto denominador.".to_string()), "{inf:?}");
+
+    // Se acaba el tiempo con la última pregunta: se cierra sin pedir la foto,
+    // y el Tamizaje va antes de lo que queda pendiente.
+    let mut p = con_foto(None);
+    p.iniciar();
+    for ok in [true, false, false, false] {
+        p.responder(ok);
+    }
+    p.reloj.avanzar_min(91);
+    p.responder(false);
+    assert!(p.m.terminada());
+    assert!(!texto(&p.log).contains("a la cámara"), "{}", texto(&p.log));
+    let inf = p.m.informe();
+    let evaluado = inf.iter().position(|m| m.contains("hemos evaluado"));
+    let continua = inf.iter().position(|m| m.contains("hemos avanzado"));
+    assert!(evaluado.is_some() && evaluado < continua, "{inf:?}");
+    assert_eq!(
+        inf.iter().filter(|m| m.contains("hemos evaluado")).count(),
+        1
+    );
+}
+
+/// [PROPUESTA] Sesiones completas con la foto de la Tarea: cada nivel que se
+/// puede leer, otro tema y dos fotos fallidas. Todas terminan, a tiempo y
+/// con su Informe.
+#[test]
+fn tar05_sesiones_completas_con_la_foto_de_la_tarea() {
+    let mut fotos: Vec<LecturaTarea> = (1..=5)
+        .map(|nivel| LecturaTarea::Leida {
+            nivel,
+            confianza: 90,
+        })
+        .collect();
+    fotos.extend([LecturaTarea::OtroTema, LecturaTarea::SinTarea]);
+    for a in [Alumno::TodoBien, Alumno::AVeces, Alumno::Mucho] {
+        for nivel in [None, Some(1), Some(3)] {
+            for foto in &fotos {
+                sesion_con_foto(
+                    vec![obj(1, TipoObjetivo::Tarea, 5, None)],
+                    nivel,
+                    a,
+                    &format!("Foto {foto:?} {a:?} nivel {nivel:?}"),
+                    Some(*foto),
+                );
+            }
+        }
+    }
+}
+
+/// [PROPUESTA] TAR-08: con el nivel de la foto, la Tarea del banco queda en
+/// sus ejercicios de ese nivel o menos, y la ruta dice cuántos son.
+#[test]
+fn tar08_la_tarea_del_banco_llega_hasta_el_nivel_de_la_foto() {
+    let tarea = |p: &Prueba| {
+        p.m.ruta()
+            .into_iter()
+            .find(|paso| paso.nombre == "Tarea")
+            .map(|paso| paso.detalle)
+    };
+    // Sin la foto, la del banco entera.
+    let mut p = con_foto(Some(2));
+    assert_eq!(tarea(&p), Some("5 ejercicios".to_string()));
+    p.iniciar();
+    p.e(leida(3, 90));
+    assert_eq!(p.act(), "etapa1:3:teoria");
+    assert_eq!(tarea(&p), Some("2 ejercicios".to_string()));
+    p.pasar_e1();
+    p.pasar_e2();
+    let r = textos(&p.log).join("\n");
+    assert!(
+        r.contains("Ahora hagamos tu Tarea: son 2 ejercicios."),
+        "{r}"
+    );
+    let mut niveles = vec![];
+    while p.act().starts_with("tarea") {
+        niveles.push(p.m.ejercicio_actual().unwrap().nivel);
+        p.responder(true);
+    }
+    assert_eq!(niveles, [3, 3]);
+    assert!(p
+        .m
+        .informe()
+        .iter()
+        .any(|m| m.contains("hemos hecho la tarea de Matemáticas")));
+
+    // Ya tiene el nivel: directo a esos ejercicios.
+    let mut p = con_foto(Some(3));
+    p.iniciar();
+    let r = p.e(leida(3, 90));
+    assert_eq!(
+        textos(&r)[..3],
+        [
+            "¡Gracias! Ya vi tu tarea: es de las sumas y restas con el mismo denominador.",
+            "¡Eso ya lo sabes hacer! Vamos directo a tu tarea.",
+            "¡Ya tienes el nivel! Ahora hagamos tu Tarea: son 2 ejercicios. Hazlos tú solo; yo reviso cada respuesta y te ayudo si te trabas.",
+        ]
+    );
+}
+
+/// [PROPUESTA] TAR-08: si la Tarea del banco no tiene ejercicios hasta el nivel
+/// de la foto, lo que pide la Tarea ya se practicó: se dice, va al Informe y
+/// el objetivo se cumple.
+#[test]
+fn tar08_sin_ejercicios_hasta_ese_nivel_la_tarea_ya_esta_preparada() {
+    let preparada =
+        "¡Listo! Ya practicaste lo que pide tu tarea, así que ahora la puedes hacer por tu cuenta.";
+    let informe = "Liam ya domina lo que pide su tarea de Matemáticas para el día jueves 19 de noviembre: fracciones equivalentes, simplificar y comparar. Ya la puede hacer por su cuenta. ¡Felicidades!";
+    // Primero se refuerza su nivel; luego no queda nada de la Tarea del banco.
+    let mut p = con_foto(Some(1));
+    p.iniciar();
+    p.e(leida(2, 90));
+    assert_eq!(p.act(), "etapa1:2:teoria");
+    assert_eq!(
+        p.m.ruta()
+            .iter()
+            .filter(|paso| paso.nombre == "Tarea")
+            .count(),
+        0
+    );
+    p.pasar_e1();
+    p.pasar_e2();
+    assert!(textos(&p.log).contains(&preparada), "{}", texto(&p.log));
+    assert!(!p.act().starts_with("tarea"), "{}", p.act());
+    assert_eq!(p.m.objetivos[0].estado, EstadoObjetivo::Completado);
+    assert!(p.registro_tiene("TAR-08"));
+    assert!(
+        p.m.informe().contains(&informe.to_string()),
+        "{:?}",
+        p.m.informe()
+    );
+
+    // Ya lo sabe: no se le dice que va directo a una Tarea que no hay.
+    let mut p = con_foto(Some(3));
+    p.iniciar();
+    let r = p.e(leida(2, 90));
+    assert_eq!(
+        textos(&r)[..2],
+        [
+            "¡Gracias! Ya vi tu tarea: es de las fracciones equivalentes.",
+            preparada
+        ]
+    );
+    assert!(!texto(&r).contains("Vamos directo"), "{}", texto(&r));
+    assert!(p.m.informe().contains(&informe.to_string()));
+}
+
+/// [PROPUESTA] PAU-07 y TAM-08: de noche, quien dice que está cansado
+/// mientras se espera la foto de su Tarea descansa, y el Informe cuenta el
+/// Tamizaje antes de lo que queda pendiente.
+#[test]
+fn pau07_de_noche_cansado_esperando_la_foto_descansa_y_el_informe_cuenta_el_tamizaje() {
+    let mut p = con_foto(None);
+    p.m.perfil.minuto_inicio = Some(22 * 60 + 50);
+    p.iniciar();
+    hacer_tamizaje(&mut p, [true, false, false, false, false]);
+    assert_eq!(p.act(), "pedir_tarea");
+    let r = p.e(Entrada::Cansado);
+    assert!(texto(&r).contains("Ya es tarde"), "{}", texto(&r));
+    assert!(p.m.terminada());
+    assert_eq!(p.m.recordatorio(), None);
+    let inf = p.m.informe();
+    let evaluado = inf.iter().position(|m| m.contains("hemos evaluado"));
+    let continua = inf.iter().position(|m| m.contains("hemos avanzado"));
+    assert!(evaluado.is_some() && evaluado < continua, "{inf:?}");
+    assert_eq!(
+        inf.iter().filter(|m| m.contains("hemos evaluado")).count(),
+        1
+    );
 }

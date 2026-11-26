@@ -227,6 +227,7 @@ fn app_with(pool: PgPool, events_webhook: Option<EventsWebhook>) -> App {
         session_minutes: 20,
         break_every_minutes: 30,
         transcript_hours: 24,
+        engine_homework: 0,
         supervisor: None,
         embeddings: None,
         mail: None,
@@ -4568,8 +4569,11 @@ impl Pupil<'_> {
         let (status, step) =
             self.app.admin(Method::GET, &format!("/v1/sessions/{}/step", self.session), None).await;
         assert_eq!(status, StatusCode::OK, "{step}");
-        let fields: Vec<&str> = step.as_object().unwrap().keys().map(String::as_str).collect();
+        let fields: Vec<&str> =
+            step.as_object().unwrap().keys().map(String::as_str).filter(|field| *field != "awaits").collect();
         assert_eq!(fields, ["card", "closed", "elapsed_seconds", "progress", "route", "stage"], "{step}");
+        // Only while the engine waits for a photo of the homework.
+        assert!(step.get("awaits").is_none_or(|awaits| awaits == "homework_photo"), "{step}");
         step
     }
 
@@ -4577,8 +4581,15 @@ impl Pupil<'_> {
         let (status, response) =
             self.app.call(Method::POST, "/v1/agent/session/said", Some(&self.token), Some(body)).await;
         assert_eq!(status, StatusCode::OK, "{response}");
-        let fields: Vec<&str> = response.as_object().unwrap().keys().map(String::as_str).collect();
+        let fields: Vec<&str> = response
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .filter(|field| *field != "awaits")
+            .collect();
         assert_eq!(fields, ["closed", "converse", "lines"], "{response}");
+        assert!(response.get("awaits").is_none_or(|awaits| awaits == "homework_photo"), "{response}");
         assert!(response["closed"].is_boolean(), "{response}");
         assert!(response["converse"].is_null() || response["converse"].is_string(), "{response}");
         assert_lines(&self.contract, &response["lines"]);
@@ -5158,6 +5169,193 @@ async fn an_engine_session_leaves_the_level_and_its_evidence_and_the_next_one_st
     assert_eq!(status, StatusCode::NO_CONTENT);
     assert_eq!(app.count("select count(*) from attempts").await, 0);
     assert_eq!(app.count("select count(*) from session_engine_inputs").await, 0);
+}
+
+/// The first input of a session's engine, as stored.
+async fn first_input(app: &App, session: &str) -> Value {
+    sqlx::query_scalar("select input from session_engine_inputs where session_id = $1::uuid and seq = 0")
+        .bind(session)
+        .fetch_one(&app.state.pool)
+        .await
+        .unwrap()
+}
+
+#[sqlx::test(migrator = "aule_platform::MIGRATOR")]
+async fn the_engine_reads_the_homeworks_level_from_a_photo_only_when_allowed(pool: PgPool) {
+    let mut app = app(pool);
+    let child = app.child().await;
+    app.consent(&child, "voice", true).await;
+    let path = "/v1/agent/session/homework";
+    let read = json!({ "outcome": "read", "level": 3, "confidence": 0.82 });
+
+    // As it ships (AULE_ENGINE_HOMEWORK=0), an agent that says it can read a
+    // photo gets the session as before: no photo is asked for, none is taken.
+    {
+        let (session, token) = engine_session(&app, &child, fractions("homework")).await;
+        let id = session["session_id"].as_str().unwrap().to_string();
+        let (status, start) = app.call(Method::GET, "/v1/agent/session?homework=1", Some(&token), None).await;
+        assert_eq!(status, StatusCode::OK, "{start}");
+        assert!(start["script"].get("awaits").is_none(), "{start}");
+        assert_eq!(first_input(&app, &id).await, json!({ "kind": "start" }));
+        let pupil = Pupil { app: &app, session: id, token: token.clone(), contract: visual_contract() };
+        pupil.says(json!({ "said": "sí" })).await;
+        for right in [true, false, false, false, false] {
+            assert!(pupil.answers(right).await.get("awaits").is_none());
+        }
+        assert_eq!(pupil.step().await["stage"], "Etapa 1: Descubrimiento");
+        let (status, _) = app.call(Method::POST, path, Some(&token), Some(read.clone())).await;
+        assert_eq!(status, StatusCode::CONFLICT);
+    }
+
+    // What the agent says it can do is a number the platform knows, or nothing starts.
+    let (session, token) = engine_session(&app, &child, fractions("homework")).await;
+    let id = session["session_id"].as_str().unwrap().to_string();
+    for bad in ["?homework=3", "?homework=yes", "?homework=-1"] {
+        let (status, body) =
+            app.call(Method::GET, &format!("/v1/agent/session{bad}"), Some(&token), None).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{bad}: {body}");
+    }
+    let inputs: i64 =
+        sqlx::query_scalar("select count(*) from session_engine_inputs where session_id = $1::uuid")
+            .bind(&id)
+            .fetch_one(&app.state.pool)
+            .await
+            .unwrap();
+    assert_eq!(inputs, 0, "nothing started");
+
+    // Allowed: the session gets the lesser of the two, and keeps it.
+    let mut config = (*app.state.config).clone();
+    config.engine_homework = 1;
+    app.state.config = Arc::new(config);
+    app.router = http::router(app.state.clone());
+    let agent = Some(token.as_str());
+    let (status, start) = app.call(Method::GET, "/v1/agent/session?homework=2", agent, None).await;
+    assert_eq!(status, StatusCode::OK, "{start}");
+    assert_eq!(first_input(&app, &id).await, json!({ "kind": "start", "homework": 1 }));
+    let pupil = Pupil { app: &app, session: id.clone(), token: token.clone(), contract: visual_contract() };
+
+    // After the warm-up the engine asks for the photo, and says it waits for one.
+    pupil.says(json!({ "said": "sí" })).await;
+    for right in [true, false, false, false] {
+        pupil.answers(right).await;
+    }
+    let closing = pupil.answers(false).await;
+    assert_eq!(closing["awaits"], "homework_photo", "{closing}");
+    let said = said_in(&closing);
+    assert!(said.contains("¡Terminamos el calentamiento! Gracias por pensar conmigo."), "{said}");
+    assert!(!said.contains("He analizado"), "the plan waits for the homework: {said}");
+    let step = pupil.step().await;
+    assert_eq!(
+        (&step["awaits"], &step["card"], step["stage"].as_str()),
+        (&json!("homework_photo"), &Value::Null, Some("Tarea"))
+    );
+
+    // Only the outcome, and a level with its confidence for a homework that was read.
+    for (bad, why) in [
+        (
+            json!({ "outcome": "read", "level": 3, "confidence": 0.9, "image": "/9j/4AAQSkZJRg" }),
+            "never the photo",
+        ),
+        (json!({ "outcome": "read", "level": 3 }), "no confidence"),
+        (json!({ "outcome": "read", "confidence": 0.9 }), "no level"),
+        (json!({ "outcome": "read", "level": 6, "confidence": 0.9 }), "a level the engine does not have"),
+        (json!({ "outcome": "read", "level": 0, "confidence": 0.9 }), "no level at all"),
+        (json!({ "outcome": "read", "level": 3, "confidence": 1.5 }), "a confidence over 1"),
+        (json!({ "outcome": "unreadable", "level": 3 }), "a level without a reading"),
+        (json!({ "outcome": "maybe" }), "an outcome there is not"),
+        (json!({}), "nothing"),
+    ] {
+        let (status, body) = app.call(Method::POST, path, agent, Some(bad)).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{why}: {body}");
+    }
+    // An exercise shown belongs to a stage no session has yet.
+    let (status, _) = app.call(Method::POST, path, agent, Some(json!({ "outcome": "shown" }))).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+
+    // A photo that cannot be read is asked for again.
+    let (status, blurry) =
+        app.call(Method::POST, path, agent, Some(json!({ "outcome": "unreadable" }))).await;
+    assert_eq!(status, StatusCode::OK, "{blurry}");
+    assert_lines(&pupil.contract, &blurry["lines"]);
+    assert_eq!(
+        said_in(&blurry),
+        "Uy, no la pude ver bien. Acércala un poquito a la cámara, con buena luz, y muéstramela otra vez."
+    );
+    assert_eq!((&blurry["awaits"], &blurry["converse"]), (&json!("homework_photo"), &Value::Null));
+
+    // Words meanwhile are the engine's to answer, with no model.
+    let talk = pupil.says(json!({ "said": "espera, la estoy buscando" })).await;
+    assert_eq!(
+        said_in(&talk),
+        "Te escucho. Cuando la tengas, muéstrame tu tarea a la cámara; si no la tienes, dime «no tengo»."
+    );
+    assert_eq!((&talk["awaits"], &talk["converse"]), (&json!("homework_photo"), &Value::Null));
+
+    // A tutor that reconnects is reminded of the photo.
+    let (_, again) = app.call(Method::GET, "/v1/agent/session", agent, None).await;
+    assert_eq!(
+        said_in(&again["script"]),
+        "Ahora quiero ver tu tarea, para saber qué practicar. Muéstramela a la cámara, y si no la tienes, dime «no tengo»."
+    );
+    assert_eq!(again["script"]["awaits"], "homework_photo");
+
+    // Read at level 3: the homework's level is the target, and the plan is told now.
+    let (status, response) = app.call(Method::POST, path, agent, Some(read.clone())).await;
+    assert_eq!(status, StatusCode::OK, "{response}");
+    let fields: Vec<&str> = response.as_object().unwrap().keys().map(String::as_str).collect();
+    assert_eq!(fields, ["closed", "converse", "lines"], "nothing awaited now: {response}");
+    assert_lines(&pupil.contract, &response["lines"]);
+    assert!(
+        said_in(&response).starts_with(
+            "¡Gracias! Ya vi tu tarea: es de las sumas y restas con el mismo denominador. | He analizado"
+        ),
+        "{response}"
+    );
+    assert_eq!(pupil.step().await["stage"], "Etapa 1: Descubrimiento");
+    let (status, _) = app.call(Method::POST, path, agent, Some(read)).await;
+    assert_eq!(status, StatusCode::CONFLICT, "nothing waits for another photo");
+
+    // What is kept of the photos: what was read, the level and how sure, in percent.
+    let readings: Vec<Value> = sqlx::query_scalar(
+        "select input from session_engine_inputs where session_id = $1::uuid and input->>'kind' = 'homework' order by seq",
+    )
+    .bind(&id)
+    .fetch_all(&app.state.pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        readings,
+        [
+            json!({ "kind": "homework", "outcome": "unreadable" }),
+            json!({ "kind": "homework", "outcome": "read", "level": 3, "confidence": 82 }),
+        ]
+    );
+
+    // The family's report says the homework was seen.
+    app.call(Method::POST, "/v1/agent/session/end", agent, Some(json!({}))).await;
+    let (status, _) = app.call(Method::POST, path, agent, Some(json!({ "outcome": "unavailable" }))).await;
+    assert_eq!(status, StatusCode::CONFLICT, "the session has ended");
+    assert!(jobs::work_once(&app.state).await.unwrap());
+    let summary: String =
+        sqlx::query_scalar("select guardian_summary from session_reviews where session_id = $1::uuid")
+            .bind(&id)
+            .fetch_one(&app.state.pool)
+            .await
+            .unwrap();
+    assert!(
+        summary.contains(
+            "Mateo nos mostró su tarea de Matemáticas: es sobre sumar y restar fracciones con igual denominador y \
+             convertir mixtos e impropias."
+        ),
+        "{summary}"
+    );
+
+    // A session the engine does not run has no photo to read.
+    let (_, free) = app.session(&child).await;
+    app.call(Method::GET, "/v1/agent/session?homework=1", Some(&free), None).await;
+    let (status, _) =
+        app.call(Method::POST, path, Some(&free), Some(json!({ "outcome": "no_homework" }))).await;
+    assert_eq!(status, StatusCode::CONFLICT);
 }
 
 #[sqlx::test(migrator = "aule_platform::MIGRATOR")]

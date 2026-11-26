@@ -73,6 +73,17 @@ pub enum Hecho {
     },
     /// [PROPUESTA] El Alumno pidió un tema que todavía no tenemos.
     TemaPedido { tema: String },
+    /// [PROPUESTA] TAR-05: se vio la Tarea en una foto; su nivel fue el Nivel objetivo.
+    TareaVista { curso: String, subtema: String },
+    /// [PROPUESTA] TAR-07: la Tarea de la foto no es del tema que enseñamos (OBJ-08).
+    TareaOtroTema { tema: String },
+    /// [PROPUESTA] TAR-08: la Tarea del banco no tenía ejercicios hasta el nivel
+    /// de la foto; el Alumno ya domina lo que pide su Tarea.
+    TareaPreparada {
+        curso: String,
+        fecha: Option<NaiveDate>,
+        subtema: String,
+    },
 }
 
 /// "a, b y c"
@@ -243,6 +254,20 @@ pub fn generar(nombre_padre: &str, nombre_alumno: &str, hechos: &[Hecho]) -> Vec
             )),
             Hecho::TemaPedido { tema } => m.push(format!(
                 "{nombre_alumno} nos dijo que le gustaría aprender sobre {tema}. Todavía no lo tenemos, pero lo anotamos."
+            )),
+            Hecho::TareaVista { curso, subtema } => m.push(format!(
+                "{nombre_alumno} nos mostró su tarea de {curso}: es sobre {subtema}."
+            )),
+            Hecho::TareaOtroTema { tema } => m.push(format!(
+                "{nombre_alumno} nos mostró una tarea que no es del tema de {tema}. Todavía no cubrimos ese tema, así que no la trabajamos hoy; te recomendamos revisarla con su Docente."
+            )),
+            Hecho::TareaPreparada {
+                curso,
+                fecha,
+                subtema,
+            } => m.push(format!(
+                "{nombre_alumno} ya domina lo que pide su tarea de {curso} para el día {}: {subtema}. Ya la puede hacer por su cuenta. ¡Felicidades!",
+                f(fecha)
             )),
         }
     }

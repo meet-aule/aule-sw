@@ -37,9 +37,14 @@ impl Student {
     }
 
     fn from(setup: Setup) -> Self {
+        Self::opened(setup, 0)
+    }
+
+    /// A student whose tutor can do `homework` with a photo of the homework.
+    fn opened(setup: Setup, homework: u8) -> Self {
         let engine = Engine::new(setup, bank().unwrap());
         let mut student = Self { engine, now: 0, records: Vec::new(), turns: Vec::new() };
-        let opening = student.engine.open(0);
+        let opening = student.engine.open(0, homework);
         student.keep(opening);
         student
     }
@@ -86,6 +91,8 @@ impl Student {
                 self.now += 5 * 60_000;
                 turn
             }
+            // This student has no photo of the homework to show.
+            Esperando::FotoTarea => self.says("no tengo"),
             Esperando::Nada => panic!("nothing is awaited at {}", self.engine.motor.actividad()),
         }
     }
@@ -259,7 +266,7 @@ fn an_engine_rebuilt_from_its_inputs_is_the_same_engine() {
         let stored = serde_json::to_value(&record.input).unwrap();
         assert_eq!(serde_json::from_value::<Input>(stored).unwrap(), record.input);
     }
-    assert_eq!(serde_json::to_value(Input::Start).unwrap(), json!({ "kind": "start" }));
+    assert_eq!(serde_json::to_value(Input::Start { homework: 0 }).unwrap(), json!({ "kind": "start" }));
     assert_eq!(
         serde_json::to_value(Input::Chat { text: "hola".into(), intent: Intencion::Charla }).unwrap(),
         json!({ "kind": "chat", "text": "hola", "intent": "charla" })
@@ -318,6 +325,7 @@ fn assert_no_answer(student: &Student) {
         "note",
         "hints_allowed",
         "format_help",
+        "awaits",
         // inside a visual
         "kind",
         "fractions",
@@ -726,7 +734,7 @@ fn only_what_the_bank_covers_is_run_by_the_engine() {
         (Goal::ExamPrep, "prepararnos para tu Evaluación de Fracciones"),
         (Goal::Explore, "aprender algo nuevo de Fracciones"),
     ] {
-        let opening = engine(kind).open(0);
+        let opening = engine(kind).open(0, 0);
         assert!(said_by_tutor(&opening).contains(said), "{opening:?}");
     }
 }
@@ -734,17 +742,17 @@ fn only_what_the_bank_covers_is_run_by_the_engine() {
 #[test]
 fn the_opening_is_the_same_until_something_happens() {
     let mut engine = engine(Goal::Homework);
-    let opening = engine.open(0);
-    assert_eq!(engine.unsaved(), [Record { at_ms: 0, input: Input::Start }]);
+    let opening = engine.open(0, 0);
+    assert_eq!(engine.unsaved(), [Record { at_ms: 0, input: Input::Start { homework: 0 } }]);
     engine.saved();
     // A tutor that asks again gets the same lines, and the engine is not started twice.
-    assert_eq!(engine.open(5000), opening);
+    assert_eq!(engine.open(5000, 0), opening);
     assert!(engine.unsaved().is_empty());
 
     // Later, a tutor that reconnects is told where the session is.
     engine.said(6000, "sí", None, false);
     engine.saved();
-    let again = engine.open(9000);
+    let again = engine.open(9000, 0);
     assert_eq!(again.lines.len(), 1);
     assert_eq!(again.lines[0].say, engine.card().unwrap().enunciado);
     assert!(engine.unsaved().is_empty());
@@ -932,7 +940,7 @@ fn every_exercise_of_the_bank_practises_a_skill_of_the_curriculum() {
 fn time_acts_without_the_student_speaking() {
     // Before the session started, time does nothing and starts nothing.
     let mut idle = engine(Goal::Homework);
-    assert_eq!(idle.pass(60_000), Turn { lines: Vec::new(), converse: None, closed: false });
+    assert_eq!(idle.pass(60_000), Turn { lines: Vec::new(), converse: None, closed: false, awaits: None });
     assert!(!idle.started() && idle.unsaved().is_empty());
 
     let mut student = in_practice();
@@ -1023,4 +1031,175 @@ fn the_engines_session_is_as_long_as_the_platforms() {
     assert!((31..=46).contains(&length) && breaks == 1, "{length} minutes, {breaks} breaks");
     let (length, breaks, done) = length_and_breaks(90);
     assert!((47..=60).contains(&length) && breaks == 1 && done, "{length} minutes, {breaks} breaks, {done}");
+}
+
+/// The engine's lines while it waits for a photo of the homework.
+const ASK_FOR_THE_PHOTO: &str = "Ahora quiero ver tu tarea, para saber qué practicar. Muéstramela a la cámara, y si no la tienes, dime «no tengo».";
+const REMIND_OF_THE_CAMERA: &str =
+    "Te escucho. Cuando la tengas, muéstrame tu tarea a la cámara; si no la tienes, dime «no tengo».";
+
+/// A homework session whose tutor can read a photo of the homework, at the
+/// end of a screening that leaves the student at level 1.
+fn waiting_for_the_photo() -> Student {
+    let mut student = Student::opened(setup(Goal::Homework), HOMEWORK_LEVEL);
+    student.says("sí");
+    student.answers(true);
+    for _ in 0..4 {
+        student.answers(false);
+    }
+    assert_eq!(student.at(), "pedir_tarea");
+    student
+}
+
+#[test]
+fn a_photo_of_the_homework_sets_its_level_when_the_tutor_can_read_one() {
+    let mut student = waiting_for_the_photo();
+    assert_eq!(student.records[0].input, Input::Start { homework: 1 });
+    // The screening closes without the plan, and the photo is asked for.
+    let closing = student.turns.last().unwrap().clone();
+    let said = said_by_tutor(&closing);
+    let expected = format!("¡Terminamos el calentamiento! Gracias por pensar conmigo. | {ASK_FOR_THE_PHOTO}");
+    assert!(said.ends_with(&expected), "{said}");
+    assert!(!said.contains("He analizado"), "{said}");
+    assert_eq!((closing.awaits, closing.converse.clone()), (Some("homework_photo"), None));
+    assert_eq!(closing.reply()["awaits"], "homework_photo");
+    assert_eq!(closing.script()["awaits"], "homework_photo");
+    let step = student.engine.step(student.now);
+    assert_eq!((&step["awaits"], &step["card"]), (&json!("homework_photo"), &Value::Null));
+    assert_no_answer(&student);
+
+    // What is said meanwhile is the engine's to answer: a reminder, no model.
+    let talk = student.says("espera, la estoy buscando");
+    assert_eq!(said_by_tutor(&talk), REMIND_OF_THE_CAMERA);
+    assert_eq!((talk.awaits, talk.converse.clone()), (Some("homework_photo"), None));
+    assert!(talk.lines.iter().all(|line| line.echoes));
+
+    // A tutor that reconnects is told what is awaited; that stores nothing.
+    let again = student.engine.open(student.now + 1000, 0);
+    assert_eq!(said_by_tutor(&again), ASK_FOR_THE_PHOTO);
+    assert_eq!(again.awaits, Some("homework_photo"));
+    assert!(student.engine.unsaved().is_empty());
+
+    // A photo that cannot be read is asked for again.
+    student.now += 5_000;
+    let blurry = student.engine.homework(student.now, Reading::Unreadable, None, None).unwrap();
+    let blurry = student.keep(blurry);
+    assert_eq!(
+        said_by_tutor(&blurry),
+        "Uy, no la pude ver bien. Acércala un poquito a la cámara, con buena luz, y muéstramela otra vez."
+    );
+    assert_eq!(blurry.awaits, Some("homework_photo"));
+    // An exercise shown belongs to a stage no session has yet.
+    assert!(matches!(
+        student.engine.homework(student.now, Reading::Shown, None, None),
+        Err(ApiError::Conflict(_))
+    ));
+
+    // Read at level 3: the homework's level is the target, and only now the plan.
+    student.now += 5_000;
+    let read = student.engine.homework(student.now, Reading::Read, Some(3), Some(82)).unwrap();
+    let read = student.keep(read);
+    let said = said_by_tutor(&read);
+    let expected = "¡Gracias! Ya vi tu tarea: es de las sumas y restas con el mismo denominador. | He analizado \
+                    cómo te fue en los ejercicios, y antes de que hagamos la tarea, te voy a ayudar a reforzar \
+                    las fracciones equivalentes y las sumas y restas con el mismo denominador. Esto es importante \
+                    para que aprendas a hacer la tarea por tu cuenta. | Etapa 1: Descubrimiento. Empecemos por \
+                    las fracciones equivalentes.";
+    assert!(said.starts_with(expected), "{said}");
+    assert_eq!((read.awaits, read.converse.clone()), (None, None));
+    assert!(read.reply().get("awaits").is_none());
+    assert!(read.lines.iter().all(|line| !line.echoes));
+    assert_eq!(student.at(), "etapa1:2:teoria");
+    assert_eq!(
+        student.records.last().unwrap().input,
+        Input::Homework { outcome: Reading::Read, level: Some(3), confidence: Some(82) }
+    );
+    assert!(student.engine.step(student.now).get("awaits").is_none());
+    // Nothing waits for a photo now: another reading is refused and stores nothing.
+    assert!(matches!(
+        student.engine.homework(student.now, Reading::Read, Some(4), Some(90)),
+        Err(ApiError::Conflict(_))
+    ));
+    assert!(student.engine.unsaved().is_empty());
+
+    // Rebuilt from its inputs, the same session; stored, the same inputs.
+    let rebuilt = Engine::replay(setup(Goal::Homework), bank().unwrap(), &student.records);
+    assert_eq!(rebuilt.step(student.now), student.engine.step(student.now));
+    for record in &student.records {
+        let stored = serde_json::to_value(&record.input).unwrap();
+        assert_eq!(serde_json::from_value::<Input>(stored).unwrap(), record.input);
+    }
+    assert_eq!(
+        serde_json::to_value(&student.records[0].input).unwrap(),
+        json!({ "kind": "start", "homework": 1 })
+    );
+    assert_eq!(
+        serde_json::to_value(Input::Homework {
+            outcome: Reading::Read,
+            level: Some(3),
+            confidence: Some(82)
+        })
+        .unwrap(),
+        json!({ "kind": "homework", "outcome": "read", "level": 3, "confidence": 82 })
+    );
+    assert_eq!(
+        serde_json::to_value(Input::Homework { outcome: Reading::NoHomework, level: None, confidence: None })
+            .unwrap(),
+        json!({ "kind": "homework", "outcome": "no_homework" })
+    );
+
+    // The family's report says the homework was seen, and plans up to its level.
+    let report = student.engine.report().unwrap();
+    assert!(
+        report.contains(
+            "Mateo nos mostró su tarea de Matemáticas: es sobre sumar y restar fracciones con igual \
+             denominador y convertir mixtos e impropias."
+        ),
+        "{report}"
+    );
+    assert!(!report.contains("sumar y restar fracciones con distinto denominador"), "{report}");
+}
+
+#[test]
+fn without_a_photo_the_session_goes_on_with_the_banks_homework() {
+    let mut student = waiting_for_the_photo();
+    let none = student.says("no tengo");
+    let said = said_by_tutor(&none);
+    let expected = "¡No pasa nada! | Vamos a practicar con ejercicios míos, como los de una tarea de fracciones. | \
+                    He analizado cómo te fue en los ejercicios, y antes de que hagamos la tarea, te voy a ayudar a \
+                    reforzar las fracciones equivalentes, las sumas y restas con el mismo denominador y las sumas \
+                    y restas con distinto denominador.";
+    assert!(said.starts_with(expected), "{said}");
+    assert_eq!((none.awaits, none.converse.clone()), (None, None));
+    assert_eq!(student.at(), "etapa1:2:teoria");
+    assert!(matches!(
+        student.engine.homework(student.now, Reading::NoHomework, None, None),
+        Err(ApiError::Conflict(_))
+    ));
+}
+
+#[test]
+fn a_tutor_that_cannot_read_a_photo_gets_the_session_as_before() {
+    let mut student = Student::new(Goal::Homework);
+    assert_eq!(serde_json::to_value(&student.records[0].input).unwrap(), json!({ "kind": "start" }));
+    // An input stored before the capability existed reads as none.
+    assert_eq!(
+        serde_json::from_value::<Input>(json!({ "kind": "start" })).unwrap(),
+        Input::Start { homework: 0 }
+    );
+    student.says("sí");
+    student.answers(true);
+    for _ in 0..4 {
+        student.answers(false);
+    }
+    assert_eq!(student.at(), "etapa1:2:teoria");
+    assert!(student.engine.homework(student.now, Reading::Read, Some(3), Some(90)).is_err());
+    assert!(student.turns.iter().all(|turn| turn.awaits.is_none()));
+    assert!(!student.turns.iter().flat_map(|turn| &turn.lines).any(|line| line.say.contains("a la cámara")));
+    assert!(student.engine.step(student.now).get("awaits").is_none());
+    // The shapes the agent gets are the ones it always got.
+    let fields = |value: Value| value.as_object().unwrap().keys().cloned().collect::<Vec<_>>();
+    let last = student.turns.last().unwrap();
+    assert_eq!(fields(last.reply()), ["closed", "converse", "lines"]);
+    assert_eq!(fields(last.script()), ["closed", "lines"]);
 }

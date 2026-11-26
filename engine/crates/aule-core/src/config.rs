@@ -85,6 +85,18 @@ pub struct Config {
 
     /// Veces que se repite el ciclo de pistas en Tarea/Corrección antes de dejar el ejercicio marcado.
     pub ciclos_max_tarea: u32,
+
+    /// TAR-05 [PROPUESTA]: con la Tarea como objetivo y su nivel por conocer,
+    /// Aule pide verla a la cámara y su nivel es el Nivel objetivo. Apagado:
+    /// la Tarea del banco, como hasta ahora. Lo enciende quien puede leer una foto.
+    pub foto_tarea: bool,
+    /// TAR-06 [PROPUESTA]: una lectura con menos confianza que esta (0 a 100)
+    /// cuenta como una foto que no se vio bien.
+    pub confianza_minima_foto: u8,
+    /// TAR-06 [PROPUESTA]: fotos fallidas tras las que se sigue sin la foto.
+    pub intentos_foto: u8,
+    /// TAR-06 [PROPUESTA]: turnos de conversación sin foto tras los que se sigue sin ella.
+    pub charlas_sin_foto: u8,
 }
 
 impl Default for Config {
@@ -121,6 +133,10 @@ impl Default for Config {
             minutos_por_sesion_plan: 60,
             umbral_extracurricular_min: 30,
             ciclos_max_tarea: 2,
+            foto_tarea: false,
+            confianza_minima_foto: 70,
+            intentos_foto: 2,
+            charlas_sin_foto: 3,
         }
     }
 }
