@@ -2779,12 +2779,28 @@ impl Motor {
             Actividad::Pausa(_) | Actividad::Terminada | Actividad::NoIniciada => {
                 out.push(msg("Te entiendo. Descansa un poquito."));
             }
+            _ if self.es_de_noche() => {
+                // [PROPUESTA] PAU-07: de noche no se propone moverse. Quien está
+                // cansado descansa y la sesión se cierra, con su despedida.
+                self.aplicar("PAU-07", "Dijo que está cansado y ya es de noche: cierre");
+                out.push(msg("Ya es tarde, y lo mejor ahora es descansar: mientras duermes, tu cerebro también aprende lo que practicamos. Por hoy lo dejamos aquí y seguimos en la próxima sesión.").clase(Clase::Calma));
+                self.cerrar(out);
+            }
             _ => {
                 self.aplicar("PAU-05", "Dijo que está cansado: Pausa activa ahora");
                 out.push(msg("Gracias por decirme. Hagamos una Pausa activa y luego seguimos donde nos quedamos.").clase(Clase::Calma));
                 self.entrar_pausa(true, out);
             }
         }
+    }
+
+    /// [PROPUESTA] PAU-07: si ahora es de noche donde vive la familia.
+    fn es_de_noche(&self) -> bool {
+        let Some(inicio) = self.perfil.minuto_inicio else {
+            return false;
+        };
+        let ahora = (u64::from(inicio) + self.ahora() / 60_000) % 1440;
+        ahora >= u64::from(self.cfg.noche_desde_min) || ahora < u64::from(self.cfg.noche_hasta_min)
     }
 
     fn entrar_pausa(&mut self, por_cansancio: bool, out: &mut Vec<Mensaje>) {
@@ -2834,7 +2850,6 @@ impl Motor {
             return Some(k);
         }
         let palabras = [
-            ("sueno", 0),
             ("salto", 0),
             ("aburr", 1),
             ("espejo", 1),

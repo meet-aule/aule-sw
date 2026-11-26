@@ -13,7 +13,7 @@ fn setup(goal: Goal) -> Setup {
         today: NaiveDate::from_ymd_opt(2026, 11, 14).unwrap(),
         goal,
         due: NaiveDate::from_ymd_opt(2026, 11, 19),
-        start: Start { minutes: 90, kept: Kept::default() },
+        start: Start { minutes: 90, kept: Kept::default(), minute: Some(16 * 60) },
     }
 }
 
@@ -433,6 +433,19 @@ fn in_practice() -> Student {
 }
 
 #[test]
+fn a_tired_student_at_night_rests_and_the_session_closes() {
+    // At 22:50 where the family lives, "estoy cansado" ends the session kindly
+    // instead of proposing an active break (PAU-07).
+    let mut night = setup(Goal::Homework);
+    night.start.minute = Some(22 * 60 + 50);
+    let mut student = Student::from(night);
+    let turn = student.says("estoy cansado");
+    let said = said_by_tutor(&turn);
+    assert!(said.contains("Ya es tarde") && !said.contains("Pausa activa"), "{turn:?}");
+    assert!(turn.closed && student.engine.closed(), "{turn:?}");
+}
+
+#[test]
 fn a_spoken_answer_is_split_into_the_number_and_how_it_was_worked_out() {
     // The number first, then why: the engine's own reader would take the "3"
     // after the last "es", so the part before "porque" is what is graded.
@@ -556,9 +569,11 @@ fn what_is_not_an_answer_goes_where_the_engine_expects_it() {
     let turn = student.says("estoy cansado");
     assert_eq!(student.at(), "pausa");
     assert_eq!(turn.lines.last().unwrap().show.as_ref().unwrap()["kind"], "table");
-    // In the break, naming an activity chooses it; anything else is talk.
+    // In the break, naming an activity chooses it; anything else is talk. Being
+    // sleepy never picks the star jumps: a calm activity is proposed instead.
     let turn = student.says("tengo sueño");
-    assert!(said_by_tutor(&turn).contains("Saltos de estrella"), "{turn:?}");
+    let said = said_by_tutor(&turn);
+    assert!(said.contains("Respiración del globo") && !said.contains("Saltos de estrella"), "{turn:?}");
     let turn = student.says("¿cuánto falta?");
     assert!(turn.lines.is_empty(), "{turn:?}");
     assert!(turn.converse.unwrap().contains("active break"));

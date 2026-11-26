@@ -43,6 +43,11 @@ pub struct Config {
     pub pausa_duracion_s: u64,
     /// PAU-06 [PROPUESTA]: las 4 actividades (2 energizantes y 2 relajantes).
     pub actividades_pausa: Vec<ActividadPausa>,
+    /// PAU-07 [PROPUESTA]: de qué minuto del día a cuál es de noche donde vive
+    /// la familia. De noche, quien dice que está cansado descansa: la sesión se
+    /// cierra en vez de proponer una pausa activa.
+    pub noche_desde_min: u16,
+    pub noche_hasta_min: u16,
 
     /// NIV-01: niveles por tema.
     pub niveles_por_tema: u8,
@@ -96,6 +101,8 @@ impl Default for Config {
             pausas_en_min: vec![30, 60],
             pausa_duracion_s: 300,
             actividades_pausa: actividades_propuestas(),
+            noche_desde_min: 21 * 60,
+            noche_hasta_min: 6 * 60,
             niveles_por_tema: 5,
             tamizaje_min_estimados: 15,
             etapa1_min_estimados: 8,
@@ -130,7 +137,7 @@ pub fn actividades_propuestas() -> Vec<ActividadPausa> {
         a(
             "Saltos de estrella",
             "energizante",
-            "Si tienes sueño",
+            "Si te falta energía",
             &[
                 "Ponte de pie, con espacio a tu alrededor.",
                 "Haz 15 saltos abriendo brazos y piernas como una estrella.",
