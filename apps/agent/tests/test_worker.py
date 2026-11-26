@@ -13,6 +13,7 @@ from livekit.agents import AgentSession, llm
 from aule_agent import worker
 from aule_agent.config import Settings
 from aule_agent.greetings import greeting
+from aule_agent.homework import Course
 from aule_agent.moderation import PROBE_TEXT, THRESHOLDS, Moderator, Probe
 from aule_agent.physical_safety import PhysicalSafetyGuard
 from aule_agent.platform import Platform, PlatformSession, Refused
@@ -597,11 +598,17 @@ async def test_an_admitted_session_starts_with_no_way_around_the_gates(monkeypat
 
 
 @pytest.mark.parametrize(
-    ("push_to_talk", "engine", "reads"),
-    [(False, True, True), (True, True, False), (False, False, False)],
+    ("push_to_talk", "engine", "course", "reads"),
+    [
+        (False, True, True, True),
+        (True, True, True, False),
+        (False, False, False, False),
+        # A platform that says nothing of the course: there is nothing to read against.
+        (False, True, False, False),
+    ],
 )
-async def test_only_an_engine_session_without_the_talk_button_reads_homework_photos(
-    monkeypatch, push_to_talk, engine, reads
+async def test_only_an_engine_session_with_a_course_and_no_talk_button_reads_homework_photos(
+    monkeypatch, push_to_talk, engine, course, reads
 ):
     events, sessions, shutdown, readers = [], [], [], []
     for name, value in {
@@ -612,14 +619,19 @@ async def test_only_an_engine_session_without_the_talk_button_reads_homework_pho
         monkeypatch.setenv(name, value)
 
     class Reader:
-        def __init__(self, *, counted):
-            self.counted, self.closed = counted, False
+        def __init__(self, course, *, counted):
+            self.course, self.counted, self.closed = course, counted, False
             readers.append(self)
 
         async def close(self):
             self.closed = True
 
-    start = {"instructions": "", **({"script": {"lines": [{"say": "Hola."}]}} if engine else {})}
+    sent = {"topic": "Fracciones", "levels": [{"level": 1, "about": "Leer fracciones"}]}
+    start = {
+        "instructions": "",
+        **({"script": {"lines": [{"say": "Hola."}]}} if engine else {}),
+        **({"homework": sent} if course else {}),
+    }
 
     def linked_platform(linked, **options):
         return Platform(linked, Answers(events, start), **options)
@@ -656,7 +668,9 @@ async def test_only_an_engine_session_without_the_talk_button_reads_homework_pho
         assert tutor._reader is (readers[0] if reads else None)
         assert len(readers) == int(reads)
         if reads:
-            # What a read uses is counted with the session's model calls.
+            # Read against the course the platform sent, and what a read uses
+            # is counted with the session's model calls.
+            assert readers[0].course == Course("Fracciones", ("Leer fracciones",))
             assert readers[0].counted.__func__ is Usage.looked
     finally:
         for cleanup in shutdown:

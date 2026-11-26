@@ -454,11 +454,13 @@ async def entrypoint(ctx: JobContext) -> None:
     usage = Usage()
     voice = build_tts(settings, language)
     voice.on("metrics_collected", usage.spoke)
-    # Only the engine asks for a photo of the homework. What each read uses
-    # is paid like the tutor's own calls and counted with them.
+    # Only the engine asks for a photo of the homework, and it is read against
+    # the course the platform sent with the start: without one, none is read.
+    # What each read uses is paid like the tutor's own calls and counted with them.
+    course = platform.homework_course if platform and platform.scripted else None
     reader = (
-        HomeworkReader(counted=usage.looked)
-        if platform and platform.scripted and not settings.push_to_talk
+        HomeworkReader(course, counted=usage.looked)
+        if course is not None and not settings.push_to_talk
         else None
     )
     tutor = Tutor(
