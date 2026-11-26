@@ -41,7 +41,8 @@ use crate::state::AppState;
 const CODE_MINUTES: i32 = 10;
 const MAX_ATTEMPTS: i32 = 5;
 const MAX_CODES_PER_HOUR: i32 = 5;
-const SESSION_DAYS: i32 = 30;
+/// A family's session lasts this long from its last use (`auth::Caller` renews it).
+pub(crate) const SESSION_DAYS: i32 = 30;
 /// A session the team's console opens lasts this long, as the console's own does.
 pub(crate) const TEAM_SESSION_HOURS: i32 = 12;
 const MAX_SOURCE_CHARS: usize = 24;

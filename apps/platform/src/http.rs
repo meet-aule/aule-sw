@@ -9,7 +9,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use uuid::Uuid;
 
-use crate::auth::{Caller, Input, Operator};
+use crate::auth::{Caller, Guardian, Input, Operator};
 use crate::error::{ApiError, ApiResult};
 use crate::families::{self, child_for};
 use crate::learning::{self, NewAttempt, Skill, is_slug};
@@ -34,6 +34,7 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/children/{child_id}/memories/{memory_id}", delete(forget_memory))
         .route("/v1/children/{child_id}/reviews", get(child_reviews))
         .route("/v1/children/{child_id}/sessions", get(child_sessions))
+        .route("/v1/children/{child_id}/sessions/facts", get(child_session_facts))
         .route("/v1/skills", put(put_skills).get(get_skills))
         .route("/v1/sessions", post(sessions::create_session))
         .route("/v1/sessions/{session_id}", get(sessions::status))
@@ -264,17 +265,80 @@ async fn child_reviews(
 }
 
 #[derive(Deserialize)]
+struct SessionListQuery {
+    #[serde(default)]
+    limit: Option<String>,
+}
+
+/// How many of a child's sessions to answer with: 20 unless asked, 1 to 50.
+fn session_list_limit(asked: Option<&str>) -> ApiResult<u64> {
+    match asked.map(str::parse::<u64>) {
+        None => Ok(20),
+        Some(Ok(limit @ 1..=50)) => Ok(limit),
+        Some(_) => Err(ApiError::bad_request("limit must be 1 to 50")),
+    }
+}
+
+/// A child's sessions, newest first, for the family's app: every one, the one
+/// going on now and those that never started included, so a session still open
+/// can be seen and ended. How each one stands and what it was for, as its kind
+/// and subject: never the topic or day typed for it, the review's words or
+/// anything said. Only the child's own guardians ask for it; the team reads a
+/// family's sessions on its own page (`team::family_sessions`).
+async fn child_sessions(
+    guardian: Guardian,
+    State(state): State<AppState>,
+    Path(child_id): Path<Uuid>,
+    Query(params): Query<SessionListQuery>,
+) -> ApiResult<Json<Value>> {
+    let limit = session_list_limit(params.limit.as_deref())?;
+    let caller = Caller::Guardian { id: guardian.id, family_id: guardian.family_id };
+    child_for(&state.db, &caller, child_id).await?;
+    use crate::entity::session;
+    use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect};
+    let sessions: Vec<Value> = session::Entity::find()
+        .filter(session::Column::ChildId.eq(child_id))
+        .filter(session::Column::Audience.eq("child"))
+        .order_by_desc(session::Column::CreatedAt)
+        .order_by_desc(session::Column::Id)
+        .limit(limit)
+        .all(&state.db)
+        .await?
+        .into_iter()
+        .map(|row| {
+            let objective = row.objective.as_ref();
+            let kind = objective.and_then(|objective| objective.get("kind")?.as_str());
+            let subject = objective.and_then(|objective| objective.get("subject")?.as_str());
+            json!({
+                "id": row.id,
+                "status": row.status,
+                "created_at": row.created_at,
+                "started_at": row.started_at,
+                "ended_at": row.ended_at,
+                "end_reason": row.end_reason,
+                "engine": row.engine,
+                "language": row.language,
+                "objective": kind.map(|kind| json!({ "kind": kind, "subject": subject })),
+                "on_device": row.device_id.is_some(),
+                "reviewed": row.reviewed_at.is_some(),
+            })
+        })
+        .collect();
+    Ok(Json(json!({ "sessions": sessions })))
+}
+
+#[derive(Deserialize)]
 struct SessionsQuery {
     #[serde(default)]
     limit: Option<i64>,
 }
 
-/// The child's latest sessions, newest first, as facts a guardian can be shown:
-/// when, how long, what for, the skills by their catalog name, the exercises
-/// tried and got right, the breaks and how each ended. Never what was said: no
-/// topic or date typed for it, no review, no transcript, no count of turns or
-/// characters, and no id.
-async fn child_sessions(
+/// The child's latest sessions, newest first, as facts a guardian can be shown,
+/// on the playground's home, where a child lands too: when, how long, what for,
+/// the skills by their catalog name, the exercises tried and got right, the
+/// breaks and how each ended. Never what was said: no topic or date typed for
+/// it, no review, no transcript, no count of turns or characters, and no id.
+async fn child_session_facts(
     caller: Caller,
     State(state): State<AppState>,
     Path(child_id): Path<Uuid>,
@@ -361,4 +425,20 @@ async fn put_skills(
 
 async fn get_skills(_: Caller, State(state): State<AppState>) -> ApiResult<Json<Value>> {
     Ok(Json(json!({ "skills": learning::catalog(&state.db).await? })))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_childs_session_list_is_twenty_long_unless_asked_from_one_to_fifty() {
+        assert_eq!(session_list_limit(None).unwrap(), 20);
+        for (asked, limit) in [("1", 1), ("20", 20), ("50", 50)] {
+            assert_eq!(session_list_limit(Some(asked)).unwrap(), limit, "{asked}");
+        }
+        for asked in ["0", "51", "-1", "abc", "", " 5", "5.0", "99999999999999999999"] {
+            assert!(session_list_limit(Some(asked)).is_err(), "{asked}");
+        }
+    }
 }

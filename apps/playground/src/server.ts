@@ -63,6 +63,7 @@ import {
   sourceOf,
 } from "./signin.ts";
 import { RecoveryTickets, recoveryCookie, recoveryTicket, resumeToken, STATUS_GRACE_SECONDS } from "./recovery.ts";
+import { appApi, LIMITS, type Limits } from "./passthrough.ts";
 
 const publicDir = new URL("../public/", import.meta.url);
 // The browser build that ships inside the livekit-client package.
@@ -242,14 +243,18 @@ const TYPED_PAGES = ["/guia", "/guide"];
 // The team's panel moved to its own console (apps/admin). Its old address
 // sends the team there: a fixed address, never one taken from the request.
 const TEAM_CONSOLE = "https://admin.meetaule.com/";
+// The family app's way to the platform (passthrough.ts).
+const APP_API = "/api/v1/";
 
 export function createPlayground(
   settings: Settings,
   rooms: Pick<RoomServiceClient, "listParticipants" | "deleteRoom"> = new RoomServiceClient(
     settings.livekitServiceUrl, settings.livekitApiKey, settings.livekitApiSecret, { requestTimeout: 5 },
   ),
+  appLimits: Limits = LIMITS,
 ): Server {
   const headers = securityHeaders(settings);
+  const forApp = appApi(settings, appLimits);
   // Read on the first request and kept in memory until a file in public/
   // changes, so an edit to the page shows on the next reload. The pages say
   // which build they come from.
@@ -720,6 +725,17 @@ export function createPlayground(
     const path = pathname.slice(settings.basePath.length);
 
     const handle = async () => {
+      if (path.startsWith(APP_API)) {
+        const answer = await forApp(request, path.slice(APP_API.length), url.searchParams);
+        // Null: the app went away before its request was in.
+        if (!answer) return;
+        response.writeHead(answer.status, {
+          ...headers,
+          ...(answer.type ? { "Content-Type": answer.type } : {}),
+          ...(answer.close ? { Connection: "close" } : {}),
+        });
+        return response.end(answer.body);
+      }
       // Watchers read only the status; a person can read which build answers.
       if (path === "/healthz" && request.method === "GET") {
         return json(response, 200, { ok: true, version: VERSION, commit: settings.commit });

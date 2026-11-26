@@ -46,6 +46,10 @@ Three kinds of caller use `Authorization: Bearer ...`:
 
 Devices do not use a bearer token: they sign with the key burned into them.
 
+The family app reaches the guardian's routes it calls, and no others, through
+[the playground's pass-through](../playground/README.md#the-family-apps-api),
+which takes a guardian's bearer only.
+
 ### Sign-in and account (guardian)
 
 | Route | What it does |
@@ -61,6 +65,12 @@ Devices do not use a bearer token: they sign with the key burned into them.
 | `GET /v1/notices`, `POST /v1/notices/{id}/read` | What the family has been told |
 | `PUT`, `DELETE /v1/push/tokens` | The app registers this phone for pushes each time it starts, and forgets it on sign-out. Body: `{"token", "platform"}` with `android`, `ios` or `web` |
 
+A family's token lasts 30 days from its last use: a request with one that has
+fewer than 29 days left sets it to 30 days from then (`auth::Caller`), so a
+session is written once a day at most and a parent who opens the app within a
+month never needs another code. Signing out and erasing the family still end it;
+an ended one stays ended, and the team's sessions of 12 hours keep their end.
+
 Every way of signing in also takes an optional `source`: the code of the link
 a family came from, which the playground passes on from `?src=` on its page. A
 new family keeps it when it is a short code of lower-case letters, digits and
@@ -72,8 +82,8 @@ family that already exists keeps the one it came with.
 
 | Route | What it does |
 |---|---|
-| `POST /v1/families/{id}/children` | A child's profile. `grade` is `P1` to `P6` or `S1` to `S5` |
-| `GET`, `PUT`, `DELETE /v1/children/{id}` | Read, replace or erase a child and everything derived from them. `tutor_name` (1 to 20 letters, default `Aule`), `tutor_persona` (`calido`, `jugueton`, `aventurero` or `tranquilo`) and `tutor_persona_note` (one line, up to 200 characters; empty removes it) say how the tutor presents itself, and keep their value when left out. `subjects` are the school subjects the family wants reinforced, from the list `GET /v1/me` returns; left out of a `PUT`, they keep their value. `relationship` is what the signed-in guardian is to the child (see [People, as FHIR R4](#people-as-fhir-r4)); it keeps its value when left out, an empty text removes it, and `GET` returns the caller's own (`null` when not stated, or for the operator) |
+| `POST /v1/families/{id}/children` | A child's profile. `grade` is `P1` to `P6` or `S1` to `S5`. A signed-in guardian may send what they consent to with it, `consents: {voice, memory, transcripts, policy_version, locale?}`, written in the same transaction as the child and recorded as `POST /v1/children/{id}/consents` records each answer: `voice` must be `true` and `memory` and `transcripts` answered, or the answer is 400 and no child is made. The operator's token gets 400 for it: the operator records answers one at a time, saying how |
+| `GET`, `PUT`, `DELETE /v1/children/{id}` | Read, replace or erase a child and everything derived from them. `tutor_name` (1 to 20 letters, default `Aule`), `tutor_persona` (`calido`, `jugueton`, `aventurero` or `tranquilo`) and `tutor_persona_note` (one line, up to 200 characters; empty removes it) say how the tutor presents itself, and keep their value when left out. `subjects` are the school subjects the family wants reinforced, from the list `GET /v1/me` returns; left out of a `PUT`, they keep their value. `relationship` is what the signed-in guardian is to the child (see [People, as FHIR R4](#people-as-fhir-r4)); it keeps its value when left out, an empty text removes it, and `GET` returns the caller's own (`null` when not stated, or for the operator). A `PUT` with `consents` is refused (400): an answer has its own route |
 | `POST /v1/children/{id}/consents` | Grant or take back `voice`, `transcripts` or `memory` |
 | `GET /v1/children/{id}/skills` | What the child knows now, and what the model would work on next |
 | `POST /v1/children/{id}/attempts` | Answers reported by a guardian (the operator can also import past records) |
@@ -81,7 +91,8 @@ family that already exists keeps the one it came with.
 | `GET /v1/children/{id}/memories?query=` | What is remembered, closest to the query first |
 | `DELETE /v1/children/{id}/memories/{memory_id}` | Forget one thing |
 | `GET /v1/children/{id}/reviews` | Notes from past sessions |
-| `GET /v1/children/{id}/sessions?limit=` | The child's latest sessions as facts, newest first: when, how long (`seconds`, `null` when the housekeeping closed it), what for (the objective's `kind` and `subject`), up to three skills by catalog name, exercises tried and right, breaks, how it ended; never what was said, the topic typed or the review. Child sessions that started and ended; 3, or `limit` from 1 to 10 |
+| `GET /v1/children/{id}/sessions?limit=` | The child's sessions for the family's app, newest first, the one going on now and those that never started included: `{sessions: [{id, status, created_at, started_at, ended_at, end_reason, engine, language, objective, on_device, reviewed}]}`. `status` is `created`, `active` or `ended`; `objective` is its `kind` and `subject` (or `null`), never the topic or day typed for it; `on_device` says a device ran it, `reviewed` that its review has run. Never what was said. 20, or `limit` from 1 to 50 (400 otherwise). For the child's own guardians only: the operator's token gets 403 |
+| `GET /v1/children/{id}/sessions/facts?limit=` | For the playground's home, the child's latest sessions as facts, newest first: when, how long (`seconds`, `null` when the housekeeping closed it), what for (the objective's `kind` and `subject`), up to three skills by catalog name, exercises tried and right, breaks, how it ended; never what was said, the topic typed or the review. Child sessions that started and ended; 3, or `limit` from 1 to 10 |
 | `GET /v1/sessions/{id}` | Lifecycle only for the child's guardian or operator: status, fixed end reason, language, engine flag and remaining seconds; resume requires active status and current voice consent |
 | `POST /v1/sessions/{id}/end` | Owner stops a session, including after voice consent is revoked. First close wins and queues one review |
 | `POST /v1/sessions` | A session and its room token. The platform opens the room through LiveKit's server API and asks for the tutor there, so the agent's token and the family's note never reach the person: their token only lets them into the room. 503 when LiveKit does not open it. A guardian can only start a child's session. Optional `objective`: what the family says the session is for, `{kind: homework, exam_prep, exam_review or explore, subject (one of the subjects, or other), topic (up to 200 characters), due (a date)}`; the supervisor plans for it first. Optional `engine: true` asks for the [session engine](#sessions-run-by-the-session-engine) to run the session; the response's `engine` says whether it does |

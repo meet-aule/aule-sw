@@ -36,7 +36,7 @@ The words of these steps are in `public/first-steps.js`, in Spanish and English,
 
 The student's ending screen shows the same pixel-art cuy at rest above its title and explanation, with the return or reconnect controls below. It reuses the session's character and renderer, without loading another image or opening a room.
 
-Back on the home, each student's row says what their last three sessions were: the day and the minutes, the skills practised or what the session was for, how many exercises were practised (not how many were right: a child lands on the home too), the breaks, and an ending that was not the ordinary one («Hoy · 6 min Sumar hasta 20 · 3 ejercicios · 1 pausa»). «Ver resúmenes» under each child opens a separate reading screen (`public/reviews.js`), with the latest five summaries and their next steps, an empty state while none are ready, and refresh/retry. It reuses the guardian-scoped `api/student/known` read, renders only the summaries as text, and clears them on leaving or signing out; stale responses cannot populate another child's screen. Configurar keeps the profile and memory controls. The home itself still shows only facts, never the review's words. FIGMA.md D43. The lines come from `api/student/sessions`, which reads the platform's guardian-scoped `GET /v1/children/{id}/sessions` and keeps only those facts: never the transcript, anything said or typed, the topic written on A04 · Detalles or the review's words (`src/students.ts` `latestSessions`, `public/summaries.js`). On a first run the session says so to the child too: «Tu papá o mamá recibe un resumen de lo que hacemos.» FIGMA.md D28, D35.
+Back on the home, each student's row says what their last three sessions were: the day and the minutes, the skills practised or what the session was for, how many exercises were practised (not how many were right: a child lands on the home too), the breaks, and an ending that was not the ordinary one («Hoy · 6 min Sumar hasta 20 · 3 ejercicios · 1 pausa»). «Ver resúmenes» under each child opens a separate reading screen (`public/reviews.js`), with the latest five summaries and their next steps, an empty state while none are ready, and refresh/retry. It reuses the guardian-scoped `api/student/known` read, renders only the summaries as text, and clears them on leaving or signing out; stale responses cannot populate another child's screen. Configurar keeps the profile and memory controls. The home itself still shows only facts, never the review's words. FIGMA.md D43. The lines come from `api/student/sessions`, which reads the platform's guardian-scoped `GET /v1/children/{id}/sessions/facts` and keeps only those facts: never the transcript, anything said or typed, the topic written on A04 · Detalles or the review's words (`src/students.ts` `latestSessions`, `public/summaries.js`). On a first run the session says so to the child too: «Tu papá o mamá recibe un resumen de lo que hacemos.» FIGMA.md D28, D35.
 
 Mobile examples with synthetic data: [shared entry](screenshots/entry.png) and
 [session summaries](screenshots/summaries.png). These are documentation images,
@@ -97,6 +97,43 @@ the same session. This applies both with the platform and to operator sessions
 issued by the playground. The page shows its reconnecting state while the SDK
 retries; a failed recovery still reports that the connection was lost. Reload
 recovery for families is described below; an ended tutor cannot be resumed.
+
+## The family app's API
+
+The family app ([meet-aule/aule-app](https://github.com/meet-aule/aule-app))
+reaches the platform, which listens only on its own machine, through this
+server: `<base path>/api/v1/<path>` goes on to the platform's `/v1/<path>`. In
+production that is `https://playground.meetaule.com/session/api/v1`. The list
+is in `src/passthrough.ts`.
+
+- **Only the app's calls.** Signing in by code or with Google, signing out,
+  `me`, adding a child, a child's profile, consents, reviews, skills, sessions
+  and memories (with `limit`) and forgetting one, the skill catalog, a
+  session's state and ending it, the notices and the family's devices. Anything
+  else is a 404 that reaches nothing: starting a session, the team's routes,
+  the metrics, the agent's, the devices' own (`ota`) and the health check, and
+  so is another method or an address that is not quite one of these. Each part
+  of an address is a word of its route or an id; a query is the route's own
+  number, once, or a 400.
+- **Only the bearer.** Of the request's headers only `Authorization` (`Bearer`
+  and a session's token) and `Content-Type` go on, with the page's own
+  `User-Agent`; a cookie, an address or anything else the request carried stays
+  here, and of the platform's answer only its status, its type and its body
+  come back. Without a bearer only signing in goes on (401 otherwise); the
+  operator's token is refused with the answer a wrong token gets, and a line in
+  the log that says it was tried.
+- **Bounded.** A body is JSON of 16 KiB at most (413, and the connection closes)
+  sent within 10 seconds (the connection closes otherwise); the platform has 10
+  seconds to answer (503 otherwise). The refusals are in the platform's error
+  shape, `{"error": {"code", "message"}}`.
+- **Nothing of a request is logged**, only a route's shape when the platform
+  does not answer: never a token, an id or a body.
+
+The page's Worker (`infra/edge`) passes these addresses on as it does every
+other, the bearer and the body included. From Cloudflare to the server the hop
+is still plain http, as it is for the page's cookie (`infra/server/README.md`),
+so the app's bearer crosses it unencrypted until a tunnel or a certificate at
+the origin closes it.
 
 ## Boundaries
 

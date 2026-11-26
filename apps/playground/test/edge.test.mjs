@@ -39,6 +39,42 @@ test("any other address goes to the server as it came, query and all", async (t)
   assert.deepEqual(asked, ["http://origin.invalid:8090/guia?src=cesar"]);
 });
 
+test("the family app's API reaches the server with its bearer and its body, and the answer comes back as it is", async (t) => {
+  const sent = [];
+  t.mock.method(globalThis, "fetch", async (input, init) => {
+    sent.push({
+      url: String(input),
+      method: init.method,
+      authorization: init.headers.get("authorization"),
+      type: init.headers.get("content-type"),
+      body: init.body ? await new Response(init.body).text() : null,
+    });
+    return new Response('{"id":"x"}', { status: 201, headers: { "content-type": "application/json" } });
+  });
+  const token = "ab".repeat(32);
+  const body = JSON.stringify({ nickname: "Mati" });
+  const family = "0193a1f0-0000-7000-8000-000000000001";
+  const response = await playground.fetch(
+    new Request(`https://playground.meetaule.com/session/api/v1/families/${family}/children`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body,
+    }),
+    { ORIGIN_URL: "http://origin.invalid:8090" },
+  );
+  assert.deepEqual(sent, [
+    {
+      url: `http://origin.invalid:8090/session/api/v1/families/${family}/children`,
+      method: "POST",
+      authorization: `Bearer ${token}`,
+      type: "application/json",
+      body,
+    },
+  ]);
+  assert.equal(response.status, 201);
+  assert.equal(await response.text(), '{"id":"x"}');
+});
+
 // The console's Worker's secret in these tests, and what it adds to every request with it.
 const EDGE_SECRET = "an-edge-secret-of-the-tests-0123456789abcdef";
 const ADMIN_ENV = { ORIGIN_URL: "http://origin.invalid:8092", EDGE_SECRET };
