@@ -445,7 +445,7 @@ function factsOf(session: Record<string, unknown>): SessionFacts | null {
 
 /**
  * A student's latest sessions as facts the home can show (FIGMA.md D35), from
- * the platform's guardian-scoped GET /v1/children/{id}/sessions: when, how
+ * the platform's guardian-scoped GET /v1/children/{id}/sessions/facts: when, how
  * long, what for, which skills, the exercises and the breaks, and how it
  * ended. Anything else in the answer is left behind, and a session whose
  * start is not a date is not shown. With them, how many of the review's
@@ -459,7 +459,7 @@ export async function latestSessions(
   id: string,
 ): Promise<{ sessions: SessionFacts[]; summaries: number }> {
   const [answer, reviews] = (await Promise.all([
-    platform(settings, `${pathOf(id)}/sessions?limit=${LATEST_SESSIONS}`, undefined, token),
+    platform(settings, `${pathOf(id)}/sessions/facts?limit=${LATEST_SESSIONS}`, undefined, token),
     platform(settings, `${pathOf(id)}/reviews`, undefined, token).catch(() => ({})),
   ])) as [{ sessions?: unknown }, Reviews];
   const sessions = Array.isArray(answer.sessions) ? answer.sessions : [];

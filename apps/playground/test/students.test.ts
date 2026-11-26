@@ -95,12 +95,12 @@ const platform = createServer(async (request, response) => {
     });
   }
   if (path === `/v1/children/${LIAM}/memories/${MEMORY}` && method === "DELETE") return answer(204, {});
-  if (path === `/v1/children/${LIAM}/sessions?limit=3`) return answer(200, { sessions: LATEST });
+  if (path === `/v1/children/${LIAM}/sessions/facts?limit=3`) return answer(200, { sessions: LATEST });
   if (path === "/v1/sessions") return answer(201, { session_id: "s-1", serverUrl: "wss://x", token: "jwt", room: "r" });
   answer(404, { error: { message: "no such path" } });
 });
 
-// What the platform's GET /v1/children/{id}/sessions could send, with what the page must never show.
+// What the platform's GET /v1/children/{id}/sessions/facts could send, with what the page must never show.
 const MARK = "written-by-the-child";
 const LATEST = [
   {
@@ -451,7 +451,7 @@ test("a student's latest sessions are facts the page can show, and nothing else 
     seen.map((call) => [call.method, call.path, call.auth]).sort(),
     [
       ["GET", `/v1/children/${LIAM}/reviews`, `Bearer ${TOKEN}`],
-      ["GET", `/v1/children/${LIAM}/sessions?limit=3`, `Bearer ${TOKEN}`],
+      ["GET", `/v1/children/${LIAM}/sessions/facts?limit=3`, `Bearer ${TOKEN}`],
     ],
   );
 });

@@ -499,6 +499,7 @@ async fn every_route_needs_its_credentials(pool: PgPool) {
         (Method::POST, "/v1/families"),
         (Method::GET, "/v1/skills"),
         (Method::GET, "/v1/children/00000000-0000-0000-0000-000000000000/sessions"),
+        (Method::GET, "/v1/children/00000000-0000-0000-0000-000000000000/sessions/facts"),
         (Method::POST, "/v1/sessions"),
         (Method::GET, "/v1/agent/session"),
         (Method::GET, "/v1/admin/families?q=ana&status=trial"),
@@ -1253,6 +1254,7 @@ async fn a_guardian_signs_in_with_a_code_and_reaches_only_their_family(pool: PgP
         (Method::GET, format!("/v1/children/{child}/skills"), None),
         (Method::GET, format!("/v1/children/{child}/memories"), None),
         (Method::GET, format!("/v1/children/{child}/sessions"), None),
+        (Method::GET, format!("/v1/children/{child}/sessions/facts"), None),
         (Method::DELETE, format!("/v1/children/{child}"), None),
         (Method::POST, format!("/v1/families/{family}/children"), Some(json!({ "nickname": "X" }))),
         (Method::POST, "/v1/sessions".to_string(), Some(json!({ "child_id": child, "audience": "child" }))),
@@ -1441,7 +1443,7 @@ async fn a_guardian_reads_their_childs_latest_sessions_as_facts(pool: PgPool) {
     app.past_session(&app.child_of(family).await, "3 hours", 10).await;
 
     // Both guardians read the same three, and so does the team.
-    let path = format!("/v1/children/{child}/sessions");
+    let path = format!("/v1/children/{child}/sessions/facts");
     let (status, facts) = app.call(Method::GET, &path, Some(&ana), None).await;
     assert_eq!(status, StatusCode::OK, "{facts}");
     assert_eq!(app.call(Method::GET, &path, Some(&pedro), None).await, (StatusCode::OK, facts.clone()));
@@ -1498,6 +1500,223 @@ async fn a_guardian_reads_their_childs_latest_sessions_as_facts(pool: PgPool) {
         assert_eq!(
             (status, body["sessions"].as_array().map(Vec::len)),
             (StatusCode::OK, Some(shown)),
+            "{query}"
+        );
+    }
+}
+
+type When = (
+    String,
+    chrono::DateTime<chrono::Utc>,
+    Option<chrono::DateTime<chrono::Utc>>,
+    Option<chrono::DateTime<chrono::Utc>>,
+);
+
+#[sqlx::test(migrator = "aule_platform::MIGRATOR")]
+async fn a_guardian_lists_their_childs_sessions_the_live_one_included(pool: PgPool) {
+    let app = app(pool);
+    let db = &app.state.pool;
+    let update = |sql: &'static str, session: &str| sqlx::query(sql).bind(session.to_string()).execute(db);
+
+    // Ana's family, by code, and Pedro, its other guardian, by code too.
+    let ana = app.sign_in("ana@example.org", "Ana").await;
+    let (_, me) = app.call(Method::GET, "/v1/me", Some(&ana), None).await;
+    let family = me["family_id"].as_str().unwrap().to_string();
+    sqlx::query(
+        "insert into guardians (id, family_id, email, name)
+         values (gen_random_uuid(), $1::uuid, 'pedro@example.org', 'Pedro')",
+    )
+    .bind(&family)
+    .execute(db)
+    .await
+    .unwrap();
+    let pedro = app.sign_in("pedro@example.org", "Pedro").await;
+    let child = app.child_of(&family).await;
+
+    // Four days ago, in English, homework the engine ran, with a topic and a
+    // day typed for it, and reviewed.
+    let said = "el cuaderno azul de Mateo";
+    let reviewed = app.past_session(&child, "4 days", 20).await;
+    sqlx::query(
+        "update sessions set engine = true, language = 'en', end_reason = 'budget_reached',
+                reviewed_at = ended_at + interval '1 minute', objective = $2
+         where id = $1::uuid",
+    )
+    .bind(&reviewed)
+    .bind(json!({ "kind": "homework", "subject": "matematica", "topic": said, "due": "2026-11-27" }))
+    .execute(db)
+    .await
+    .unwrap();
+    // Two days ago, on the family's device, its review still to come.
+    let device: String = sqlx::query_scalar(
+        "insert into devices (id, serial, hmac_key, model, family_id, child_id)
+         values (gen_random_uuid(), 'AULE-0001', decode(repeat('ab', 32), 'hex'), 'aule-v0.2', $1::uuid, $2::uuid)
+         returning id::text",
+    )
+    .bind(&family)
+    .bind(&child)
+    .fetch_one(db)
+    .await
+    .unwrap();
+    let on_device = app.past_session(&child, "2 days", 12).await;
+    sqlx::query("update sessions set device_id = $2::uuid, end_reason = 'child_ended' where id = $1::uuid")
+        .bind(&on_device)
+        .bind(&device)
+        .execute(db)
+        .await
+        .unwrap();
+    // An hour ago, one the tutor never came to.
+    let unstarted = app.past_session(&child, "1 hour", 1).await;
+    update(
+        "update sessions set started_at = null, end_reason = 'device_offline' where id = $1::uuid",
+        &unstarted,
+    )
+    .await
+    .unwrap();
+    // Ten minutes ago, the one going on now, with what it is for and no subject.
+    let live = app.past_session(&child, "10 minutes", 20).await;
+    sqlx::query("update sessions set status = 'active', ended_at = null, objective = $2 where id = $1::uuid")
+        .bind(&live)
+        .bind(json!({ "kind": "explore", "topic": said }))
+        .execute(db)
+        .await
+        .unwrap();
+    // A minute ago, one just made, its tutor not in yet.
+    let created = app.past_session(&child, "1 minute", 0).await;
+    update(
+        "update sessions set status = 'created', started_at = null, ended_at = null where id = $1::uuid",
+        &created,
+    )
+    .await
+    .unwrap();
+    // Not listed: the team trying the tutor with his profile, and a sibling's.
+    let team_try = app.past_session(&child, "30 minutes", 10).await;
+    update("update sessions set audience = 'operator' where id = $1::uuid", &team_try).await.unwrap();
+    app.past_session(&app.child_of(&family).await, "5 minutes", 10).await;
+
+    // Both guardians read the same list, newest first, each session with
+    // exactly these fields.
+    let path = format!("/v1/children/{child}/sessions");
+    let (status, list) = app.call(Method::GET, &path, Some(&ana), None).await;
+    assert_eq!(status, StatusCode::OK, "{list}");
+    assert_eq!(app.call(Method::GET, &path, Some(&pedro), None).await, (StatusCode::OK, list.clone()));
+    let sessions = list["sessions"].as_array().unwrap();
+    let ids: Vec<&str> = sessions.iter().map(|session| session["id"].as_str().unwrap()).collect();
+    assert_eq!(ids, [&created, &live, &unstarted, &on_device, &reviewed].map(String::as_str), "{list}");
+    for session in sessions {
+        let mut named: Vec<&str> = session.as_object().unwrap().keys().map(String::as_str).collect();
+        named.sort_unstable();
+        assert_eq!(
+            named,
+            [
+                "created_at",
+                "end_reason",
+                "ended_at",
+                "engine",
+                "id",
+                "language",
+                "objective",
+                "on_device",
+                "reviewed",
+                "started_at",
+                "status"
+            ],
+            "{session}"
+        );
+    }
+    // When each was made, started and ended, as the database has it.
+    let when: Vec<When> = sqlx::query_as(
+        "select id::text, created_at, started_at, ended_at from sessions
+         where child_id = $1::uuid and audience = 'child' order by created_at desc",
+    )
+    .bind(&child)
+    .fetch_all(db)
+    .await
+    .unwrap();
+    let time =
+        |value: &Value| value.as_str().map(|text| text.parse::<chrono::DateTime<chrono::Utc>>().unwrap());
+    let listed: Vec<When> = sessions
+        .iter()
+        .map(|session| {
+            let id = session["id"].as_str().unwrap().to_string();
+            (
+                id,
+                time(&session["created_at"]).unwrap(),
+                time(&session["started_at"]),
+                time(&session["ended_at"]),
+            )
+        })
+        .collect();
+    assert_eq!(listed, when);
+    let rest: Vec<Value> = sessions
+        .iter()
+        .map(|session| {
+            let mut session = session.clone();
+            for at in ["id", "created_at", "started_at", "ended_at"] {
+                session.as_object_mut().unwrap().remove(at);
+            }
+            session
+        })
+        .collect();
+    let session = |status: &str, end_reason: Value, engine: bool, language: &str, objective: Value| {
+        json!({
+            "status": status, "end_reason": end_reason, "engine": engine, "language": language,
+            "objective": objective, "on_device": false, "reviewed": false
+        })
+    };
+    let mut on_the_device = session("ended", json!("child_ended"), false, "es", Value::Null);
+    on_the_device["on_device"] = json!(true);
+    let mut done = session(
+        "ended",
+        json!("budget_reached"),
+        true,
+        "en",
+        json!({ "kind": "homework", "subject": "matematica" }),
+    );
+    done["reviewed"] = json!(true);
+    assert_eq!(
+        rest,
+        [
+            session("created", Value::Null, false, "es", Value::Null),
+            session("active", Value::Null, false, "es", json!({ "kind": "explore", "subject": null })),
+            session("ended", json!("device_offline"), false, "es", Value::Null),
+            on_the_device,
+            done,
+        ],
+        "{list}"
+    );
+    // What it was for is its kind and subject: never the topic or day typed.
+    let named = keys(&list);
+    for never in ["topic", "due", "summary", "guardian_summary", "room", "token", "child_turns"] {
+        assert!(!named.iter().any(|key| key == never), "{never}: {list}");
+    }
+    assert!(!list.to_string().contains(said), "{list}");
+
+    // Only the child's own guardians: the team's token is refused, and another
+    // family finds no child.
+    let (status, body) = app.admin(Method::GET, &path, None).await;
+    assert_eq!((status, body["error"]["code"].as_str()), (StatusCode::FORBIDDEN, Some("forbidden")));
+    let luis = app.sign_in("luis@example.org", "Luis").await;
+    let (status, body) = app.call(Method::GET, &path, Some(&luis), None).await;
+    assert_eq!((status, body["error"]["code"].as_str()), (StatusCode::NOT_FOUND, Some("not_found")));
+
+    // Twenty unless asked, and one to fifty; anything else is refused.
+    for ago in 10..40 {
+        app.past_session(&child, &format!("{ago} days"), 5).await;
+    }
+    for (query, shown) in [("", 20), ("?limit=1", 1), ("?limit=20", 20), ("?limit=50", 35)] {
+        let (status, body) = app.call(Method::GET, &format!("{path}{query}"), Some(&ana), None).await;
+        assert_eq!(
+            (status, body["sessions"].as_array().map(Vec::len)),
+            (StatusCode::OK, Some(shown)),
+            "{query}"
+        );
+    }
+    for query in ["?limit=0", "?limit=51", "?limit=-1", "?limit=ten", "?limit="] {
+        let (status, body) = app.call(Method::GET, &format!("{path}{query}"), Some(&ana), None).await;
+        assert_eq!(
+            (status, body["error"]["message"].as_str()),
+            (StatusCode::BAD_REQUEST, Some("limit must be 1 to 50")),
             "{query}"
         );
     }
