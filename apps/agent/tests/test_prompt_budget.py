@@ -12,12 +12,13 @@ import pytest
 from aule_agent.tutor import Tutor
 
 # Characters of static policy in the most complete session, the final language
-# rule included: es 4,078 and en 4,069, with the analogy rule, the checking rule
-# for answers checked in code and the reply-length rule (#225). Raised from
-# 4,000 on purpose: the analogy and checking rules were approved together on
-# 2026-11-25 and do not fit beside the length rule.
-INSTRUCTIONS_BUDGET = 4_100
-TOOLS_BUDGET = 9_000  # characters of the tools' JSON (8,923)
+# rule included: es 4,214 and en 4,205, with the analogy rule, the checking rule
+# for answers checked in code, the reply-length rule (#225) and the screen rule
+# of the 2026-11-25 test session (every exercise and example is shown). Raised on
+# purpose: from 4,000 when the analogy and checking rules, approved together on
+# 2026-11-25, did not fit beside the length rule; from 4,100 for the screen rule.
+INSTRUCTIONS_BUDGET = 4_250
+TOOLS_BUDGET = 9_000  # characters of the tools' JSON (8,971)
 
 
 class Gates:

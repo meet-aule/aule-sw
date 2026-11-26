@@ -19,8 +19,9 @@ from .events import contracts_dir
 TOPIC = "aule.visual"
 
 DESCRIPTION = (
-    "Show something on the student's screen while you keep talking. Each call replaces what "
-    "was on the screen. Never show the answer to what you are asking, and do not draw the "
+    "Show something on the student's screen while you keep talking. Use it for every exercise "
+    "and example you give. Each call replaces what was on the screen. Never show the answer "
+    "to what you are asking, and do not draw the "
     "part of a diagram that gives it away (for 8 + 6 on a number line, mark 8 only). Choose a "
     "kind and give "
     "what it needs: exercise needs lines; fraction_bars and fraction_circle (a pie) need "

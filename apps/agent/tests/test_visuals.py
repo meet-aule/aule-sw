@@ -5,6 +5,7 @@ import pytest
 from aule_agent import visuals
 from aule_agent.events import contracts_dir
 from aule_agent.moderation import Action, Decision
+from aule_agent.prompts import response_language
 from aule_agent.tutor import SCREEN, SHOWN, Tutor, present
 
 EXAMPLES = sorted((contracts_dir() / "visuals" / "examples").glob("*.json"))
@@ -146,3 +147,23 @@ def test_the_tutor_only_talks_about_a_screen_when_there_is_one():
     ]
     assert SCREEN in with_screen.instructions
     assert "Plan: fracciones" in with_screen.instructions
+
+
+@pytest.mark.parametrize("language", ["es", "en"])
+def test_with_a_screen_each_exercise_and_example_is_shown_and_the_exercise_again_after(language):
+    without = Tutor(language=language, gates=Gate())
+    with_screen = Tutor(language=language, gates=Gate(), show=Screen())
+
+    # Examples told and never drawn left the child without seeing what they
+    # meant (the test session of 2026-11-25); one drawn over the exercise
+    # would leave the wrong numbers up when the tutor returns to it.
+    for rule in (
+        "Use show for every exercise and example you give, and whenever a visual helps:",
+        "If you showed something else, show the exercise again when you return to it.",
+    ):
+        assert with_screen.instructions.count(rule) == 1
+        assert rule not in without.instructions
+    # The tool says it too, where the model chooses it.
+    assert "Use it for every exercise and example you give." in visuals.DESCRIPTION
+    # The output-language rule is still the last instruction.
+    assert with_screen.instructions.endswith(response_language(language))
