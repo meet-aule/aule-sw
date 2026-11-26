@@ -32,6 +32,15 @@ known, and the level read in the photo, outside the engine, becomes the
 target. Without a photo the bank's homework is used, as before (TAR-05 to
 TAR-07).
 
+Where the engine asks something whose answers it knows, the message that asks
+carries them (`Mensaje::opciones`, from `Motor::opciones`) for a screen to show
+as buttons: «Sí» to «¿Empezamos?», the four activities of a break, «No tengo mi
+tarea» whenever it asks for the homework's photo, «Sí, fracciones» to the topic
+it proposes and «Sí» and «No» to «¿te parece si seguimos aprendiendo…?».
+Tapping one is saying it: its words come back as `Entrada::Texto`. Only answers
+the engine follows are offered, so «¿Empezamos?» has no «No», which would start
+the session all the same. An exercise's options are on its card.
+
 ## Language
 
 The code, its comments and its rules are in Spanish, unlike the rest of this

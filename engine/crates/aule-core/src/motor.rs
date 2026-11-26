@@ -65,6 +65,11 @@ pub struct Mensaje {
     pub redaccion: Redaccion,
     pub adjunto: Option<Adjunto>,
     pub clase: Clase,
+    /// [PROPUESTA] Lo que el Alumno puede tocar en la pantalla, bajo este
+    /// mensaje, para contestar lo que pregunta (`Motor::opciones`). Vacío
+    /// cuando no pregunta nada con respuestas conocidas.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub opciones: Vec<String>,
 }
 
 fn msg(t: impl Into<String>) -> Mensaje {
@@ -73,8 +78,13 @@ fn msg(t: impl Into<String>) -> Mensaje {
         redaccion: Redaccion::Guion,
         adjunto: None,
         clase: Clase::Normal,
+        opciones: vec![],
     }
 }
+
+/// [PROPUESTA] TAR-06: lo que se toca para seguir sin la foto de la Tarea.
+/// Dicho o tocado, es un «no tengo» (`no_tiene_tarea`).
+pub const NO_TENGO_TAREA: &str = "No tengo mi tarea";
 
 impl Mensaje {
     fn clase(mut self, c: Clase) -> Self {
@@ -620,7 +630,48 @@ impl Motor {
             Entrada::Chat { texto, intencion } => self.chat(&texto, intencion, &mut out),
             Entrada::FotoTarea(lectura) => self.foto_tarea(lectura, &mut out),
         }
+        // [PROPUESTA] Lo último que dijo pregunta lo que el motor espera ahora:
+        // lo que se puede tocar para contestarlo va con ese mensaje.
+        let opciones = self.opciones();
+        if let Some(ultimo) = out.last_mut().filter(|_| !opciones.is_empty()) {
+            ultimo.opciones = opciones;
+        }
         out
+    }
+
+    /// [PROPUESTA] Las respuestas que el Alumno puede tocar en la pantalla para
+    /// contestar lo que el motor le acaba de preguntar, cuando las conoce. Tocar
+    /// una es decirla: llega como `Entrada::Texto` con sus palabras, y el motor
+    /// hace lo mismo que si la hubiera dicho o escrito. Solo las que el motor
+    /// sabe seguir: a «¿Empezamos?» cualquier respuesta empieza, así que no se
+    /// ofrece un «No» que haría lo mismo. Las de un ejercicio están en su
+    /// tarjeta (`Tarjeta::opciones`).
+    pub fn opciones(&self) -> Vec<String> {
+        match &self.act {
+            Actividad::Bienvenida => vec!["Sí".into()],
+            // TAR-06: «no tengo» sigue sin la foto.
+            Actividad::PedirTarea { .. } => vec![NO_TENGO_TAREA.into()],
+            // PAU-06: una de las actividades, mientras no eligió ninguna.
+            Actividad::Pausa(p) if p.eleccion.is_none() => self
+                .cfg
+                .actividades_pausa
+                .iter()
+                .map(|a| a.nombre.clone())
+                .collect(),
+            // OBJ-11: el tema que se le propone, si no lo domina ya; con el
+            // nivel 5 se le propone otro que no tenemos, y cualquier respuesta cierra.
+            Actividad::ElegirTema { intentos: 0 } => {
+                let tema = self.tema_principal();
+                if self.nivel_de(&tema) == Some(self.cfg.niveles_por_tema) {
+                    vec![]
+                } else {
+                    vec![format!("Sí, {}", tema.to_lowercase())]
+                }
+            }
+            // «¿Te parece si seguimos aprendiendo…?»: sí sigue, no cierra.
+            Actividad::ElegirTema { .. } => vec!["Sí".into(), "No".into()],
+            _ => vec![],
+        }
     }
 
     // ─────────── inicio ───────────

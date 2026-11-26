@@ -5,7 +5,9 @@ use aule_core::banco::Angulo;
 use aule_core::config::Config;
 use aule_core::informe::Hecho;
 use aule_core::modelo::{EstadoObjetivo, Objetivo, Perfil, TipoObjetivo};
-use aule_core::motor::{Calificacion, Clase, Entrada, Esperando, LecturaTarea, Mensaje, Motor};
+use aule_core::motor::{
+    Calificacion, Clase, Entrada, Esperando, LecturaTarea, Mensaje, Motor, NO_TENGO_TAREA,
+};
 use aule_core::reloj::RelojManual;
 use chrono::NaiveDate;
 use std::sync::Arc;
@@ -1529,4 +1531,230 @@ fn pau07_de_noche_cansado_esperando_la_foto_descansa_y_el_informe_cuenta_el_tami
         inf.iter().filter(|m| m.contains("hemos evaluado")).count(),
         1
     );
+}
+
+// ───────────── Lo que se puede tocar en la pantalla ─────────────
+
+/// Las opciones de cada mensaje de una respuesta del motor: solo el último
+/// puede tenerlas, y son las que el motor ofrece ahora.
+fn opciones_de(p: &Prueba, r: &[Mensaje]) -> Vec<String> {
+    let (ultimo, antes) = r.split_last().expect("el motor contestó algo");
+    assert!(
+        antes.iter().all(|m| m.opciones.is_empty()),
+        "solo el último mensaje ofrece algo: {}",
+        texto(r)
+    );
+    assert_eq!(ultimo.opciones, p.m.opciones());
+    ultimo.opciones.clone()
+}
+
+/// [PROPUESTA] A «¿Empezamos?» se toca «Sí», que empieza como decirlo. No hay
+/// un «No»: cualquier respuesta empieza.
+#[test]
+fn opciones_a_empezamos_se_toca_si() {
+    let mut p = Prueba::new(Some(3), vec![obj(1, TipoObjetivo::Tarea, 5, Some(3))]);
+    let r = p.e(Entrada::Comenzar);
+    assert!(
+        r.last().unwrap().texto.ends_with("¿Empezamos?"),
+        "{}",
+        texto(&r)
+    );
+    assert_eq!(opciones_de(&p, &r), ["Sí"]);
+    let r = p.e(Entrada::Texto("Sí".into()));
+    assert_eq!(p.act(), "tarea:1");
+    assert!(r.iter().all(|m| m.opciones.is_empty()), "{}", texto(&r));
+}
+
+/// [PROPUESTA] PAU-06: la Pausa activa ofrece sus cuatro actividades, y tocar
+/// una es elegirla, igual que `Entrada::Actividad`. Elegida, no se ofrecen más.
+#[test]
+fn opciones_la_pausa_ofrece_sus_actividades_y_tocar_una_la_elige() {
+    let nombres: Vec<String> = Config::default()
+        .actividades_pausa
+        .iter()
+        .map(|a| a.nombre.clone())
+        .collect();
+    for (k, nombre) in nombres.iter().enumerate() {
+        let mut tocada = Prueba::new(Some(3), vec![obj(1, TipoObjetivo::Tarea, 5, Some(3))]);
+        tocada.iniciar();
+        let r = tocada.e(Entrada::Cansado);
+        assert!(
+            r.last().unwrap().texto.ends_with("Elige una:"),
+            "{}",
+            texto(&r)
+        );
+        assert_eq!(opciones_de(&tocada, &r), nombres);
+        let dicho = tocada.e(Entrada::Texto(nombre.clone()));
+
+        let mut elegida = Prueba::new(Some(3), vec![obj(1, TipoObjetivo::Tarea, 5, Some(3))]);
+        elegida.iniciar();
+        elegida.e(Entrada::Cansado);
+        let elegido = elegida.e(Entrada::Actividad(k));
+        assert_eq!(textos(&dicho), textos(&elegido), "{nombre}");
+        assert_eq!(
+            tocada.m.vista().pausa.unwrap().actividad.unwrap().nombre,
+            *nombre
+        );
+        assert!(tocada.m.opciones().is_empty());
+        let r = tocada.e(Entrada::Texto("¿cuánto falta?".into()));
+        assert!(r.iter().all(|m| m.opciones.is_empty()), "{}", texto(&r));
+    }
+}
+
+/// [PROPUESTA] TAR-06: cada vez que se pide la foto de la Tarea se puede tocar
+/// «No tengo mi tarea», que sigue sin ella como decir «no tengo».
+#[test]
+fn opciones_al_pedir_la_foto_se_toca_no_tengo_mi_tarea() {
+    let mut p = con_foto(Some(4));
+    p.iniciar();
+    assert_eq!(p.log.last().unwrap().texto, PIDE_FOTO_ANTES);
+    assert_eq!(p.log.last().unwrap().opciones, [NO_TENGO_TAREA]);
+    let r = p.e(Entrada::Texto("espera".into()));
+    assert_eq!(textos(&r), [RECUERDA_FOTO]);
+    assert_eq!(opciones_de(&p, &r), [NO_TENGO_TAREA]);
+    let r = p.e(Entrada::FotoTarea(LecturaTarea::NoDisponible));
+    assert_eq!(
+        textos(&r),
+        ["Uy, no pude mirar la foto. ¿Probamos otra vez?"]
+    );
+    assert_eq!(opciones_de(&p, &r), [NO_TENGO_TAREA]);
+    let tocado = p.e(Entrada::Texto(NO_TENGO_TAREA.into()));
+    assert_ne!(p.act(), "pedir_tarea");
+    assert!(
+        texto(&tocado).contains("Vamos a practicar con ejercicios míos"),
+        "{}",
+        texto(&tocado)
+    );
+
+    let mut dicho = con_foto(Some(4));
+    dicho.iniciar();
+    dicho.e(Entrada::Texto("espera".into()));
+    dicho.e(Entrada::FotoTarea(LecturaTarea::NoDisponible));
+    assert_eq!(
+        textos(&dicho.e(Entrada::Texto("no tengo".into()))),
+        textos(&tocado)
+    );
+    assert_eq!(dicho.act(), p.act());
+}
+
+/// [PROPUESTA] OBJ-11: el tema que se propone se toca con «Sí, fracciones»; a
+/// «¿te parece si seguimos aprendiendo fracciones?», «Sí» sigue y «No» cierra.
+/// Con el nivel 5, lo que se propone es otro tema y no se ofrece nada.
+#[test]
+fn opciones_al_elegir_el_tema() {
+    let al_elegir = || {
+        let mut p = Prueba::new(Some(3), vec![obj(1, TipoObjetivo::Tarea, 5, Some(3))]);
+        p.iniciar();
+        while p.act().starts_with("tarea") {
+            p.reloj.avanzar_min(3);
+            p.responder(true);
+        }
+        assert_eq!(p.act(), "elegir_tema");
+        p
+    };
+    let mut p = al_elegir();
+    assert!(
+        p.log
+            .last()
+            .unwrap()
+            .texto
+            .starts_with("¿Qué te gustaría aprender ahora?"),
+        "{}",
+        texto(&p.log)
+    );
+    assert_eq!(p.log.last().unwrap().opciones, ["Sí, fracciones"]);
+    p.e(Entrada::Texto("Sí, fracciones".into()));
+    assert_eq!(p.act(), "etapa1:4:teoria");
+
+    for (tocada, fin) in [("Sí", "etapa1:4:teoria"), ("No", "terminada")] {
+        let mut p = al_elegir();
+        let r = p.e(Entrada::Texto("quiero aprender de volcanes".into()));
+        assert!(
+            r.last()
+                .unwrap()
+                .texto
+                .contains("¿te parece si seguimos aprendiendo fracciones?"),
+            "{}",
+            texto(&r)
+        );
+        assert_eq!(opciones_de(&p, &r), ["Sí", "No"]);
+        p.e(Entrada::Texto(tocada.into()));
+        assert_eq!(p.act(), fin, "{tocada}");
+    }
+
+    let mut p = Prueba::new(Some(5), vec![]);
+    p.iniciar();
+    assert_eq!(p.act(), "elegir_tema");
+    assert!(p
+        .log
+        .last()
+        .unwrap()
+        .texto
+        .starts_with("¿Qué te gustaría aprender ahora?"));
+    assert!(p.log.last().unwrap().opciones.is_empty() && p.m.opciones().is_empty());
+}
+
+/// [PROPUESTA] Quien solo toca lo que se le ofrece llega al final de su sesión:
+/// cada opción es algo que el motor entiende, y caben en una pantalla (de 1 a
+/// 4, distintas, de 40 letras como mucho, `contracts/choices`).
+#[test]
+fn opciones_quien_solo_toca_llega_al_final() {
+    let objetivos = [
+        vec![obj(1, TipoObjetivo::Tarea, 5, None)],
+        vec![obj(1, TipoObjetivo::Preparacion, 6, Some(4))],
+        vec![],
+    ];
+    for (i, objetivos) in objetivos.into_iter().enumerate() {
+        for nivel in [None, Some(3), Some(5)] {
+            let mut p = Prueba::new(nivel, objetivos.clone());
+            p.m.cfg.foto_tarea = true;
+            let mut r = p.e(Entrada::Comenzar);
+            let mut tocadas = 0;
+            for _ in 0..3000 {
+                if p.m.terminada() {
+                    break;
+                }
+                let ofrecidas = r.last().map(|m| m.opciones.clone()).unwrap_or_default();
+                assert!(ofrecidas.len() <= 4, "{ofrecidas:?}");
+                for o in &ofrecidas {
+                    assert!(!o.trim().is_empty() && o.chars().count() <= 40, "{o}");
+                    assert_eq!(ofrecidas.iter().filter(|x| *x == o).count(), 1, "{o}");
+                }
+                p.reloj.avanzar_s(30);
+                r = match (ofrecidas.first(), p.m.esperando()) {
+                    (Some(o), _) => {
+                        tocadas += 1;
+                        let antes = p.act();
+                        let r = p.e(Entrada::Texto(o.clone()));
+                        assert!(
+                            p.act() != antes || !texto(&r).contains("Te escucho"),
+                            "«{o}» no se entendió en {antes}: {}",
+                            texto(&r)
+                        );
+                        r
+                    }
+                    (None, Esperando::Respuesta { .. } | Esperando::Explicacion { .. }) => {
+                        p.responder(true)
+                    }
+                    (None, Esperando::Conversacion { sugerencias }) => {
+                        let t = sugerencias.first().cloned().unwrap_or_else(|| "sí".into());
+                        p.e(Entrada::Texto(t))
+                    }
+                    (None, Esperando::Actividad { .. }) => {
+                        p.reloj.avanzar_s(300);
+                        p.e(Entrada::Tick)
+                    }
+                    (None, Esperando::FotoTarea | Esperando::Nada) => {
+                        panic!("nada que tocar en {}", p.act())
+                    }
+                };
+            }
+            assert!(
+                p.m.terminada(),
+                "objetivos {i}, nivel {nivel:?}: en {}",
+                p.act()
+            );
+            assert!(tocadas > 0, "objetivos {i}, nivel {nivel:?}");
+        }
+    }
 }
