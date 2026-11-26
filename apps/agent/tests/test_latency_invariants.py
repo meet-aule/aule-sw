@@ -1040,8 +1040,12 @@ def photo_world(name: str, seed: int) -> World:
     return world
 
 
-@pytest.fixture(scope="module")
-def photo_sessions() -> tuple[dict[str, Run], list[str]]:
+# With the talk button, as the web page runs in production, and without it:
+# showing the homework is the camera's button either way.
+@pytest.fixture(scope="module", params=harness.MODES)
+def photo_sessions(request) -> tuple[dict[str, Run], list[str]]:
+    mode = request.param
+
     async def run() -> tuple[dict[str, Run], list[str]]:
         records = harness.Records()
         root = logging.getLogger()
@@ -1049,14 +1053,14 @@ def photo_sessions() -> tuple[dict[str, Run], list[str]]:
         root.addHandler(records)
         root.setLevel(logging.INFO)
         try:
-            with harness.offline(mode="open-mic"):
+            with harness.offline(mode=mode):
                 worlds = {name: photo_world(name, index) for index, name in enumerate(PRESSES)}
                 runs = await asyncio.gather(
                     *(
                         harness.run_session(
                             world,
                             [harness.Turn(n, "show", "", 0.0, 0.0) for n in range(PRESSES[name])],
-                            mode="open-mic",
+                            mode=mode,
                         )
                         for name, world in worlds.items()
                     )

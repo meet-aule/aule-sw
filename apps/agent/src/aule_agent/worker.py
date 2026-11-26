@@ -34,7 +34,7 @@ from .homework import HomeworkReader
 from .logs import keep_personal_fields_out
 from .observability import Observability
 from .pace import Pace, says_tired
-from .platform import Platform, platform_session
+from .platform import HOMEWORK_CAPABILITY, Platform, platform_session
 from .providers import build_llm, build_stt, build_tts
 from .reconnect import ReconnectGrace
 from .replies import reply
@@ -411,12 +411,11 @@ async def entrypoint(ctx: JobContext) -> None:
 
     # With a platform, the tutor starts from what is known about the student
     # and reports the conversation; without one it is a tutor with no memory.
-    # It is told that the agent reads a photo of the homework, which is shown
-    # to the camera: the push-to-talk devices have none.
+    # It is told that the agent reads a photo of the homework. Whether this
+    # session's screen has a camera to show one with is the platform's to
+    # know, not a matter of the talk button: the web page has both.
     linked = platform_session(ctx.job.metadata)
-    platform = (
-        Platform(linked, homework_capability=0 if settings.push_to_talk else 1) if linked else None
-    )
+    platform = Platform(linked, homework_capability=HOMEWORK_CAPABILITY) if linked else None
 
     admitted = await admit(ctx, settings, audience, language, platform, observer=observer)
     if admitted is None:
@@ -458,11 +457,7 @@ async def entrypoint(ctx: JobContext) -> None:
     # the course the platform sent with the start: without one, none is read.
     # What each read uses is paid like the tutor's own calls and counted with them.
     course = platform.homework_course if platform and platform.scripted else None
-    reader = (
-        HomeworkReader(course, counted=usage.looked)
-        if course is not None and not settings.push_to_talk
-        else None
-    )
+    reader = HomeworkReader(course, counted=usage.looked) if course is not None else None
     tutor = Tutor(
         language=language,
         gates=gates,
