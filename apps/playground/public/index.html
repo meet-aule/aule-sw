@@ -794,91 +794,97 @@
              where Aule not arriving is said, once. A16's second line follows it, not live: the family sees a summary of
              every session on its home (D35). -->
         <h2 class="session-title" id="session-title" tabindex="-1">La sesión empezó.</h2>
-        <p class="session-intro" id="session-intro" role="status"></p>
-        <p class="session-intro" id="session-parent"></p>
-        <div class="session-message" data-message></div>
-        <!-- Under a camera's problem, what an adult can do: smaller, and not live, since the line above is (D33). -->
-        <p class="device-note session-help" id="session-help"></p>
-        <!-- Figma: web-only state of the session: Aule did not arrive. A15's title comes back, the line above
-             says so and this Botón/Compacto 191:1396 ends the attempt and goes back to A05. -->
-        <button type="button" class="compact session-retry" id="retry-session" hidden>Intentar otra vez</button>
-        <!-- A session the engine runs says where it is now: the stop in hand, after a dot for each stop done.
-             The stops still to come are not shown (D39). -->
-        <p id="route" class="route" hidden></p>
-        <!-- Left: Aule on its stage, what can be done under it, and the exercise in hand. -->
-        <div class="work">
-          <!-- Figma: web-only state of the session: the stage, Aule's face or what Aule draws with the face in a corner,
-               or the camera while the child shows their work (D30, D31). -->
-          <div class="stage" id="stage" data-shows="face">
-            <div class="tutor" id="tutor" data-state="waiting">
-              <!-- Aule's face, drawn in this browser: a cuy with glasses (cuy.js) on the wobnimo mascot, shown in
-                   pixel art (pixels.js). The jelly is what shows if the cuy cannot load, and the dot where no
-                   face can be drawn. -->
-              <div class="mascot face-box">
-                <wobnimo-mascot id="mascot" character="mochi" state="sleeping" floor="0" aria-hidden="true"></wobnimo-mascot>
+        <!-- Under the top bar, the rest of the screen: the lines over the stage, then the stage and the talk. The
+             session fills the screen and never scrolls; the conversation scrolls in its own box (D30). -->
+        <div class="session-body">
+          <p class="session-intro" id="session-intro" role="status"></p>
+          <p class="session-intro" id="session-parent"></p>
+          <div class="session-message" data-message></div>
+          <!-- Under a camera's problem, what an adult can do: smaller, and not live, since the line above is (D33). -->
+          <p class="device-note session-help" id="session-help"></p>
+          <!-- Figma: web-only state of the session: Aule did not arrive. A15's title comes back, the line above
+               says so and this Botón/Compacto 191:1396 ends the attempt and goes back to A05. -->
+          <button type="button" class="compact session-retry" id="retry-session" hidden>Intentar otra vez</button>
+          <!-- A session the engine runs says where it is now: the stop in hand, after a dot for each stop done.
+               The stops still to come are not shown (D39). -->
+          <p id="route" class="route" hidden></p>
+          <div class="session-main">
+            <!-- Left: Aule on its stage, what can be done under it, and the exercise in hand. -->
+            <div class="work">
+              <!-- Figma: web-only state of the session: the stage, Aule's face or what Aule draws with the face in a corner,
+                   or the camera while the child shows their work (D30, D31). -->
+              <div class="stage" id="stage" data-shows="face">
+                <div class="tutor" id="tutor" data-state="waiting">
+                  <!-- Aule's face, drawn in this browser: a cuy with glasses (cuy.js) on the wobnimo mascot, shown in
+                       pixel art (pixels.js). The jelly is what shows if the cuy cannot load, and the dot where no
+                       face can be drawn. -->
+                  <div class="mascot face-box">
+                    <wobnimo-mascot id="mascot" character="mochi" state="sleeping" floor="0" aria-hidden="true"></wobnimo-mascot>
+                  </div>
+                  <div class="orb" aria-hidden="true"></div>
+                  <p id="tutor-state" class="tile-state" role="status">Esperando a Aule…</p>
+                </div>
+                <figure id="board" class="board" hidden aria-live="polite"></figure>
+                <!-- What the camera sees while the child aims at their work. It stays on this device until «Listo». -->
+                <div class="camera-view" id="camera-view" hidden>
+                  <video id="camera" autoplay muted playsinline></video>
+                </div>
               </div>
-              <div class="orb" aria-hidden="true"></div>
-              <p id="tutor-state" class="tile-state" role="status">Esperando a Aule…</p>
+              <div class="session-actions">
+                <!-- Figma: Botón/Compacto 191:1396 with Ícono/videocam 191:1407, once the tutor is ready; with a tutor
+                     that takes no pictures it is the camera's toggle, crossed when off (videocam_off 191:1410). -->
+                <button type="button" class="compact" id="cam" hidden><span class="icon" data-icon="videocam" aria-hidden="true"></span>Mostrar mi tarea</button>
+                <!-- While the camera is on: what to do (a status, never hidden, only empty), Botón/Negro 190:834
+                     «Listo», which sends one picture, and the device link 195:513 «Cancelar». -->
+                <p class="camera-aim" id="camera-aim" role="status" tabindex="-1"></p>
+                <button type="button" class="ink-button send" id="cam-send" hidden>Listo</button>
+                <button type="button" class="ink-link" id="cam-cancel" hidden>Cancelar</button>
+                <!-- For Aule's team only: the drawing as the device's panel would show it (D32). -->
+                <button type="button" class="compact" id="device" aria-pressed="false" hidden>Modo tinta apagado</button>
+              </div>
+              <!-- The exercise in hand, with room to answer in writing. -->
+              <section id="card" class="card" hidden aria-live="polite">
+                <p id="card-title" class="card-title"></p>
+                <p id="card-statement" class="card-statement"></p>
+                <form id="answer" autocomplete="off" hidden>
+                  <label id="answer-line">
+                    Tu respuesta
+                    <input id="answer-text" type="text" maxlength="200" autocomplete="off" />
+                  </label>
+                  <label id="explanation-line" hidden>
+                    ¿Cómo lo pensaste?
+                    <textarea id="explanation-text" rows="2" maxlength="600"></textarea>
+                  </label>
+                  <p id="card-help" class="note" hidden></p>
+                  <button type="submit" class="compact" id="answer-send">Responder</button>
+                  <p class="note">También puedes decirlo o mostrar tu cuaderno.</p>
+                </form>
+              </section>
             </div>
-            <figure id="board" class="board" hidden aria-live="polite"></figure>
-            <!-- What the camera sees while the child aims at their work. It stays on this device until «Listo». -->
-            <div class="camera-view" id="camera-view" hidden>
-              <video id="camera" autoplay muted playsinline></video>
-            </div>
-          </div>
-          <div class="session-actions">
-            <!-- Figma: Botón/Compacto 191:1396 with Ícono/videocam 191:1407, once the tutor is ready; with a tutor
-                 that takes no pictures it is the camera's toggle, crossed when off (videocam_off 191:1410). -->
-            <button type="button" class="compact" id="cam" hidden><span class="icon" data-icon="videocam" aria-hidden="true"></span>Mostrar mi tarea</button>
-            <!-- While the camera is on: what to do (a status, never hidden, only empty), Botón/Negro 190:834
-                 «Listo», which sends one picture, and the device link 195:513 «Cancelar». -->
-            <p class="camera-aim" id="camera-aim" role="status" tabindex="-1"></p>
-            <button type="button" class="ink-button send" id="cam-send" hidden>Listo</button>
-            <button type="button" class="ink-link" id="cam-cancel" hidden>Cancelar</button>
-            <!-- For Aule's team only: the drawing as the device's panel would show it (D32). -->
-            <button type="button" class="compact" id="device" aria-pressed="false" hidden>Modo tinta apagado</button>
-          </div>
-          <!-- The exercise in hand, with room to answer in writing. -->
-          <section id="card" class="card" hidden aria-live="polite">
-            <p id="card-title" class="card-title"></p>
-            <p id="card-statement" class="card-statement"></p>
-            <form id="answer" autocomplete="off" hidden>
-              <label id="answer-line">
-                Tu respuesta
-                <input id="answer-text" type="text" maxlength="200" autocomplete="off" />
-              </label>
-              <label id="explanation-line" hidden>
-                ¿Cómo lo pensaste?
-                <textarea id="explanation-text" rows="2" maxlength="600"></textarea>
-              </label>
-              <p id="card-help" class="note" hidden></p>
-              <button type="submit" class="compact" id="answer-send">Responder</button>
-              <p class="note">También puedes decirlo o mostrar tu cuaderno.</p>
-            </form>
-          </section>
-        </div>
 
-        <!-- Right: the talk. The device does not listen all the time: a turn lasts while its button is held. -->
-        <div class="talking">
-          <!-- Figma: Botón/Micrófono 193:709; A15 · Silenciado 194:509 when the microphone is off. With an open
-               microphone only, once the tutor is ready: nothing is heard before. Where the talk button is with
-               held turns, so it never pushes the stage's actions off a short screen. -->
-          <div class="mic-group" id="mic-group" hidden>
-            <button type="button" class="round-toggle round-64" id="mic" aria-pressed="true" aria-label="Micrófono" aria-describedby="mic-text">
-              <span class="icon" data-icon="mic" aria-hidden="true"></span>
-            </button>
-            <p class="round-text" id="mic-text" data-on="mic_on" data-off="mic_off">Tu micrófono está encendido.</p>
+            <!-- Right: the talk. The device does not listen all the time: a turn lasts while its button is held. -->
+            <div class="talking">
+              <!-- Figma: Botón/Micrófono 193:709; A15 · Silenciado 194:509 when the microphone is off. With an open
+                   microphone only, once the tutor is ready: nothing is heard before. Where the talk button is with
+                   held turns, so it never pushes the stage's actions off a short screen. -->
+              <div class="mic-group" id="mic-group" hidden>
+                <button type="button" class="round-toggle round-64" id="mic" aria-pressed="true" aria-label="Micrófono" aria-describedby="mic-text">
+                  <span class="icon" data-icon="mic" aria-hidden="true"></span>
+                </button>
+                <p class="round-text" id="mic-text" data-on="mic_on" data-off="mic_off">Tu micrófono está encendido.</p>
+              </div>
+              <!-- Figma: web-only state of the talk button: the coach line above it on a first run, and a hint
+                   after a tap; inside it, while it is held, a bar with the level of the microphone, measured in
+                   this browser. -->
+              <p id="talk-coach" class="talk-coach" role="status"></p>
+              <button type="button" id="talk" class="talk" hidden aria-pressed="false"><span id="talk-label">Mantén apretado para hablar</span><span class="talk-level" aria-hidden="true"><span id="talk-bar"></span></span></button>
+              <ol id="transcript" aria-label="Conversación" aria-live="polite"></ol>
+              <form id="type" class="type" autocomplete="off">
+                <input id="typed" type="text" maxlength="500" aria-label="Mensaje para Aule" placeholder="O escríbele a Aule…" />
+                <button type="submit" class="compact" id="type-send">Enviar</button>
+              </form>
+            </div>
           </div>
-          <!-- Figma: web-only state of the talk button: the coach line above it on a first run, and a hint
-               after a tap; inside it, while it is held, a bar with the level of the microphone, measured in
-               this browser. -->
-          <p id="talk-coach" class="talk-coach" role="status"></p>
-          <button type="button" id="talk" class="talk" hidden aria-pressed="false"><span id="talk-label">Mantén apretado para hablar</span><span class="talk-level" aria-hidden="true"><span id="talk-bar"></span></span></button>
-          <ol id="transcript" aria-label="Conversación" aria-live="polite"></ol>
-          <form id="type" class="type" autocomplete="off">
-            <input id="typed" type="text" maxlength="500" aria-label="Mensaje para Aule" placeholder="O escríbele a Aule…" />
-            <button type="submit" class="compact" id="type-send">Enviar</button>
-          </form>
         </div>
 
         <!-- Last in the page's order, first in the bar: a Tab never reaches «Terminar» before the talk button,
