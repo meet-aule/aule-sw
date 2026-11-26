@@ -961,8 +961,9 @@ fn time_acts_without_the_student_speaking() {
 }
 
 /// A whole session of `minutes`, answered right at a steady pace: when it
-/// closed, in minutes, and how many breaks the engine gave.
-fn length_and_breaks(minutes: u32) -> (u64, usize) {
+/// closed, in minutes, how many breaks the engine gave, and whether the
+/// homework was done.
+fn length_and_breaks(minutes: u32) -> (u64, usize, bool) {
     let mut setup = setup(Goal::Homework);
     setup.start.minutes = minutes;
     let mut student = Student::from(setup);
@@ -984,7 +985,8 @@ fn length_and_breaks(minutes: u32) -> (u64, usize) {
         .flat_map(|turn| &turn.lines)
         .filter(|line| line.say.starts_with("¡Pausa activa!"))
         .count();
-    (student.now / 60_000, breaks)
+    let done = student.engine.report().is_some_and(|report| report.contains("hemos hecho la tarea"));
+    (student.now / 60_000, breaks, done)
 }
 
 #[test]
@@ -997,11 +999,13 @@ fn the_engines_session_is_as_long_as_the_platforms() {
     }
     // A short session has no break and closes by itself before its time is
     // up (the engine does not start what it cannot finish); a 45-minute one
-    // has the break at 30; a long one has both.
-    let (length, breaks) = length_and_breaks(30);
+    // has the break at 30; a long one goes past that, with the break at 30,
+    // until the homework is done. Getting three in a row right at the first
+    // try ends a level's practice early, so this student is done before 60.
+    let (length, breaks, _) = length_and_breaks(30);
     assert!(length <= 31 && breaks == 0, "{length} minutes, {breaks} breaks");
-    let (length, breaks) = length_and_breaks(45);
+    let (length, breaks, _) = length_and_breaks(45);
     assert!((31..=46).contains(&length) && breaks == 1, "{length} minutes, {breaks} breaks");
-    let (length, breaks) = length_and_breaks(90);
-    assert!((61..=91).contains(&length) && breaks == 2, "{length} minutes, {breaks} breaks");
+    let (length, breaks, done) = length_and_breaks(90);
+    assert!((47..=60).contains(&length) && breaks == 1 && done, "{length} minutes, {breaks} breaks, {done}");
 }

@@ -22,7 +22,8 @@ to the rules of the demo are marked `[PROPUESTA]` in the code.
 Objective of the session → **Tamizaje** (five questions, one per level, no hints)
 → for each level up to the target: **Etapa 1: Descubrimiento** (theory, worked
 and assisted examples, the student explains it back) then **Etapa 2: Refuerzo**
-(five exercises on their own; hints, then a step-by-step of a similar exercise)
+(up to five exercises on their own, ending early once three in a row are right
+at the first try; hints, then a step-by-step of a similar exercise)
 → the **Tarea**, the simulation of an evaluation or its correction → the report.
 
 ## Language

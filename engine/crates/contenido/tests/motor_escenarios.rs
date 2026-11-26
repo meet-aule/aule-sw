@@ -459,6 +459,140 @@ fn a16_vuelve_a_etapa1() {
     assert_eq!(p.act(), "tarea:1");
 }
 
+/// [PROPUESTA] E2-02: la Etapa 2 termina cuando los últimos 3 ejercicios salen
+/// bien al primer intento y sin pistas. Se le dice al Alumno que son hasta 5,
+/// MET-01 queda con los que hizo y el Informe dice lo que domina.
+#[test]
+fn e202_tres_seguidos_a_la_primera_terminan_la_etapa2() {
+    let mut p = llegar_a_e2(2);
+    assert_eq!(p.act(), "etapa2:3:1");
+    let dichas = textos(&p.log);
+    assert!(dichas.contains(
+        &"Etapa 2: Refuerzo. Ahora te toca a ti: son hasta 5 ejercicios. Si te trabas, pídeme una pista."
+    ));
+    assert!(dichas.contains(&"Ejercicio 1."), "{}", texto(&p.log));
+    // La pantalla sigue mostrando el lugar en la lista del banco.
+    assert_eq!(p.m.vista().progreso, "Nivel 3 · Ejercicio 1 de 5");
+    p.responder(true);
+    p.responder(true);
+    assert_eq!(p.act(), "etapa2:3:3");
+    let r = p.responder(true);
+    assert!(textos(&r).contains(
+        &"¡Completaste la Etapa 2! Te salieron 3 seguidos a la primera, así que ya dominas: sumar y restar fracciones con igual denominador y convertir mixtos e impropias."
+    ), "{}", texto(&r));
+    assert_eq!(p.act(), "tarea:1");
+    assert_eq!(p.m.metricas.nic[0].primer_intento, [true, true, true]);
+    assert!(p.registro_tiene(
+        "Completó 3 ejercicios del nivel 3: los últimos 3 bien al primer intento y sin pistas"
+    ));
+    assert_eq!(p.m.perfil.niveles["Fracciones"], 3);
+    while p.act().starts_with("tarea") {
+        p.responder(true);
+    }
+    assert!(p.m.informe().iter().any(|m| m
+        == "Ahora Liam domina sumar y restar fracciones con igual denominador y convertir mixtos e impropias. ¡Felicidades!"));
+
+    // Cuentan los últimos 3: con un error en el primero, termina en el cuarto.
+    let mut p = llegar_a_e2(2);
+    p.responder(false);
+    for _ in 0..3 {
+        p.responder(true);
+    }
+    assert_eq!(p.act(), "etapa2:3:4");
+    p.responder(true);
+    assert_eq!(p.act(), "tarea:1");
+    assert_eq!(
+        p.m.metricas.nic[0].primer_intento,
+        [false, true, true, true]
+    );
+
+    // Una pista también corta la racha: sin 3 seguidos, hasta el máximo de 5.
+    let mut p = llegar_a_e2(2);
+    p.responder(false);
+    p.responder(true);
+    p.responder(true);
+    p.e(Entrada::Ayuda);
+    p.responder(true);
+    p.responder(true);
+    assert_eq!(p.act(), "etapa2:3:5");
+    p.responder(true);
+    assert_eq!(p.act(), "tarea:1");
+    assert_eq!(
+        p.m.metricas.nic[0].primer_intento,
+        [false, true, false, true, true]
+    );
+    assert!(p.registro_tiene("Completó los 5 ejercicios del nivel 3"));
+
+    // Con el ajuste en 0, siempre los 5, y se dice el total.
+    let mut p = Prueba::new(Some(2), vec![obj(1, TipoObjetivo::Tarea, 5, Some(3))]);
+    p.m.cfg.etapa2_aciertos_seguidos = 0;
+    p.iniciar();
+    p.pasar_e1();
+    let dichas = textos(&p.log);
+    assert!(dichas.contains(
+        &"Etapa 2: Refuerzo. Ahora te toca a ti: son 5 ejercicios. Si te trabas, pídeme una pista."
+    ));
+    assert!(dichas.contains(&"Ejercicio 1 de 5."));
+    for _ in 0..4 {
+        p.responder(true);
+    }
+    assert_eq!(p.act(), "etapa2:3:5");
+    p.responder(true);
+    assert_eq!(p.act(), "tarea:1");
+}
+
+/// [PROPUESTA] E1-03: si los pasos del primer ejemplo guiado salen bien al
+/// primer intento y sin pistas, se pasa a explicarlo sin el segundo ejemplo.
+/// Con un error o una pista, el segundo ejemplo sigue.
+#[test]
+fn e103_un_ejemplo_guiado_limpio_lleva_a_explicar() {
+    let hasta_el_guiado = || {
+        let mut p = Prueba::new(Some(1), vec![obj(1, TipoObjetivo::Tarea, 5, Some(2))]);
+        p.iniciar();
+        while p.act() != "etapa1:2:asistido" {
+            assert!(p.act().starts_with("etapa1:2"), "{}", p.act());
+            p.e(Entrada::Texto("Entendido, sigue".into()));
+        }
+        p
+    };
+    let guiados = |p: &Prueba| {
+        p.log
+            .iter()
+            .filter(|m| m.texto.starts_with("Te acompaño paso a paso."))
+            .count()
+    };
+
+    let mut p = hasta_el_guiado();
+    for _ in 0..3 {
+        assert_eq!(p.act(), "etapa1:2:asistido");
+        p.responder(true);
+    }
+    assert_eq!(p.act(), "etapa1:2:explicar");
+    assert_eq!(guiados(&p), 1, "{}", texto(&p.log));
+    assert!(p.registro_tiene("Ejemplo guiado 1 sin errores ni pistas"));
+    p.responder(true);
+    assert_eq!(p.act(), "etapa2:2:1");
+
+    // Un paso con error: el segundo ejemplo sigue.
+    let mut p = hasta_el_guiado();
+    for ok in [true, false, true, true] {
+        p.responder(ok);
+    }
+    assert_eq!(p.act(), "etapa1:2:asistido");
+    assert_eq!(guiados(&p), 2);
+    let titulo = p.m.vista().tarjeta.unwrap().titulo;
+    assert!(titulo.contains("Ejemplo guiado 2 de 2"), "{titulo}");
+
+    // Una pista: también.
+    let mut p = hasta_el_guiado();
+    p.e(Entrada::Ayuda);
+    for _ in 0..3 {
+        p.responder(true);
+    }
+    assert_eq!(p.act(), "etapa1:2:asistido");
+    assert_eq!(guiados(&p), 2);
+}
+
 /// A18: simulación con falla: sin pistas, etapas, y se vuelve a simular solo lo fallado con ejercicios nuevos.
 #[test]
 fn a18_simulacion_con_falla() {

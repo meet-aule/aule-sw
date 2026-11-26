@@ -283,8 +283,18 @@ struct Tam {
 enum FaseE1 {
     Teoria(usize),
     NoAsistido(usize),
-    Asistido { ej: usize, paso: usize, fallos: u8 },
-    Explicar { pistas: usize, repaso_hecho: bool },
+    Asistido {
+        ej: usize,
+        paso: usize,
+        fallos: u8,
+        /// [PROPUESTA] Hasta ahora, cada paso de este ejemplo salió bien al
+        /// primer intento y sin pistas.
+        limpio: bool,
+    },
+    Explicar {
+        pistas: usize,
+        repaso_hecho: bool,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -1784,6 +1794,7 @@ impl Motor {
                         ej: 0,
                         paso: 0,
                         fallos: 0,
+                        limpio: true,
                     }
                 };
                 self.act = Actividad::Etapa1(e1);
@@ -1820,7 +1831,9 @@ impl Motor {
     fn calificar_e1(&mut self, mut e1: E1, c: Calificacion, ayuda: bool, out: &mut Vec<Mensaje>) {
         let cont = self.nivel_c(e1.nivel);
         match e1.fase.clone() {
-            FaseE1::Asistido { ej, paso, fallos } => {
+            FaseE1::Asistido {
+                ej, paso, fallos, ..
+            } => {
                 let ejemplo = &cont.etapa1.asistidos[ej];
                 let p = &ejemplo.pasos[paso];
                 if !ayuda && c.ilegible {
@@ -1841,10 +1854,12 @@ impl Motor {
                         "Casi. Pensemos juntos:"
                     };
                     out.push(msg(format!("{pre} {}", p.ayuda)).clase(Clase::Pista));
+                    // Una pista o un error: este ejemplo ya no salió limpio.
                     e1.fase = FaseE1::Asistido {
                         ej,
                         paso,
                         fallos: 1,
+                        limpio: false,
                     };
                     self.act = Actividad::Etapa1(e1);
                 } else {
@@ -1961,11 +1976,13 @@ impl Motor {
     ) {
         let cont = self.nivel_c(e1.nivel);
         let ejemplo = &cont.etapa1.asistidos[ej];
+        let limpio = matches!(e1.fase, FaseE1::Asistido { limpio: true, .. });
         if paso + 1 < ejemplo.pasos.len() {
             e1.fase = FaseE1::Asistido {
                 ej,
                 paso: paso + 1,
                 fallos: 0,
+                limpio,
             };
         } else {
             out.push(
@@ -1975,11 +1992,24 @@ impl Motor {
                 ))
                 .clase(Clase::Exito),
             );
-            e1.fase = if ej + 1 < cont.etapa1.asistidos.len() {
+            let queda_otro = ej + 1 < cont.etapa1.asistidos.len();
+            // [PROPUESTA] Todos los pasos bien al primer intento y sin pistas: ya
+            // sabe ejecutarlos, así que pasa a explicarlo sin el ejemplo siguiente.
+            if queda_otro && limpio {
+                self.aplicar(
+                    "E1-03",
+                    &format!(
+                        "Ejemplo guiado {} sin errores ni pistas: pasa a explicarlo, sin el siguiente",
+                        ej + 1
+                    ),
+                );
+            }
+            e1.fase = if queda_otro && !limpio {
                 FaseE1::Asistido {
                     ej: ej + 1,
                     paso: 0,
                     fallos: 0,
+                    limpio: true,
                 }
             } else {
                 FaseE1::Explicar {
@@ -2034,15 +2064,37 @@ impl Motor {
         lista
     }
 
+    /// [PROPUESTA] E2-02: una Etapa 2 de `total` ejercicios puede terminar
+    /// antes del último, así que no se le promete el total al Alumno.
+    fn e2_puede_terminar_antes(&self, total: usize) -> bool {
+        let n = self.cfg.etapa2_aciertos_seguidos;
+        n > 0 && n < total
+    }
+
+    /// [PROPUESTA] E2-02: los últimos ejercicios salieron bien al primer
+    /// intento y sin pistas, lo mismo que mide MET-01.
+    fn e2_dominada(&self, e2: &E2) -> bool {
+        let n = self.cfg.etapa2_aciertos_seguidos;
+        n > 0 && e2.primer.len() >= n && e2.primer[e2.primer.len() - n..].iter().all(|x| *x)
+    }
+
     fn iniciar_e2(&mut self, nivel: u8, out: &mut Vec<Mensaje>) {
         self.marcar_ruta(format!("e2-{nivel}"), "Refuerzo", format!("Nivel {nivel}"));
         let lista = self.elegir_e2(nivel);
+        let hasta = if self.e2_puede_terminar_antes(lista.len()) {
+            "hasta "
+        } else {
+            ""
+        };
         self.aplicar(
             "E2-01",
-            &format!("Etapa 2: Refuerzo del nivel {nivel}: 5 ejercicios autónomos"),
+            &format!(
+                "Etapa 2: Refuerzo del nivel {nivel}: {hasta}{} ejercicios autónomos",
+                lista.len()
+            ),
         );
         out.push(msg(format!(
-            "Etapa 2: Refuerzo. Ahora te toca a ti: son {} ejercicios. Si te trabas, pídeme una pista.",
+            "Etapa 2: Refuerzo. Ahora te toca a ti: son {hasta}{} ejercicios. Si te trabas, pídeme una pista.",
             lista.len()
         )));
         let actual = Ex::new(lista[0].clone(), self.ahora());
@@ -2074,7 +2126,7 @@ impl Motor {
             out.push(self.felicitar(&c));
             e2.idx += 1;
             self.cupo_descontar();
-            if e2.idx >= e2.lista.len() {
+            if e2.idx >= e2.lista.len() || self.e2_dominada(&e2) {
                 return self.completar_e2(*e2, out);
             }
             e2.actual = Ex::new(e2.lista[e2.idx].clone(), self.ahora());
@@ -2173,19 +2225,36 @@ impl Motor {
         {
             self.extra_niveles.push(e2.nivel);
         }
+        // [PROPUESTA] E2-02: o los hizo todos, o los últimos le salieron bien a
+        // la primera (`e2_dominada`) y la Etapa 2 terminó antes.
+        let hechos = e2.primer.len();
+        let antes = hechos < e2.lista.len();
+        let seguidos = self.cfg.etapa2_aciertos_seguidos;
         self.aplicar(
             "E2-02",
-            &format!("Completó los 5 ejercicios del nivel {}", e2.nivel),
+            &if antes {
+                format!(
+                    "Completó {hechos} ejercicios del nivel {}: los últimos {seguidos} bien al primer intento y sin pistas",
+                    e2.nivel
+                )
+            } else {
+                format!("Completó los {hechos} ejercicios del nivel {}", e2.nivel)
+            },
         );
         if self.remediacion.front() == Some(&e2.nivel) {
             self.remediacion.pop_front();
         }
         self.e1_lista = None;
+        let subtema = self.banco.subtema(e2.nivel);
+        let texto = if antes {
+            format!(
+                "¡Completaste la Etapa 2! Te salieron {seguidos} seguidos a la primera, así que ya dominas: {subtema}."
+            )
+        } else {
+            format!("¡Completaste la Etapa 2! Ya dominas: {subtema}.")
+        };
         out.push(
-            msg(format!(
-                "¡Completaste la Etapa 2! Ya dominas: {}.",
-                self.banco.subtema(e2.nivel)
-            ))
+            msg(texto)
             .clase(Clase::Exito)
             .ia("Celebra en 1 o 2 frases cortas que el Alumno completó la Etapa 2 y ya domina el subtema. Menciona el subtema. No repitas imágenes de tus mensajes anteriores."),
         );
@@ -3363,11 +3432,13 @@ impl Motor {
             }
             Actividad::Etapa2(e2) => {
                 self.revisar_aviso(out);
-                out.push(msg(format!(
-                    "Ejercicio {} de {}.",
-                    e2.idx + 1,
-                    e2.lista.len()
-                )));
+                // [PROPUESTA] E2-02: si puede terminar antes, no se dice el total.
+                let texto = if self.e2_puede_terminar_antes(e2.lista.len()) {
+                    format!("Ejercicio {}.", e2.idx + 1)
+                } else {
+                    format!("Ejercicio {} de {}.", e2.idx + 1, e2.lista.len())
+                };
+                out.push(msg(texto));
             }
             Actividad::Practica(p) => {
                 self.revisar_aviso(out);
