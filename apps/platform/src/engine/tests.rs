@@ -444,6 +444,26 @@ fn in_practice() -> Student {
 }
 
 #[test]
+fn the_course_a_homework_photo_is_read_against_is_the_banks_own() {
+    // The agent takes a course only as: a topic of at most 60 characters, and
+    // at most nine levels numbered from 1 with no gap, each with at most 160
+    // characters on one line (`apps/agent`, `homework.course_from`).
+    let bank = bank().unwrap();
+    let course = homework_course().unwrap();
+    assert_eq!(course["topic"], bank.tema.as_str());
+    assert!((1..=60).contains(&bank.tema.chars().count()));
+    let levels = course["levels"].as_array().unwrap();
+    assert_eq!(levels.len(), bank.niveles.len());
+    assert!((1..=9).contains(&levels.len()));
+    for (number, (level, kept)) in levels.iter().zip(&bank.niveles).enumerate() {
+        assert_eq!(level["level"], number as u64 + 1, "{level}");
+        let about = level["about"].as_str().unwrap();
+        assert_eq!(about, kept.titulo);
+        assert!((1..=160).contains(&about.chars().count()) && !about.contains('\n'), "{about}");
+    }
+}
+
+#[test]
 fn a_tired_student_at_night_rests_and_the_session_closes() {
     // At 22:50 where the family lives, "estoy cansado" ends the session kindly
     // instead of proposing an active break (PAU-07).

@@ -80,6 +80,17 @@ fn bank() -> Option<Arc<Banco>> {
     .clone()
 }
 
+/// What a photo of the homework is read against: the bank's topic and what
+/// each of its levels is about, in the bank's own words. The agent builds its
+/// question from this, so a bank for another topic, or with other levels,
+/// needs no change there. Nothing when the bank is not valid.
+pub fn homework_course() -> Option<Value> {
+    let bank = bank()?;
+    let levels: Vec<Value> =
+        bank.niveles.iter().map(|level| json!({ "level": level.nivel, "about": level.titulo })).collect();
+    Some(json!({ "topic": bank.tema, "levels": levels }))
+}
+
 /// The engine's clock: milliseconds since the session's first input, set by
 /// the platform before every input and never read from the system.
 #[derive(Clone, Default)]

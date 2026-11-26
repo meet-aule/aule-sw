@@ -5656,6 +5656,8 @@ async fn the_engine_reads_the_homeworks_level_from_a_photo_only_when_allowed(poo
         let (status, start) = app.call(Method::GET, "/v1/agent/session?homework=1", Some(&token), None).await;
         assert_eq!(status, StatusCode::OK, "{start}");
         assert!(start["script"].get("awaits").is_none(), "{start}");
+        // Not allowed to read photos here: no course to read them against either.
+        assert!(start.get("homework").is_none(), "{start}");
         assert_eq!(first_input(&app, &id).await, json!({ "kind": "start" }));
         let pupil = Pupil { app: &app, session: id, token: token.clone(), contract: visual_contract() };
         pupil.says(json!({ "said": "sí" })).await;
@@ -5692,6 +5694,13 @@ async fn the_engine_reads_the_homeworks_level_from_a_photo_only_when_allowed(poo
     let (status, start) = app.call(Method::GET, "/v1/agent/session?homework=2", agent, None).await;
     assert_eq!(status, StatusCode::OK, "{start}");
     assert_eq!(first_input(&app, &id).await, json!({ "kind": "start", "homework": 1 }));
+    // The agent is told what a photo is read against: the bank's topic and levels.
+    assert_eq!(start["homework"]["topic"], "Fracciones", "{start}");
+    assert_eq!(start["homework"]["levels"].as_array().map(Vec::len), Some(5), "{start}");
+    assert_eq!(
+        start["homework"]["levels"][0],
+        json!({ "level": 1, "about": "Leer, escribir y representar fracciones" })
+    );
     let pupil = Pupil { app: &app, session: id.clone(), token: token.clone(), contract: visual_contract() };
 
     // After the warm-up the engine asks for the photo, and says it waits for one.
