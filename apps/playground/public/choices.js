@@ -25,6 +25,22 @@ export function choicesOf(value) {
   return { options: [...options], multiple };
 }
 
+/** What tells one set of choices from another: the same options offered the same way. */
+export const keyOf = (choices) => (choices ? JSON.stringify([choices.options, choices.multiple]) : "");
+
+/**
+ * Whether the answers to tap that the engine's step carries are drawn from it.
+ * The tutor sends them once it has said its question, but a page that was
+ * reloaded, or that missed that message, has none. They are drawn when the
+ * same question has waited for two looks at the step (`looks`), Aule is
+ * listening (`state`), nothing to tap is showing, and they were not already
+ * drawn on this page (`drawn`): a question answered a moment ago still shows
+ * in the step until the engine has heard the answer.
+ */
+export function restores({ key, looks, showing, drawn, state }) {
+  return key !== "" && looks >= 2 && !showing && key !== drawn && state === "listening";
+}
+
 /** The turn a selection sends: what was marked, in the order it was offered, joined by commas. */
 export function turnOf(options, marked) {
   return options.filter((option) => marked.has(option)).join(", ");
@@ -118,6 +134,10 @@ export function choicesItem(document, choices, { language, say, send }) {
 
   return {
     item,
+    /** Whether a tap can still answer. */
+    get open() {
+      return state === "open";
+    },
     /** The conversation moved on: the buttons stay to be read, and cannot be pressed. */
     close() {
       state = "closed";

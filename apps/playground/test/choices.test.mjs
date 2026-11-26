@@ -8,7 +8,7 @@ import { readFile } from "node:fs/promises";
 import { test } from "node:test";
 import { runInNewContext } from "node:vm";
 
-import { TOPIC, choicesItem, choicesOf, turnOf } from "../public/choices.js";
+import { TOPIC, choicesItem, choicesOf, keyOf, restores, turnOf } from "../public/choices.js";
 import { words } from "../public/first-steps.js";
 
 const app = await readFile(new URL("../public/app.js", import.meta.url), "utf8");
@@ -219,15 +219,22 @@ function source(name) {
 /** The page's answers to tap with a stand-in room: what it sent, wrote and said went wrong. */
 function page({ fails = false } = {}) {
   const transcript = element("ol");
+  // Aule's tile, whose state says whether it is listening.
+  const tutor = element("div");
+  tutor.dataset.state = "listening";
   const sent = [];
   const messages = [];
   const context = {
     document,
     choicesOf,
     choicesItem,
+    keyOf,
+    restores,
     words,
     CHAT_TOPIC: "lk.chat",
     choicesNow: null,
+    choicesDrawn: "",
+    stepChoices: { key: "", looks: 0 },
     room: {
       localParticipant: {
         sendText: async (text, { topic }) => {
@@ -237,13 +244,14 @@ function page({ fails = false } = {}) {
       },
     },
     sessionLanguage: () => "es",
-    $: (id) => (id === "transcript" ? transcript : element("p")),
+    $: (id) => (id === "transcript" ? transcript : id === "tutor" ? tutor : element("p")),
     followTranscript: () => {},
     showMessage: (text) => messages.push(text),
   };
-  runInNewContext(["item", "closeChoices", "onChoices", "sendTyped"].map(source).join("\n"), context);
+  const functions = ["item", "closeChoices", "onChoices", "drawChoices", "restoreChoices", "sendTyped"];
+  runInNewContext(functions.map(source).join("\n"), context);
   const offer = (value) => context.onChoices({ readAll: async () => (typeof value === "string" ? value : JSON.stringify(value)) });
-  return { context, transcript, sent, messages, offer };
+  return { context, transcript, tutor, sent, messages, offer };
 }
 
 test("the page puts what the tutor offered under its line, and a tap is the student's typed turn", async () => {
@@ -278,6 +286,68 @@ test("newer answers to tap close the ones before, and what is not choices is not
   assert.equal(transcript.children[2].dataset.name, "Tú (escrito)");
   assert.equal(context.choicesNow, null);
   assert.ok(second.children.find((child) => child.className === "choices-options").children.every((button) => button.disabled));
+});
+
+test("answers the step carries are drawn from it only when the tutor's message never came", () => {
+  const waiting = { key: keyOf({ options: ["Sí", "No"], multiple: false }), looks: 2, showing: false, drawn: "", state: "listening" };
+  assert.equal(restores(waiting), true);
+  // One look is not enough: the tutor may still be about to send them.
+  assert.equal(restores({ ...waiting, looks: 1 }), false);
+  // Nor while Aule speaks or thinks, with some showing, with none to draw, or once drawn here.
+  for (const state of ["speaking", "thinking", "waiting", "reconnecting", undefined]) {
+    assert.equal(restores({ ...waiting, state }), false, String(state));
+  }
+  assert.equal(restores({ ...waiting, showing: true }), false);
+  assert.equal(restores({ ...waiting, key: "" }), false);
+  assert.equal(restores({ ...waiting, drawn: waiting.key }), false);
+  // The same options offered another way are other choices.
+  assert.notEqual(keyOf({ options: ["1/2", "2/4"], multiple: true }), keyOf({ options: ["1/2", "2/4"], multiple: false }));
+  assert.equal(keyOf(null), "");
+});
+
+test("after a reload the page draws the waiting question's answers from the step, once", async () => {
+  const { context, transcript, tutor, sent, offer } = page();
+  const carried = { options: ["Saltos de estrella", "Respiración del globo"], multiple: false };
+  // The first look only notes them; Aule may be about to send them itself.
+  context.restoreChoices(carried);
+  assert.equal(transcript.children.length, 0);
+  // While Aule speaks they wait.
+  tutor.dataset.state = "speaking";
+  context.restoreChoices(carried);
+  assert.equal(transcript.children.length, 0);
+  tutor.dataset.state = "listening";
+  context.restoreChoices(carried);
+  assert.equal(transcript.children.length, 1);
+  const buttons = transcript.children[0].children[0].children;
+  assert.deepEqual(buttons.map((button) => button.textContent), carried.options);
+  // The tutor's own message for the same question does not draw them twice,
+  context.restoreChoices(carried);
+  await offer(carried);
+  assert.equal(transcript.children.length, 1);
+  // and a tap answers as any other.
+  buttons[1].click();
+  await settle();
+  assert.deepEqual(sent, [["Respiración del globo", "lk.chat"]]);
+  // Until the engine has heard the answer its step still carries them: not drawn again.
+  context.restoreChoices(carried);
+  context.restoreChoices(carried);
+  assert.equal(transcript.children.filter((child) => child.className === "choices").length, 1);
+  // Once no question waits, the same answers asked again are a new question.
+  context.restoreChoices(undefined);
+  context.restoreChoices(carried);
+  context.restoreChoices(carried);
+  assert.equal(transcript.children.filter((child) => child.className === "choices").length, 2);
+  // What is not choices is never drawn.
+  context.restoreChoices(undefined);
+  context.restoreChoices({ options: ["Sí", "Sí"] });
+  context.restoreChoices({ options: ["Sí", "Sí"] });
+  assert.equal(transcript.children.filter((child) => child.className === "choices").length, 2);
+});
+
+test("the step is asked for its answers to tap on every look, and a session's end forgets them", () => {
+  assert.match(source("showStep"), /restoreChoices\(step\.choices\);/);
+  const forgets = source("forgetWords");
+  assert.ok(forgets.includes('choicesDrawn = "";') && forgets.includes('stepChoices = { key: "", looks: 0 };'));
 });
 
 test("a tap that cannot be sent says so and can be tried again", async () => {

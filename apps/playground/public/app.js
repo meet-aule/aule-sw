@@ -7,7 +7,7 @@
 import { firstRun, openedSession, purposeAsked, sessionRequest } from "./home.js";
 import { addressFor, back, current, getAccount, go, need, onAccount, onHide, onShow, readdress, sessionAddress } from "./screens.js";
 import { TOPIC as VISUAL_TOPIC, renderVisual } from "./visuals.js";
-import { TOPIC as CHOICES_TOPIC, choicesItem, choicesOf } from "./choices.js";
+import { TOPIC as CHOICES_TOPIC, choicesItem, choicesOf, keyOf, restores } from "./choices.js";
 import { endedMessage, languageOf, recoveryMessage } from "./session-messages.js";
 import { COACH_HOLD_MS, HINTS_MS, VOICE, WINDOW_MS, cameraProblem, heard, isTap, levelOf, micProblem, words } from "./first-steps.js";
 import { cuy } from "./cuy.js";
@@ -677,6 +677,7 @@ async function showStep(id, given) {
 
   showRoute(step.route ?? []);
   showCard(step.card ?? null);
+  restoreChoices(step.choices);
 }
 
 /**
@@ -783,8 +784,12 @@ function item(text) {
 
 // --- answers to tap under Aule's question (D44) -----------------------------------
 
-// What Aule offered to tap last, while it can still be pressed.
+// What Aule offered to tap last, while it can still be pressed; which choices
+// were drawn last on this page; and the choices of the engine's step, with how
+// many looks in a row have found them waiting (choices.js restores).
 let choicesNow = null;
+let choicesDrawn = "";
+let stepChoices = { key: "", looks: 0 };
 
 /** The conversation moved on: what Aule offered to tap stays to be read, and cannot be pressed. */
 function closeChoices() {
@@ -801,17 +806,42 @@ async function onChoices(reader) {
   try {
     const offered = choicesOf(JSON.parse(await reader.readAll()));
     if (!offered || !room) return;
-    closeChoices();
-    const language = sessionLanguage();
-    choicesNow = choicesItem(document, offered, {
-      language,
-      say: (key) => words(key, language),
-      send: (text) => sendTyped(text, "you"),
-    });
-    $("transcript").append(choicesNow.item);
-    followTranscript();
+    // Already drawn from the step and still to be answered: not drawn twice.
+    if (choicesNow?.open && choicesDrawn === keyOf(offered)) return;
+    drawChoices(offered);
   } catch {
     // What this page cannot read is skipped: the answer can still be said or typed.
+  }
+}
+
+/** Draws `offered` under the conversation's last line, in place of what was offered before. */
+function drawChoices(offered) {
+  closeChoices();
+  const language = sessionLanguage();
+  choicesNow = choicesItem(document, offered, {
+    language,
+    say: (key) => words(key, language),
+    send: (text) => sendTyped(text, "you"),
+  });
+  choicesDrawn = keyOf(offered);
+  $("transcript").append(choicesNow.item);
+  followTranscript();
+}
+
+/**
+ * The answers to tap that the engine's step carries, drawn from it when the
+ * tutor's message with them never reached this page: after a reload, or a
+ * message lost on the way (choices.js restores).
+ */
+function restoreChoices(carried) {
+  const offered = choicesOf(carried ?? null);
+  const key = keyOf(offered);
+  stepChoices = { key, looks: key && key === stepChoices.key ? stepChoices.looks + 1 : key ? 1 : 0 };
+  // No question waits: the next one is new, even with the same answers.
+  if (!key) choicesDrawn = "";
+  const state = $("tutor").dataset.state;
+  if (room && restores({ key, looks: stepChoices.looks, showing: Boolean(choicesNow), drawn: choicesDrawn, state })) {
+    drawChoices(offered);
   }
 }
 
@@ -1928,6 +1958,8 @@ function teardown({ quiet = false } = {}) {
 function forgetWords() {
   $("transcript").replaceChildren();
   choicesNow = null;
+  choicesDrawn = "";
+  stepChoices = { key: "", looks: 0 };
   lines.clear();
   heldLines = [];
   for (const id of ["typed", "answer-text", "explanation-text"]) $(id).value = "";
