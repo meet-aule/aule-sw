@@ -23,6 +23,8 @@ from livekit import rtc
 from livekit.agents import (
     Agent,
     APIConnectOptions,
+    APIError,
+    APIStatusError,
     FlushSentinel,
     ModelSettings,
     StopResponse,
@@ -124,6 +126,24 @@ UNCHECKED = "Not checked: carry on by yourself."
 # accepted, hence the allowance.
 NO_REPLY_SECONDS = 15.0
 EARLY_REPLY_SECONDS = 5.0
+# How long one step of the model may take, the watchdog's time: a step not
+# over by then failed, as a request the model refused did.
+STEP_SECONDS = NO_REPLY_SECONDS
+# Failed steps in a row that end the session: the first is tried once more,
+# after a fixed line, and there is no third try.
+MODEL_FAILURES_TO_END = 2
+
+# Why no request to the model can succeed for the rest of the session: its
+# provider refuses the key, the account has no credit left or may not use the
+# model (skill shared/error-codes.md). When the credit ran out on 2026-11-25
+# the answer was a 400 that said so only in its message.
+_GIVE_UP_TYPES = {
+    "authentication_error": "authentication",
+    "billing_error": "billing",
+    "permission_error": "permission",
+}
+_GIVE_UP_STATUSES = {401: "authentication", 402: "billing", 403: "permission"}
+_NO_CREDIT = "credit balance"
 
 # The longest typed message that is read. A spoken turn is rarely longer.
 MAX_TYPED_CHARS = 500
@@ -411,6 +431,61 @@ async def _with_tool_start(stream: AsyncIterable[Any], began: asyncio.Event) -> 
             yield TOOL_CALL_BEGAN if kind == "began" else value
     finally:
         await utils.aio.cancel_and_wait(*tasks)
+
+
+class NoReplyInTime(Exception):
+    """A step of the model that was not over within ``STEP_SECONDS``."""
+
+
+async def _in_time(stream: AsyncIterable[Any], seconds: float) -> AsyncGenerator[Any]:
+    """The chunks of one step of the model as they come, while the step is
+    over within ``seconds``; ``NoReplyInTime`` once it is not, with its
+    request closed. A hung request is otherwise waited for through each of
+    LiveKit's tries."""
+    deadline = asyncio.get_running_loop().time() + seconds
+    async with contextlib.aclosing(aiter(stream)) as chunks:  # type: ignore[type-var]
+        while True:
+            timeout = asyncio.timeout_at(deadline)
+            try:
+                async with timeout:
+                    chunk = await anext(chunks)
+            except StopAsyncIteration:
+                return
+            except TimeoutError:
+                if timeout.expired():
+                    raise NoReplyInTime() from None
+                raise
+            yield chunk
+
+
+def _answer_behind(error: BaseException) -> BaseException:
+    """The provider's own failure behind ``error``: when its retries run out,
+    LiveKit raises a failure of its own, from the last one."""
+    found = error
+    for _ in range(4):
+        cause = found.__cause__
+        if not isinstance(cause, APIError):
+            break
+        found = cause
+    return found
+
+
+def why_unanswerable(error: BaseException) -> str | None:
+    """Why no request to the model can succeed for the rest of the session
+    ("authentication", "billing" or "permission"), or None when one may."""
+    failure = _answer_behind(error)
+    if not isinstance(failure, APIStatusError):
+        return None
+    body = failure.body if isinstance(failure.body, dict) else {}
+    detail = body.get("error") if isinstance(body.get("error"), dict) else {}
+    kind, message = detail.get("type"), detail.get("message")
+    if isinstance(kind, str) and kind in _GIVE_UP_TYPES:
+        return _GIVE_UP_TYPES[kind]
+    if failure.status_code in _GIVE_UP_STATUSES:
+        return _GIVE_UP_STATUSES[failure.status_code]
+    if failure.status_code == 400 and isinstance(message, str) and _NO_CREDIT in message.lower():
+        return "billing"
+    return None
 
 
 @dataclass(frozen=True)
@@ -889,6 +964,12 @@ class Tutor(Agent):
         # in the same turn works in silence, or the lines would pile up.
         self._meanwhiles = itertools.cycle(MEANWHILE)
         self._meanwhile_due = True
+        # The same for the line said when the model fails, once a turn; the
+        # steps that failed in a row, and whether the model was given up on
+        # for the session, which then closes (``on_unavailable``).
+        self._hold_on_due = True
+        self._failures = 0
+        self._given_up = False
         # Whether this turn of the student put something on the screen.
         self._drew = False
         # The frame taken when the student pressed the button, until it is used.
@@ -927,9 +1008,11 @@ class Tutor(Agent):
         self._tutor_name = persona.name
         self._student_name = student_name
         self._session_number = session_number
-        # What closes the session when the student says goodbye; set by the
-        # worker, which owns the session's pace.
+        # What closes the session when the student says goodbye, and when the
+        # model cannot answer any more; set by the worker, which owns the
+        # session's pace and its platform.
         self.on_goodbye: Callable[[], None] | None = None
+        self.on_unavailable: Callable[[], None] | None = None
 
     def _goodbye(self, text: str) -> bool:
         """Whether this turn was the student's goodbye, and the session now closes."""
@@ -1129,7 +1212,7 @@ class Tutor(Agent):
         trace = new_turn()
         if self._timing is not None:
             self._timing.traced(trace)
-        self._meanwhile_due = True
+        self._meanwhile_due = self._hold_on_due = True
         self._drew = False
         # A spoken turn during a drill is the student's try (a typed one never comes here).
         self._drill.took()
@@ -1139,6 +1222,9 @@ class Tutor(Agent):
             if not await self._may_answer(turn_ctx, new_message):
                 # The stopped turn gets no reply: StopResponse discards it. An
                 # early reply asked for it is dropped unseen.
+                raise StopResponse()
+            if self._given_up:
+                # The model cannot answer any more and the session is closing.
                 raise StopResponse()
             if self._goodbye(new_message.text_content or ""):
                 raise StopResponse()
@@ -1184,7 +1270,7 @@ class Tutor(Agent):
         if not text:
             return
         new_turn()
-        self._meanwhile_due = True
+        self._meanwhile_due = self._hold_on_due = True
         self._drew = False
         await self._interrupt()
         message = llm.ChatMessage(role="user", content=[text])
@@ -1205,6 +1291,34 @@ class Tutor(Agent):
         self._meanwhile_due = False
         return reply(next(self._meanwhiles), self._language)
 
+    def _hold_on(self) -> str:
+        if not self._hold_on_due:
+            return ""
+        self._hold_on_due = False
+        return reply("hold_on", self._language)
+
+    def _failed(self, error: Exception) -> bool:
+        """Counts a step of the model that failed or was not over in time.
+        True when it is tried once more; False when the model is given up on
+        for the rest of the session, which then closes (``on_unavailable``)."""
+        self._failures += 1
+        failure = _answer_behind(error)
+        cause = why_unanswerable(failure)
+        # Its type and status only: a provider's message may quote the request.
+        facts = {
+            "error": type(failure).__name__,
+            "status": failure.status_code if isinstance(failure, APIStatusError) else None,
+            "failures": self._failures,
+        }
+        if cause is None and self._failures < MODEL_FAILURES_TO_END:
+            logger.info("model step failed, trying it once more", extra=facts)
+            return True
+        self._given_up = True
+        logger.warning("tutor model unavailable", extra={**facts, "cause": cause or "in_a_row"})
+        if self.on_unavailable is not None:
+            self.on_unavailable()
+        return False
+
     async def show_work(self) -> bool:
         """The student pressed the button that shows their work: the tutor
         looks at what the camera sees now and answers at once. False when the
@@ -1216,7 +1330,7 @@ class Tutor(Agent):
             return False
         self._shown = frame
         new_turn()
-        self._meanwhile_due = True
+        self._meanwhile_due = self._hold_on_due = True
         self._drew = False
         # The page is waiting for this answer: a long line that cannot be cut is
         # not waited for to its end, and the reply is said after it instead.
@@ -1270,7 +1384,7 @@ class Tutor(Agent):
         rules, and not for a turn that takes a camera frame: no image goes to
         the model before the gates let its turn through."""
         self._drop_early_reply()
-        if not self._asks_early or self._engine is not None:
+        if not self._asks_early or self._engine is not None or self._given_up:
             return
         chat_ctx = turn_ctx.copy()
         chat_ctx.insert(new_message)
@@ -1485,6 +1599,15 @@ class Tutor(Agent):
     async def llm_node(
         self, chat_ctx: llm.ChatContext, tools: list[llm.Tool], model_settings: ModelSettings
     ) -> AsyncIterable[llm.ChatChunk | str]:
+        """One step of the model, as it reaches the voice (``_said``).
+
+        A step that fails, or is not over within ``STEP_SECONDS``, is asked
+        once more after a fixed line, so the student is not left in silence.
+        One that fails again, or in a way no retry changes, gives the model up
+        for the session, which closes with a fixed line (``_failed``). Nothing
+        of a failed step was said but a fixed line: ``checked`` holds a step
+        whole until it is over, and the tutor always has tools.
+        """
         took = self._took()
         prompt = self._prompt()
         # A new step: what the voice was given for an earlier one is not said now.
@@ -1494,35 +1617,60 @@ class Tutor(Agent):
         REQUEST.set(prompt)
         chat_ctx = with_instructions(chat_ctx, prompt.text)
         early, self._early = self._early, None
-        if early is not None and early.matches(
-            chat_ctx, tools, model_settings, prompt, self._peek_frame(chat_ctx)
-        ):
-            # The gates let the turn through and this is the request the early
-            # reply made: what the model wrote so far, then the rest, and the
-            # stages it timed.
-            early.request.used = True
-            early.times.tell(took)
-            self.early_replies["used"] += 1
-            stream = early.chunks()
-            tool_start = early.tool_start
-        else:
-            if early is not None:
-                early.drop()
-                self.early_replies["dropped"] += 1
-                early = None
-            frame = self._frame_for(chat_ctx)
-            # Read by the model's client as the model's events come in.
-            tool_start = ToolStart(took)
-            TOOL_STARTED.set(tool_start)
-            stream = timed(
-                Agent.default.llm_node(self, with_frame(chat_ctx, frame), tools, model_settings),
-                took,
+        if early is not None and (
+            self._given_up
+            or not early.matches(
+                chat_ctx, tools, model_settings, prompt, self._peek_frame(chat_ctx)
             )
-        said = self._said(stream, tools, took, tool_start.began)
+        ):
+            early.drop()
+            self.early_replies["dropped"] += 1
+            early = None
+        if self._given_up:
+            # The session is closing: the model is not asked again.
+            return
+        frame = None if early is not None else self._frame_for(chat_ctx)
         try:
-            async with contextlib.aclosing(said):  # type: ignore[type-var]
-                async for chunk in said:
-                    yield chunk
+            while True:
+                if early is not None:
+                    # The gates let the turn through and this is the request the
+                    # early reply made: what the model wrote so far, then the
+                    # rest, and the stages it timed.
+                    early.request.used = True
+                    early.times.tell(took)
+                    self.early_replies["used"] += 1
+                    stream, tool_start = early.chunks(), early.tool_start
+                else:
+                    # Read by the model's client as the model's events come in.
+                    tool_start = ToolStart(took)
+                    TOOL_STARTED.set(tool_start)
+                    stream = timed(
+                        Agent.default.llm_node(
+                            self, with_frame(chat_ctx, frame), tools, model_settings
+                        ),
+                        took,
+                    )
+                said = self._said(_in_time(stream, STEP_SECONDS), tools, took, tool_start.began)
+                failure: Exception | None = None
+                try:
+                    async with contextlib.aclosing(said):  # type: ignore[type-var]
+                        async for chunk in said:
+                            yield chunk
+                except Exception as error:
+                    failure = error
+                if failure is None:
+                    self._failures = 0
+                    return
+                if early is not None:
+                    # Asked again, the request is a new one.
+                    early.drop()
+                    early = None
+                if not self._failed(failure):
+                    return
+                if line := self._hold_on():
+                    # On its own, so the voice says it while the step is asked again.
+                    yield line
+                    yield FlushSentinel()
         finally:
             if early is not None:
                 # Interrupted while it still ran: the request stops.

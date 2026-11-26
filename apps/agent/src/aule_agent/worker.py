@@ -32,7 +32,7 @@ from .camera import Camera
 from .config import LANGUAGES, ConfigError, Settings, build_commit
 from .logs import keep_personal_fields_out
 from .observability import Observability
-from .pace import Pace
+from .pace import Pace, says_tired
 from .platform import Platform, platform_session
 from .providers import build_llm, build_stt, build_tts
 from .reconnect import ReconnectGrace
@@ -511,10 +511,35 @@ async def entrypoint(ctx: JobContext) -> None:
 
     tutor.on_goodbye = goodbye
 
+    async def close_without_a_model() -> None:
+        # The tutor's model cannot answer any more: the student hears why, and
+        # the platform records "provider_error", the end reason it accepts for
+        # a service that failed, which the page's end screen explains.
+        if platform and not platform.end_reason:
+            platform.end_reason = "provider_error"
+        try:
+            await session.say(
+                reply("tutor_unavailable", language),
+                allow_interruptions=False,
+                add_to_chat_ctx=False,
+            )
+        finally:
+            session.shutdown()
+
+    def model_unavailable() -> None:
+        # In its own task, as the goodbye: the step that gave up ends at once.
+        task = asyncio.create_task(close_without_a_model())
+        asides.add(task)
+        task.add_done_callback(asides.discard)
+
+    tutor.on_unavailable = model_unavailable
+
     @session.on("conversation_item_added")
     def back_from_a_break(event) -> None:
+        # Only a turn the gates let through is added. Its words are read for
+        # tiredness, which makes the next break a calm one, and not kept.
         if getattr(event.item, "type", None) == "message" and event.item.role == "user":
-            pace.student_spoke()
+            pace.student_spoke(tired=says_tired(event.item.text_content or ""))
 
     if platform:
 

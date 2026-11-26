@@ -7,12 +7,15 @@ the student is not talking, never over either of them.
 """
 
 import asyncio
+import itertools
 import logging
+import re
 import time
+import unicodedata
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from .replies import BREAKS, reply
+from .replies import BREAKS, RESTS, reply
 
 logger = logging.getLogger("aule.agent.pace")
 
@@ -36,6 +39,16 @@ IDLE_ASK_SECONDS = 180.0
 IDLE_CLOSE_SECONDS = 60.0
 IDLE_POLL_SECONDS = 5.0
 
+# What says the student is tired or sleepy, in their words without accents:
+# "estoy cansada", "ya me cansé", "tengo sueño", "I'm so tired". A dream ("tuve
+# un sueño") is not sleepiness, and boredom is not tiredness: a break that
+# wakes them up suits it.
+_TIRED = re.compile(
+    r"\b(cans[aeio]\w*|descans\w*|agotad[oa]s?|no puedo mas|"
+    r"(tengo|da|dio|de|con|que|mucho|muchisimo) sueno|(quiero|ganas de) dormir|"
+    r"tired|sleepy|exhausted|worn out|(want|wanna) (to )?sleep)\b"
+)
+
 
 def warning(max_minutes: int) -> tuple[int, str] | None:
     """How many minutes before the end the warning is said, and its line."""
@@ -44,6 +57,15 @@ def warning(max_minutes: int) -> tuple[int, str] | None:
     if max_minutes > SHORT_WARNING_MINUTES:
         return SHORT_WARNING_MINUTES, "two_minutes_left"
     return None
+
+
+def says_tired(text: str) -> bool:
+    """Whether the student says they are tired or sleepy. Their words are read
+    for this alone and kept nowhere; a wrong yes only makes the next break a
+    calm one."""
+    unaccented = unicodedata.normalize("NFKD", text.lower())
+    plain = "".join(c for c in unaccented if not unicodedata.combining(c))
+    return _TIRED.search(plain) is not None
 
 
 class Pace:
@@ -68,6 +90,11 @@ class Pace:
         self._sleep = sleep
         self._started = clock()
         self.breaks_taken = 0
+        # The activities offered in turn, and whether the student said they
+        # are tired since the last break: then the next one is a calm one.
+        self._breaks = itertools.cycle(BREAKS)
+        self._rests = itertools.cycle(RESTS)
+        self._tired = False
         self._offering = False
         self._on_break = False
         self._break_ended: float | None = None
@@ -106,9 +133,11 @@ class Pace:
     async def take_a_break(self) -> None:
         """Proposes one short activity away from the work and lets the student go.
 
-        The tutor says nothing more until the student talks again or the break
-        is over, whichever comes first. Asked for again while a break is on or
-        just after one, it does nothing.
+        A student who said they are tired is invited to rest, which they may
+        turn down by carrying on; any other break wakes them up or calms them,
+        in turn. The tutor says nothing more until the student talks again or
+        the break is over, whichever comes first. Asked for again while a
+        break is on or just after one, it does nothing.
         """
         recent = (
             self._break_ended is not None
@@ -118,7 +147,8 @@ class Pace:
             return
         self._offering = True
         try:
-            line = BREAKS[self.breaks_taken % len(BREAKS)]
+            line = next(self._rests if self._tired else self._breaks)
+            self._tired = False
             self.breaks_taken += 1
             number = self.breaks_taken
             self._on_break = True
@@ -155,10 +185,12 @@ class Pace:
                 self._session.shutdown()
                 return
 
-    def student_spoke(self) -> None:
-        """The student said or wrote something: they are there, and back from a break."""
+    def student_spoke(self, *, tired: bool = False) -> None:
+        """The student said or wrote something: they are there, and back from
+        a break. ``tired`` when it said they are tired (``says_tired``)."""
         self._heard_at = self._clock()
         self._asked_if_there = False
+        self._tired = self._tired or tired
         if not self._on_break:
             return
         self._on_break = False

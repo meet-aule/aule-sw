@@ -1,6 +1,8 @@
 import asyncio
 
+import latency_harness as harness
 import pytest
+from fakes import Delays, TurnPlan, World, words_of
 
 from aule_agent.pace import (
     BREAK_COOLDOWN_SECONDS,
@@ -8,9 +10,10 @@ from aule_agent.pace import (
     IDLE_CLOSE_SECONDS,
     QUIET_TIMEOUT_SECONDS,
     Pace,
+    says_tired,
     warning,
 )
-from aule_agent.replies import BREAKS, REPLIES
+from aule_agent.replies import BREAKS, REPLIES, RESTS
 
 
 class Time:
@@ -245,3 +248,100 @@ async def test_a_goodbye_is_said_back_once_and_closes_the_session():
 
     assert [said[1] for said in session.said] == [REPLIES["farewell"]["es"]]
     assert session.closed_at is not None and made.closed_after_goodbye
+
+
+# --- A tired student ---------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        "Estoy cansado",
+        "uff, estoy cansadísima",
+        "ya me cansé",
+        "¿podemos descansar un rato?",
+        "tengo sueño",
+        "me muero de sueño",
+        "estoy agotada",
+        "ya no puedo más",
+        "I'm tired",
+        "so sleepy",
+    ],
+)
+def test_a_student_who_says_they_are_tired_is_heard_in_their_own_words(said):
+    assert says_tired(said)
+
+
+@pytest.mark.parametrize(
+    "said",
+    ["tuve un sueño muy raro", "estoy aburrido", "me da siete octavos", "two cans of paint", ""],
+)
+def test_a_dream_boredom_or_an_answer_is_not_tiredness(said):
+    assert not says_tired(said)
+
+
+async def test_a_break_after_the_student_said_they_are_tired_is_a_calm_one():
+    made, session, time = pace()
+
+    made.student_spoke(tired=True)
+    await made.take_a_break()
+    made.student_spoke()
+    time.now += BREAK_COOLDOWN_SECONDS + 1
+    # A break for another reason, such as a block of work that is over.
+    await made.take_a_break()
+    made.student_spoke(tired=True)
+    time.now += BREAK_COOLDOWN_SECONDS + 1
+    await made.take_a_break()
+    made.close()
+
+    assert [text for _, text, _, _ in session.said] == [
+        line(RESTS[0]),
+        line(BREAKS[0]),
+        line(RESTS[1]),
+    ]
+
+
+def test_a_calm_break_is_asked_and_never_sends_the_student_moving():
+    assert set(RESTS) <= set(REPLIES) and not set(RESTS) & set(BREAKS)
+    for key in RESTS:
+        for language, text in REPLIES[key].items():
+            # An invitation: a question the student may answer with a no.
+            assert "?" in text, (key, language)
+            moving = ("salt", "rápido", "de pie", "jump", "faster", "stand up")
+            assert not any(word in text.lower() for word in moving), (key, language)
+
+
+def heard(world):
+    return " ".join(" ".join(text for said in world.played for text in said.texts).split())
+
+
+def spoken(key):
+    return " ".join(REPLIES[key]["es"].split())
+
+
+async def a_session_with_a_break(words):
+    """A free session of one turn, ``words``, after which the platform offers
+    a break; it ends once a break's line has been heard."""
+    lines = [spoken(key) for key in (*BREAKS, *RESTS)]
+    with harness.offline():
+        world = World(seed=5, delays=Delays(scale=0.05))
+        world.platform.break_after = words
+        world.plans[words] = TurnPlan(reply="Te entiendo.")
+        turn = harness.Turn(1, "reply", words, 0.4, 0.1)
+        await harness.run_session(
+            world, [turn], until=lambda: any(said in heard(world) for said in lines)
+        )
+    return world
+
+
+async def test_in_a_session_a_tired_student_is_offered_a_calm_break_and_others_an_active_one():
+    tired = await a_session_with_a_break(words_of(1, "estoy muy cansado"))
+    other = await a_session_with_a_break(words_of(1))
+
+    assert spoken(RESTS[0]) in heard(tired)
+    assert not [key for key in BREAKS if spoken(key) in heard(tired)]
+    assert spoken(BREAKS[0]) in heard(other)
+    assert not [key for key in RESTS if spoken(key) in heard(other)]
+    # The platform hears that the break was taken, either way.
+    for world in (tired, other):
+        assert world.metrics["breaks_taken"] == 1
