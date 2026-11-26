@@ -56,6 +56,27 @@ class Usage:
         # the cache's usage fields are the only proof of it.
         logger.info("model call", extra=call)
 
+    def looked(self, usage: object) -> None:
+        """Counts one call that read a photo of the homework (``homework``),
+        from the usage the Messages API returned. It is billed as the tutor's
+        own calls are, so it goes in the same totals, the input with what
+        the cache read and wrote, as LiveKit counts it; the platform keeps
+        no more numbers than it does now."""
+        cached = _count(usage, "cache_read_input_tokens")
+        written = _count(usage, "cache_creation_input_tokens")
+        call = {
+            "input_tokens": _count(usage, "input_tokens") + cached + written,
+            "cached_tokens": cached,
+            "cache_write_tokens": written,
+            "output_tokens": _count(usage, "output_tokens"),
+        }
+        self.calls += 1
+        self.input_tokens += call["input_tokens"]
+        self.cached_tokens += call["cached_tokens"]
+        self.cache_write_tokens += call["cache_write_tokens"]
+        self.output_tokens += call["output_tokens"]
+        logger.info("model call", extra={**call, "photo": 1})
+
     def heard(self, metrics: object) -> None:
         """Counts the audio the speech-to-text plugin was sent."""
         seconds = getattr(metrics, "audio_duration", 0.0)

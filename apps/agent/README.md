@@ -17,6 +17,7 @@ Aule's voice tutor: a [LiveKit Agents](https://github.com/livekit/agents) worker
 | `replies` | The fixed replies a person hears when a gate stops a turn, in Spanish and English |
 | `visuals` | What the tutor can show on the student's screen, checked against the shared contract before it is sent |
 | `camera` | The latest camera frame, held in memory and never stored |
+| `homework` | What a photo of the homework shows, read by a model for the session engine; nothing it writes is said, and the photo is never kept |
 | `prosody` | Whether the voice went up or down at the end of an utterance, measured from the audio by rule, for pronunciation drills |
 | `providers` | Builds the speech and language models from the settings |
 | `platform` | Gets the student's profile and the supervisor's plan, reports turns and safety flags in the background, applies guidance |
@@ -178,6 +179,18 @@ The policy's one rule on analogies ([prompts.py](src/aule_agent/prompts.py))
 keeps the exercise's operations, their order and each number in its role: when
 the exercise adds, everything in the story is put together, and nothing is
 bought, spent, eaten or given away. Worked examples use different numbers.
+
+## The homework photo
+
+When the session engine waits for a photo of the child's homework (`awaits: "homework_photo"` in its answer), the button that shows work sends the camera's fresh frame to `homework`, never to the tutor's model. The tutor says «Veamos.» and answers the page at once. In the background one `claude-sonnet-5-5` call gets the frame and the approved question (`homework.QUESTION`):
+
+- the frame is a JPEG of at most 1024 px, made in memory and sent once, with nothing marked for the prompt cache and nothing else in the request: no name, no conversation;
+- thinking is off (`between_tools`), effort low, at most 256 tokens, and the answer is JSON in a fixed schema: what the photo shows, the highest level of the fraction exercises in sight (1 to 5) and how sure the model is;
+- a refusal, an answer cut short, JSON that is not exactly the schema's, a value out of range or no answer within 8 seconds is `unavailable`, which carries no level.
+
+Nothing the model writes is said or shown. The platform is told the outcome, and for a read the level and the confidence (`POST /v1/agent/session/homework`, 3 seconds), and the tutor says the engine's lines; when the platform does not take it, the fixed «No pude mirar tu tarea. ¿Me la muestras otra vez?», and the child can show it again. The frame is dropped once read. What the child says meanwhile waits for the engine to hear of the photo, up to 11 seconds. The log has each read's outcome and time, never the level, the confidence or the image, and the read's tokens are counted with the tutor's model calls, at the same price.
+
+The agent tells the platform it reads photos (`GET /v1/agent/session?homework=1`) unless the talk button is on: the push-to-talk devices have no camera. The platform caps what it is told (`AULE_ENGINE_HOMEWORK`, 0 by default), and an older platform ignores it, so nothing changes until the platform asks for a photo. The five levels are described twice, in `homework.QUESTION` and in the engine's level files. Before it is turned on: one real call to the model, and an evaluation of about 50 labelled photos for accuracy, latency and the engine's threshold of 70.
 
 ## Pedagogy regression experiment
 

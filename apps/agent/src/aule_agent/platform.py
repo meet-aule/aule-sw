@@ -22,8 +22,9 @@ import aiohttp
 
 from ._version import __version__
 from .config import build_commit
+from .homework import Reading
 from .safety import FLAG_ACTIONS, FLAG_CATEGORIES, FLAG_GATES
-from .script import Line, Reply, lines_from, reply_from
+from .script import Reply, reply_from
 from .tutor import OpenExercise, Persona, persona_from
 
 logger = logging.getLogger("aule.agent.platform")
@@ -33,6 +34,9 @@ START_TIMEOUT_SECONDS = 6.0
 START_RETRY_SECONDS = 1.0
 # An exercise is checked while the student waits for the tutor's reply.
 CHECK_TIMEOUT_SECONDS = 1.5
+# What a photo of the homework showed is told while the student waits too,
+# after «Veamos.» and the read.
+HOMEWORK_TIMEOUT_SECONDS = 3.0
 REPORT_TIMEOUT_SECONDS = 10.0
 REPORT_RETRY_SECONDS = 1.0
 END_FLUSH_TIMEOUT_SECONDS = 5.0
@@ -107,9 +111,15 @@ class Platform:
         session: PlatformSession,
         send: Send | None = None,
         clock: Callable[[], float] = time.monotonic,
+        *,
+        homework_capability: int = 0,
     ) -> None:
         self._session = session
         self._send = send or self._http
+        # What the agent can do with the student's homework, said when the
+        # session starts: 1 reads its level from a photo. The platform caps
+        # it, and an engine told nothing asks for no photo.
+        self._homework_capability = homework_capability
         # Which build of the agent makes each call, for the platform's side of a problem.
         self._user_agent = user_agent(build_commit())
         # Filled by ``start`` from the agent-session body; the tutor's persona.
@@ -126,7 +136,7 @@ class Platform:
         self.student_grade: str | None = None
         # Filled by ``start`` when the session engine runs this session: what
         # it wrote for the tutor to open with.
-        self._opening: tuple[Line, ...] = ()
+        self._opening = Reply()
         self._scripted = False
         # What the engine wrote for something that reached it another way (an
         # answer typed on the page), until the tutor says it.
@@ -245,21 +255,22 @@ class Platform:
         script = answer.get("script")
         if isinstance(script, dict):
             self._scripted = True
-            self._opening = lines_from(script.get("lines"))
+            self._opening = reply_from(script) or Reply()
         instructions = answer.get("instructions")
         return instructions if isinstance(instructions, str) else ""
 
     def _ask_to_start(self) -> Awaitable[dict[str, Any] | None]:
-        return self._call(
-            "GET", "/v1/agent/session", None, START_TIMEOUT_SECONDS, for_the_session=True
-        )
+        # A platform that does not know the question ignores it.
+        capability = self._homework_capability
+        path = "/v1/agent/session" + (f"?homework={capability}" if capability else "")
+        return self._call("GET", path, None, START_TIMEOUT_SECONDS, for_the_session=True)
 
     @property
     def scripted(self) -> bool:
         """Whether the session engine runs this session."""
         return self._scripted
 
-    def opening(self) -> tuple[Line, ...]:
+    def opening(self) -> Reply:
         return self._opening
 
     async def said(self, text: str) -> Reply | None:
@@ -270,6 +281,23 @@ class Platform:
             "POST", "/v1/agent/session/said", {"said": text}, CHECK_TIMEOUT_SECONDS
         )
         return reply_from(answer)
+
+    async def homework(self, report: Reading) -> Reply | None:
+        """Tells the engine what a photo of the homework showed and returns
+        what it wrote back, an empty reply when it had nothing to say. None
+        when it could not be told: the student is asked to show it again.
+        Never the photo, and the level and the confidence only for a read.
+        A refusal is about this one report, never the end of the session."""
+        body: dict[str, Any] = {"outcome": report.outcome}
+        if report.outcome == "read":
+            body["level"] = report.level
+            body["confidence"] = report.confidence
+        answer = await self._call(
+            "POST", "/v1/agent/session/homework", body, HOMEWORK_TIMEOUT_SECONDS
+        )
+        if answer is None:
+            return None
+        return reply_from(answer) or Reply()
 
     async def pose(self, expression: str, skill_id: str | None, form: str | None) -> str | None:
         """Tells the platform which exercise is being asked. Returns what the

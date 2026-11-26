@@ -45,12 +45,13 @@ from livekit.agents.voice.generation import (
 
 from . import answers, comparison, drill, farewell, visuals
 from .greetings import greeting as written_greeting
+from .homework import Reading
 from .observability import new_turn
 from .prompts import CHECKING, INSTRUCTIONS, PACED, SCREEN, response_language
 from .providers import EARLY, REQUEST, TOOL_STARTED, WARMING, Early, Prompt
 from .replies import ADULT_HELP_SEQUENCE, ANSWERABLE, MEANWHILE, REPLIES, reply
 from .safety import Gates
-from .script import Engine, Line, Reply
+from .script import Awaits, Engine, Line, Reply
 from .timing import Timing
 
 logger = logging.getLogger("aule.agent.tutor")
@@ -81,6 +82,13 @@ class Checker(Protocol):
     async def pose(self, expression: str, skill_id: str | None, form: str | None) -> str | None: ...
 
     async def answer(self, said: str) -> str | None: ...
+
+
+class Reader(Protocol):
+    """Reads what a photo of the homework shows, for the engine:
+    ``homework.HomeworkReader``."""
+
+    async def read(self, frame: rtc.VideoFrame) -> Reading: ...
 
 
 # The two checking tools as the model sees them. Written out by hand: a schema
@@ -321,6 +329,10 @@ FRESH_FRAME_SECONDS = 2.0
 # answers anyway, with the answer said after that line. With the camera's wait,
 # it still ends before the page stops waiting.
 UNCUT_WAIT_SECONDS = 4.0
+# How long what the student says waits for a photo of the homework being read
+# to reach the engine, which then hears it in the state the photo left it in:
+# the reader's time and then the platform's (``homework``, ``platform``).
+HOMEWORK_WAIT_SECONDS = 11.0
 
 
 def shows_something(chat_ctx: llm.ChatContext) -> bool:
@@ -948,6 +960,7 @@ class Tutor(Agent):
         student_name: str | None = None,
         session_number: int | None = None,
         engine: Engine | None = None,
+        reader: Reader | None = None,
         breaks: bool = False,
         timing: Timing | None = None,
         early_reply: bool = False,
@@ -964,7 +977,8 @@ class Tutor(Agent):
         # work them out nor holds the answer of an exercise that is still open.
         # `student_name` and `session_number` only choose and fill the greeting.
         # `engine` is the session engine: what it wrote is said as written, and
-        # the model speaks only when the student leaves the script.
+        # the model speaks only when the student leaves the script. `reader`
+        # reads a photo of the homework for it when it waits for one.
         # `persona` is the tutor's name, tone preset and (already-moderated)
         # family note; the default leaves the prompt exactly as written.
         persona = persona or Persona()
@@ -1105,6 +1119,12 @@ class Tutor(Agent):
         # Which answer of the engine is being said. Lines of an older one stop
         # as soon as a newer answer arrives.
         self._script_turn = 0
+        # What the engine waits for, as its last answer said; and, while a
+        # photo of the homework is read, what is set once the engine has
+        # heard what it showed.
+        self._awaits: Awaits | None = None
+        self._reader = reader
+        self._reading: asyncio.Event | None = None
         self._show = show
         self._model_done_at = 0.0
         self._watches: set[asyncio.Task[None]] = set()
@@ -1365,9 +1385,10 @@ class Tutor(Agent):
     async def on_enter(self) -> None:
         # The engine's own opening when it runs the session; otherwise a
         # written greeting. Either way no model writes the first words.
-        opening = self._engine.opening() if self._engine is not None else ()
-        if opening:
-            await self._say(opening)
+        opening = self._engine.opening() if self._engine is not None else Reply()
+        self._awaits = opening.awaits
+        if opening.lines:
+            await self._say(opening.lines)
             self._voice_the_lines_ahead()
             return
         # A written greeting, said at once. The name is a family's own text, so
@@ -1454,6 +1475,7 @@ class Tutor(Agent):
         when the student types to the tutor itself, and so do the lines of the
         engine's previous answer that were still to come."""
         self._script_turn += 1
+        self._awaits = said.awaits
         await self.session.interrupt()
         if said.lines:
             await self._say(said.lines)
@@ -1465,7 +1487,11 @@ class Tutor(Agent):
         over and the model must not be called."""
         if self._engine is None:
             return False
+        await self._after_the_photo()
         reply = await self._engine.said(text)
+        # Like the rules for talk, what the engine waits for is what its
+        # answer says; no answer, and the turn is the model's, as without it.
+        self._awaits = reply.awaits if reply is not None else None
         rules = reply.converse if reply is not None else None
         if (rules or "") != self._rules_for_talk:
             # What the model may do while the student talks changes with the
@@ -1620,13 +1646,22 @@ class Tutor(Agent):
     async def show_work(self) -> bool:
         """The student pressed the button that shows their work: the tutor
         looks at what the camera sees now and answers at once. False when the
-        camera sent nothing to look at, and then nothing is said."""
+        camera sent nothing to look at, and then nothing is said.
+
+        While the engine waits for a photo of the homework, the photo goes to
+        the reader and never to the tutor's model, and the button is answered
+        as soon as the reading has begun (``_look_at_the_homework``). A press
+        while one is read is answered and changes nothing."""
         if self._camera is None:
             return False
+        if self._reading is not None and not self._reading.is_set():
+            return True
         frame = await self._camera.fresh(FRESH_FRAME_SECONDS)
         if frame is None:
             return False
-        self._shown = frame
+        homework = self._homework_wanted()
+        if homework is None:
+            self._shown = frame
         new_turn()
         self._meanwhile_due = self._hold_on_due = True
         self._drew = False
@@ -1635,8 +1670,70 @@ class Tutor(Agent):
         # The page is waiting for this answer: a long line that cannot be cut is
         # not waited for to its end, and the reply is said after it instead.
         await self._interrupt(wait=UNCUT_WAIT_SECONDS)
+        if homework is not None:
+            told = asyncio.Event()
+            self._reading = told
+            self._in_background(self._look_at_the_homework(frame, *homework, told))
+            return True
         self.session.generate_reply(user_input=SHOWN_WORK[self._language])
         return True
+
+    def _homework_wanted(self) -> tuple[Reader, Engine] | None:
+        """The reader and the engine, when the engine waits for a photo of
+        the homework and there is a reader for it."""
+        if self._awaits != "homework_photo" or self._reader is None or self._engine is None:
+            return None
+        return self._reader, self._engine
+
+    async def _look_at_the_homework(
+        self, frame: rtc.VideoFrame, reader: Reader, engine: Engine, told: asyncio.Event
+    ) -> None:
+        """Reads a photo of the homework for the engine, which waits for one.
+
+        «Veamos.» is said at once, while the reader looks; nothing keeps the
+        photo once it was read. The engine is then told what it showed, and
+        ``told`` is set for what the student says next. Then its lines are
+        said, or, when it could not be told, a fixed line that asks for the
+        photo again. Nothing the reader's model wrote is said. Never raises."""
+        try:
+            looking = self.session.say(
+                reply("meanwhile_look", self._language),
+                add_to_chat_ctx=True,
+                allow_interruptions=True,
+            )
+            reading = await reader.read(frame)
+            del frame
+            answer = await engine.homework(reading)
+            if answer is not None:
+                self._awaits = answer.awaits
+            told.set()
+            await looking
+            if answer is None:
+                await self.session.say(
+                    reply("homework_unreachable", self._language),
+                    add_to_chat_ctx=True,
+                    allow_interruptions=True,
+                )
+                return
+            if answer.lines:
+                await self._say(answer.lines)
+            if answer.closed:
+                self.session.shutdown()
+        except Exception as error:
+            # The type only: what was read is not logged.
+            logger.warning("homework photo not answered", extra={"error": type(error).__name__})
+        finally:
+            told.set()
+
+    async def _after_the_photo(self) -> None:
+        """Waits, for a while at most, for a photo of the homework being read
+        to reach the engine, so that what the student says now comes after it."""
+        told = self._reading
+        if told is None or told.is_set():
+            return
+        with contextlib.suppress(TimeoutError):
+            async with asyncio.timeout(HOMEWORK_WAIT_SECONDS):
+                await told.wait()
 
     async def _interrupt(self, wait: float | None = None) -> None:
         """Stops what the tutor is saying, once it may be stopped.

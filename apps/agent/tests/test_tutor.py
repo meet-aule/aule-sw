@@ -1,6 +1,8 @@
 import asyncio
+import gc
 import json
 import time
+import weakref
 from types import SimpleNamespace
 from unittest.mock import PropertyMock, patch
 
@@ -24,7 +26,10 @@ from livekit.agents.types import DEFAULT_API_CONNECT_OPTIONS
 from livekit.agents.voice.generation import mark_instructions_cache_boundary, update_instructions
 
 from aule_agent.greetings import GREETINGS, greeting
+from aule_agent.homework import TIMEOUT_SECONDS as READ_SECONDS
+from aule_agent.homework import Reading
 from aule_agent.moderation import Action, Decision
+from aule_agent.platform import HOMEWORK_TIMEOUT_SECONDS
 from aule_agent.prompts import RESPONSE_LANGUAGES, response_language
 from aule_agent.providers import REQUEST, TOOL_STARTED, layout
 from aule_agent.replies import ADULT_HELP_SEQUENCE, MEANWHILE, REPLIES, reply
@@ -32,6 +37,7 @@ from aule_agent.script import Line, Reply
 from aule_agent.timing import Timing
 from aule_agent.tutor import (
     FRESH_FRAME_SECONDS,
+    HOMEWORK_WAIT_SECONDS,
     INSTRUCTIONS,
     MAX_TYPED_CHARS,
     UNCHECKED,
@@ -812,10 +818,15 @@ def test_greetings_are_taken_in_turn_carry_the_tutors_name_and_exist_in_every_la
 
 
 class ScriptedEngine:
-    """Stands in for the session engine."""
+    """Stands in for the session engine: what it opens with and what it waits
+    for then, its answers to what is said, and its answer to every photo of
+    the homework it is told about (None: it could not be told)."""
 
-    def __init__(self, opening=(), *replies):
-        self._opening, self.replies, self.heard = tuple(opening), list(replies), []
+    def __init__(self, opening=(), *replies, awaits=None, photo=None):
+        self._opening = Reply(lines=tuple(opening), awaits=awaits)
+        self.replies, self.photo = list(replies), photo
+        # What it heard, in order: the student's words, and each photo's reading.
+        self.heard = []
 
     def opening(self):
         return self._opening
@@ -823,6 +834,10 @@ class ScriptedEngine:
     async def said(self, text):
         self.heard.append(text)
         return self.replies.pop(0) if self.replies else None
+
+    async def homework(self, report):
+        self.heard.append(report)
+        return self.photo
 
 
 async def scripted_turn(tutor, session, text="tres cuartos"):
@@ -1146,6 +1161,280 @@ async def test_a_camera_with_nothing_to_show_gets_no_answer():
         assert await Tutor(language="es", gates=ScriptedGates()).show_work() is False
 
     assert not hasattr(session, "replies_to") and not hasattr(session, "interrupts")
+
+
+class Page:
+    """A photo of the homework, as the camera hands it over."""
+
+
+class Photos:
+    """A camera that hands each photo over once and keeps none."""
+
+    def __init__(self, *photos):
+        self._photos = list(photos)
+        self.waited = []
+
+    async def fresh(self, timeout):
+        self.waited.append(timeout)
+        return self._photos.pop(0) if self._photos else None
+
+    def latest(self):
+        return None
+
+
+READ = Reading("read", 3, 0.82)
+
+
+class PhotoReader:
+    """Stands in for the reader of a photo of the homework: it reads, once
+    let go, and keeps no photo."""
+
+    def __init__(self, reading=READ, *, held=False):
+        self.reading = reading
+        self.seen = []
+        self.release = asyncio.Event()
+        if not held:
+            self.release.set()
+
+    async def read(self, frame):
+        self.seen.append(weakref.ref(frame))
+        await self.release.wait()
+        return self.reading
+
+
+ASKS = Line("Ahora quiero ver tu tarea. Muéstramela a la cámara.")
+THANKS = Reply(lines=(Line("¡Gracias! Ya vi tu tarea: es de las sumas y restas."),))
+
+
+def homework_tutor(engine, reader, *photos, gates=None):
+    tutor = Tutor(
+        language="es",
+        gates=gates or ScriptedGates(),
+        camera=Photos(*photos),
+        engine=engine,
+        reader=reader,
+    )
+    return tutor, Session()
+
+
+async def until(condition):
+    for _ in range(200):
+        if condition():
+            return
+        await asyncio.sleep(0.005)
+    raise AssertionError("never happened")
+
+
+async def background(tutor):
+    """Until what the tutor does in the background is over."""
+    while tutor._watches:
+        await asyncio.gather(*list(tutor._watches))
+
+
+def texts(session):
+    return [said[0] if isinstance(said, tuple) else said for said in session.said]
+
+
+async def test_a_photo_the_engine_waits_for_is_read_for_it_and_the_button_answered_at_once():
+    engine = ScriptedEngine([ASKS], awaits="homework_photo", photo=THANKS)
+    reader, page = PhotoReader(held=True), Page()
+    tutor, session = homework_tutor(engine, reader, page)
+
+    with patch.object(Tutor, "session", new_callable=PropertyMock, return_value=session):
+        await tutor.on_enter()
+        # Answered while the photo is still being read: the page waits for it.
+        assert await asyncio.wait_for(tutor.show_work(), 1) is True
+        await until(lambda: reader.seen)
+        assert reader.seen[0]() is page
+        assert texts(session) == [ASKS.say, "Veamos."] and engine.heard == []
+        reader.release.set()
+        await background(tutor)
+
+    # The engine heard what the photo showed and its lines are said after «Veamos.».
+    assert engine.heard == [READ]
+    assert texts(session) == [ASKS.say, "Veamos.", THANKS.lines[0].say]
+    assert session.said[1] == ("Veamos.", True, True)
+    # Whatever was being said stopped; the tutor's model was never asked and
+    # has no photo to look at.
+    assert session.interrupts == 1
+    assert not hasattr(session, "replies_to")
+    assert tutor._frame_for(conversation(("user", "Mira mi trabajo."))) is None
+
+
+async def test_nothing_keeps_the_photo_once_it_was_read():
+    page = Page()
+    kept = weakref.ref(page)
+    alive_when_told = []
+
+    class Engine(ScriptedEngine):
+        async def homework(self, report):
+            gc.collect()
+            alive_when_told.append(kept() is not None)
+            return await super().homework(report)
+
+    engine = Engine([ASKS], awaits="homework_photo", photo=THANKS)
+    tutor, session = homework_tutor(engine, PhotoReader(), page)
+    del page
+
+    with patch.object(Tutor, "session", new_callable=PropertyMock, return_value=session):
+        await tutor.on_enter()
+        assert await tutor.show_work() is True
+        await background(tutor)
+
+    assert alive_when_told == [False]
+
+
+async def test_a_photo_the_platform_does_not_take_gets_the_fixed_line_and_can_be_shown_again():
+    engine = ScriptedEngine([ASKS], awaits="homework_photo", photo=None)
+    reader = PhotoReader()
+    tutor, session = homework_tutor(engine, reader, Page(), Page())
+
+    with patch.object(Tutor, "session", new_callable=PropertyMock, return_value=session):
+        await tutor.on_enter()
+        for _ in range(2):
+            assert await tutor.show_work() is True
+            await background(tutor)
+
+    unreachable = REPLIES["homework_unreachable"]["es"]
+    assert unreachable == "No pude mirar tu tarea. ¿Me la muestras otra vez?"
+    assert texts(session) == [ASKS.say, "Veamos.", unreachable, "Veamos.", unreachable]
+    assert engine.heard == [READ] * 2 and len(reader.seen) == 2
+    assert not hasattr(session, "replies_to")
+
+
+async def test_what_the_student_says_while_a_photo_is_read_reaches_the_engine_after_it():
+    heard = Reply(lines=(Line("Te escucho."),))
+    engine = ScriptedEngine([ASKS], heard, awaits="homework_photo", photo=THANKS)
+    reader = PhotoReader(held=True)
+    tutor, session = homework_tutor(engine, reader, Page(), gates=ScriptedGates(ALLOW))
+
+    with patch.object(Tutor, "session", new_callable=PropertyMock, return_value=session):
+        await tutor.on_enter()
+        await tutor.show_work()
+        await until(lambda: reader.seen)
+        turn = asyncio.create_task(scripted_turn(tutor, session, "ya está, mírala"))
+        await asyncio.sleep(0.05)
+        # The words wait for the photo to reach the engine.
+        assert engine.heard == []
+        reader.release.set()
+        to_the_model, _ = await turn
+        await background(tutor)
+
+    assert not to_the_model
+    assert engine.heard == [READ, "ya está, mírala"]
+
+
+async def test_what_the_student_says_waits_for_a_photo_being_read_a_while_only(monkeypatch):
+    monkeypatch.setattr("aule_agent.tutor.HOMEWORK_WAIT_SECONDS", 0.05)
+    heard = Reply(lines=(Line("Te escucho."),))
+    engine = ScriptedEngine([ASKS], heard, awaits="homework_photo", photo=THANKS)
+    reader = PhotoReader(held=True)
+    tutor, session = homework_tutor(engine, reader, Page(), gates=ScriptedGates(ALLOW))
+
+    with patch.object(Tutor, "session", new_callable=PropertyMock, return_value=session):
+        await tutor.on_enter()
+        await tutor.show_work()
+        await until(lambda: reader.seen)
+        await asyncio.wait_for(scripted_turn(tutor, session, "ya está"), 1)
+        assert engine.heard == ["ya está"]
+        reader.release.set()
+        await background(tutor)
+
+    assert engine.heard == ["ya está", READ]
+
+
+def test_the_wait_for_a_photo_covers_its_read_and_its_report():
+    assert HOMEWORK_WAIT_SECONDS == READ_SECONDS + HOMEWORK_TIMEOUT_SECONDS == 11
+
+
+async def test_a_press_while_a_photo_is_read_is_answered_and_changes_nothing():
+    engine = ScriptedEngine([ASKS], awaits="homework_photo", photo=THANKS)
+    reader = PhotoReader(held=True)
+    tutor, session = homework_tutor(engine, reader, Page(), Page())
+
+    with patch.object(Tutor, "session", new_callable=PropertyMock, return_value=session):
+        await tutor.on_enter()
+        await tutor.show_work()
+        await until(lambda: reader.seen)
+        assert await asyncio.wait_for(tutor.show_work(), 1) is True
+        reader.release.set()
+        await background(tutor)
+
+    assert len(reader.seen) == 1 and tutor._camera.waited == [FRESH_FRAME_SECONDS]
+    assert texts(session) == [ASKS.say, "Veamos.", THANKS.lines[0].say]
+    assert session.interrupts == 1
+
+
+@pytest.mark.parametrize(
+    ("awaits", "with_reader"), [(None, True), ("homework", True), ("homework_photo", False)]
+)
+async def test_unless_the_engine_waits_for_a_photo_the_button_is_the_models_as_before(
+    awaits, with_reader
+):
+    reader = PhotoReader()
+    engine = ScriptedEngine([ASKS], awaits=awaits, photo=THANKS)
+    tutor, session = homework_tutor(engine, reader if with_reader else None, Page())
+
+    with patch.object(Tutor, "session", new_callable=PropertyMock, return_value=session):
+        await tutor.on_enter()
+        assert await tutor.show_work() is True
+        await background(tutor)
+
+    assert session.replies_to == ["Mira mi trabajo."]
+    assert reader.seen == [] and engine.heard == []
+    assert isinstance(tutor._frame_for(conversation(("user", "Mira mi trabajo."))), Page)
+
+
+async def test_what_the_engine_waits_for_is_what_its_last_answer_said():
+    engine = ScriptedEngine(
+        [ASKS],
+        Reply(lines=(Line("¡No pasa nada!"),)),
+        Reply(lines=(Line("Uy, no la pude ver bien."),), awaits="homework_photo"),
+        None,
+        awaits="homework_photo",
+        photo=Reply(lines=(Line("Mmm, no veo una tarea."),), awaits="homework_photo"),
+    )
+    tutor, session = homework_tutor(
+        engine, PhotoReader(), Page(), gates=ScriptedGates(*[ALLOW] * 3)
+    )
+    seen = []
+
+    with patch.object(Tutor, "session", new_callable=PropertyMock, return_value=session):
+        await tutor.on_enter()
+        seen.append(tutor._awaits)
+        await tutor.show_work()
+        await background(tutor)
+        seen.append(tutor._awaits)
+        for words in ("no tengo", "otra vez", "¿y ahora?"):
+            await scripted_turn(tutor, session, words)
+            seen.append(tutor._awaits)
+        await tutor.scripted_lines(Reply(lines=(Line("¡Correcto!"),), awaits="homework_photo"))
+        seen.append(tutor._awaits)
+
+    # The opening, the photo's answer, three answers (the last, none: the
+    # engine could not be asked) and lines written for an answer typed on the page.
+    assert seen == [
+        "homework_photo",
+        "homework_photo",
+        None,
+        "homework_photo",
+        None,
+        "homework_photo",
+    ]
+
+
+async def test_an_engine_that_closes_the_session_after_a_photo_closes_it_after_its_lines():
+    goodbye = Reply(lines=(Line("Hasta la próxima."),), closed=True)
+    engine = ScriptedEngine([ASKS], awaits="homework_photo", photo=goodbye)
+    tutor, session = homework_tutor(engine, PhotoReader(), Page())
+    session.shutdown = lambda: session.said.append("closed")
+
+    with patch.object(Tutor, "session", new_callable=PropertyMock, return_value=session):
+        await tutor.on_enter()
+        await tutor.show_work()
+        await background(tutor)
+
+    assert texts(session) == [ASKS.say, "Veamos.", "Hasta la próxima.", "closed"]
 
 
 async def test_a_drawing_is_never_left_without_a_word():

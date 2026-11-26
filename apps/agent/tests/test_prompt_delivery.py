@@ -57,8 +57,8 @@ class OpenChecker:
 
 
 class Engine:
-    def opening(self) -> tuple:
-        return ()
+    def opening(self) -> Reply:
+        return Reply()
 
     async def said(self, text: str) -> Reply:
         return Reply(converse=text or None)

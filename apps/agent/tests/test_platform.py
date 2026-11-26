@@ -6,8 +6,10 @@ from aiohttp import web
 from aiohttp.test_utils import TestServer
 
 from aule_agent._version import __version__
+from aule_agent.homework import Reading
 from aule_agent.platform import (
     FLAG_COOLDOWN_SECONDS,
+    HOMEWORK_TIMEOUT_SECONDS,
     MAX_FLAGS_IN_FLIGHT,
     MAX_PENDING_TURNS,
     Platform,
@@ -16,6 +18,7 @@ from aule_agent.platform import (
     platform_session,
     user_agent,
 )
+from aule_agent.script import Line, Reply
 from aule_agent.tutor import OpenExercise
 
 SESSION = PlatformSession(url="http://platform", token="t")
@@ -27,10 +30,12 @@ class Recorder:
 
     def __init__(self, *answers):
         self.calls = []
+        self.timeouts = []
         self.answers = list(answers)
 
     async def __call__(self, method, path, body, timeout):
         self.calls.append((method, path, body))
+        self.timeouts.append(timeout)
         answer = self.answers.pop(0) if self.answers else {}
         if isinstance(answer, Exception):
             raise answer
@@ -628,7 +633,7 @@ async def test_a_session_run_by_the_engine_opens_with_its_lines_and_asks_it_each
 
     await platform.start()
 
-    assert platform.scripted and [line.say for line in platform.opening()] == ["¡Hola, Liam!"]
+    assert platform.scripted and [line.say for line in platform.opening().lines] == ["¡Hola, Liam!"]
     reply = await platform.said("cinco sextos")
     assert reply is not None and reply.lines[0].say == "¿Cuántos sextos caben en un tercio?"
     assert send.calls[-1] == ("POST", "/v1/agent/session/said", {"said": "cinco sextos"})
@@ -642,7 +647,7 @@ async def test_a_session_without_an_engine_is_not_scripted(monkeypatch):
 
     await platform.start()
 
-    assert not platform.scripted and platform.opening() == ()
+    assert not platform.scripted and platform.opening() == Reply()
 
 
 @pytest.mark.parametrize("status", [401, 403, 409, 410])
@@ -782,4 +787,83 @@ async def test_an_engine_session_with_nothing_to_open_with_is_still_the_engines(
 
     await platform.start()
 
-    assert platform.scripted and platform.opening() == ()
+    assert platform.scripted and platform.opening() == Reply()
+
+
+async def test_the_start_says_that_the_agent_reads_homework_photos_only_when_it_does():
+    reads, plain = Recorder({"instructions": "Plan"}), Recorder({"instructions": "Plan"})
+
+    assert await Platform(SESSION, reads, homework_capability=1).start() == "Plan"
+    assert await Platform(SESSION, plain).start() == "Plan"
+
+    assert reads.calls == [("GET", "/v1/agent/session?homework=1", None)]
+    assert plain.calls == [("GET", "/v1/agent/session", None)]
+
+
+async def test_the_homework_question_reaches_the_platform_as_a_query():
+    heard = []
+
+    async def answer(request):
+        heard.append((request.path, dict(request.query)))
+        return web.json_response({"instructions": "Plan"})
+
+    app = web.Application()
+    app.router.add_route("*", "/{path:.*}", answer)
+    async with TestServer(app) as server:
+        url = str(server.make_url("")).rstrip("/")
+        platform = Platform(PlatformSession(url=url, token="t"), homework_capability=1)
+        assert await platform.start() == "Plan"
+        await platform.end()
+
+    assert heard[0] == ("/v1/agent/session", {"homework": "1"})
+
+
+async def test_the_engines_opening_says_what_it_waits_for():
+    script = {
+        "lines": [{"say": "Antes de empezar, quiero ver tu tarea.", "echoes": False}],
+        "awaits": "homework_photo",
+    }
+    platform = Platform(SESSION, Recorder({"instructions": "", "script": script}))
+
+    await platform.start()
+
+    assert platform.opening() == Reply(
+        lines=(Line("Antes de empezar, quiero ver tu tarea."),), awaits="homework_photo"
+    )
+
+
+async def test_what_a_photo_of_the_homework_showed_is_told_and_the_engines_answer_returned():
+    thanks = {"lines": [{"say": "¡Gracias! Ya vi tu tarea.", "echoes": False}], "awaits": None}
+    again = {"lines": [{"say": "Uy, no la pude ver bien.", "echoes": False}]}
+    send = Recorder(thanks, {**again, "awaits": "homework_photo"}, {})
+    platform = Platform(SESSION, send)
+
+    assert await platform.homework(Reading("read", 3, 0.82)) == Reply(
+        lines=(Line("¡Gracias! Ya vi tu tarea."),)
+    )
+    assert (await platform.homework(Reading("unreadable"))).awaits == "homework_photo"
+    # Told, though it had nothing to say: a report the engine was not waiting for.
+    assert await platform.homework(Reading("unavailable")) == Reply()
+
+    # The level and the confidence only with a read; never anything of the photo.
+    assert send.calls == [
+        ("POST", "/v1/agent/session/homework", {"outcome": "read", "level": 3, "confidence": 0.82}),
+        ("POST", "/v1/agent/session/homework", {"outcome": "unreadable"}),
+        ("POST", "/v1/agent/session/homework", {"outcome": "unavailable"}),
+    ]
+    assert send.timeouts == [HOMEWORK_TIMEOUT_SECONDS] * 3 and HOMEWORK_TIMEOUT_SECONDS == 3.0
+
+
+@pytest.mark.parametrize(
+    "failure", [RuntimeError("down"), Refused(409), Refused(401), Refused(410), Refused(404)]
+)
+async def test_a_homework_report_that_is_not_taken_is_none_and_the_session_goes_on(failure):
+    send = Recorder(failure, {})
+    platform = Platform(SESSION, send)
+
+    assert await platform.homework(Reading("read", 2, 0.9)) is None
+
+    assert not platform.gone
+    platform.heard("user", "hola")
+    await platform.report_once()
+    assert send.calls[-1][1] == "/v1/agent/session/turns"

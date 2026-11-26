@@ -8,15 +8,21 @@ ask something or to talk.
 """
 
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 
 from . import visuals
+from .homework import Reading
 
 # The longest line that is said. A line of the script is a sentence or two.
 MAX_LINE_CHARS = 1200
 # One answer can carry a worked example step by step and the next question
 # after it; the cap is there for an answer gone wrong, not for a long one.
 MAX_LINES = 24
+
+# What the engine may be waiting for: a photo of the homework, or the homework
+# itself, worked through with the student one exercise at a time.
+Awaits = Literal["homework_photo", "homework"]
+AWAITS: tuple[Awaits, ...] = ("homework_photo", "homework")
 
 
 @dataclass(frozen=True)
@@ -43,14 +49,18 @@ class Reply:
     converse: str | None = None
     # The engine ended the session: after these lines nothing follows.
     closed: bool = False
+    # What the engine waits for now; None for nothing in particular.
+    awaits: Awaits | None = None
 
 
 class Engine(Protocol):
     """The engine, as the tutor sees it: the platform."""
 
-    def opening(self) -> tuple[Line, ...]: ...
+    def opening(self) -> Reply: ...
 
     async def said(self, text: str) -> Reply | None: ...
+
+    async def homework(self, report: Reading) -> Reply | None: ...
 
 
 def lines_from(value: object) -> tuple[Line, ...]:
@@ -80,7 +90,8 @@ def lines_from(value: object) -> tuple[Line, ...]:
 
 def reply_from(value: object) -> Reply | None:
     """The reply in the platform's answer, or None when it has nothing to say
-    and the turn is the model's."""
+    and the turn is the model's. What the engine waits for comes with what
+    it says; anything but a value it is known to wait for is nothing."""
     if not isinstance(value, dict):
         return None
     lines = lines_from(value.get("lines"))
@@ -89,4 +100,5 @@ def reply_from(value: object) -> Reply | None:
     closed = value.get("closed") is True
     if not lines and rules is None and not closed:
         return None
-    return Reply(lines=lines, converse=rules, closed=closed)
+    awaits = next((known for known in AWAITS if value.get("awaits") == known), None)
+    return Reply(lines=lines, converse=rules, closed=closed, awaits=awaits)

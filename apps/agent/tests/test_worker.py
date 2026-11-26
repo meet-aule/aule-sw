@@ -20,6 +20,7 @@ from aule_agent.replies import reply
 from aule_agent.safety import Gates
 from aule_agent.timing import Timing
 from aule_agent.tutor import Tutor
+from aule_agent.usage import Usage
 
 SETTINGS = Settings(
     agent_name="a",
@@ -91,7 +92,7 @@ class Answers:
 
     async def __call__(self, method, path, body, timeout):
         self.events.append(("platform", method, path, body))
-        if path != START:
+        if path.partition("?")[0] != START:
             return {}
         if self.asked is not None:
             self.asked.set()
@@ -593,6 +594,74 @@ async def test_an_admitted_session_starts_with_no_way_around_the_gates(monkeypat
     finally:
         for cleanup in shutdown:
             await cleanup()
+
+
+@pytest.mark.parametrize(
+    ("push_to_talk", "engine", "reads"),
+    [(False, True, True), (True, True, False), (False, False, False)],
+)
+async def test_only_an_engine_session_without_the_talk_button_reads_homework_photos(
+    monkeypatch, push_to_talk, engine, reads
+):
+    events, sessions, shutdown, readers = [], [], [], []
+    for name, value in {
+        **ENV,
+        "AULE_PUSH_TO_TALK": "1" if push_to_talk else "",
+        "AULE_PLATFORM_URL": "http://platform",
+    }.items():
+        monkeypatch.setenv(name, value)
+
+    class Reader:
+        def __init__(self, *, counted):
+            self.counted, self.closed = counted, False
+            readers.append(self)
+
+        async def close(self):
+            self.closed = True
+
+    start = {"instructions": "", **({"script": {"lines": [{"say": "Hola."}]}} if engine else {})}
+
+    def linked_platform(linked, **options):
+        return Platform(linked, Answers(events, start), **options)
+
+    async def admit(ctx, settings, who, language, platform, observer=None):
+        await platform.start()
+        return Gates(), ""
+
+    provider = SimpleNamespace(on=lambda event, callback: None)
+    monkeypatch.setattr(worker, "admit", admit)
+    monkeypatch.setattr(worker, "Platform", linked_platform)
+    monkeypatch.setattr(worker, "HomeworkReader", Reader)
+    monkeypatch.setattr(worker, "AgentSession", started(sessions))
+    monkeypatch.setattr(worker, "build_llm", lambda settings: provider)
+    monkeypatch.setattr(worker, "build_stt", lambda settings, language: provider)
+    monkeypatch.setattr(worker, "build_tts", lambda settings, language: provider)
+    room = Room()
+    ctx = SimpleNamespace(
+        job=SimpleNamespace(
+            metadata=json.dumps({"platform_token": "t"}), room=SimpleNamespace(name=room.name)
+        ),
+        room=room,
+        proc=SimpleNamespace(userdata={"vad": "vad"}),
+        add_shutdown_callback=shutdown.append,
+    )
+
+    await worker.entrypoint(ctx)
+    try:
+        (session,) = sessions
+        tutor = session.start_options["agent"]
+        # Without the talk button the platform is told the agent reads photos.
+        (asked,) = [path for _, method, path, _ in events if method == "GET"]
+        assert asked == (START if push_to_talk else f"{START}?homework=1")
+        assert tutor._reader is (readers[0] if reads else None)
+        assert len(readers) == int(reads)
+        if reads:
+            # What a read uses is counted with the session's model calls.
+            assert readers[0].counted.__func__ is Usage.looked
+    finally:
+        for cleanup in shutdown:
+            await cleanup()
+    assert all(reader.closed for reader in readers)
 
 
 async def test_the_start_up_check_asks_the_gates_with_the_workers_settings(monkeypatch):
