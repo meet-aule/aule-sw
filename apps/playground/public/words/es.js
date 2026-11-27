@@ -1,0 +1,625 @@
+// Every word the page says, in Spanish: the language it was written in, the one
+// the markup of index.html holds, and what any other language falls back to
+// for a key it lacks. One group a screen or a kind of word, each a key to its
+// sentence; {name} and the like are filled as it is said (i18n.js). Another
+// language is a file like this one beside it, with the same groups and keys.
+//
+// Three groups speak to the student and are said in the student's or the
+// session's language, not the interface's: `first` (first-steps.js), `ending`
+// and `recovery` (session-messages.js). One short sentence each, warm, and
+// without an exclamation mark (FIGMA.md D33).
+
+export default {
+  // The language itself: its own name, as the picker lists it, and the locale
+  // its dates and numbers are written in.
+  language: {
+    name: "Español",
+    locale: "es-PE",
+    label: "Idioma",
+  },
+
+  page: {
+    title: "Aule · Tu tutor con IA",
+    description: "Aule, el tutor con IA que conversa por voz con tu hijo y practica matemática sin darle la respuesta.",
+  },
+
+  common: {
+    back: "Atrás",
+    next: "Siguiente",
+    save: "Guardar",
+    optional: "opcional",
+    save_failed: "No se pudo guardar. Inténtalo otra vez.",
+    too_many_likes: "Elige hasta diez cosas que le gusten.",
+    session_closed: "Tu sesión se cerró. Vuelve a entrar.",
+  },
+
+  // The progress header of the onboarding (steps.js SEGMENTS), and what a screen reader hears of the part in hand.
+  progress: {
+    label: "Avance",
+    account: "Tu cuenta",
+    profile: "Su perfil",
+    step: ": paso {done} de {steps}",
+  },
+
+  // The tab's name for each screen (steps.js SCREENS), after «Aule · ».
+  screen: {
+    p01: "Entra a Aule",
+    p03: "Código",
+    p04: "Tu autorización",
+    p05: "Conozcamos a tu hijo",
+    "p06-grade": "Entrevista · grado",
+    p06: "Entrevista · expectativas",
+    p07: "Entrevista · gustos",
+    "p10-name": "¿Cómo lo llamamos?",
+    p14: "Revisa tu correo",
+    p15: "Escríbenos",
+    home: "Tus alumnos",
+    summaries: "Resúmenes",
+    editor: "Configurar",
+    a02: "¿Eres tú?",
+    a04: "¿Qué hacemos hoy?",
+    "a04-details": "Detalles",
+    a05: "Antes de empezar",
+    session: "La sesión empieza",
+    "session-end": "La sesión terminó",
+  },
+
+  // The entry (P01), its code and name step (P03) and the two help screens after it (P14, P15).
+  entry: {
+    title: "Entra a Aule",
+    help: "Entra o crea tu cuenta, sin contraseña.",
+    google: "Continuar con Google",
+    github: "Continuar con GitHub",
+    apple: "Continuar con Apple",
+    meta: "Continuar con Facebook",
+    soon: "Pronto",
+    help_label: "Ayuda para entrar",
+    or: "o",
+    email: "Tu correo",
+    email_placeholder: "nombre@correo.com",
+    email_required: "Escribe tu correo electrónico.",
+    email_invalid: "Revisa el correo: no parece una dirección válida.",
+    send: "Enviarme un código",
+    privacy_lead: "Al continuar, confirmas que conoces la",
+    privacy_link: "Política de privacidad de Aule",
+    google_failed: "No se pudo cargar el botón de Google.",
+    google_refused: "No se pudo entrar con esa cuenta de Google. Inténtalo otra vez.",
+    provider_failed: "No se pudo entrar con esa cuenta. Inténtalo otra vez o usa otra.",
+    not_sent: "No se pudo enviar el código. Inténtalo otra vez en un momento.",
+    erased: "Tu cuenta y tus datos se borraron.",
+    code_title: "Escribe el código que te enviamos",
+    code_help: "Puedes pegarlo. Llega en un minuto.",
+    code_label: "Código de 6 dígitos",
+    code_wait: "Revisando tu código. Suele tardar unos segundos; si no avanza, pide uno nuevo.",
+    code_short: "Escribe los seis dígitos del código.",
+    wrong_code: "Ese código no es correcto o ya venció. Pide uno nuevo si hace falta.",
+    not_checked: "No se pudo revisar el código. Inténtalo otra vez en un momento.",
+    code_resent: "Te enviamos un código nuevo.",
+    name: "Tu nombre",
+    name_placeholder: "Ej.: Ana",
+    name_error: "Escribe tu nombre para crear tu cuenta.",
+    name_help: "Código correcto. Para crear tu cuenta, dinos cómo te llamas.",
+    continue: "Continuar",
+    resend: "Reenviar",
+    missing: "No me llega el correo",
+    check_title: "Revisa tu correo",
+    check_help: "Te enviamos un código para entrar. Si no lo ves, revisa la carpeta de spam o de promociones; puede tardar un minuto.",
+    sent_to: "Lo enviamos a",
+    still_missing: "¿Sigue sin llegar? Escríbenos",
+    other_email: "Probar con otro correo",
+    help_step: "¿No llega el código?",
+    help_title: "Te ayudamos por correo",
+    help_text: "Escríbenos y te ayudamos a entrar personalmente.",
+    write_us: "Escribir a",
+    mail_subject: "No me llega el código",
+    mail_body: "Intenté entrar con",
+  },
+
+  // The eyebrow over the entry's title (FIGMA.md D47): the pool signin.js picks a
+  // line from (ENTRY_LINES says when each holds). None is longer than 40
+  // characters, so the eyebrow keeps to one line on a phone. `welcome` and
+  // `back` are also what it says when no line can be picked.
+  lines: {
+    welcome: "Te damos la bienvenida",
+    come_in: "Pasa, que hay tarea",
+    pencil: "Lápiz, cuaderno y ganas",
+    no_rush: "Sin apuro, paso a paso",
+    today: "Hoy sí sale ese ejercicio",
+    back: "¡Qué bueno que estés de vuelta!",
+    again: "Otra vez por aquí. Bien.",
+    cuy_waiting: "El cuy te estaba esperando",
+    morning: "Buenos días. ¿Tarea temprano?",
+    breakfast: "Con el desayuno entra mejor",
+    afternoon: "Buenas tardes. Hora de la tarea",
+    after_school: "Después del cole, un ratito",
+    evening: "Buenas noches. ¿Tarea de último minuto?",
+    before_bed: "Todavía hay tiempo antes de dormir",
+    awake: "¿Despiertos a esta hora?",
+    asleep: "Shhh… los niños duermen",
+    tomorrow: "La tarea puede esperar a mañana",
+    monday: "Lunes. Empezamos bien",
+    friday: "Viernes: última tarea de la semana",
+    weekend: "Fin de semana y aquí estás",
+    sunday: "Domingo de repaso",
+    cuy_hello: "El cuy dice hola",
+    two_plus_two: "Dos más dos sigue siendo cuatro",
+    lima: "Hecho en Lima, con tarea",
+  },
+
+  // P04 Tu autorización: the guardian's consent and what is kept.
+  consent: {
+    title: "Antes de empezar, tu autorización",
+    help: "Aule es un tutor por voz para tu hijo. Necesitamos tu permiso antes de crear su perfil.",
+    agree: "Soy su padre, madre o apoderado y autorizo que Aule procese su voz para conversar con él y, si usa la cámara, las imágenes de su cuaderno para revisar sus ejercicios.",
+    keep_toggle: "Qué guardamos",
+    keep_memory: "Recordar entre sesiones lo que aprende y lo que le gusta",
+    keep_transcripts: "Guardar por escrito la conversación de cada sesión",
+    keep_note: "El audio y el video nunca se guardan. Puedes cambiarlo cuando quieras en Configurar.",
+    privacy: "Política de privacidad",
+    ok: "Autorizo",
+  },
+
+  // The child's name and grade, and the first session (in the place of P10 and P12).
+  child: {
+    title: "¿Cómo quieres que lo llamemos?",
+    help: "Aule lo llamará así en sus sesiones. Basta un nombre corto o un apodo.",
+    name_label: "Su nombre o apodo",
+    name_placeholder: "Ej.: Mati",
+    name_error: "Escribe cómo quieres que lo llamemos.",
+    grade_label: "¿En qué grado está?",
+    grade_choose: "Elige su grado",
+    grade_later: "Prefiero decirlo después",
+    later: "Empezar más tarde",
+    start: "Empezar su primera sesión",
+    done: "Listo. Aule ya conoce a {name}.",
+  },
+
+  // The interview, from the home: P05, the grade, P06 and P07.
+  interview: {
+    title: "Conozcamos a tu hijo",
+    intro: "Para que las sesiones sean realmente personalizadas, nos gustaría conocer un poco más a tu hijo.",
+    intro_more: "3 preguntas, un par de minutos. Es opcional y solo lo usamos para personalizar sus sesiones.",
+    later: "En otro momento",
+    start: "Empezar entrevista",
+    step_1: "1 de 3",
+    step_2: "2 de 3",
+    step_3: "3 de 3",
+    grade_title: "¿En qué grado está?",
+    grade_help: "Así Aule le propone ejercicios de su nivel.",
+    skip: "Saltar pregunta",
+    expect_title: "¿Qué esperas de Aule en el día a día?",
+    expect_label: "Tu respuesta",
+    expect_placeholder: "Escribe aquí tu respuesta",
+    expect_help: "Hasta 200 caracteres.",
+    likes_title: "¿Qué le gusta a tu hijo?",
+    likes_help: "Elige todos los que apliquen y, si falta algo, escríbelo abajo.",
+    likes_legend: "Lo que le gusta",
+    likes_more: "¿Algo más que le guste?",
+    likes_more_placeholder: "Ej.: dinosaurios, cocinar, ajedrez",
+    likes_more_help: "Opcional. Escríbelo como lo dirías tú.",
+    like_too_long: "Cada gusto puede tener hasta 40 letras.",
+    thanks: "Gracias. Aule ya sabe más de {name}.",
+  },
+
+  // The grades, by the platform's codes.
+  grade: {
+    P1: "1.º de primaria",
+    P2: "2.º de primaria",
+    P3: "3.º de primaria",
+    P4: "4.º de primaria",
+    P5: "5.º de primaria",
+    P6: "6.º de primaria",
+    S1: "1.º de secundaria",
+    S2: "2.º de secundaria",
+    S3: "3.º de secundaria",
+    S4: "4.º de secundaria",
+    S5: "5.º de secundaria",
+  },
+
+  // P07's options (steps.js LIKES), each under what is saved for it: its words
+  // in lower case. What is saved stays the same in every language.
+  like: {
+    deportes: "Deportes",
+    videojuegos: "Videojuegos",
+    "animales y naturaleza": "Animales y naturaleza",
+    "espacio y ciencia": "Espacio y ciencia",
+    "música y arte": "Música y arte",
+    "libros e historias": "Libros e historias",
+  },
+
+  // The family's home, and a student's row on it.
+  home: {
+    title: "¿Quién va a estudiar hoy?",
+    students: "Tus alumnos",
+    none: "Todavía no hay alumnos en tu cuenta. Agrega al primero para empezar.",
+    add: "+ Agregar un alumno",
+    add_first: "Agregar un alumno",
+    hello: "Hola, {name}.",
+    hello_plain: "Hola.",
+    unconfigured: "Sin configurar todavía",
+    tone: "tono {tone}",
+    configure: "Configurar",
+    // Its name starts with the word it shows, for whoever says it to reach it (WCAG 2.5.3).
+    configure_of: "Configurar a {name}",
+    interview: "Cuéntale a Aule sobre {name}",
+    account_failed: "No se pudo leer tu cuenta. Carga la página otra vez.",
+  },
+
+  // «Mi cuenta y mis datos», on the home: what is kept, erasing it, and signing out.
+  account: {
+    summary: "Mi cuenta y mis datos",
+    kept: "Guardamos tu nombre y tu correo, y de cada alumno lo que tú decidas al configurarlo. No guardamos audio ni video.",
+    erase_label: "Para borrar tu cuenta y todo lo guardado, escribe tu correo",
+    erase: "Borrar mi cuenta",
+    no_undo: "No se puede deshacer.",
+    sign_out: "Salir de la cuenta",
+    team: "Panel del equipo",
+    erase_email: "Escribe el correo con el que entraste.",
+    erase_confirm: "¿Borrar tu cuenta, tus alumnos y todo lo guardado? No se puede deshacer.",
+    erase_wrong: "Ese no es el correo con el que entraste.",
+    erase_failed: "No se pudo borrar la cuenta. Inténtalo otra vez.",
+  },
+
+  // What the family's plan allows now (steps.js planLine), and why it has no
+  // session left (limit_*, by the platform's reason). The plan's own words, as
+  // the landing and the family guide say them.
+  plan: {
+    team: "Equipo de Aule: sesiones sin límite.",
+    free: "Acceso gratuito: sesiones sin límite.",
+    trial_new: "Tu prueba: 7 días gratis desde la primera sesión, una sesión al día, sin tarjeta.",
+    trial_open_one: "Prueba gratis: te queda {n} día, y hoy tienes tu sesión.",
+    trial_open_other: "Prueba gratis: te quedan {n} días, y hoy tienes tu sesión.",
+    trial_used_one: "Prueba gratis: te queda {n} día, y la sesión de hoy ya la usaste: vuelve mañana.",
+    trial_used_other: "Prueba gratis: te quedan {n} días, y la sesión de hoy ya la usaste: vuelve mañana.",
+    left_one: "El plan Aule hasta el {date}: te queda {n} sesión de {allowed} en estos 7 días.",
+    left_other: "El plan Aule hasta el {date}: te quedan {n} sesiones de {allowed} en estos 7 días.",
+    used: "El plan Aule hasta el {date}: ya usaste las {allowed} sesiones de estos 7 días; cada una vuelve a los 7 días de usarla.",
+    over: "Tu prueba gratis terminó. Para seguir, escríbenos a admin@meetaule.com y te activamos el plan Aule: S/{price} al mes, {sessions} sesiones cada 7 días. Todavía no se puede pagar desde la app.",
+    limit_trial_day_used: "Hoy ya usaste la sesión de tu prueba gratis. Vuelve mañana.",
+    limit_week_used: "Ya usaste las sesiones del plan Aule de estos 7 días. Cada una vuelve a los 7 días de usarla.",
+    limit_trial_over: "Tu prueba gratis de 7 días terminó. Para seguir, escríbenos a admin@meetaule.com y te activamos el plan Aule.",
+  },
+
+  // A student's settings (students.js).
+  editor: {
+    title: "Configurar a {name}",
+    name_label: "¿Cómo quieres que lo llamemos?",
+    grade: "Grado",
+    relationship: "¿Qué eres de {name}?",
+    prefer_not: "Prefiero no decirlo",
+    subjects: "Asignaturas que quieres reforzar",
+    likes: "Lo que le gusta",
+    interest_placeholder: "Otra cosa que le guste",
+    interest_label: "Otro interés",
+    add: "Agregar",
+    interests_help: "Aule usa hasta diez para ambientar los ejemplos y los ejercicios.",
+    tone_legend: "Cómo le habla Aule",
+    tone_label: "Tono de Aule",
+    note: "Algo que Aule deba tener en cuenta",
+    note_placeholder: "Ej.: se frustra rápido, ve despacio",
+    language: "Idioma de las sesiones",
+    kept: "Lo que guardamos",
+    kept_note: "El audio y el video nunca se guardan.",
+    memories: "Lo que Aule recuerda",
+    remove: "Quitar a este alumno",
+    known_title: "Lo que Aule sabe de {name}",
+    mastered_one: "Domina {n} habilidad y está practicando {practising}.",
+    mastered_other: "Domina {n} habilidades y está practicando {practising}.",
+    no_exercises: "Todavía no hay ejercicios resueltos.",
+    coming: "Lo que viene: {skills}.",
+    forget: "Olvidar",
+    forget_failed: "No se pudo olvidar. Inténtalo otra vez.",
+    no_memories: "Aule todavía no recuerda nada de {name}.",
+    name_needed: "Escribe cómo quieres que llamemos al alumno.",
+    remove_confirm: "¿Quitar a {name}? Se borra lo que Aule recuerda de este alumno. No se puede deshacer.",
+    remove_failed: "No se pudo quitar al alumno. Inténtalo otra vez.",
+  },
+
+  // What the guardian is to the student, by the platform's codes.
+  relationship: {
+    MTH: "Mamá",
+    FTH: "Papá",
+    STPMTH: "Madrastra",
+    STPFTH: "Padrastro",
+    GRMTH: "Abuela",
+    GRFTH: "Abuelo",
+    AUNT: "Tía",
+    UNCLE: "Tío",
+    SIB: "Hermano o hermana",
+    GUARD: "Tutor o tutora legal",
+    FAMMEMB: "Otro familiar",
+  },
+
+  // How Aule talks to a student: each tone's name and, after it, what it is like.
+  tone: {
+    calido: "Cálido",
+    calido_about: "cercano y paciente",
+    jugueton: "Juguetón",
+    jugueton_about: "con humor ligero",
+    aventurero: "Aventurero",
+    aventurero_about: "cada tema es un reto por descubrir",
+    tranquilo: "Tranquilo",
+    tranquilo_about: "pausado, sin apuro",
+  },
+
+  // What the page offers as things a student likes (students.js INTERESTS, and
+  // P07's options as they are saved), each under what is saved for it. What a
+  // family writes itself is theirs, and is shown as written.
+  interest: {
+    fútbol: "fútbol",
+    vóley: "vóley",
+    baile: "baile",
+    música: "música",
+    dibujo: "dibujo",
+    videojuegos: "videojuegos",
+    animales: "animales",
+    dinosaurios: "dinosaurios",
+    "el espacio": "el espacio",
+    cocina: "cocina",
+    cuentos: "cuentos",
+    inventos: "inventos",
+    deportes: "deportes",
+    "animales y naturaleza": "animales y naturaleza",
+    "espacio y ciencia": "espacio y ciencia",
+    "música y arte": "música y arte",
+    "libros e historias": "libros e historias",
+  },
+
+  // The subjects, by the platform's codes, as the editor and the home name them.
+  subject: {
+    matematica: "Matemática",
+    comunicacion: "Comunicación",
+    ciencia: "Ciencia y Tecnología",
+    personal_social: "Personal Social",
+    ingles: "Inglés",
+  },
+
+  // What a student did in their latest sessions, on the home (summaries.js), and the summaries' own screen (reviews.js).
+  summary: {
+    today: "Hoy",
+    yesterday: "Ayer",
+    minutes: "{n} min",
+    // Two skills: «{a} y {b}», the second in lower case, as it is mid-sentence.
+    and: "{a} y {b}",
+    homework: "Tareas de {subject}",
+    homework_any: "Tareas",
+    exam_prep: "Repaso para una evaluación de {subject}",
+    exam_prep_any: "Repaso para una evaluación",
+    exam_review: "Revisión de una evaluación de {subject}",
+    exam_review_any: "Revisión de una evaluación",
+    explore: "Algo nuevo de {subject}",
+    explore_any: "Algo nuevo",
+    chosen_by_aule: "Aule eligió el tema",
+    exercises_one: "{n} ejercicio",
+    exercises_other: "{n} ejercicios",
+    breaks_one: "{n} pausa",
+    breaks_other: "{n} pausas",
+    budget_reached: "usó todo el tiempo",
+    idle: "se cerró porque no hubo respuesta",
+    not_working: "Aule la cerró antes de tiempo",
+    device_offline: "se cortó la conexión",
+    provider_error: "se cortó por un problema de Aule",
+    error: "se cortó por un problema de Aule",
+    list: "Últimas sesiones de {name}",
+    see_summaries: "Ver resúmenes",
+    // Its name starts with the words it shows, for whoever says them to reach it (WCAG 2.5.3).
+    see_summaries_of: "Ver resúmenes de {name}",
+    start_with: "Empezar con {name}",
+    summaries_title: "Resúmenes de {name}",
+    summaries_help: "Lo que practicó y qué puede trabajar después.",
+    summary_list: "Últimos resúmenes",
+    summary: "Resumen",
+    next_session: "Para la próxima sesión",
+    summaries_loading: "Cargando los resúmenes…",
+    summaries_empty: "Todavía no hay resúmenes. Si la sesión acaba de terminar, espera un momento y vuelve a actualizar.",
+    summaries_failed: "No pudimos cargar los resúmenes. Inténtalo otra vez.",
+    back_home: "Volver al inicio",
+    refresh: "Actualizar",
+    retry: "Intentar otra vez",
+  },
+
+  // A child's first steps and the session's own words (first-steps.js), in the
+  // student's language. «apretado» is the live button's word. What only an
+  // adult can fix has a line of its own, for them (*_help).
+  first: {
+    // a02: a line for the parent, then A02's question, its two tiles and the way back.
+    handoff_lead: "Ahora le toca a {name}.",
+    handoff_title: "¿Eres tú?",
+    handoff_yes: "Sí, soy yo",
+    handoff_no: "No soy yo",
+    back: "Volver",
+    // A04: the greeting over César's title, and the tiles (steps.js KINDS), «No lo sé» and the link.
+    a04_hello: "Hola, {name}.",
+    a04_title: "¿Qué hacemos hoy?",
+    kind_homework: "Terminar tareas de la escuela",
+    kind_exam_prep: "Repasar para una evaluación",
+    kind_explore: "Quiero aprender algo nuevo",
+    kind_none: "No lo sé",
+    kind_exam_review: "Revisar una evaluación que ya di",
+    // A04 · Detalles: its line, its fields, the subjects (as `subject` has them) and the note.
+    details_line: "Si quieres, cuéntale a Aule de qué se trata.",
+    details_subject: "Asignatura",
+    details_due: "¿Para cuándo es?",
+    details_topic: "Tema",
+    details_topic_example: "Ej.: fracciones, triángulos",
+    optional: "(opcional)",
+    subject_matematica: "Matemática",
+    subject_comunicacion: "Comunicación",
+    subject_ciencia: "Ciencia y Tecnología",
+    subject_personal_social: "Personal Social",
+    subject_ingles: "Inglés",
+    subject_other: "Otra",
+    details_note: "Aquí Aule te ayuda con lo que traigas.",
+    details_next: "Seguir",
+    // A05: its title and line, and its round buttons with what each says it is.
+    a05_title: "Antes de empezar",
+    a05_line: "Aule necesita escucharte.",
+    mic_label: "Micrófono",
+    mic_on: "Tu micrófono está encendido.",
+    mic_off: "Tu micrófono está apagado.",
+    cam_label: "Cámara",
+    cam_on: "Tu cámara está encendida.",
+    cam_off: "Tu cámara está apagada.",
+    // A05's check: César's line under the bar (Pendiente 260:654), then what the status line says.
+    check_line: "Si la barra se mueve cuando hablas, Aule te escucha.",
+    check_prompt: "Di «Hola, Aule» y mira la barra.",
+    check_heard: "Te escucho.",
+    check_quiet: "Acércate un poco y habla como siempre.",
+    check_other_app: "Si otra app está usando el micrófono, ciérrala y toca «Intentar otra vez».",
+    retry: "Intentar otra vez",
+    // A microphone that cannot be used, by what the browser said (micProblem), and
+    // under it what an adult can do.
+    mic_blocked: "Aule no puede escucharte.",
+    mic_blocked_help: "Un adulto puede permitir el micrófono junto a la dirección de la página (en iPhone, «aA») y tocar «Intentar otra vez».",
+    mic_missing: "No encontramos un micrófono.",
+    mic_missing_help: "Un adulto puede conectar uno o probar en otro celular o computadora.",
+    mic_busy: "Otra app está usando el micrófono.",
+    mic_busy_help: "Un adulto puede cerrarla y tocar «Intentar otra vez».",
+    mic_unavailable: "Tu micrófono no está disponible.",
+    sound_test: "Probar el sonido",
+    sound_line: "Si no lo oíste, sube el volumen.",
+    camera_note: "Se enciende solo para mostrar tu tarea.",
+    // A05's camera, when the browser gives none.
+    camera_none: "No hay cámara, pero puedes entrar con tu voz.",
+    // A16 Hola, soy Aule, on a first run: César's AI disclosure, the one line of two sentences.
+    intro_title: "Hola, soy Aule",
+    intro_line: "Soy tu tutor. Soy una inteligencia artificial.",
+    // A16's second line, true now that the home shows each session's summary (D35).
+    intro_parent: "Tu papá o mamá recibe un resumen de lo que hacemos.",
+    // The talk button, as the coach speaks of it.
+    talk_hold: "Mantén apretado para hablar",
+    talk_hold_key: "Mantén apretado para hablar (o la barra espaciadora)",
+    talk_listening: "Te escucho… suelta para enviar",
+    talk_off: "El micrófono está apagado",
+    // The talk button's coach: what the button's own words do not say.
+    coach: "Mantenlo apretado y luego suelta.",
+    coach_tap: "Déjalo apretado mientras hablas.",
+    coach_done: "Eso es.",
+    // The line under Aule's face in the session, by the tutor's state; with held
+    // turns, «Tu turno» until the button is held.
+    state_waiting: "Esperando a Aule…",
+    state_initializing: "Aule se está preparando…",
+    state_listening: "Te escucho",
+    state_your_turn: "Tu turno",
+    state_thinking: "Pensando…",
+    state_speaking: "Hablando",
+    state_left: "Aule salió de la sesión.",
+    state_reconnecting: "Reconectando…",
+    // «Mostrar mi tarea», its two steps (the camera on the stage, then «Listo» or
+    // «Cancelar»), the line it adds to the conversation (the tutor hears the same
+    // one, SHOWN_WORK in apps/agent), and what went wrong, by cameraProblem.
+    show_work: "Mostrar mi tarea",
+    camera_aim: "Muestra tu tarea a la cámara y toca «Listo».",
+    camera_send: "Listo",
+    camera_cancel: "Cancelar",
+    showing_work: "Aule está mirando…",
+    shown_work: "Mira mi trabajo.",
+    // After 30 s with nothing the camera goes off, and says so.
+    camera_off: "La cámara se apagó.",
+    // A camera that cannot be used: the child's line, and under it what an adult can do (*_help).
+    camera_blocked: "Aule no puede usar tu cámara.",
+    camera_blocked_help: "Un adulto puede permitir la cámara junto a la dirección de la página (en iPhone, «aA»).",
+    camera_missing: "No hay cámara, pero puedes seguir con tu voz.",
+    camera_busy: "Otra app está usando la cámara.",
+    camera_busy_help: "Un adulto puede cerrarla y volver a tocar «Mostrar mi tarea».",
+    camera_unseen: "Acerca tu tarea a la cámara e inténtalo otra vez.",
+    // The session's own words around the stage: «Terminar», the clock's name, the typed
+    // message, the conversation and who said each line, and what went wrong with a turn.
+    end_session: "Terminar",
+    clock_label: "Tiempo que queda",
+    type_label: "Mensaje para Aule",
+    type_placeholder: "O escríbele a Aule…",
+    send: "Enviar",
+    conversation: "Conversación",
+    you: "Tú",
+    you_typed: "Tú (escrito)",
+    talk_not_started: "No pudimos avisarle a Aule que estás hablando; inténtalo otra vez.",
+    turn_unheard: "Aule no lo escuchó; mantén apretado el botón y dilo otra vez.",
+    message_failed: "No se pudo enviar el mensaje.",
+    // The answers to tap under Aule's question (choices.js, D44): the name of their
+    // group, the line where several may be marked, and the button that sends them.
+    choices_label: "Toca tu respuesta",
+    choices_several: "Puedes tocar varias y luego «Listo».",
+    choices_done: "Listo",
+  },
+
+  // Each ending under the end screen's «La sesión terminó.», by the platform's
+  // end_reason; "unknown" for a session with no reason kept.
+  ending: {
+    child_ended: "Gracias por la sesión de hoy, nos vemos pronto.",
+    parent_ended: "Se cerró desde la cuenta de tu familia.",
+    budget_reached: "Buen trabajo, se nos acabó el tiempo.",
+    idle: "Parece que tuviste que irte, así que Aule cerró la sesión.",
+    device_offline: "Se perdió la conexión por mucho rato.",
+    not_working: "Lo dejamos aquí por hoy, y Aule le avisó a tu familia.",
+    provider_error: "Aule tuvo un problema con su servicio; vuelve a intentarlo en un momento.",
+    error: "Algo falló y la sesión se cortó; vuelve a intentarlo en un momento.",
+    unknown: "Cuando quieras, empezamos otra.",
+  },
+
+  recovery: {
+    // A05's web-only state: the session is still open and its tutor waiting.
+    resume_title: "¿Seguimos donde nos quedamos?",
+    available: "Tu sesión sigue abierta y Aule te está esperando.",
+    resume: "Seguir con la sesión",
+    restart: "Empezar otra sesión",
+    start: "Empezar la sesión",
+    check_failed: "No pudimos revisar tu sesión anterior; vuelve atrás y entra otra vez.",
+    // The session's title (A15), and the end screen's: its titles, and what it says while it asks why.
+    started: "La sesión empezó.",
+    ended: "La sesión terminó.",
+    checking_title: "Un momento…",
+    checking: "Estamos revisando qué pasó con la sesión.",
+    lost_title: "Se cortó la conexión.",
+    lost: "Tu sesión sigue abierta y Aule te está esperando.",
+    lost_unknown: "No pudimos revisar tu sesión; vuelve atrás y entra otra vez.",
+    close_failed: "Saliste de la sesión, y se cerrará sola en un par de minutos.",
+    // When carrying on cannot be done; "failed" for anything else.
+    failed: "No pudimos seguir con la sesión; vuelve a intentarlo.",
+    session_active: "Tu sesión está abierta en otra pestaña; sigue desde allí.",
+    session_changed: "Esta sesión cambió en otra pestaña; vuelve atrás y entra otra vez.",
+    recovery_unavailable: "No pudimos revisar tu sesión; inténtalo en un momento.",
+    // The session while Aule does not arrive: its title, the line under it (with
+    // «Intentar otra vez»), and the end screen of a session it never came to.
+    missing_title: "Aule no pudo llegar",
+    tutor_missing: "No es tu culpa.",
+    no_tutor: "Aule no llegó a esta sesión, así que no cuenta.",
+  },
+
+  // What the session's screens say in the interface's language: why a session
+  // could not start, the exercise card's own words around the engine's, the
+  // engine's route, and the two switches under the stage.
+  session: {
+    back: "Volver",
+    daily_limit: "Ya usaste las sesiones de hoy. Vuelve mañana.",
+    session_active: "Todavía hay una sesión en curso. Elige al mismo alumno para continuarla o cerrarla.",
+    session_changed: "La sesión cambió en otra pestaña. Vuelve a elegir al alumno.",
+    recovery_unavailable: "No pudimos comprobar la sesión. Espera un momento y vuelve a intentarlo.",
+    start_failed: "No se pudo empezar la sesión.",
+    mic_blocked: "El navegador bloqueó el micrófono. Permítelo y empieza otra vez.",
+    answer: "Tu respuesta",
+    explanation: "¿Cómo lo pensaste?",
+    answer_send: "Responder",
+    answer_also: "También puedes decirlo o mostrar tu cuaderno.",
+    answer_failed: "No se pudo enviar tu respuesta. Inténtalo otra vez o dila en voz alta.",
+    route_now: "Ahora:",
+    route_done_one: "Ya hiciste {n} parte.",
+    route_done_other: "Ya hiciste {n} partes.",
+    camera_on: "Cámara",
+    camera_off: "Cámara apagada",
+    ink_on: "Modo tinta",
+    ink_off: "Modo tinta apagado",
+  },
+
+  cookies: {
+    label: "Aviso de cookies",
+    text: "Solo cookies propias y necesarias, nada de publicidad: tu cuenta, tu sesión y, si te invitaron, tu enlace hasta que entres.",
+    policy: "Política de cookies",
+    ok: "Entendido",
+  },
+
+  footer: {
+    privacy: "Privacidad",
+    terms: "Términos",
+  },
+};

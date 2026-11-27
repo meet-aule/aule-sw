@@ -11,6 +11,7 @@ import { back, current, getAccount, go, landing, need, onAccount, onShow, readdr
 import { languageOf, words } from "./first-steps.js";
 import { homeWords, sessionLine } from "./summaries.js";
 import { openSummaries } from "./reviews.js";
+import { language, onLanguage, t } from "./i18n.js";
 
 // The student a session is for, and what for: undefined until a tile is
 // chosen, "" when it is left to Aule, else the kind.
@@ -56,7 +57,7 @@ export function sessionRequest() {
 /** The subjects the platform keeps for a student; null when it keeps none, and then a session is not asked what for. */
 function subjectsKept() {
   const kept = getAccount().subjects;
-  return Array.isArray(kept) ? kept.filter((subject) => subject in SUBJECTS) : null;
+  return Array.isArray(kept) ? kept.filter((subject) => SUBJECTS.includes(subject)) : null;
 }
 
 /**
@@ -89,16 +90,15 @@ const asked = (objective) => ({
 // --- The home: who studies today --------------------------------------------------------
 
 function row(student, open) {
-  const language = document.documentElement.lang;
   const item = document.createElement("li");
   item.className = "student-row";
   const start = document.createElement("button");
   start.type = "button";
   start.className = "student-go";
   const name = document.createElement("b");
-  name.textContent = homeWords("start_with", language, { name: student.name });
+  name.textContent = homeWords("start_with", language(), { name: student.name });
   const about = document.createElement("small");
-  about.textContent = describe(student) || "Sin configurar todavía";
+  about.textContent = describe(student) || t("home.unconfigured");
   start.append(name, about);
   // With no session left, the plan line says why; the settings still open.
   if (!open) start.setAttribute("aria-disabled", "true");
@@ -108,19 +108,19 @@ function row(student, open) {
   const configure = document.createElement("button");
   configure.type = "button";
   configure.className = "small";
-  configure.textContent = "Configurar";
-  configure.setAttribute("aria-label", `Configurar a ${student.name}`);
+  configure.textContent = t("home.configure");
+  configure.setAttribute("aria-label", t("home.configure_of", { name: student.name }));
   configure.addEventListener("click", () => edit(student));
   // Facts on the home (D35); the review's words on their own screen (D43).
   const sessions = document.createElement("ul");
   sessions.className = "student-sessions";
-  sessions.setAttribute("aria-label", homeWords("list", language, { name: student.name }));
+  sessions.setAttribute("aria-label", homeWords("list", language(), { name: student.name }));
   sessions.hidden = true;
   const summaries = document.createElement("button");
   summaries.type = "button";
   summaries.className = "link student-summaries";
-  summaries.textContent = homeWords("see_summaries", language);
-  summaries.setAttribute("aria-label", homeWords("see_summaries_of", language, { name: student.name }));
+  summaries.textContent = homeWords("see_summaries", language());
+  summaries.setAttribute("aria-label", homeWords("see_summaries_of", language(), { name: student.name }));
   summaries.addEventListener("click", () => openSummaries(student));
   item.dataset.student = student.id;
   item.append(start, configure, sessions, summaries);
@@ -131,11 +131,15 @@ function row(student, open) {
     interview.type = "button";
     interview.className = "link student-interview";
     interview.dataset.interview = student.id;
-    interview.textContent = `Cuéntale a Aule sobre ${student.name}`;
+    interview.textContent = t("home.interview", { name: student.name });
     item.append(interview);
   }
   return item;
 }
+
+// Each student's latest sessions as last read, by the student's id: the facts,
+// kept to say them again in a language just picked without asking again.
+const sessionsOf = new Map();
 
 /**
  * Each student's latest sessions under their row (D35): when, how long, what
@@ -146,28 +150,33 @@ function row(student, open) {
  * as it is.
  */
 function drawSessions() {
-  const language = document.documentElement.lang;
   for (const item of $("student-list").children) {
     call("api/student/sessions", { student_id: item.dataset.student }).then(
       (answer) => {
         if (current() !== "home" || !item.isConnected) return;
-        const lines = (answer.sessions ?? []).map((facts) => {
-          const { when, what } = sessionLine(facts, { language });
-          const line = document.createElement("li");
-          const day = document.createElement("b");
-          day.textContent = when;
-          const about = document.createElement("span");
-          about.textContent = what;
-          line.append(day, " ", about);
-          return line;
-        });
-        const list = item.querySelector(".student-sessions");
-        list.replaceChildren(...lines);
-        list.hidden = lines.length === 0;
+        sessionsOf.set(item.dataset.student, answer.sessions ?? []);
+        sayLines(item);
       },
       () => undefined,
     );
   }
+}
+
+/** Writes a row's lines from the facts last read for its student, in the page's language. */
+function sayLines(item) {
+  const lines = (sessionsOf.get(item.dataset.student) ?? []).map((facts) => {
+    const { when, what } = sessionLine(facts, { language: language() });
+    const line = document.createElement("li");
+    const day = document.createElement("b");
+    day.textContent = when;
+    const about = document.createElement("span");
+    about.textContent = what;
+    line.append(day, " ", about);
+    return line;
+  });
+  const list = item.querySelector(".student-sessions");
+  list.replaceChildren(...lines);
+  list.hidden = lines.length === 0;
 }
 
 function drawHome() {
@@ -175,8 +184,8 @@ function drawHome() {
   if (account.signed_in !== true) return;
   // A name that already ends in a full stop ("Gonzalo G.") keeps just the one.
   const name = (account.name ?? "").trim().replace(/\.+$/, "");
-  $("hello").textContent = name ? `Hola, ${name}.` : "Hola.";
-  const plan = planLine(account.plan, document.documentElement.lang);
+  $("hello").textContent = name ? t("home.hello", { name }) : t("home.hello_plain");
+  const plan = planLine(account.plan, language());
   $("plan-line").textContent = plan.text;
   $("plan-line").hidden = !plan.text;
   $("team-panel").hidden = account.team !== true;
@@ -201,6 +210,13 @@ onShow("home", () => {
   readAgain().then((home) => {
     if (home) drawSessions();
   });
+});
+
+// A language just picked on the home (language.js): its rows and lines are said again in it.
+onLanguage(() => {
+  if (current() !== "home") return;
+  drawHome();
+  for (const item of $("student-list").children) sayLines(item);
 });
 
 /**
@@ -331,7 +347,7 @@ function edit(student, handingOver = false) {
     try {
       setAccount(await call("api/account"));
     } catch {
-      return go("home", { message: "No se pudo leer tu cuenta. Carga la página otra vez." });
+      return go("home", { message: t("home.account_failed") });
     }
     // Removed from the hand-off: there is nobody to hand over to.
     if (handingOver && saved === null) {
@@ -467,6 +483,7 @@ onAccount((account) => {
   confirmed = false;
   opened = null;
   detailsOf = "";
+  sessionsOf.clear();
   // a02 and A04 named the child.
   $("a02-lead").textContent = "";
   $("a02-name").textContent = "";

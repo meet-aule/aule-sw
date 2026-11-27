@@ -5,6 +5,7 @@
 import { $, call, say } from "./students.js";
 import { codeDigits, maskEmail } from "./steps.js";
 import { current, getAccount, go, landing, need, onHide, onShow, setAccount } from "./screens.js";
+import { language, onLanguage, t } from "./i18n.js";
 
 const GOOGLE_SCRIPT = "https://accounts.google.com/gsi/client";
 // Sign-ins that leave the page for the provider's and come back with a code.
@@ -16,123 +17,10 @@ const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 // «Reenviar» rests this long after a code is sent again.
 const RESEND_REST_MS = 30_000;
 
-// Every word of the entry (P01), its code and name step (P03) and the two help
-// screens after it (P14, P15), in Spanish and in English: the same keys in
-// both. An element of the page names its key in data-entry, a field its
-// placeholder's in data-entry-placeholder; the rest is said from here.
-const ENTRY_WORDS = {
-  es: {
-    title: "Entra a Aule",
-    greeting: "Te damos la bienvenida",
-    returning: "¡Qué bueno que estés de vuelta!",
-    help: "Entra o crea tu cuenta, sin contraseña.",
-    google: "Continuar con Google",
-    github: "Continuar con GitHub",
-    apple: "Continuar con Apple",
-    meta: "Continuar con Facebook",
-    soon: "Pronto",
-    help_label: "Ayuda para entrar",
-    or: "o",
-    email: "Tu correo",
-    email_placeholder: "nombre@correo.com",
-    email_required: "Escribe tu correo electrónico.",
-    email_invalid: "Revisa el correo: no parece una dirección válida.",
-    send: "Enviarme un código",
-    privacy_lead: "Al continuar, confirmas que conoces la",
-    privacy_link: "Política de privacidad de Aule",
-    google_failed: "No se pudo cargar el botón de Google.",
-    google_refused: "No se pudo entrar con esa cuenta de Google. Inténtalo otra vez.",
-    provider_failed: "No se pudo entrar con esa cuenta. Inténtalo otra vez o usa otra.",
-    not_sent: "No se pudo enviar el código. Inténtalo otra vez en un momento.",
-    erased: "Tu cuenta y tus datos se borraron.",
-    code_tab: "Código",
-    code_title: "Escribe el código que te enviamos",
-    code_help: "Puedes pegarlo. Llega en un minuto.",
-    code_label: "Código de 6 dígitos",
-    code_wait: "Revisando tu código. Suele tardar unos segundos; si no avanza, pide uno nuevo.",
-    code_short: "Escribe los seis dígitos del código.",
-    wrong_code: "Ese código no es correcto o ya venció. Pide uno nuevo si hace falta.",
-    not_checked: "No se pudo revisar el código. Inténtalo otra vez en un momento.",
-    code_resent: "Te enviamos un código nuevo.",
-    name: "Tu nombre",
-    name_placeholder: "Ej.: Ana",
-    name_error: "Escribe tu nombre para crear tu cuenta.",
-    name_help: "Código correcto. Para crear tu cuenta, dinos cómo te llamas.",
-    continue: "Continuar",
-    resend: "Reenviar",
-    missing: "No me llega el correo",
-    back: "Atrás",
-    check_title: "Revisa tu correo",
-    check_help: "Te enviamos un código para entrar. Si no lo ves, revisa la carpeta de spam o de promociones; puede tardar un minuto.",
-    sent_to: "Lo enviamos a",
-    still_missing: "¿Sigue sin llegar? Escríbenos",
-    other_email: "Probar con otro correo",
-    help_tab: "Escríbenos",
-    help_step: "¿No llega el código?",
-    help_title: "Te ayudamos por correo",
-    help_text: "Escríbenos y te ayudamos a entrar personalmente.",
-    write_us: "Escribir a",
-    mail_subject: "No me llega el código",
-    mail_body: "Intenté entrar con",
-  },
-  en: {
-    title: "Sign in to Aule",
-    greeting: "Welcome",
-    returning: "Good to see you back!",
-    help: "Sign in or create your account, without a password.",
-    google: "Continue with Google",
-    github: "Continue with GitHub",
-    apple: "Continue with Apple",
-    meta: "Continue with Facebook",
-    soon: "Soon",
-    help_label: "Sign-in help",
-    or: "or",
-    email: "Your email",
-    email_placeholder: "name@email.com",
-    email_required: "Enter your email address.",
-    email_invalid: "Check the email: it does not look like a valid address.",
-    send: "Send me a code",
-    privacy_lead: "By continuing, you confirm that you are familiar with",
-    privacy_link: "Aule’s Privacy Policy",
-    google_failed: "Google’s button could not be loaded.",
-    google_refused: "We could not sign you in with that Google account. Try again.",
-    provider_failed: "We could not sign you in with that account. Try again or use another.",
-    not_sent: "The code could not be sent. Try again in a moment.",
-    erased: "Your account and your data were erased.",
-    code_tab: "Code",
-    code_title: "Enter the code we sent you",
-    code_help: "You can paste it. It should arrive within a minute.",
-    code_label: "6-digit code",
-    code_wait: "Checking your code. It usually takes a few seconds; if nothing happens, ask for a new one.",
-    code_short: "Enter the six digits of the code.",
-    wrong_code: "That code is not right or has expired. Ask for a new one if you need to.",
-    not_checked: "The code could not be checked. Try again in a moment.",
-    code_resent: "We sent you a new code.",
-    name: "Your name",
-    name_placeholder: "E.g. Ana",
-    name_error: "Enter your name to create your account.",
-    name_help: "Code confirmed. Tell us your name to create your account.",
-    continue: "Continue",
-    resend: "Resend",
-    missing: "I am not getting the email",
-    back: "Back",
-    check_title: "Check your email",
-    check_help: "We sent you a code to sign in. If you do not see it, check your spam or promotions folder; it can take a minute.",
-    sent_to: "We sent it to",
-    still_missing: "Still not there? Write to us",
-    other_email: "Try another email",
-    help_tab: "Write to us",
-    help_step: "Is the code not arriving?",
-    help_title: "We will help you by email",
-    help_text: "Write to us and we will help you sign in personally.",
-    write_us: "Write to",
-    mail_subject: "I am not getting the code",
-    mail_body: "I tried to sign in with",
-  },
-};
-
-const entryLanguage = () => (document.documentElement.lang === "en" ? "en" : "es");
-const entryText = (key) => ENTRY_WORDS[entryLanguage()][key];
+// The entry's words (words/es.js `entry`), in the page's language. The markup of
+// its four screens names its own (data-i18n, written by language.js); the rest
+// is said from here.
+const entryText = (key) => t(`entry.${key}`);
 
 // The eyebrow over the entry's title is a splash line (FIGMA.md D47): on each
 // load one line of this pool is picked at random, by weight, among those whose
@@ -141,9 +29,9 @@ const entryText = (key) => ENTRY_WORDS[entryLanguage()][key];
 // for ("new" or "returning"; either, when it does not say), the hours it holds
 // in (from `from` up to, not including, `to`; round midnight when `from` is
 // the later), the days of the week (0 is Sunday) and its weight (1 when it
-// does not say). Each line is written in Spanish and in English, side by side,
-// and neither is longer than 40 characters, so the eyebrow keeps to one line
-// on a phone.
+// does not say). Its words are the page's, by `key` (words/es.js `lines`): none
+// is longer than 40 characters in any language, so the eyebrow keeps to one
+// line on a phone.
 // A line tied to the hour or the day weighs three general ones: there it shows
 // most of the time, not always.
 const TIMED = 3;
@@ -151,37 +39,37 @@ const TIMED = 3;
 const RARE = 0.1;
 const ENTRY_LINES = [
   // General, for anyone.
-  { es: "Te damos la bienvenida", en: "Welcome" },
-  { es: "Pasa, que hay tarea", en: "Come in, there's homework" },
-  { es: "Lápiz, cuaderno y ganas", en: "Pencil, notebook and the will to try" },
-  { es: "Sin apuro, paso a paso", en: "No rush, step by step" },
-  { es: "Hoy sí sale ese ejercicio", en: "Today that exercise works out" },
+  { key: "welcome" },
+  { key: "come_in" },
+  { key: "pencil" },
+  { key: "no_rush" },
+  { key: "today" },
   // General, for a browser that has signed in before.
-  { es: "¡Qué bueno que estés de vuelta!", en: "Good to see you back!", who: "returning" },
-  { es: "Otra vez por aquí. Bien.", en: "Here again. Good.", who: "returning" },
-  { es: "El cuy te estaba esperando", en: "The guinea pig was waiting for you", who: "returning" },
+  { key: "back", who: "returning" },
+  { key: "again", who: "returning" },
+  { key: "cuy_waiting", who: "returning" },
   // The morning, 05:00 to 11:59.
-  { es: "Buenos días. ¿Tarea temprano?", en: "Good morning. Homework this early?", from: 5, to: 12, weight: TIMED },
-  { es: "Con el desayuno entra mejor", en: "It goes down better with breakfast", from: 5, to: 12, weight: TIMED },
+  { key: "morning", from: 5, to: 12, weight: TIMED },
+  { key: "breakfast", from: 5, to: 12, weight: TIMED },
   // The afternoon, 12:00 to 18:59.
-  { es: "Buenas tardes. Hora de la tarea", en: "Good afternoon. Homework time", from: 12, to: 19, weight: TIMED },
-  { es: "Después del cole, un ratito", en: "After school, just a little while", from: 12, to: 19, weight: TIMED },
+  { key: "afternoon", from: 12, to: 19, weight: TIMED },
+  { key: "after_school", from: 12, to: 19, weight: TIMED },
   // The evening, 19:00 to 22:59.
-  { es: "Buenas noches. ¿Tarea de último minuto?", en: "Good evening. Last-minute homework?", from: 19, to: 23, weight: TIMED },
-  { es: "Todavía hay tiempo antes de dormir", en: "There's still time before bed", from: 19, to: 23, weight: TIMED },
+  { key: "evening", from: 19, to: 23, weight: TIMED },
+  { key: "before_bed", from: 19, to: 23, weight: TIMED },
   // Late at night, 23:00 to 04:59.
-  { es: "¿Despiertos a esta hora?", en: "Up at this hour?", from: 23, to: 5, weight: TIMED },
-  { es: "Shhh… los niños duermen", en: "Shhh… the children are asleep", from: 23, to: 5, weight: TIMED },
-  { es: "La tarea puede esperar a mañana", en: "The homework can wait until morning", from: 23, to: 5, weight: TIMED },
+  { key: "awake", from: 23, to: 5, weight: TIMED },
+  { key: "asleep", from: 23, to: 5, weight: TIMED },
+  { key: "tomorrow", from: 23, to: 5, weight: TIMED },
   // The day of the week.
-  { es: "Lunes. Empezamos bien", en: "Monday. Off to a good start", days: [1], weight: TIMED },
-  { es: "Viernes: última tarea de la semana", en: "Friday: last homework of the week", days: [5], weight: TIMED },
-  { es: "Fin de semana y aquí estás", en: "The weekend, and here you are", days: [6, 0], weight: TIMED },
-  { es: "Domingo de repaso", en: "Sunday revision", days: [0], weight: TIMED },
+  { key: "monday", days: [1], weight: TIMED },
+  { key: "friday", days: [5], weight: TIMED },
+  { key: "weekend", days: [6, 0], weight: TIMED },
+  { key: "sunday", days: [0], weight: TIMED },
   // Rare, for anyone.
-  { es: "El cuy dice hola", en: "The guinea pig says hi", weight: RARE },
-  { es: "Dos más dos sigue siendo cuatro", en: "Two plus two is still four", weight: RARE },
-  { es: "Hecho en Lima, con tarea", en: "Made in Lima, with homework", weight: RARE },
+  { key: "cuy_hello", weight: RARE },
+  { key: "two_plus_two", weight: RARE },
+  { key: "lima", weight: RARE },
 ];
 
 /** Whether a line's conditions hold for a new or a returning visitor, at `now` by the visitor's clock. */
@@ -217,19 +105,12 @@ function greeting() {
   const returning = recall(local, RETURNING) === "1";
   try {
     if (entryLine?.returning !== returning) entryLine = { returning, line: pickLine(ENTRY_LINES, returning, new Date(), Math.random) };
-    const words = entryLine.line?.[entryLanguage()];
+    const words = entryLine.line ? t(`lines.${entryLine.line.key}`) : "";
     if (words) return words;
   } catch {
     // Whatever went wrong, the eyebrow still greets.
   }
-  return entryText(returning ? "returning" : "greeting");
-}
-
-/** Writes the words of the four screens in the page's language, each where its key is named. */
-function entryWords() {
-  for (const element of document.querySelectorAll("[data-entry]")) element.textContent = entryText(element.dataset.entry);
-  for (const field of document.querySelectorAll("[data-entry-placeholder]")) field.placeholder = entryText(field.dataset.entryPlaceholder);
-  $("entry-greeting").textContent = greeting();
+  return t(returning ? "lines.back" : "lines.welcome");
 }
 
 // The explanation stays out of the heading; hover, keyboard focus or a tap reveals it.
@@ -364,7 +245,7 @@ function renderGoogle(id) {
     text: "continue_with",
     shape: "rectangular",
     logo_alignment: "center",
-    locale: document.documentElement.lang === "en" ? "en" : "es",
+    locale: language(),
     width,
   });
   // Fitted now, and again whenever the row changes size or Google's script puts in or resizes its frame.
@@ -437,13 +318,8 @@ for (const id of ["p01", "p03"]) {
 // The system changed between light and dark with the page open.
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change", tintBars);
 
-// The tab's name, as steps.js has it in Spanish, in the page's language.
-for (const [id, name] of Object.entries({ p01: "title", p03: "code_tab", p14: "check_title", p15: "help_tab" })) {
-  onShow(id, () => (document.title = `Aule · ${entryText(name)}`));
-}
-
 onShow("p01", () => {
-  entryWords();
+  $("entry-greeting").textContent = greeting();
   needGoogle();
   renderGoogle("google-p01");
   googleTrouble();
@@ -655,6 +531,17 @@ $("code-resend").addEventListener("click", async () => {
 
 $("code-missing").addEventListener("click", () => go("p14"));
 
+// A language just picked (language.js): the markup's words are already in it, and
+// what this script wrote over them is said again. A complaint about the address
+// goes: it is said again, in the new language, the next time it holds.
+onLanguage(() => {
+  $("code-help").textContent = entryText($("email-name-field").hidden ? "code_help" : "name_help");
+  emailError(false);
+  if (current() !== "p01") return;
+  $("entry-greeting").textContent = greeting();
+  renderGoogle("google-p01");
+});
+
 // --- P14 Revisa tu correo and P15 Escríbenos -----------------------------------
 
 onShow("p14", () => {
@@ -701,18 +588,14 @@ $("erase").addEventListener("submit", async (event) => {
   // No address, or not one: said here, before the question that cannot be undone.
   if (!EMAIL.test($("erase-email").value.trim())) {
     $("erase-email").focus();
-    return say("Escribe el correo con el que entraste.");
+    return say(t("account.erase_email"));
   }
-  const sure = window.confirm("¿Borrar tu cuenta, tus alumnos y todo lo guardado? No se puede deshacer.");
+  const sure = window.confirm(t("account.erase_confirm"));
   if (!sure) return;
   try {
     await call("api/account/erase", { email: $("erase-email").value });
   } catch (error) {
-    return say(
-      error?.message === "wrong_email"
-        ? "Ese no es el correo con el que entraste."
-        : "No se pudo borrar la cuenta. Inténtalo otra vez.",
-    );
+    return say(t(error?.message === "wrong_email" ? "account.erase_wrong" : "account.erase_failed"));
   }
   $("erase-email").value = "";
   // The account is gone: this browser no longer greets it as coming back.
@@ -755,9 +638,14 @@ $("cookies-ok").addEventListener("click", () => {
 // --- Where the page starts ---------------------------------------------------------
 
 // Back from GitHub, Facebook or Apple without having signed in. The address
-// is cleaned so that reloading the page does not say it again.
-const outcome = new URLSearchParams(location.search).get("signin");
-if (outcome) history.replaceState(null, "", location.pathname);
+// is cleaned so that reloading the page does not say it again; what else it
+// asks for (a language) stays.
+const address = new URL(location.href);
+const outcome = address.searchParams.get("signin");
+if (outcome) {
+  address.searchParams.delete("signin");
+  history.replaceState(null, "", `${address.pathname}${address.search}`);
+}
 
 function start(account) {
   setAccount(account);

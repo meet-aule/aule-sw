@@ -7,10 +7,13 @@ import { test } from "node:test";
 import { KEYS, SUBJECTS, homeWords, sessionLine, subjectName } from "../public/summaries.js";
 import { words } from "../public/first-steps.js";
 
-// The editor's subjects (students.js touches the page as it loads, so it is read as text).
+import es from "../public/words/es.js";
+
+// The editor's subjects (students.js touches the page as it loads, so it is read as text): their
+// codes, which it names with the page's words for a subject.
 const editor = await readFile(new URL("../public/students.js", import.meta.url), "utf8");
 const EDITOR_SUBJECTS = Object.fromEntries(
-  [...(editor.match(/export const SUBJECTS = \{([^}]*)\}/)?.[1] ?? "").matchAll(/(\w+): "([^"]+)"/g)].map(([, code, name]) => [code, name]),
+  [...(editor.match(/export const SUBJECTS = \[([^\]]*)\]/)?.[1] ?? "").matchAll(/"(\w+)"/g)].map(([, code]) => [code, es.subject[code]]),
 );
 
 // A Tuesday afternoon, in this machine's own time, like the family's browser.
@@ -56,6 +59,8 @@ test("every word is there in Spanish and in English, calm, with the same places 
 
 test("the subjects are named as the editor names them, and in English as the child's screens do", () => {
   assert.deepEqual([...SUBJECTS], Object.keys(EDITOR_SUBJECTS));
+  assert.match(editor, /chip\("checkbox", "subjects", value, t\(`subject\.\$\{value\}`\), /);
+  assert.deepEqual(Object.values(EDITOR_SUBJECTS), ["Matemática", "Comunicación", "Ciencia y Tecnología", "Personal Social", "Inglés"]);
   for (const subject of SUBJECTS) {
     assert.equal(subjectName(subject, "es"), EDITOR_SUBJECTS[subject], subject);
     assert.equal(subjectName(subject, "es"), words(`subject_${subject}`, "es"), subject);

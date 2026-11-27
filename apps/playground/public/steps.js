@@ -2,6 +2,8 @@
 // rules for moving between them. Pure data and functions: nothing here touches
 // the page, so the tests import it as it is. FIGMA.md maps it all to the file.
 
+import { SOURCE, countIn, localeOf, wordsIn } from "./i18n.js";
+
 /** The Figma file the page follows (read-only; Code Connect is not on the team's plan). */
 export const FIGMA_FILE = "yOAIYJNl5nZ7NgWtESN0Fo";
 
@@ -10,10 +12,12 @@ export const FIGMA_FILE = "yOAIYJNl5nZ7NgWtESN0Fo";
  * with the steps each has on the web. The Figma's «Enlazar Aule» links the
  * device; on the web it is the child's profile. «Conocer a tu hijo» left the
  * onboarding: the interview is offered on the home, after the first session (D34).
+ * `name` is the Figma's; the page says each part in its language, by `key`
+ * (words/es.js `progress`).
  */
 export const SEGMENTS = [
-  { name: "Tu cuenta", steps: 2 },
-  { name: "Su perfil", steps: 2 },
+  { key: "account", name: "Tu cuenta", steps: 2 },
+  { key: "profile", name: "Su perfil", steps: 2 },
 ];
 
 /**
@@ -65,6 +69,7 @@ export function progressAt(id, flow = "new") {
   if (!screen?.progress || (flow === "back" && screen.plainComingBack)) return null;
   const [part, step] = screen.progress;
   return SEGMENTS.map((segment, index) => ({
+    key: segment.key,
     name: segment.name,
     steps: segment.steps,
     done: index < part ? segment.steps : index === part ? step : 0,
@@ -157,42 +162,30 @@ export function greeting(returning) {
 }
 
 const DAY_MS = 86_400_000;
-const sessions = (n) => (n === 1 ? "1 sesión" : `${n} sesiones`);
-const date = (iso) => new Date(iso).toLocaleDateString("es-PE", { day: "numeric", month: "long" });
 
 /**
- * What the family's plan allows now, in a line; and whether a session can
- * start. The words are the plan's own, as the landing and the family guide say
- * them: «el plan Aule», S/59 al mes, 3 sesiones cada 7 días, 7 días gratis.
- * Nobody can pay in the app yet: the team activates the plan of a family who
- * writes in, so a granted plan reads like a paid one.
+ * What the family's plan allows now, in a line of `lang`; and whether a
+ * session can start. The words are the plan's own (words/es.js `plan`), as the
+ * landing and the family guide say them: «el plan Aule», S/59 al mes, 3
+ * sesiones cada 7 días, 7 días gratis. Nobody can pay in the app yet: the team
+ * activates the plan of a family who writes in, so a granted plan reads like a
+ * paid one.
  */
-export function planLine(plan, lang = "es", now = Date.now()) {
+export function planLine(plan, lang = SOURCE, now = Date.now()) {
   if (!plan) return { text: "", open: true };
-  if (plan.plan === "team") return { text: "Equipo de Aule: sesiones sin límite.", open: true };
-  if (plan.plan === "free") {
-    return { text: lang.startsWith("en") ? "Free access: unlimited sessions." : "Acceso gratuito: sesiones sin límite.", open: true };
-  }
+  if (plan.plan === "team") return { text: wordsIn(lang, "plan.team"), open: true };
+  if (plan.plan === "free") return { text: wordsIn(lang, "plan.free"), open: true };
   const left = plan.left ?? 0;
-  if (plan.plan === "trial" && !plan.ends_at) {
-    return { text: "Tu prueba: 7 días gratis desde la primera sesión, una sesión al día, sin tarjeta.", open: true };
-  }
+  if (plan.plan === "trial" && !plan.ends_at) return { text: wordsIn(lang, "plan.trial_new"), open: true };
   if (plan.plan === "trial") {
     const days = Math.max(1, Math.ceil((new Date(plan.ends_at) - now) / DAY_MS));
-    const today = left > 0 ? "hoy tienes tu sesión" : "la sesión de hoy ya la usaste: vuelve mañana";
-    return { text: `Prueba gratis: te ${days === 1 ? "queda 1 día" : `quedan ${days} días`}, y ${today}.`, open: left > 0 };
+    return { text: countIn(lang, left > 0 ? "plan.trial_open" : "plan.trial_used", days), open: left > 0 };
   }
+  const locale = localeOf(lang);
   if (plan.plan === "paid" || plan.plan === "granted") {
-    const week =
-      left > 0
-        ? `te ${left === 1 ? "queda" : "quedan"} ${sessions(left)} de ${plan.allowed} en estos 7 días`
-        : `ya usaste las ${plan.allowed} sesiones de estos 7 días; cada una vuelve a los 7 días de usarla`;
-    return { text: `El plan Aule hasta el ${date(plan.ends_at)}: ${week}.`, open: left > 0 };
+    const values = { date: new Date(plan.ends_at).toLocaleDateString(locale, { day: "numeric", month: "long" }), allowed: plan.allowed };
+    return { text: left > 0 ? countIn(lang, "plan.left", left, values) : wordsIn(lang, "plan.used", values), open: left > 0 };
   }
-  const price = (plan.price?.amount_cents ?? 5900) / 100;
-  const perWeek = plan.price?.sessions_per_week ?? 3;
-  return {
-    text: `Tu prueba gratis terminó. Para seguir, escríbenos a admin@meetaule.com y te activamos el plan Aule: S/${price} al mes, ${perWeek} sesiones cada 7 días. Todavía no se puede pagar desde la app.`,
-    open: false,
-  };
+  const price = new Intl.NumberFormat(locale).format((plan.price?.amount_cents ?? 5900) / 100);
+  return { text: wordsIn(lang, "plan.over", { price, sessions: plan.price?.sessions_per_week ?? 3 }), open: false };
 }

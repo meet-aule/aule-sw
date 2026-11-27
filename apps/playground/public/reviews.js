@@ -4,11 +4,11 @@
 import { $, call } from "./students.js";
 import { current, getAccount, go, need, onAccount, onHide, onShow } from "./screens.js";
 import { homeWords } from "./summaries.js";
+import { language, locale } from "./i18n.js";
 
 let studentId = null;
 let read = 0;
 const studentNow = () => (getAccount().students ?? []).find((student) => student.id === studentId);
-const language = () => document.documentElement.lang === "en" ? "en" : "es";
 const words = (key, values) => homeWords(key, language(), values);
 
 need("summaries", () => studentNow() !== undefined);
@@ -31,7 +31,7 @@ function reviewItem(session) {
   const date = new Date(`${session.day}T12:00:00`);
   const title = document.createElement("h3");
   title.textContent = Number.isNaN(date.getTime()) ? words("summary") : date.toLocaleDateString(
-    language() === "en" ? "en-GB" : "es-PE", { day: "numeric", month: "long", year: "numeric" },
+    locale(), { day: "numeric", month: "long", year: "numeric" },
   );
   const summary = document.createElement("p");
   summary.textContent = session.summary;

@@ -7,10 +7,11 @@ import { test } from "node:test";
 import { runInNewContext } from "node:vm";
 
 import { SCREENS, progressAt } from "../public/steps.js";
+import { onLanguage, t } from "../public/i18n.js";
 
 const read = (name) => readFile(new URL(`../public/${name}`, import.meta.url), "utf8");
-// The router as a script: its one import is given, and what it exports stays in scope.
-const screens = (await read("screens.js")).replace(/^import .*$/m, "").replace(/^export /gm, "");
+// The router as a script: its imports are given, and what it exports stays in scope.
+const screens = (await read("screens.js")).replace(/^import .*$/gm, "").replace(/^export /gm, "");
 const app = await read("app.js");
 const home = await read("home.js");
 
@@ -111,7 +112,7 @@ function page(address, recovery = { available: false }) {
       },
     })`,
     {
-      SCREENS, progressAt, URL, performance, history, location, document, studied,
+      SCREENS, progressAt, onLanguage, t, URL, performance, history, location, document, studied,
       addEventListener: (type, listener) => type === "popstate" && popped.push(listener),
       window: { scrollTo() {} },
       call: answer,

@@ -6,6 +6,8 @@ import { readFile } from "node:fs/promises";
 import { test } from "node:test";
 import { runInNewContext } from "node:vm";
 
+import { count, t } from "../public/i18n.js";
+
 const app = await readFile(new URL("../public/app.js", import.meta.url), "utf8");
 const html = await readFile(new URL("../public/index.html", import.meta.url), "utf8");
 
@@ -56,7 +58,8 @@ const dots = (node) => node.nodes.find((child) => child.className === "route-don
 function route(stops) {
   const line = element("p");
   const document = { createElement: element };
-  const showRoute = runInNewContext(`${source("showRoute")}\nshowRoute`, { $: () => line, document });
+  // The route's own words are the page's, as i18n.js says them: Spanish, the language the tests run in.
+  const showRoute = runInNewContext(`${source("showRoute")}\nshowRoute`, { $: () => line, document, count, t });
   showRoute(stops);
   return line;
 }

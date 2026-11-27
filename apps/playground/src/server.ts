@@ -102,6 +102,11 @@ const STATIC: Record<string, { file: string | URL; type: string }> = {
   // The lines the family's home says about each student's latest sessions.
   "/summaries.js": { file: new URL("summaries.js", publicDir), type: "text/javascript; charset=utf-8" },
   "/reviews.js": { file: new URL("reviews.js", publicDir), type: "text/javascript; charset=utf-8" },
+  // The page's words: which language shows, and one file of words a language.
+  "/i18n.js": { file: new URL("i18n.js", publicDir), type: "text/javascript; charset=utf-8" },
+  "/language.js": { file: new URL("language.js", publicDir), type: "text/javascript; charset=utf-8" },
+  "/words/es.js": { file: new URL("words/es.js", publicDir), type: "text/javascript; charset=utf-8" },
+  "/words/en.js": { file: new URL("words/en.js", publicDir), type: "text/javascript; charset=utf-8" },
   "/visuals.js": { file: new URL("visuals.js", publicDir), type: "text/javascript; charset=utf-8" },
   // The answers a student can tap under the tutor's question.
   "/choices.js": { file: new URL("choices.js", publicDir), type: "text/javascript; charset=utf-8" },
@@ -236,6 +241,10 @@ const OWN_SCRIPTS = new Set([
   "/first-steps.js",
   "/summaries.js",
   "/reviews.js",
+  "/i18n.js",
+  "/language.js",
+  "/words/es.js",
+  "/words/en.js",
   "/visuals.js",
   "/choices.js",
   "/cuy.js",
