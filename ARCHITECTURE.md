@@ -46,7 +46,7 @@ Three things decide what happens in a session, and only one of them is in the co
 
 | When | What it does | Cost to the conversation |
 |---|---|---|
-| Before | Writes a brief from the learner model's candidates, the child's profile and their memories: what to work on, how to start, what to keep in mind | None: it is written ahead, right after the review of the session before, and a session that asks for the same takes it. Otherwise it is written while the person connects, and the tutor starts with the child's profile and gets the brief with its first turns |
+| Before | Writes a brief from the learner model's candidates, the child's profile and their memories: what to work on, how to start, what to keep in mind | None: it is written ahead, right after the review of the session before, and a session that asks for the same takes it. Otherwise it is written while the person connects, and the tutor starts with the child's profile and gets the brief with its first turns. In a session the engine runs, the tutor reads only what the brief says about the child: there is no plan to follow there |
 | During | Reads each turn after it happened, with the memories closest to what the child just said, and may write guidance for the tutor's next turns. Not in a session the engine runs, where the engine decides the tutor's next step | None: the agent reports turns in the background and never waits. Guidance arrives one turn late by design |
 | After | Reviews the session into evidence for the learner model, memories, a note for the guardian and fixed-category flags, and then writes the brief for the child's next session | None: both are jobs in the worker |
 

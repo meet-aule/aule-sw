@@ -515,6 +515,13 @@ async fn late_brief(db: &DatabaseConnection, session_id: Uuid) -> Result<Option<
     Ok(row.and_then(|row| brief_of(row.brief)))
 }
 
+/// The plan in the words the tutor gets: whole in a session its model leads;
+/// in one the engine runs, only what it says about the student, since the
+/// engine decides what is worked on and a plan to follow would work against it.
+fn plan_for_the_tutor(session: &Session, brief: &Brief) -> Option<String> {
+    if engine::runs(session) { brief.as_notes() } else { Some(brief.as_instructions()) }
+}
+
 /// What the tutor is told about the student, in words.
 fn student_line(child: &Child) -> String {
     let mut line = format!("The student's name is {}.", child.nickname);
@@ -601,8 +608,8 @@ pub async fn agent_start(
         }
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     };
-    let instructions = match &brief {
-        Some(brief) => format!("{}\n\n{}", student_line(&child), brief.as_instructions()),
+    let instructions = match brief.as_ref().and_then(|brief| plan_for_the_tutor(&session, brief)) {
+        Some(plan) => format!("{}\n\n{plan}", student_line(&child)),
         None => student_line(&child),
     };
     // How many sessions this student has started before this one: lets a
@@ -799,7 +806,8 @@ pub async fn agent_turns(
         })
         .collect();
     // Repeated on every answer: the agent keeps the first one it sees.
-    let plan = late_brief(&state.db, session.id).await?.map(|brief| brief.as_instructions());
+    let plan =
+        late_brief(&state.db, session.id).await?.and_then(|brief| plan_for_the_tutor(&session, &brief));
     // "warn" or "end", repeated while it holds: the agent says each once.
     let stop: Option<String> = session_row::Entity::find_by_id(session.id)
         .select_only()
