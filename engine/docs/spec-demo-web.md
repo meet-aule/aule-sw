@@ -67,6 +67,7 @@ Next item correctness, Time-to-master.
 - **E1-04.** Se completa cuando el Alumno explica con sus palabras de qué va el tema y concluyó los 2 tipos de ejemplos.
 - **E1-05.** Si no logra explicarlo: la misma secuencia de Pistas; si las agota, repaso conceptual de ese tema en ese nivel.
 - **E1-06 [PROPUESTA].** La teoría y los ejemplos no asistidos avanzan cuando el Alumno lo pide, y por voz no hay un botón para pedirlo: cada explicación y cada ejemplo no asistido terminan con «¿Seguimos?», y sus dos respuestas («Entendido, sigue», «No entendí») se pueden tocar. «Sí», «sigamos» o «seguimos» siguen; «no», «no entendí» u «otra vez» lo explican de nuevo. Lo demás es conversación y no avanza nada: al tercer turno de conversación seguido sobre la misma explicación, Aule sigue con lo siguiente por su cuenta.
+- **CHAT-02 [PROPUESTA].** Con una respuesta pendiente (un ejercicio, un paso del ejemplo acompañado o la explicación con sus propias palabras), lo que no es una respuesta es conversación y no avanza nada; por voz, un número mal oído («Dos» oído «Doce») ni siquiera llega como respuesta. Al tercer turno de conversación seguido, Aule vuelve a decir su pregunta tal cual, con lo que se puede tocar para contestarla. Una respuesta, una ayuda pedida o cualquier otro paso corta la cuenta; el paso del tiempo no.
 
 ## 7. Etapa 2: Refuerzo
 

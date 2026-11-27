@@ -113,6 +113,9 @@ pub struct Config {
     /// E1 [PROPUESTA]: turnos de conversación seguidos sobre una misma explicación
     /// o ejemplo resuelto tras los que el motor sigue con lo siguiente.
     pub charlas_por_explicacion: u8,
+    /// CHAT-02 [PROPUESTA]: turnos de conversación seguidos, con una respuesta
+    /// pendiente, tras los que el motor vuelve a decir su pregunta. 0: nunca.
+    pub charlas_por_pregunta: u8,
 }
 
 impl Default for Config {
@@ -154,6 +157,7 @@ impl Default for Config {
             intentos_foto: 2,
             charlas_sin_foto: 3,
             charlas_por_explicacion: 3,
+            charlas_por_pregunta: 3,
         }
     }
 }

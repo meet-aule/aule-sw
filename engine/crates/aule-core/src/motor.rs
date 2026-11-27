@@ -465,6 +465,9 @@ pub struct Motor {
     /// [PROPUESTA] Turnos de conversación seguidos sobre la explicación o el
     /// ejemplo resuelto en pantalla (`Config::charlas_por_explicacion`).
     charlas_explicacion: u8,
+    /// [PROPUESTA] Turnos de conversación seguidos mientras el motor espera una
+    /// respuesta (`Config::charlas_por_pregunta`).
+    charlas_pregunta: u8,
     pausa_total_ms: u64,
     e1_lista: Option<u8>,
     remediacion: VecDeque<u8>,
@@ -524,6 +527,7 @@ impl Motor {
             iniciada: false,
             pausas_tomadas: 0,
             charlas_explicacion: 0,
+            charlas_pregunta: 0,
             pausa_total_ms: 0,
             e1_lista: None,
             remediacion: VecDeque::new(),
@@ -620,6 +624,11 @@ impl Motor {
 
     pub fn entrada(&mut self, e: Entrada) -> Vec<Mensaje> {
         let mut out = vec![];
+        // Lo que no es conversación ni el paso del tiempo corta la racha de
+        // conversación ante una pregunta pendiente (CHAT-02).
+        if !matches!(e, Entrada::Chat { .. } | Entrada::Tick) {
+            self.charlas_pregunta = 0;
+        }
         match e {
             Entrada::Comenzar => self.comenzar(&mut out),
             Entrada::Tick => self.tick(&mut out),
@@ -4013,6 +4022,40 @@ impl Motor {
             );
         }
         self.contar_charla_de_explicacion(out);
+        self.contar_charla_de_pregunta(out);
+    }
+
+    /// [PROPUESTA] CHAT-02. Conversar mientras el motor espera una respuesta no
+    /// la trae, y a quien se le oye mal («Dos» oído «Doce») se queda ahí sin
+    /// saberlo: por voz, la conversación con el modelo dio catorce vueltas con
+    /// el ejercicio esperando. A la tercera vez seguida
+    /// (`Config::charlas_por_pregunta`) el motor vuelve a decir lo que espera:
+    /// el enunciado, o la pregunta de la explicación.
+    fn contar_charla_de_pregunta(&mut self, out: &mut Vec<Mensaje>) {
+        // Si el motor ya contestó este mensaje (una pista, seguir con lo
+        // siguiente), lo que espera ya quedó dicho otra vez.
+        if !out.is_empty() {
+            self.charlas_pregunta = 0;
+            return;
+        }
+        let pregunta = match self.esperando() {
+            Esperando::Respuesta { enunciado, .. } => enunciado,
+            Esperando::Explicacion { pregunta, .. } => pregunta,
+            _ => return,
+        };
+        self.charlas_pregunta = self.charlas_pregunta.saturating_add(1);
+        let tope = self.cfg.charlas_por_pregunta;
+        if tope == 0 || self.charlas_pregunta < tope {
+            return;
+        }
+        self.charlas_pregunta = 0;
+        self.aplicar(
+            "CHAT-02",
+            &format!(
+                "{tope} turnos de conversación seguidos con una respuesta pendiente: el motor repite su pregunta"
+            ),
+        );
+        out.push(msg(pregunta));
     }
 
     /// [PROPUESTA] Conversar sobre una explicación o un ejemplo resuelto no los
