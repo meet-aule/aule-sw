@@ -28,8 +28,7 @@ CLOSED = [
     (
         "Así es, Gonzalo: 6 partes en total. Hoy trabajaste las fracciones equivalentes y la "
         "comparación, y lo hiciste muy bien. ¡Nos vemos pronto!",
-        "Así es, Gonzalo: 6 partes en total. Hoy trabajaste las fracciones equivalentes y la "
-        "comparación, y lo hiciste muy bien.",
+        "Así es, Gonzalo: 6 partes en total.",
     ),
     (
         "Gonzalo, quizás hoy estás cansado y eso es normal. Descansa un momento, y cuando "
@@ -58,6 +57,38 @@ CLOSED = [
     ("Great job! Next time we'll continue with sums. Bye!", "Great job!"),
     ("That's all for today. See you soon!", ""),
     ("You worked hard. Get some rest, and we carry on whenever you want.", "You worked hard."),
+    # The day summed up while the engine was still teaching (the same day, after
+    # the model was told not to say goodbye).
+    (
+        "Muy bien, Gonzalo. Llevaste las dos fracciones a décimos y comparaste las partes, "
+        "que es justo lo que hay que hacer. Hoy trabajamos fracciones equivalentes, "
+        "simplificación y comparación con distinto denominador. Sigue practicando así.",
+        "Muy bien, Gonzalo. Llevaste las dos fracciones a décimos y comparaste las partes, "
+        "que es justo lo que hay que hacer.",
+    ),
+    (
+        "Ese razonamiento con doceavos es muy bien pensado, Gonzalo. Ya tienes lo principal "
+        "de hoy: para comparar fracciones, las llevas a un mismo denominador.",
+        "Ese razonamiento con doceavos es muy bien pensado, Gonzalo.",
+    ),
+    (
+        "Cinco sextos es mayor, sí. Lo que trabajamos hoy fue comparar fracciones con "
+        "distinto denominador usando un denominador común. ¡Muy buen trabajo hoy!",
+        "Cinco sextos es mayor, sí.",
+    ),
+    (
+        "Ya lo tienes, Gonzalo: cada parte es un cuarto. Esa es la idea que nos llevamos hoy.",
+        "Ya lo tienes, Gonzalo: cada parte es un cuarto.",
+    ),
+    ("Hoy te costó bastante, y aun así lo lograste al contar con calma.", ""),
+    ("Hoy lo trabajaste con la barra de chocolate y la pizza. ¡Muy bien hecho hoy!", ""),
+    ("Hoy trabajamos cómo comparar fracciones; sigue practicando eso.", ""),
+    ("¡Muy buen trabajo, sigue practicando!", ""),
+    (
+        "Right, five sixths. Today you worked on comparing fractions. Great job today!",
+        "Right, five sixths.",
+    ),
+    ("What we did today was compare fractions. Keep practising!", ""),
 ]
 
 # Sentences that share a word with a goodbye and are none.
@@ -71,6 +102,16 @@ GOES_ON = [
     "Si estás cansado, dímelo. ¿Quieres descansar?",
     "I see you counted five. For today's exercise, look at the bar.",
     "Take the next step: which number goes below?",
+    # A word of a summary, and none.
+    "Para terminar, dime con tus palabras qué trabajamos hoy.",
+    "¿Recuerdas lo que vimos hoy con la pizza?",
+    "Gonzalo, la pizza de hoy ya la trabajamos: la partimos en cuatro y tomamos tres cuartos.",
+    "Gonzalo, parece que hoy te cuesta seguir. ¿Quieres una pista?",
+    "Cinco y seis sumados dan once, pero hoy no estamos sumando.",
+    "¡Buen trabajo, Gonzalo! Ahora mira la barra.",
+    "Buen trabajo explicándolo. ¿Cuál es mayor?",
+    "Practicaste con calma y te salió. ¿Seguimos?",
+    "Good job! Today's bar has five parts.",
 ]
 
 
