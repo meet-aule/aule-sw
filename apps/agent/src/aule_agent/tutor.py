@@ -44,7 +44,7 @@ from livekit.agents.voice.generation import (
     mark_instructions_cache_boundary,
 )
 
-from . import answers, choices, comparison, drill, farewell, visuals
+from . import answers, choices, closing, comparison, drill, farewell, visuals
 from .greetings import greeting as written_greeting
 from .homework import Reading
 from .observability import new_turn
@@ -674,6 +674,7 @@ async def checked(
     ahead: VoiceAhead | None = None,
     tool_began: asyncio.Event | None = None,
     approved: Callable[[str], None] | None = None,
+    kept: Callable[[str], str] | None = None,
 ) -> AsyncIterable[Any]:
     """What reaches the voice from one step of the model.
 
@@ -701,6 +702,10 @@ async def checked(
 
     ``approved`` is told the reply once nothing stands between it and the
     voice: the gate approved it, or there is no gate. Never a fixed reply.
+
+    ``kept`` gives what is said of the reply when not all of it is to be (in
+    a session the engine runs, the model's goodbyes are not): the gate reads
+    that, and it is what is voiced, kept in the conversation and told on.
     """
     chunks: list[Any] = []
     line_said = False
@@ -739,6 +744,11 @@ async def checked(
                     yield chunk
             return
         written = "".join(_text_of(chunk) for chunk in chunks)
+        if kept is not None and written and (said := kept(written)) != written:
+            # Not all of the reply is said: what is goes as one piece, in place
+            # of the model's own pieces of text.
+            chunks = [said, *(chunk for chunk in chunks if not _text_of(chunk))]
+            written = said
         if not gates.checks_spoken:
             if approved is not None:
                 approved(written)
@@ -1143,6 +1153,12 @@ class Tutor(Agent):
         # photo of the homework is read, what is set once the engine has
         # heard what it showed.
         self._awaits: Awaits | None = None
+        # The engine's latest line that was heard to its end: said again in
+        # place of a reply of the model's that was nothing but a goodbye.
+        self._script_line: str | None = None
+        # Whether the engine's own activity is over while the room stays
+        # open: the goodbye is then the model's to say.
+        self._script_over = False
         self._reader = reader
         self._reading: asyncio.Event | None = None
         self._show = show
@@ -1411,6 +1427,7 @@ class Tutor(Agent):
         # written greeting. Either way no model writes the first words.
         opening = self._engine.opening() if self._engine is not None else Reply()
         self._awaits = opening.awaits
+        self._script_over = opening.over
         if opening.lines:
             await self._say(opening.lines)
             self._voice_the_lines_ahead()
@@ -1521,7 +1538,10 @@ class Tutor(Agent):
                 line.say, add_to_chat_ctx=True, allow_interruptions=True
             )
             said += 1
-            if line.choices is not None and turn == self._script_turn and not played.interrupted:
+            heard = turn == self._script_turn and not played.interrupted
+            if heard and line.say not in self._fixed_lines:
+                self._script_line = line.say
+            if line.choices is not None and heard:
                 # What can be tapped goes under its question once it has been heard.
                 await self._put_up(line.choices)
         # Counts only: what is said is never logged.
@@ -1547,6 +1567,7 @@ class Tutor(Agent):
         engine's previous answer that were still to come."""
         self._script_turn += 1
         self._awaits = said.awaits
+        self._script_over = said.over
         await self.session.interrupt()
         if said.lines:
             await self._say(said.lines)
@@ -1563,6 +1584,8 @@ class Tutor(Agent):
         # Like the rules for talk, what the engine waits for is what its
         # answer says; no answer, and the turn is the model's, as without it.
         self._awaits = reply.awaits if reply is not None else None
+        if reply is not None:
+            self._script_over = reply.over
         rules = reply.converse if reply is not None else None
         if (rules or "") != self._rules_for_talk:
             # What the model may do while the student talks changes with the
@@ -1788,6 +1811,7 @@ class Tutor(Agent):
             answer = await engine.homework(reading)
             if answer is not None:
                 self._awaits = answer.awaits
+                self._script_over = answer.over
             told.set()
             await looking
             if answer is None:
@@ -2164,6 +2188,25 @@ class Tutor(Agent):
                 # Interrupted while it still ran: the request stops.
                 early.drop()
 
+    def _unclosed(self, written: str) -> str:
+        """What is said of a reply the model wrote in a session the engine
+        runs: all but the sentences that close the session (``closing``).
+
+        Only the engine ends such a session, and its goodbye is its own lines;
+        the model is asked while the session goes on. In place of a reply that
+        was nothing but a goodbye, the engine's latest line is said again, as
+        it was written: the student hears where the session is, and no new
+        words are made for it. Before the engine has said anything, nothing."""
+        said = closing.without(written)
+        if said == written:
+            return written
+        # Counts only: what was left out is never logged.
+        logger.info(
+            "closing sentences left out of a reply",
+            extra={"chars": len(written) - len(said), "all": not said},
+        )
+        return said or self._script_line or ""
+
     async def _said(
         self,
         stream: AsyncIterable[Any],
@@ -2173,7 +2216,12 @@ class Tutor(Agent):
     ) -> AsyncIterable[llm.ChatChunk | str]:
         """What reaches the voice from one step of the model: through the
         output gate, with a word for a drawing that had none."""
-        if tools or self._gates.checks_spoken:
+        # In a session the engine runs, a reply is read whole too: the model's
+        # goodbyes are not said (``_unclosed``), until the engine's own
+        # activity is over and its rules ask the model for one.
+        engine_goes_on = self._engine is not None and not self._script_over
+        unclosed = self._unclosed if engine_goes_on else None
+        if tools or self._gates.checks_spoken or unclosed is not None:
             # Buffering costs the time to the first word, so it is only paid
             # when there is a gate to wait for or a tool whose step must be
             # known whole before any of it is said.
@@ -2186,6 +2234,7 @@ class Tutor(Agent):
                 ahead=self._ahead,
                 tool_began=tool_began,
                 approved=self._question_approved,
+                kept=unclosed,
             )
         started = time.monotonic()
         chars, called = 0, []
