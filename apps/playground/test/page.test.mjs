@@ -831,9 +831,27 @@ test("the entry's near-dark palette is the entry's alone, behind one switch (D45
   assert.match(root, /--fibre: 154 91 46;/);
 });
 
+test("the entry's help is at the end of the email field, which asks for the address in words", () => {
+  const entry = html.slice(html.indexOf('data-screen="p01"'), html.indexOf('data-screen="p03"'));
+  // The title stands alone; the help's button and its words are in the field's box, after the input.
+  assert.match(entry, /<h2 class="question-title" id="p01-title" tabindex="-1" data-i18n="entry\.title">Entra a Aule<\/h2>\s*<\/div>/);
+  assert.match(entry, /<div class="entry-email">\s*<input id="email-address"[^>]*\/>\s*<div class="entry-help-control" id="entry-help-control">\s*<button class="entry-help-trigger" id="entry-help-trigger" type="button" aria-describedby="entry-help" aria-expanded="false" aria-controls="entry-help">/);
+  assert.match(entry, /<p class="entry-tooltip" id="entry-help" data-i18n="entry\.help" role="tooltip" hidden>Entra o crea tu cuenta, sin contraseña\.<\/p>/);
+  assert.equal(entry.split('id="entry-help-control"').length, 2, "one help");
+  assert.deepEqual([es.entry.email_placeholder, en.entry.email_placeholder], ["Ingresa tu correo electrónico", "Enter your email address"]);
+  assert.match(entry, /<input id="email-address"[^>]*placeholder="Ingresa tu correo electrónico" data-i18n-attr="placeholder:entry\.email_placeholder"/);
+  // The words written in the field stop short of the help: its 44 px and the 5 it stands off the edge.
+  const rule = (selector) => rules(css).find(([found]) => found.split("\n").pop().trim() === selector)?.[1] ?? "";
+  assert.match(rule(".entry-card .field .entry-email input"), /padding-right: 54px;/);
+  assert.match(rule(".entry-help-control"), /position: absolute;[\s\S]*right: 5px;/);
+  assert.match(rule(".entry-tooltip"), /right: 0;\s*bottom: calc\(100% \+ 9px\);/);
+});
+
 test("an email that is missing or is not one is said under the field: a red edge, a ringed «!» and the words, in both languages (D45)", () => {
   const entry = html.slice(html.indexOf('data-screen="p01"'), html.indexOf('data-screen="p03"'));
-  assert.match(entry, /<input id="email-address"[^>]*aria-describedby="email-error" \/>\s*<p class="field-error" id="email-error" role="alert" data-i18n="entry\.email_invalid" hidden>/);
+  // Right under the field's box, which holds the input and, at its end, the help (below).
+  assert.match(entry, /<input id="email-address"[^>]*aria-describedby="email-error" \/>/);
+  assert.match(entry, /<div class="entry-email">[\s\S]*?<\/div>\s*<\/div>\s*<p class="field-error" id="email-error" role="alert" data-i18n="entry\.email_invalid" hidden>/);
   const signin = scripts["signin.js"];
   // In both languages, as the entry's other words are.
   assert.deepEqual([es.entry.email_required, en.entry.email_required], ["Escribe tu correo electrónico.", "Enter your email address."]);
