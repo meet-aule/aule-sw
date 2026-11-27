@@ -64,7 +64,7 @@ export default {
     help_label: "Sign-in help",
     or: "or",
     email: "Your email",
-    email_placeholder: "name@email.com",
+    email_placeholder: "Enter your email address",
     email_required: "Enter your email address.",
     email_invalid: "Check the email: it does not look like a valid address.",
     send: "Send me a code",
