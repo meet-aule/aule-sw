@@ -1584,6 +1584,21 @@ class Tutor(Agent):
     def _instructions_now(self) -> str:
         return self._prompt().text
 
+    async def _keep(self, message: llm.ChatMessage) -> None:
+        """Keeps what the student said in a turn the engine answered, where it
+        was said: before the engine's lines that answered it.
+
+        The conversation it goes into is the tutor's own as it is now, with
+        those lines in it. The copy LiveKit hands the turn was made before
+        they were said: kept instead, it lost them, and the model answered the
+        student's next words as if the engine had never spoken (2026-11-26, by
+        voice: «Tres décimos», read from the engine's own line seconds before,
+        was judged against an earlier drawing).
+        """
+        context = self.chat_ctx.copy()
+        context.insert(message)
+        await self.update_chat_ctx(context)
+
     async def on_user_turn_completed(
         self, turn_ctx: llm.ChatContext, new_message: llm.ChatMessage
     ) -> None:
@@ -1611,10 +1626,8 @@ class Tutor(Agent):
             if self._goodbye(new_message.text_content or ""):
                 raise StopResponse()
             if await self._scripted(new_message.text_content or ""):
-                # The engine answered. The student's words stay in the
-                # conversation; the model is not asked.
-                turn_ctx.items.append(new_message)
-                await self.update_chat_ctx(turn_ctx)
+                # The engine answered; the model is not asked.
+                await self._keep(new_message)
                 raise StopResponse()
             checked = await self._check_after_the_gates(turn, new_message.text_content or "")
             if checked:
@@ -1669,9 +1682,7 @@ class Tutor(Agent):
         if self._goodbye(text):
             return None
         if await self._scripted(text):
-            context = self.chat_ctx.copy()
-            context.items.append(message)
-            await self.update_chat_ctx(context)
+            await self._keep(message)
             return None
         await self._check_after_the_gates(turn, text)
         # The message the gates judged, under an id of its own: as with a reply
