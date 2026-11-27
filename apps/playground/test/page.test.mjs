@@ -761,6 +761,21 @@ test("the entry's type is the brand site's: its eyebrow in handwriting, its seri
   assert.match(rule(".primary"), /font: 600 16px\/1\.2 var\(--sans\);/);
 });
 
+test("the entry leaves less air above its title on a screen that is not tall, so the small print ends above the cookie notice", () => {
+  const rule = (text, selector) => rules(text).find(([found]) => found.split("\n").pop().trim() === selector)?.[1] ?? "";
+  // A phone: 64 px above the eyebrow, clear of Aule's mark (24 px down, 28 tall), and the card 24 under the help.
+  assert.match(rule(css, ".screen.entry:not([hidden])"), /padding: 64px 24px 32px;/);
+  assert.match(rule(css, ".entry-card"), /margin-top: 24px;/);
+  // Two columns on a screen up to 960 px tall: 80 px above, 56 from 1200 px wide, where the eyebrow passes beside the mark.
+  const short = blocks(css, "@media (min-width: 960px) and (max-height: 960px)").join("\n");
+  assert.match(rule(short, ".screen.entry:not([hidden])"), /padding: 80px 32px 24px;/);
+  assert.match(rule(short, ".entry-card"), /margin-top: 24px;/);
+  const wide = blocks(css, "@media (min-width: 1200px) and (max-height: 960px)").join("\n");
+  assert.match(rule(wide, ".screen.entry:not([hidden])"), /padding-top: 56px;/);
+  // The notice itself is as it was (its own test, above).
+  assert.match(css, /\n\.cookie-notice \{[^}]*bottom: max\(16px, env\(safe-area-inset-bottom\)\);/);
+});
+
 test("the entry's near-dark palette is the entry's alone, behind one switch (D45)", () => {
   // One place asks whether the system is dark, and all it holds is the entry's tokens.
   assert.equal(css.match(/prefers-color-scheme/g).length, 1);
