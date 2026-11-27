@@ -67,7 +67,13 @@ const CHAT_TOPIC = "lk.chat";
 // plan's own words: words/es.js `plan` limit_*), or the sign-in or the session
 // changed meanwhile (`session`).
 const PLAN_LIMITS = ["trial_day_used", "week_used", "trial_over"];
-const ERRORS = { daily_limit: "session.daily_limit", not_signed_in: "common.session_closed", session_active: "session.session_active", session_changed: "session.session_changed", recovery_unavailable: "session.recovery_unavailable" };
+const ERRORS = {
+  daily_limit: "session.daily_limit",
+  not_signed_in: "common.session_closed",
+  session_active: "session.session_active",
+  session_changed: "session.session_changed",
+  recovery_unavailable: "session.recovery_unavailable",
+};
 
 /** The words for a session the server did not start; undefined for an error with none of its own. */
 function startError(body) {
