@@ -162,17 +162,35 @@ pub async fn on_event(state: &AppState, event: &Value) -> Result<(), DbErr> {
             .await?;
     }
     if let (Some(notice_id), Some(mailer)) = (created, &state.mailer) {
-        let recipients: Vec<String> = guardian::Entity::find()
+        let recipients: Vec<(Uuid, String, String)> = guardian::Entity::find()
             .filter(guardian::Column::FamilyId.eq(family_id))
             .filter(guardian::Column::NoticesByEmail.eq(true))
             .select_only()
+            .column(guardian::Column::Id)
             .column(guardian::Column::Email)
+            .column(guardian::Column::Language)
             .into_tuple()
             .all(&state.db)
             .await?;
         let mut sent = false;
-        for email in recipients {
-            match mailer.send(&email, &title, &body).await {
+        for (id, email, language) in recipients {
+            let result = if let Some(settings) = &state.config.mail {
+                let token = crate::unsubscribe::token(
+                    &state.config.admin_token,
+                    id,
+                    &language,
+                    chrono::Utc::now().timestamp(),
+                );
+                let links = crate::mail::NoticeLinks {
+                    language,
+                    app: format!("{}/", settings.public_url),
+                    unsubscribe: format!("{}/unsubscribe?token={token}", settings.public_url),
+                };
+                mailer.send_notice(&email, &title, &body, &links).await
+            } else {
+                mailer.send(&email, &title, &body).await
+            };
+            match result {
                 Ok(()) => sent = true,
                 // The notice is still in the app; the email is not retried.
                 Err(error) => tracing::warn!(%notice_id, %error, "a notice was not emailed"),

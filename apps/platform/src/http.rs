@@ -84,6 +84,10 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/admin/passkeys/options", post(passkeys::register_options))
         .route("/v1/admin/passkeys/{passkey_id}", delete(passkeys::delete))
         .route("/v1/notices", get(notices::list))
+        .route(
+            "/v1/notices/unsubscribe",
+            post(crate::unsubscribe::unsubscribe).layer(DefaultBodyLimit::max(1024)),
+        )
         .route("/v1/notices/{notice_id}/read", post(notices::mark_read))
         .route("/v1/push/tokens", put(push::register).delete(push::unregister))
         // Devices: made by the operator, claimed by a guardian

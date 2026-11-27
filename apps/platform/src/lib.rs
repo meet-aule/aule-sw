@@ -32,6 +32,7 @@ pub mod signin;
 pub mod state;
 pub mod supervisor;
 pub mod team;
+pub mod unsubscribe;
 
 /// The platform's version: Cargo.toml's, which `scripts/version.py` keeps
 /// equal to the repository's version.txt.

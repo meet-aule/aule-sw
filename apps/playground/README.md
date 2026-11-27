@@ -206,3 +206,12 @@ the browser still uses `AULE_LIVEKIT_PUBLIC_URL`. Session lifecycle responses ar
 `no-store`. The page explains known endings on the student's end screen
 (FIGMA.md, D23) using fixed Spanish/English text in `public/session-messages.js`;
 it never renders raw provider errors. Old sessions may have no stored reason.
+
+### Email unsubscribe
+
+`/unsubscribe?token=…` under the configured base path is public and needs no
+account cookie. GET/HEAD only show confirmation. POST forwards the signed,
+notice-only capability to the platform; it never forwards cookies or the
+operator credential. The page is Spanish/English, works without JavaScript,
+and never caches or includes third-party assets. Deploy this route before the
+platform/worker release that puts it in notice emails.
