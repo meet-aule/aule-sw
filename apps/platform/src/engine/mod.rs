@@ -63,6 +63,11 @@ const MAX_DIGITS: usize = 6;
 /// Said once when an answer came without how it was worked out, in the stages
 /// that ask for both. It says nothing about whether the answer is right.
 const ASK_HOW: &str = "¡Gracias! Ahora cuéntame cómo lo pensaste.";
+/// Said when what the student said by voice could not be taken as their
+/// answer: it sounds like one and cannot be read as one here, or it is a
+/// number the hearing writes for the right one. It says nothing about whether
+/// an answer is right.
+const SAY_AGAIN: &str = "No te entendí, ¿me repites tu respuesta?";
 /// The report greets the guardian by name; a family always has one.
 const GUARDIAN_FALLBACK: &str = "familia";
 
@@ -535,6 +540,10 @@ pub struct Engine {
     stored: usize,
     last_ms: u64,
     held: Option<Held>,
+    /// The exercise whose answer was asked for once more because it sounded
+    /// like the right one (`heard_for`): the second time it is graded as it
+    /// was heard. Not stored: after a restart it may be asked for once more.
+    reheard: Option<String>,
     working: Option<Working>,
     outcomes: Vec<Outcome>,
     /// What the session started with (`Input::Start`).
@@ -629,6 +638,7 @@ impl Engine {
             stored: 0,
             last_ms: 0,
             held: None,
+            reheard: None,
             working: None,
             outcomes: Vec::new(),
             homework: 0,
@@ -1119,10 +1129,31 @@ impl Engine {
                     self.push(at_ms, graded(None, false, false, None, true), out);
                     return Reply::Scripted;
                 }
+                // It sounds like an answer and cannot be read as one here (a
+                // number where one of the options is asked for, say): the
+                // tutor asks for it again in its own words. Left to the model
+                // it was answered as talk, and judged.
+                if intent == Intencion::RespuestaAlEjercicio {
+                    return self.say_again(at_ms, said, intent, out);
+                }
                 return self.chat(at_ms, said, intent, out);
             }
         };
         let reading = correccion::corregir(key, &answer);
+        // By voice «dos» is written «doce» often, and the other way round. A
+        // wrong answer that is the number the hearing writes for the right
+        // one is asked for once more before it is marked: once for an
+        // exercise, and never for one that was typed.
+        if !typed
+            && held.is_none()
+            && reading.veredicto == Veredicto::Incorrecta
+            && key.opciones.is_empty()
+            && self.reheard != card
+            && heard_for(key.respuesta, &answer)
+        {
+            self.reheard = card;
+            return self.say_again(at_ms, said, intent, out);
+        }
         let unreadable = reading.veredicto == Veredicto::Ilegible;
         let mut explained = None;
         if let (Some((keys, least)), false) = (needs, unreadable) {
@@ -1155,6 +1186,18 @@ impl Engine {
             unreadable,
         );
         self.push(at_ms, input, out);
+        Reply::Scripted
+    }
+
+    /// Asks for the answer once more, in the tutor's own fixed words. What was
+    /// said is kept as talk and nothing is graded, so at the third time
+    /// running the engine still says its question again, in place of this line.
+    fn say_again(&mut self, at_ms: u64, said: &str, intent: Intencion, out: &mut Vec<Line>) -> Reply {
+        let lines = out.len();
+        self.push(at_ms, Input::Chat { text: said.to_string(), intent }, out);
+        if out.len() == lines {
+            out.push(Line::fixed(SAY_AGAIN, None));
+        }
         Reply::Scripted
     }
 
@@ -1280,6 +1323,15 @@ impl Engine {
 /// Whether the student is asking for something instead of answering. The
 /// engine's classifier reads "creo que es..." and "así que son tres octavos"
 /// as asking what a word means, so that one also has to look like a question.
+/// Whether a spoken answer, read as a number, is one the hearing writes for
+/// the expected one: «doce» where «dos» is right, and the other way round.
+fn heard_for(expected: &str, answer: &str) -> bool {
+    match (texto::leer_respuesta(answer), texto::leer_fraccion(expected)) {
+        (Some(heard), Some(expected)) => texto::se_oye_como(&heard, &expected),
+        _ => false,
+    }
+}
+
 fn asks(intent: Intencion, said: &str) -> bool {
     match intent {
         Intencion::RepetirEnunciado | Intencion::PedirAyuda | Intencion::PedirRespuesta => true,
