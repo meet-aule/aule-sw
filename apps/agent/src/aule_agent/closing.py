@@ -12,6 +12,12 @@ So a sentence that says goodbye, says the session is over, puts the work off
 to another day or sends the student away to rest is not said. By rule, as the
 student's own goodbye is read (``farewell``): what is left out must not
 depend on the model that wrote it.
+
+Nor is a sentence that sums up the day («Hoy trabajaste las fracciones
+equivalentes y la comparación… ¡Buen trabajo hoy!»). Told not to say goodbye,
+the model summed the day up instead: thirteen such replies in one session by
+voice (2026-11-26), most of them to a child stuck at a step, who was told what
+had been done today when the step was still to do.
 """
 
 import re
@@ -75,6 +81,33 @@ _CLOSES = re.compile(
     )
 )
 
+# The day summed up, in the past: «hoy vamos a trabajar fracciones» opens a
+# session and «la pizza de hoy» only names it. A question is never one.
+_DID = (
+    r"(trabajaste|practicaste|aprendiste|descubriste|lograste|repasaste|avanzaste|hiciste|viste"
+    r"|trabajamos|practicamos|aprendimos|descubrimos|repasamos|avanzamos|hicimos|vimos)"
+)
+_SUMS_UP = re.compile(
+    "|".join(
+        (
+            # Spanish.
+            rf"(?<!\bde )\bhoy (ya )?(lo |la |los |las )?{_DID}\b",
+            r"(?<!\bde )\bhoy te costo\b",
+            rf"\blo que (hoy {_DID}|{_DID} hoy)\b",
+            r"\b(lo principal|lo importante|lo mas importante|la idea|el resumen)\b"
+            r"[^.!?]*\bde hoy\b",
+            r"\b(nos llevamos|te llevas) hoy\b",
+            r"\b(trabajo|esfuerzo|trabajado|hecho) (de )?hoy\b",
+            r"\bsigue practicando\b",
+            # English.
+            r"\btoday (you|we) (worked|practi[cs]ed|learned|learnt|discovered|saw|did|covered)\b",
+            r"\bwhat (you|we) (worked on|practi[cs]ed|learned|learnt|did|saw|covered) today\b",
+            r"\b(work|job|effort) today\b",
+            r"\bkeep practi[cs]ing\b",
+        )
+    )
+)
+
 
 def _plain(text: str) -> str:
     decomposed = unicodedata.normalize("NFD", text.lower())
@@ -83,8 +116,12 @@ def _plain(text: str) -> str:
 
 def closes(sentence: str) -> bool:
     """Whether the sentence closes the session: a goodbye, the session said to
-    be over, the work put off to another day, or the student sent to rest."""
-    return _CLOSES.search(_plain(sentence)) is not None
+    be over, the work put off to another day, the student sent to rest, or the
+    day summed up."""
+    plain = _plain(sentence)
+    if _CLOSES.search(plain) is not None:
+        return True
+    return "?" not in sentence and _SUMS_UP.search(plain) is not None
 
 
 def without(reply: str) -> str:
