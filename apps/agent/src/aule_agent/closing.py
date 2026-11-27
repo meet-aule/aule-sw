@@ -24,7 +24,7 @@ import re
 import unicodedata
 
 # A sentence, with the space before it: up to its closing marks, or to the end.
-_SENTENCE = re.compile(r"[^.!?…]*[.!?…]+[\"'»”)\]]*|[^.!?…]+$")
+SENTENCE = re.compile(r"[^.!?…]*[.!?…]+[\"'»”)\]]*|[^.!?…]+$")
 
 # Read without accents and in lower case. Each is a way of closing, not a
 # word: «la próxima vez» alone is advice («la próxima vez cuenta primero el
@@ -109,7 +109,7 @@ _SUMS_UP = re.compile(
 )
 
 
-def _plain(text: str) -> str:
+def plain(text: str) -> str:
     decomposed = unicodedata.normalize("NFD", text.lower())
     return "".join(letter for letter in decomposed if unicodedata.category(letter) != "Mn")
 
@@ -118,16 +118,16 @@ def closes(sentence: str) -> bool:
     """Whether the sentence closes the session: a goodbye, the session said to
     be over, the work put off to another day, the student sent to rest, or the
     day summed up."""
-    plain = _plain(sentence)
-    if _CLOSES.search(plain) is not None:
+    read = plain(sentence)
+    if _CLOSES.search(read) is not None:
         return True
-    return "?" not in sentence and _SUMS_UP.search(plain) is not None
+    return "?" not in sentence and _SUMS_UP.search(read) is not None
 
 
 def without(reply: str) -> str:
     """The reply without the sentences that close the session; the reply
     itself, untouched, when it has none. Empty when it was nothing else."""
-    sentences = _SENTENCE.findall(reply)
+    sentences = SENTENCE.findall(reply)
     kept = [sentence for sentence in sentences if not closes(sentence)]
     if len(kept) == len(sentences):
         return reply

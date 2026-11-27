@@ -18,6 +18,7 @@ Aule's voice tutor: a [LiveKit Agents](https://github.com/livekit/agents) worker
 | `visuals` | What the tutor can show on the student's screen, checked against the shared contract before it is sent |
 | `choices` | Answers the student can tap under the tutor's question, checked against the shared contract and sent once the question has been heard |
 | `camera` | The latest camera frame, held in memory and never stored |
+| `asking` | The questions a model asks of its own while a question of the session engine's is open ("now it's your turn: how much is…"), left out of its replies, and the engine's open question, said after them |
 | `closing` | The sentences with which a model closes a session (a goodbye, "that's all for today", the day summed up), left out of its replies while the session engine is still running the session |
 | `homework` | What a photo of the homework shows, read by a model for the session engine; nothing it writes is said, and the photo is never kept |
 | `prosody` | Whether the voice went up or down at the end of an utterance, measured from the audio by rule, for pronunciation drills |

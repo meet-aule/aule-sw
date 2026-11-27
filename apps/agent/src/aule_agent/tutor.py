@@ -44,7 +44,7 @@ from livekit.agents.voice.generation import (
     mark_instructions_cache_boundary,
 )
 
-from . import answers, choices, closing, comparison, drill, farewell, visuals
+from . import answers, asking, choices, closing, comparison, drill, farewell, visuals
 from .greetings import greeting as written_greeting
 from .homework import Reading
 from .observability import new_turn
@@ -1156,6 +1156,8 @@ class Tutor(Agent):
         # The engine's latest line that was heard to its end: said again in
         # place of a reply of the model's that was nothing but a goodbye.
         self._script_line: str | None = None
+        # The question of the engine's that the student has yet to answer.
+        self._open_question: str | None = None
         # Whether the engine's own activity is over while the room stays
         # open: the goodbye is then the model's to say.
         self._script_over = False
@@ -1428,6 +1430,7 @@ class Tutor(Agent):
         opening = self._engine.opening() if self._engine is not None else Reply()
         self._awaits = opening.awaits
         self._script_over = opening.over
+        self._asked_by_the_engine(opening)
         if opening.lines:
             await self._say(opening.lines)
             self._voice_the_lines_ahead()
@@ -1568,6 +1571,7 @@ class Tutor(Agent):
         self._script_turn += 1
         self._awaits = said.awaits
         self._script_over = said.over
+        self._asked_by_the_engine(said)
         await self.session.interrupt()
         if said.lines:
             await self._say(said.lines)
@@ -1586,6 +1590,7 @@ class Tutor(Agent):
         self._awaits = reply.awaits if reply is not None else None
         if reply is not None:
             self._script_over = reply.over
+            self._asked_by_the_engine(reply)
         rules = reply.converse if reply is not None else None
         if (rules or "") != self._rules_for_talk:
             # What the model may do while the student talks changes with the
@@ -1812,6 +1817,7 @@ class Tutor(Agent):
             if answer is not None:
                 self._awaits = answer.awaits
                 self._script_over = answer.over
+                self._asked_by_the_engine(answer)
             told.set()
             await looking
             if answer is None:
@@ -2188,24 +2194,49 @@ class Tutor(Agent):
                 # Interrupted while it still ran: the request stops.
                 early.drop()
 
+    def _asked_by_the_engine(self, reply: Reply) -> None:
+        """Keeps the question the engine's answer leaves open. An answer that
+        hands the turn to the model with no question of its own leaves the one
+        before it open: the student asked something, and the step is still to
+        do. Any other answer with no question closes it."""
+        asked = next(
+            (q for line in reversed(reply.lines) if (q := asking.question(line.say))), None
+        )
+        if asked is not None or reply.converse is None:
+            self._open_question = asked
+
     def _unclosed(self, written: str) -> str:
         """What is said of a reply the model wrote in a session the engine
-        runs: all but the sentences that close the session (``closing``).
+        runs: all but the sentences that close the session (``closing``) and,
+        while a question of the engine's is open, the model's own questions
+        (``asking``), with the engine's question after it.
 
         Only the engine ends such a session, and its goodbye is its own lines;
-        the model is asked while the session goes on. In place of a reply that
-        was nothing but a goodbye, the engine's latest line is said again, as
-        it was written: the student hears where the session is, and no new
-        words are made for it. Before the engine has said anything, nothing."""
+        only the engine asks, and its question is what the student answers
+        next. The model is asked while the session goes on, to answer what the
+        student said. In place of a reply that was nothing but a goodbye or a
+        question of its own, the engine's question is said again, or its
+        latest line: the student hears where the session is, and no new words
+        are made for it. Before the engine has said anything, nothing."""
         said = closing.without(written)
-        if said == written:
-            return written
-        # Counts only: what was left out is never logged.
-        logger.info(
-            "closing sentences left out of a reply",
-            extra={"chars": len(written) - len(said), "all": not said},
-        )
-        return said or self._script_line or ""
+        if said != written:
+            # Counts only: what was left out is never logged.
+            logger.info(
+                "closing sentences left out of a reply",
+                extra={"chars": len(written) - len(said), "all": not said},
+            )
+        asked = self._open_question
+        if asked is None:
+            return said or (written and self._script_line) or ""
+        answered = asking.without(said)
+        if answered != said:
+            logger.info(
+                "questions of its own left out of a reply",
+                extra={"chars": len(said) - len(answered), "all": not answered},
+            )
+        if not answered:
+            return asked
+        return answered if answered.endswith(asked) else f"{answered} {asked}"
 
     async def _said(
         self,
