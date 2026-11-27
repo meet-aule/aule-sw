@@ -610,6 +610,98 @@ fn a_number_the_hearing_writes_for_the_right_one_is_told_from_a_wrong_answer() {
     assert!(!heard_for("Verdadero", "doce"));
 }
 
+/// A student at a step answered by the number 2 alone, with nothing to choose
+/// from and nothing to explain: the first level's guided example asks how
+/// many parts are painted.
+fn at_an_answer_of_two() -> Student {
+    let mut student = in_screening();
+    // A screening answered wrong starts at the first level.
+    for _ in 0..10 {
+        if !student.at().starts_with("tamizaje") {
+            break;
+        }
+        student.answers(false);
+    }
+    for _ in 0..80 {
+        let found = matches!(
+            student.engine.motor.esperando(),
+            Esperando::Respuesta { respuesta, opciones, pide_explicacion, .. }
+                if respuesta == "2" && opciones.is_empty() && !pide_explicacion
+        );
+        if found {
+            return student;
+        }
+        student.answers(true);
+    }
+    panic!("no step answered by 2 was reached: at {}", student.at());
+}
+
+/// What is said a moment after the tutor's line, before the engine's clock
+/// has anything to add to the turn. `typed` is the answer box of the page.
+fn says_at_once(student: &mut Student, said: &str, typed: bool) -> Turn {
+    student.now += 3_000;
+    let turn = student.engine.said(student.now, said, None, typed);
+    student.keep(turn)
+}
+
+/// Whether each answer graded so far was right, in order.
+fn marks(student: &Student) -> Vec<bool> {
+    student
+        .records
+        .iter()
+        .filter_map(|record| match &record.input {
+            Input::Graded { correct, .. } => Some(*correct),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn a_spoken_number_that_sounds_like_the_right_one_is_asked_for_once_more() {
+    // «Dos» written «Doce»: the tutor asks for it again, and nothing is graded.
+    let mut student = at_an_answer_of_two();
+    let (at, marked) = (student.at(), marks(&student));
+    let turn = says_at_once(&mut student, "Doce", false);
+    assert_eq!(turn.converse, None, "{turn:?}");
+    assert_eq!(said_by_tutor(&turn), SAY_AGAIN);
+    assert_eq!((student.at(), marks(&student)), (at, marked.clone()));
+    assert!(matches!(&student.records.last().unwrap().input, Input::Chat { .. }));
+    // Said the same way again, it is the student's answer: graded as it was
+    // heard, and not asked for a third time.
+    for _ in 0..2 {
+        let turn = says_at_once(&mut student, "Doce", false);
+        assert_eq!(turn.converse, None, "{turn:?}");
+        assert_ne!(said_by_tutor(&turn), SAY_AGAIN);
+        let still = matches!(
+            student.engine.motor.esperando(),
+            Esperando::Respuesta { respuesta, .. } if respuesta == "2"
+        );
+        if !still {
+            break;
+        }
+    }
+    let after = marks(&student);
+    assert!(after.len() > marked.len() && after[marked.len()..].iter().all(|right| !right), "{after:?}");
+
+    // Heard right the second time, it is right.
+    let mut student = at_an_answer_of_two();
+    let marked = marks(&student);
+    let turn = says_at_once(&mut student, "es doce", false);
+    assert_eq!(said_by_tutor(&turn), SAY_AGAIN);
+    says_at_once(&mut student, "Dos.", false);
+    assert_eq!(marks(&student)[marked.len()..].to_vec(), vec![true]);
+
+    // A wrong number that sounds like no other is marked at once, and so is
+    // «doce» written in the answer box of the page.
+    for (said, typed) in [("cinco", false), ("doce", true)] {
+        let mut student = at_an_answer_of_two();
+        let marked = marks(&student);
+        let turn = says_at_once(&mut student, said, typed);
+        assert_ne!(said_by_tutor(&turn), SAY_AGAIN, "{said}");
+        assert_eq!(marks(&student)[marked.len()..].to_vec(), vec![false], "{said}");
+    }
+}
+
 #[test]
 fn what_is_not_an_answer_goes_where_the_engine_expects_it() {
     // In the screening there are no hints: asking for one gets the engine's fixed line.
