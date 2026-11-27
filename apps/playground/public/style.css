@@ -916,7 +916,7 @@ html[data-screen="p03"] main {
 
 /* Pregunta/Base 161:2101, centred, in the brand site's type (meetaule.com): the step
    is its eyebrow, in handwriting (Caveat 600, 22 px, copper); the title its large
-   serif statement (Source Serif 4 400, tight); the help under it in the serif. */
+   serif statement (Source Serif 4 400, tight). */
 .entry .question {
   justify-items: center;
   gap: 10px;
@@ -945,6 +945,55 @@ html[data-screen="p03"] main {
 .entry .question-help {
   font: 400 19px/1.4 var(--serif);
   text-wrap: balance;
+}
+
+.entry-heading {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+
+.entry-help-trigger {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.entry-help-trigger svg {
+  width: 20px;
+  height: 20px;
+}
+
+.entry-help-trigger:hover,
+.entry-help-trigger[aria-expanded="true"] {
+  color: var(--ink);
+}
+
+.entry-tooltip {
+  position: absolute;
+  z-index: 2;
+  top: 100%;
+  left: 50%;
+  width: max-content;
+  max-width: min(280px, calc(100vw - 48px));
+  margin: 0;
+  padding: 12px 16px;
+  border: 1px solid var(--entry-edge);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--ink);
+  font: 400 14px/1.5 var(--sans);
+  text-align: center;
+  transform: translateX(-50%);
 }
 
 /* The card: the ways in, 54 px each and 16 apart. */

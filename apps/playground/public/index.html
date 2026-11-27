@@ -48,8 +48,13 @@
           <div class="screen-body">
             <div class="question">
               <p class="question-step" id="entry-greeting">Te damos la bienvenida</p>
-              <h2 class="question-title" id="p01-title" tabindex="-1" data-entry="title">Entra a Aule</h2>
-              <p class="question-help" id="entry-help" data-entry="help">Entra o crea tu cuenta, sin contraseña.</p>
+              <div class="entry-heading">
+                <h2 class="question-title" id="p01-title" tabindex="-1" data-entry="title">Entra a Aule</h2>
+                <div class="entry-help-control" id="entry-help-control">
+                  <button class="entry-help-trigger" id="entry-help-trigger" type="button" aria-describedby="entry-help" aria-expanded="false" aria-controls="entry-help"><span class="sr-only" data-entry="help_label">Ayuda para entrar</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 11v6" /><circle cx="12" cy="7.5" r=".75" fill="currentColor" stroke="none" /></svg></button>
+                  <p class="entry-tooltip" id="entry-help" data-entry="help" role="tooltip" hidden>Entra o crea tu cuenta, sin contraseña.</p>
+                </div>
+              </div>
             </div>
             <!-- The card (D45, D46): the ways in, each a row of the same size, then the email field and its action. -->
             <div class="controls ways entry-card">
