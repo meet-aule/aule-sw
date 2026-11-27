@@ -114,8 +114,11 @@ const STATIC: Record<string, { file: string | URL; type: string }> = {
   "/cuy.js": { file: new URL("cuy.js", publicDir), type: "text/javascript; charset=utf-8" },
   "/pixels.js": { file: new URL("pixels.js", publicDir), type: "text/javascript; charset=utf-8" },
   "/style.css": { file: new URL("style.css", publicDir), type: "text/css; charset=utf-8" },
+  // Aule's logo at the head of the paper screens: its letters in brown and, for the entry's near-dark, in cream.
+  "/aule-logo.svg": { file: new URL("aule-logo.svg", publicDir), type: "image/svg+xml" },
+  "/aule-logo-dark.svg": { file: new URL("aule-logo-dark.svg", publicDir), type: "image/svg+xml" },
   "/icon.svg": { file: new URL("icon.svg", publicDir), type: "image/svg+xml" },
-  // The cuy with glasses for a phone's home screen and for launchers.
+  // The logo's cuy for a phone's home screen and for launchers.
   "/apple-touch-icon.png": { file: new URL("apple-touch-icon.png", publicDir), type: "image/png" },
   "/icon-192.png": { file: new URL("icon-192.png", publicDir), type: "image/png" },
   "/icon-512.png": { file: new URL("icon-512.png", publicDir), type: "image/png" },

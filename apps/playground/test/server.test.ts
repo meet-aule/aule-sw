@@ -120,6 +120,20 @@ test("the pictures of the old Andean page are gone, and the icons stay", async (
   }
 });
 
+test("Aule's logo is served, for paper and for the entry's near-dark, under the page's own policy", async () => {
+  for (const name of ["aule-logo.svg", "aule-logo-dark.svg", "icon.svg"]) {
+    const response = await fetch(`${base}/${name}`);
+    assert.equal(response.status, 200, name);
+    assert.equal(response.headers.get("content-type"), "image/svg+xml", name);
+    assert.equal(response.headers.get("x-content-type-options"), "nosniff", name);
+    assert.match(await response.text(), /^<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg" viewBox="0 0 \d+ \d+"/, name);
+  }
+  // The policy did not change for it: an image is the page's own or a data: address, as before.
+  const page = await fetch(`${base}/`);
+  assert.match(page.headers.get("content-security-policy") ?? "", /(^|; )img-src 'self' data:(;|$)/);
+  await page.arrayBuffer();
+});
+
 test("redirects the bare path and hides everything outside it", async () => {
   const bare = await fetch(base, { redirect: "manual" });
   assert.equal(bare.status, 308);

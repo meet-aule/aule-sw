@@ -52,6 +52,8 @@ const STATIC: Record<string, AssetSource> = {
   "/pilot.js": { file: new URL("pilot.js", publicDir), type: SCRIPT },
   "/signin.js": { file: new URL("signin.js", publicDir), type: SCRIPT },
   "/style.css": { file: new URL("style.css", publicDir), type: "text/css; charset=utf-8" },
+  // Aule's logo in every page's header, and its cuy alone for the tab: the playground's files, copied.
+  "/aule-logo.svg": { file: new URL("aule-logo.svg", publicDir), type: "image/svg+xml" },
   "/icon.svg": { file: new URL("icon.svg", publicDir), type: "image/svg+xml" },
   "/fonts/serif.woff2": { file: font("@fontsource-variable/source-serif-4", "source-serif-4-latin-wght-normal.woff2"), type: "font/woff2" },
   "/fonts/sans.woff2": { file: font("@fontsource-variable/inter", "inter-latin-wght-normal.woff2"), type: "font/woff2" },

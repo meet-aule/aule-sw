@@ -17,13 +17,20 @@ In a session, Aule's face is at the centre of the screen, on a stage, with one l
 The page's screens follow the Figma file «Login-Aule» v8, with the owner-requested usability adaptations documented in D42–D43: the parent's on paper (one entry with email and providers, the emailed code with a name only for a new account, the authorisation, the child's name and, if the family likes, their grade), then the child's in the device's black on white (the hand-off «¿Eres tú?», what today's session is for, the microphone before it, the session). [FIGMA.md](FIGMA.md) maps each screen, component, token and icon to the code, and says where the page differs from the file.
 
 Family screens and the guide use a subtle, static CSS paper texture (FIGMA.md
-D38), disabled for increased contrast, forced colours and printing. The PNG
-installation icons are losslessly compressed: their pixel data and transparency
-are preserved, and all four together weigh 4,274 bytes.
+D38), disabled for increased contrast, forced colours and printing.
+
+At the head of every paper screen and of the guide is Aule's logo, a hand-drawn
+cuy reading a notebook that stands for the «A» of «Aule»: one image named «Aule»
+(`public/aule-logo.svg`), 32 px tall, and 36 px (44 from 960 px wide) on the
+entry and its code step. Where those two are near-dark its letters are cream
+(`public/aule-logo-dark.svg`); everywhere else they are brown, on paper. The tab
+icon (`public/icon.svg`) and the installation icons (the four PNGs) are the
+logo's cuy alone. The logo is not Aule's face: that is still the pixel cuy.
+FIGMA.md D49.
 
 ### A child's first steps
 
-- **The road there.** New and returning families use the same entry, with the email field beside the configured providers. The code screen asks for the parent's name only after a valid code for a new account; the platform rechecks that code when creating the account. Consent and the child's profile stay separate, with both storage choices unticked. The shortest new-family path to the microphone check is 7 screens by email (formerly 9), 6 by Google (formerly 7); choosing a subject adds the same details screen as before. Optional interests and expectations remain on the home after the first session. The entry and its code step have a layout of their own: the title over one card of ways in and, from 960 px, the pixel cuy dancing in a panel beside it. They alone are near-dark where the system asks for dark, and on paper otherwise; the one switch is the `prefers-color-scheme` block of `public/style.css`. The card's ways in are rows of one size: Google's is the page's own with Google's button unseen over it, and GitHub, Apple and Facebook always show, as «Pronto» where the server does not have them yet. The eyebrow over the title is a line picked at random on each load from a pool (`ENTRY_LINES` in `public/signin.js` says when each holds; their words are with the page's others), some of them tied to the hour or the day by the visitor's clock; nothing about it is stored. FIGMA.md D34, D42, D45, D46, D47.
+- **The road there.** New and returning families use the same entry, with the email field beside the configured providers. The code screen asks for the parent's name only after a valid code for a new account; the platform rechecks that code when creating the account. Consent and the child's profile stay separate, with both storage choices unticked. The shortest new-family path to the microphone check is 7 screens by email (formerly 9), 6 by Google (formerly 7); choosing a subject adds the same details screen as before. Optional interests and expectations remain on the home after the first session. The entry and its code step have a layout of their own: the title over one card of ways in and, from 960 px, the pixel cuy dancing in a panel beside it. They alone are near-dark where the system asks for dark, and on paper otherwise; the one switch is the `prefers-color-scheme` block of `public/style.css`, which also says which logo they show. The card's ways in are rows of one size: Google's is the page's own with Google's button unseen over it, and GitHub, Apple and Facebook always show, as «Pronto» where the server does not have them yet. The eyebrow over the title is a line picked at random on each load from a pool (`ENTRY_LINES` in `public/signin.js` says when each holds; their words are with the page's others), some of them tied to the hour or the day by the visitor's clock; nothing about it is stored. FIGMA.md D34, D42, D45, D46, D47, D49.
 - **The hand-off.** «Empezar su primera sesión» hands the browser to the child: «Ahora le toca a {nombre}.», «¿Eres tú?» and the name, with «Sí, soy yo» and «No soy yo» (which opens Configurar for the name). It follows César's A02; FIGMA.md D25.
 - **The microphone check (A05).** A05 asks the browser for the microphone alone. A bar moves with its level, and once a voice has been heard the line beside Aule's face says «Te escucho.»; with no voice it gives one hint at a time, and a microphone the browser will not give is named (blocked, missing or busy) with «Intentar otra vez». «Probar el sonido» plays the chime Aule joins with. The level is worked out in the browser by an AnalyserNode that is not connected to anything: no sound leaves the device, is played back or kept. The check never holds back «Empezar la sesión». FIGMA.md D26.
 - **The camera, off until it is needed.** A05's camera starts off and the browser is asked for it only when it is turned on; there it only shows what it sees. A session never turns it on by itself, as it joins or as the tutor comes in. «Mostrar mi tarea» works in two steps: the camera turns on and the stage shows all of what it sees, on this device only, while the child points it at their work; «Listo» publishes that same camera (the browser is not asked twice) and asks the tutor to look, and the camera goes off 1.5 s after the picture; «Cancelar», or 30 seconds with nothing, turns it off. The keyboard goes to the line that says what to do, never to «Listo», and with hold to talk Space never presses the camera's buttons. No picture leaves the device until «Listo»; then one frame is used and none is stored. With a tutor that takes no pictures, the session's «Cámara» turns it on and off once the tutor is in. FIGMA.md D12, D31.
@@ -40,7 +47,8 @@ Back on the home, each student's row says what their last three sessions were: t
 
 Mobile examples with synthetic data: [shared entry](screenshots/entry.png) and
 [session summaries](screenshots/summaries.png). These are documentation images,
-not public assets served to families.
+not public assets served to families. Both were taken before the logo (FIGMA.md
+D49) and still show the wordmark as it was.
 
 ### Languages
 

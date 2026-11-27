@@ -52,6 +52,7 @@ test("every kind of answer carries the console's headers", async () => {
     ["the stylesheet", fetch(`${base}/style.css`), 200, "no-cache"],
     ["a font", fetch(`${base}/fonts/sans.woff2`), 200, "no-cache"],
     ["the icon", fetch(`${base}/icon.svg`), 200, "no-cache"],
+    ["the logo", fetch(`${base}/aule-logo.svg`), 200, "no-cache"],
     ["the health probe", fetch(`${base}/healthz`), 200, "no-store"],
     ["robots.txt", fetch(`${base}/robots.txt`), 200, "no-store"],
     ["the API's data", fetch(`${base}/api/families`, { headers: { Cookie: cookie } }), 200, "no-store"],
