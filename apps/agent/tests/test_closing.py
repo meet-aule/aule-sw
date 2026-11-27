@@ -1,6 +1,5 @@
 """The model's goodbyes in a session the engine runs (``closing``): which
-sentences close a session, what is said of a reply that has them, and when the
-goodbye is the model's to say."""
+sentences close a session, and what is said of a reply that has them."""
 
 import asyncio
 from types import SimpleNamespace
@@ -12,7 +11,7 @@ from livekit.agents import Agent, llm
 from aule_agent import closing
 from aule_agent.moderation import Action, Decision
 from aule_agent.replies import REPLIES
-from aule_agent.script import Line, Reply, reply_from
+from aule_agent.script import Line, Reply
 from aule_agent.tutor import Tutor, checked
 
 ALLOW = Decision(Action.ALLOW)
@@ -82,17 +81,6 @@ def test_what_closes_the_session_is_left_out_and_the_rest_is_kept(written, said)
 @pytest.mark.parametrize("written", GOES_ON)
 def test_a_reply_that_goes_on_is_not_touched(written):
     assert closing.without(written) is written
-
-
-def test_the_platform_says_when_the_engines_activity_is_over():
-    rules = {"lines": [], "converse": "The session has ended."}
-    assert reply_from({**rules, "over": True}) == Reply(
-        converse="The session has ended.", over=True
-    )
-    assert reply_from(rules).over is False
-    # Anything but a plain "yes" is "no", and alone it is nothing to say.
-    assert reply_from({**rules, "over": "yes"}).over is False
-    assert reply_from({"lines": [], "over": True}) is None
 
 
 # --- the reply on its way to the voice ---------------------------------------------
@@ -247,13 +235,3 @@ async def test_before_the_engine_has_said_anything_a_goodbye_gets_nothing():
     tutor = Tutor(language="es", gates=Gates(), engine=Engine())
 
     assert await reply(tutor, "¡Hasta pronto, Gonzalo!") == ""
-
-
-async def test_once_the_engines_activity_is_over_the_goodbye_is_said():
-    tutor, session = Tutor(language="es", gates=Gates(), engine=Engine()), Session()
-    with patch.object(Tutor, "session", new_callable=PropertyMock, return_value=session):
-        await tutor.scripted_lines(Reply(lines=(Line("Terminamos los ejercicios."),), over=True))
-
-    said = await reply(tutor, "Hoy trabajaste muy bien. ", "¡Hasta pronto, Gonzalo!")
-
-    assert said == "Hoy trabajaste muy bien. ¡Hasta pronto, Gonzalo!"
