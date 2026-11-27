@@ -557,6 +557,7 @@ fn what_is_not_an_answer_goes_where_the_engine_expects_it() {
     let rules = turn.converse.unwrap();
     assert!(rules.contains("screening") && rules.contains("Never give the current exercise"), "{rules}");
     assert!(rules.contains("do not judge it or say whether it is correct"), "{rules}");
+    assert!(rules.contains("Set no task of your own"), "{rules}");
     assert!(rules.contains("no help with solving is allowed"), "{rules}");
     assert!(!rules.contains("Mateo") && !rules.contains("3/8"), "{rules}");
     assert_eq!(student.at(), "tamizaje:1");

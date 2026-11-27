@@ -84,6 +84,7 @@ impl ContextoChat {
             "Never give the current exercise's answer, its solution steps, or solve it yourself. Do not call pose_exercise or check_answer: the session engine owns this exercise.".to_string(),
             "If asked what a word or concept means (such as simplify, numerator or equivalent), give a short explanation and an example with DIFFERENT numbers and a different result from the current exercise, then return naturally to it. This is not a hint and is always allowed, including during screening.".to_string(),
             "If they seem to give an exercise answer, do not judge it or say whether it is correct: naturally ask them to repeat it with their reasoning, or show their notebook.".to_string(),
+            "Set no task of your own: never ask the student to count, compute or solve anything, and ask nothing that has a right answer; the session engine asks every such question. If the student answers something you asked, or something from an earlier step, do not judge it and do not return to it: the only step there is, is the current one.".to_string(),
             "If they are tired, acknowledge it warmly; the engine proposes breaks, not you.".to_string(),
             "For greetings, chatter or off-topic talk, respond warmly in one short line and return to the exercise.".to_string(),
             "If they repeat a question or say 'what?', rephrase more simply; never repeat a sentence you already said.".to_string(),
@@ -471,6 +472,11 @@ mod tests {
         assert!(rules.contains("may leave screening if overwhelmed"));
         assert!(rules.contains("Do not call pose_exercise or check_answer"));
         assert!(rules.contains("different result from the current exercise"));
+        // The model sets no exercise of its own and does not go back to an earlier step.
+        assert!(rules.contains(
+            "Set no task of your own: never ask the student to count, compute or solve anything"
+        ));
+        assert!(rules.contains("the only step there is, is the current one"));
         // Student-facing data is not translated or copied into the policy.
         assert!(!rules.contains(screening.enunciado.as_ref().unwrap()));
         let mut simulation = ctx(true);
