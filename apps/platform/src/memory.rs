@@ -281,7 +281,14 @@ pub async fn forget(
         .filter(memory::Column::ChildId.eq(child_id))
         .exec(db)
         .await?;
-    Ok(deleted.rows_affected > 0)
+    if deleted.rows_affected == 0 {
+        return Ok(false);
+    }
+    // The plan written ahead for the next session may have it in it. One
+    // being written at this moment is not found here, and is never used: its
+    // key names the memories it was made from, and they are no longer these.
+    crate::ahead::forget(db, child_id).await?;
+    Ok(true)
 }
 
 #[cfg(test)]

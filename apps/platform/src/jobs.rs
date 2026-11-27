@@ -15,6 +15,8 @@ use crate::state::AppState;
 use crate::{events, sessions};
 
 pub const REVIEW_SESSION: &str = "review_session";
+/// Queued by a review: the plan for the child's next session (see `ahead`).
+pub const PLAN_AHEAD: &str = "plan_ahead";
 const MAX_ATTEMPTS: i32 = 5;
 /// Hours a transcript survives a session whose review keeps failing, when the
 /// guardian did not agree to keep transcripts.
@@ -62,19 +64,21 @@ async fn claim(db: &DatabaseConnection) -> Result<Option<(i64, String, Value, i3
 }
 
 async fn run(state: &AppState, kind: &str, payload: &Value) -> Result<(), String> {
-    match kind {
-        REVIEW_SESSION => {
-            let session_id: Uuid = payload["session_id"]
-                .as_str()
-                .and_then(|id| id.parse().ok())
-                .ok_or_else(|| "review_session needs session_id".to_string())?;
-            sessions::review_session(state, session_id).await.map_err(|error| match error {
-                crate::error::ApiError::Internal(detail) => detail,
-                other => other.to_string(),
-            })
-        }
-        other => Err(format!("unknown job kind {other}")),
-    }
+    let session_id = || -> Result<Uuid, String> {
+        payload["session_id"]
+            .as_str()
+            .and_then(|id| id.parse().ok())
+            .ok_or_else(|| format!("{kind} needs session_id"))
+    };
+    let done = match kind {
+        REVIEW_SESSION => sessions::review_session(state, session_id()?).await,
+        PLAN_AHEAD => sessions::plan_ahead(state, session_id()?).await,
+        other => return Err(format!("unknown job kind {other}")),
+    };
+    done.map_err(|error| match error {
+        crate::error::ApiError::Internal(detail) => detail,
+        other => other.to_string(),
+    })
 }
 
 /// Runs one job if one is due. Returns whether there was one.

@@ -8,7 +8,7 @@ use axum::Json;
 use axum::extract::rejection::QueryRejection;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
-use chrono::{Duration, Timelike, Utc};
+use chrono::{DateTime, Duration, Timelike, Utc};
 use rand::Rng;
 use sea_orm::ActiveValue::Set;
 use sea_orm::sea_query::{Expr, OnConflict};
@@ -29,8 +29,8 @@ use crate::error::{ApiError, ApiResult};
 use crate::families::{Child, child_for, current_consent, find_child};
 use crate::livekit::{NewRoom, RoomToken, room_token};
 use crate::state::AppState;
-use crate::supervisor::{self, Brief, PlanInputs, Turn};
-use crate::{engine, events, jobs, learning, llm, memory};
+use crate::supervisor::{self, Brief, ChildContext, PlanInputs, Turn};
+use crate::{ahead, engine, events, jobs, learning, llm, memory};
 
 pub const AUDIENCES: [&str; 2] = ["child", "operator"];
 
@@ -323,17 +323,39 @@ pub async fn open_session(
     }))
 }
 
-async fn prepare_brief(state: &AppState, session_id: Uuid, child: &Child, use_memory: bool) -> ApiResult<()> {
-    let now = Utc::now();
+/// What a session's plan is made from, as read for one child.
+struct Planning {
+    child: ChildContext,
+    candidates: Vec<learning::Candidate>,
+    memories: Vec<memory::Memory>,
+    last_next_step: Option<String>,
+    objective: Option<Value>,
+    minutes: u32,
+}
+
+impl Planning {
+    fn inputs(&self) -> PlanInputs<'_> {
+        PlanInputs {
+            child: &self.child,
+            candidates: &self.candidates,
+            memories: &self.memories,
+            last_next_step: self.last_next_step.as_deref(),
+            objective: self.objective.as_ref(),
+            minutes: self.minutes,
+        }
+    }
+}
+
+/// Reads what the plan of a session with this objective is made from.
+async fn planning_for(
+    state: &AppState,
+    child: &Child,
+    objective: Option<Value>,
+    use_memory: bool,
+    now: DateTime<Utc>,
+) -> ApiResult<Planning> {
     let trace = learning::trace_child(&state.db, child.id, now).await?;
     let catalog = learning::catalog(&state.db).await?;
-    let objective: Option<Value> = session_row::Entity::find_by_id(session_id)
-        .select_only()
-        .column(session_row::Column::Objective)
-        .into_tuple::<Option<Value>>()
-        .one(&state.db)
-        .await?
-        .flatten();
     // What the family asked for comes first; the learner model's own choices follow.
     let topic = objective.as_ref().and_then(|objective| objective["topic"].as_str()).unwrap_or_default();
     let mut candidates = learning::asked(&trace.skills, &catalog, child.grade.as_deref(), topic);
@@ -365,25 +387,55 @@ async fn prepare_brief(state: &AppState, session_id: Uuid, child: &Child, use_me
             .await?
             .flatten()
     };
+    Ok(Planning {
+        child: child.context(now),
+        candidates,
+        memories,
+        last_next_step,
+        objective,
+        minutes: state.config.session_minutes,
+    })
+}
 
-    let brief = match &state.llm {
-        Some(llm) => {
-            let inputs = PlanInputs {
-                child: &child.context(now),
-                candidates: &candidates,
-                memories: &memories,
-                last_next_step: last_next_step.as_deref(),
-                objective: objective.as_ref(),
-                minutes: state.config.session_minutes,
-            };
-            llm::SESSION.scope(session_id, supervisor::plan(llm.as_ref(), &inputs)).await.unwrap_or_else(
-                |error| {
-                    tracing::warn!(%session_id, %error, "planning fell back to the learner model");
-                    supervisor::fallback_brief(&candidates)
-                },
-            )
+/// The plan for what was read: the supervisor's or, without a supervisor or
+/// when it fails, the learner model's own first choices. Says whether the
+/// supervisor wrote it. Its cost is counted with the session given.
+async fn plan_from(state: &AppState, session_id: Uuid, planning: &Planning) -> (Brief, bool) {
+    let Some(llm) = &state.llm else {
+        return (supervisor::fallback_brief(&planning.candidates), false);
+    };
+    let inputs = planning.inputs();
+    match llm::SESSION.scope(session_id, supervisor::plan(llm.as_ref(), &inputs)).await {
+        Ok(brief) => (brief, true),
+        Err(error) => {
+            tracing::warn!(%session_id, %error, "planning fell back to the learner model");
+            (supervisor::fallback_brief(&planning.candidates), false)
         }
-        None => supervisor::fallback_brief(&candidates),
+    }
+}
+
+/// What the family said the session is for, if it did.
+async fn objective_of(db: &DatabaseConnection, session_id: Uuid) -> Result<Option<Value>, DbErr> {
+    Ok(session_row::Entity::find_by_id(session_id)
+        .select_only()
+        .column(session_row::Column::Objective)
+        .into_tuple::<Option<Value>>()
+        .one(db)
+        .await?
+        .flatten())
+}
+
+/// Gives a session its plan: the one written ahead after the child's last
+/// review, when it answers the question this session would ask; otherwise one
+/// written now, which the tutor gets once it is done.
+async fn prepare_brief(state: &AppState, session_id: Uuid, child: &Child, use_memory: bool) -> ApiResult<()> {
+    let now = Utc::now();
+    let objective = objective_of(&state.db, session_id).await?;
+    let planning = planning_for(state, child, objective, use_memory, now).await?;
+    let key = planning.inputs().key();
+    let brief = match ahead::find(&state.db, child.id, &key, now).await? {
+        Some(brief) => brief,
+        None => plan_from(state, session_id, &planning).await.0,
     };
     let brief = serde_json::to_value(&brief).map_err(|error| ApiError::Internal(error.to_string()))?;
     session_brief::Entity::insert(session_brief::ActiveModel {
@@ -394,6 +446,42 @@ async fn prepare_brief(state: &AppState, session_id: Uuid, child: &Child, use_me
     .on_conflict_do_nothing()
     .exec_without_returning(&state.db)
     .await?;
+    Ok(())
+}
+
+/// The job after a review: writes the plan for the child's next session now,
+/// while nobody waits for it, and keeps it (see `ahead`). It plans for what
+/// the family asked this time, the likeliest thing to be asked again; a
+/// session that asks for something else has its plan written at its start.
+pub async fn plan_ahead(state: &AppState, session_id: Uuid) -> ApiResult<()> {
+    // Only the supervisor's plans are kept: the learner model's own choices
+    // take no time to make again.
+    if state.llm.is_none() {
+        return Ok(());
+    }
+    let Some(session) = session_row::Entity::find_by_id(session_id).one(&state.db).await? else {
+        return Ok(());
+    };
+    let Some(child_id) = session.child_id else { return Ok(()) };
+    let child = match find_child(&state.db, child_id).await {
+        Ok(child) => child,
+        // Erased since the review.
+        Err(ApiError::NotFound(_)) => return Ok(()),
+        Err(error) => return Err(error),
+    };
+    // Without consent for voice there is no next session to plan.
+    let consent = current_consent(&state.db, child.id).await?;
+    if !consent["voice"] {
+        return Ok(());
+    }
+    let use_memory = consent["memory"];
+    let now = Utc::now();
+    let planning = planning_for(state, &child, session.objective, use_memory, now).await?;
+    let key = planning.inputs().key();
+    let (brief, written) = plan_from(state, session_id, &planning).await;
+    if written {
+        ahead::keep(&state.db, child.id, session_id, key, brief, use_memory, now).await?;
+    }
     Ok(())
 }
 
@@ -1036,6 +1124,9 @@ pub async fn review_session(state: &AppState, session_id: Uuid) -> ApiResult<()>
         .await?;
     }
     let mut family_told = false;
+    // Whether the supervisor reviewed the session: then it has something new
+    // to plan the next one from.
+    let mut reviewed = false;
 
     let turns = load_turns(&state.db, session.id).await?;
     let child_spoke = turns.iter().any(|turn| turn.role == "child");
@@ -1130,6 +1221,7 @@ pub async fn review_session(state: &AppState, session_id: Uuid) -> ApiResult<()>
         let data = json!({ "session_id": session.id, "child_id": child_id, "flags": review.flags });
         events::publish(&state.db, events::SESSION_REVIEWED, session.id, data).await?;
         family_told = true;
+        reviewed = true;
     }
     // Without a supervisor the engine's report still reaches the family.
     if let (false, Some(_), Some(child_id)) = (family_told, &engine_report, session.child_id) {
@@ -1148,11 +1240,18 @@ pub async fn review_session(state: &AppState, session_id: Uuid) -> ApiResult<()>
         ))
         .await?;
     engine::delete_inputs_after_review(&state.db, session.id).await?;
+    // The plan for the next session is written ahead, as a job of its own so
+    // that the family's notice does not wait for it.
+    let txn = state.db.begin().await?;
     session_row::Entity::update_many()
         .col_expr(session_row::Column::ReviewedAt, Expr::current_timestamp())
         .filter(session_row::Column::Id.eq(session.id))
-        .exec(&state.db)
+        .exec(&txn)
         .await?;
+    if reviewed {
+        jobs::enqueue(&txn, jobs::PLAN_AHEAD, &json!({ "session_id": session.id })).await?;
+    }
+    txn.commit().await?;
     Ok(())
 }
 

@@ -46,9 +46,9 @@ Three things decide what happens in a session, and only one of them is in the co
 
 | When | What it does | Cost to the conversation |
 |---|---|---|
-| Before | Writes a brief from the learner model's candidates, the child's profile and their memories: what to work on, how to start, what to keep in mind | None: it runs while the person connects, and the tutor starts from the learner model's own choices if the brief is late |
-| During | Reads each turn after it happened, with the memories closest to what the child just said, and may write guidance for the tutor's next turns | None: the agent reports turns in the background and never waits. Guidance arrives one turn late by design |
-| After | Reviews the session into evidence for the learner model, memories, a note for the guardian and fixed-category flags | None: it is a job in the worker |
+| Before | Writes a brief from the learner model's candidates, the child's profile and their memories: what to work on, how to start, what to keep in mind | None: it is written ahead, right after the review of the session before, and a session that asks for the same takes it. Otherwise it is written while the person connects, and the tutor starts with the child's profile and gets the brief with its first turns |
+| During | Reads each turn after it happened, with the memories closest to what the child just said, and may write guidance for the tutor's next turns. Not in a session the engine runs, where the engine decides the tutor's next step | None: the agent reports turns in the background and never waits. Guidance arrives one turn late by design |
+| After | Reviews the session into evidence for the learner model, memories, a note for the guardian and fixed-category flags, and then writes the brief for the child's next session | None: both are jobs in the worker |
 
 Everything the supervisor returns is validated and cut to size before it is used, a skill it invents is dropped from a plan, and the conversation reaches it as data, never as instructions.
 
