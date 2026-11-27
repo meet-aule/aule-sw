@@ -1,4 +1,4 @@
-// Aule's face: a cuy with round glasses, as on Aule's icon, for the wobnimo
+// Aule's face: a cuy with round glasses, as on Aule's first icon, for the wobnimo
 // mascot the page already runs. A character is plain data: the engine makes
 // it breathe, blink, talk and act out what the tutor is doing. Checked and
 // drawn with `npx wobnimo check` and `npx wobnimo preview`.
