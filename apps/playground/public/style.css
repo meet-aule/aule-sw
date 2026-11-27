@@ -54,6 +54,7 @@
   /* Opción/Grande · Foco 160:1384's ring in color/acento, solid: the Figma's 40 % is
      1.73:1 on the paper, under the 3:1 a focus indicator needs (4.80:1 solid). */
   --focus: #9a5b2e;
+  --fibre: 154 91 46; /* the paper's fibres (D38): the accent's red, green and blue */
   /* Figma «Aparato — e-ink» (VariableCollectionId:90:691), mode Papel: the student's screens. */
   --device-ink: #000000; /* nivel/negro VariableID:162:427 */
   --device-paper: #ffffff; /* nivel/blanco VariableID:162:430 */
@@ -99,8 +100,8 @@ body {
   background: var(--bg);
   /* Static paper fibres in CSS, with no image or filter to load (D38). */
   background-image:
-    repeating-linear-gradient(0deg, rgb(154 91 46 / 0.02) 0 1px, transparent 1px 4px),
-    repeating-linear-gradient(90deg, rgb(154 91 46 / 0.015) 0 1px, transparent 1px 6px);
+    repeating-linear-gradient(0deg, rgb(var(--fibre) / 0.02) 0 1px, transparent 1px 4px),
+    repeating-linear-gradient(90deg, rgb(var(--fibre) / 0.015) 0 1px, transparent 1px 6px);
   color: var(--ink);
   font: 400 16px/1.5 var(--sans);
   -webkit-font-smoothing: antialiased;
