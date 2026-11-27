@@ -28,6 +28,8 @@ const ENTRY_WORDS = {
     help: "Entra o crea tu cuenta, sin contraseña.",
     or: "o",
     email: "Tu correo",
+    email_required: "Escribe tu correo electrónico.",
+    email_invalid: "Revisa el correo: no parece una dirección válida.",
     send: "Enviarme un código",
     name: "Tu nombre",
     name_error: "Escribe tu nombre para crear tu cuenta.",
@@ -44,6 +46,8 @@ const ENTRY_WORDS = {
     help: "Sign in or create your account, without a password.",
     or: "or",
     email: "Your email",
+    email_required: "An email address is required.",
+    email_invalid: "Check the email: it does not look like a valid address.",
     send: "Send me a code",
     name: "Your name",
     name_error: "Enter your name to create your account.",
@@ -235,8 +239,10 @@ function entered(account) {
 
 // --- The email field on the entry --------------------------------------------
 
-function emailError(on) {
+/** The line under the email field: `words` names what it says, that an address is needed or that this is not one. */
+function emailError(on, words = "email_invalid") {
   $("email-address").setAttribute("aria-invalid", String(on));
+  if (on) $("email-error").textContent = entryText(words);
   $("email-error").hidden = !on;
   if (on) $("email-address").focus();
 }
@@ -255,9 +261,11 @@ $("email-name").addEventListener("input", () => {
   if ($("email-name").getAttribute("aria-invalid") === "true") nameError(false);
 });
 
-$("email-start").addEventListener("submit", async (event) => {
+/** «Enviarme un código»: an address that is missing or is not one is said under the field and nothing is sent; else the code goes out and P03 shows. */
+async function startEmail(event) {
   event.preventDefault();
   const address = $("email-address").value.trim();
+  if (!address) return emailError(true, "email_required");
   if (!EMAIL.test(address) || address.length > 254) return emailError(true);
   emailError(false);
   say("");
@@ -274,7 +282,9 @@ $("email-start").addEventListener("submit", async (event) => {
   emailAddress = address;
   clearCode();
   go("p03");
-});
+}
+
+$("email-start").addEventListener("submit", startEmail);
 
 // --- P03 Código: six boxes over one field ---------------------------------------
 

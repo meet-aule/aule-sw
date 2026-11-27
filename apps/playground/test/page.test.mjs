@@ -722,6 +722,24 @@ test("the entry's near-dark palette is the entry's alone, behind one switch (D45
   assert.match(root, /--fibre: 154 91 46;/);
 });
 
+test("an email that is missing or is not one is said under the field: a red edge, a ringed «!» and the words, in both languages (D45)", () => {
+  const entry = html.slice(html.indexOf('data-screen="p01"'), html.indexOf('data-screen="p03"'));
+  assert.match(entry, /<input id="email-address"[^>]*aria-describedby="email-error" \/>\s*<p class="field-error" id="email-error" role="alert" hidden>/);
+  const signin = scripts["signin.js"];
+  // In both languages, as the entry's other words are.
+  assert.match(signin, /email_required: "Escribe tu correo electrónico\."/);
+  assert.match(signin, /email_required: "An email address is required\."/);
+  assert.match(signin, /email_invalid: "Revisa el correo: no parece una dirección válida\."/);
+  assert.match(signin, /email_invalid: "Check the email: it does not look like a valid address\."/);
+  // A 1 px edge in the error's colour, and the line under it: a ringed «!» and the words from the left.
+  const rule = (selector) => rules(css).find(([found]) => found.split("\n").pop().trim() === selector)?.[1] ?? "";
+  assert.match(rule('.entry-card .field [aria-invalid="true"]'), /border-color: var\(--danger\);/);
+  assert.match(rule(".entry-card .field input"), /border: 1px solid transparent;/);
+  assert.match(rule(".entry-card .field-error"), /display: flex;[^}]*font: 400 15px\/20px var\(--sans\);[^}]*text-align: left;/);
+  assert.match(rule(".entry-card .field-error::before"), /border: 1\.5px solid currentColor;\s*border-radius: 50%;/);
+  assert.match(rule(".entry-card .field-error::before"), /content: "!" \/ "";/);
+});
+
 test("a02 hands the browser to the child: first-steps.js's words in the child's language, the name as the parent wrote it", () => {
   const home = scripts["home.js"];
   const a02 = html.slice(html.indexOf('data-screen="a02"'), html.indexOf('data-screen="a04"'));
