@@ -1026,6 +1026,31 @@ def test_in_engine_sessions_each_reply_has_its_turns_rules_and_the_prefix_stays(
     assert answered == 16 and pairs == 12, (answered, pairs)
 
 
+@pytest.mark.parametrize("placement", list(PLACEMENTS))
+def test_in_engine_sessions_the_model_reads_what_the_engine_said_where_it_was_said(
+    engine_sessions, placement
+):
+    # The engine answers the second turn with a line of its own, said in the
+    # hook, after LiveKit copied the turn's context. The model, asked again in
+    # the third and fourth turns, must have that line in the conversation,
+    # after the words it answered: without it the model answers the student's
+    # next words as if the engine had never spoken.
+    line = "Pregunta 2."
+    for world in engine_sessions[placement]:
+        streamed = [call.kwargs for call in world.model_calls if call.kwargs["stream"]]
+        after = [
+            json.dumps(request["messages"], ensure_ascii=False)
+            for request in streamed
+            if words_of(3) in _last_user(request)[0] or words_of(4) in _last_user(request)[0]
+        ]
+        # The third turn's two steps (a tool, then its reply) and the fourth's one.
+        assert len(after) == 3, (world.seed, len(after))
+        for conversation in after:
+            assert conversation.count(line) == 1, world.seed
+            assert conversation.index(words_of(2)) < conversation.index(line), world.seed
+            assert conversation.index(line) < conversation.index(words_of(3)), world.seed
+
+
 # Homework sessions without the talk button: the engine opens asking for a
 # photo of the homework and the child shows it with the button, a 1280 x 720
 # frame. In one the platform takes what it showed; in the other the platform
