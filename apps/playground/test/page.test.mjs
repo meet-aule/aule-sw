@@ -808,7 +808,7 @@ test("an email that is missing or is not one is said under the field: a red edge
   const signin = scripts["signin.js"];
   // In both languages, as the entry's other words are.
   assert.match(signin, /email_required: "Escribe tu correo electrónico\."/);
-  assert.match(signin, /email_required: "An email address is required\."/);
+  assert.match(signin, /email_required: "Enter your email address\."/);
   assert.match(signin, /email_invalid: "Revisa el correo: no parece una dirección válida\."/);
   assert.match(signin, /email_invalid: "Check the email: it does not look like a valid address\."/);
   // A 1 px edge in the error's colour, and the line under it: a ringed «!» and the words from the left.

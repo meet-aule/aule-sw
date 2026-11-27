@@ -87,7 +87,7 @@ const ENTRY_WORDS = {
     or: "or",
     email: "Your email",
     email_placeholder: "name@email.com",
-    email_required: "An email address is required.",
+    email_required: "Enter your email address.",
     email_invalid: "Check the email: it does not look like a valid address.",
     send: "Send me a code",
     privacy_lead: "By continuing, you confirm that you are familiar with",
@@ -151,9 +151,9 @@ const ENTRY_LINES = [
   // General, for anyone.
   { es: "Te damos la bienvenida", en: "Welcome" },
   { es: "Pasa, que hay tarea", en: "Come in, there's homework" },
-  { es: "Lápiz, cuaderno y ganas", en: "Pencil, notebook and a will" },
+  { es: "Lápiz, cuaderno y ganas", en: "Pencil, notebook and the will to try" },
   { es: "Sin apuro, paso a paso", en: "No rush, step by step" },
-  { es: "Hoy sí sale ese ejercicio", en: "Today that exercise gives in" },
+  { es: "Hoy sí sale ese ejercicio", en: "Today that exercise works out" },
   // General, for a browser that has signed in before.
   { es: "¡Qué bueno que estés de vuelta!", en: "Good to see you back!", who: "returning" },
   { es: "Otra vez por aquí. Bien.", en: "Here again. Good.", who: "returning" },
