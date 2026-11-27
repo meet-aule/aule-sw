@@ -167,16 +167,21 @@ Output language: English, for the tutor. Keep schema keys, enums and skill IDs u
 
     /// Tells one question for a plan from any other: with the same key, the
     /// supervisor would be asked the same thing in the same words, but for
-    /// the learner model's numbers and the order they put the skills in.
-    /// Those move a little every day while the skills and the reasons for
-    /// them stay, so a plan written for one such question answers the other
-    /// (see `ahead`).
+    /// the learner model's numbers and the order of what it reads. The
+    /// numbers move a little every day, and the order of the skills with
+    /// them, while the skills and the reasons for them stay; memories made in
+    /// one review have no order of their own. So a plan written for one such
+    /// question answers the other (see `ahead`).
     pub fn key(&self) -> String {
         let mut skills: Vec<_> =
             self.candidates.iter().map(|candidate| (&candidate.skill_id, candidate.reason)).collect();
         skills.sort_by_key(|skill| skill.0);
+        let mut memories: Vec<_> =
+            self.memories.iter().map(|memory| (&memory.kind, &memory.content)).collect();
+        memories.sort();
         let mut asked = self.asked();
         asked["candidates"] = json!(skills);
+        asked["memories"] = json!(memories);
         hex::encode(Sha256::digest(format!("{}\n{asked}", self.system()).as_bytes()))
     }
 }
@@ -660,25 +665,41 @@ pub mod tests {
             PlanInputs { candidates: &drifted, ..base }.key()
         );
 
+        // Nor does the order of the memories count: those of one review have none.
+        let memory = |kind: &str, content: &str| Memory {
+            id: uuid::Uuid::nil(),
+            kind: kind.into(),
+            content: content.into(),
+            created_at: chrono::Utc::now(),
+        };
+        let both = [
+            memory("preference", "Likes football examples."),
+            memory("struggle", "Forgets the denominator."),
+        ];
+        let swapped = [
+            memory("struggle", "Forgets the denominator."),
+            memory("preference", "Likes football examples."),
+        ];
+        assert_eq!(
+            PlanInputs { memories: &both, ..base }.key(),
+            PlanInputs { memories: &swapped, ..base }.key()
+        );
+
         // Anything else the supervisor reads makes it another question.
         let no_longer_due = [candidate("fractions.add", Reason::InProgress)];
         let another_skill = [candidate("fractions.compare", Reason::ReviewDue)];
         let older = ChildContext { language: "es".into(), grade: Some("P5".into()), ..Default::default() };
         let homework =
             json!({ "kind": "homework", "subject": "matematica", "topic": "fracciones", "due": null });
-        let memories = [Memory {
-            id: uuid::Uuid::nil(),
-            kind: "preference".into(),
-            content: "Likes football examples.".into(),
-            created_at: chrono::Utc::now(),
-        }];
+        let one = [memory("preference", "Likes football examples.")];
         let others = [
             PlanInputs { candidates: &no_longer_due, ..base },
             PlanInputs { candidates: &another_skill, ..base },
             PlanInputs { candidates: &[], ..base },
             PlanInputs { child: &older, ..base },
             PlanInputs { objective: Some(&homework), ..base },
-            PlanInputs { memories: &memories, ..base },
+            PlanInputs { memories: &one, ..base },
+            PlanInputs { memories: &both, ..base },
             PlanInputs { last_next_step: None, ..base },
             PlanInputs { minutes: 20, ..base },
         ];
