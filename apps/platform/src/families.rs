@@ -679,6 +679,8 @@ pub async fn record_consent(
                     .exec(&txn)
                     .await?;
                 memory::Entity::delete_many().filter(memory::Column::ChildId.eq(child_id)).exec(&txn).await?;
+                // The plan written ahead for the next session may have them in it.
+                crate::ahead::forget(&txn, child_id).await?;
             }
             "transcripts" => {
                 session::Entity::update_many()

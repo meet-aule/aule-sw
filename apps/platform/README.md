@@ -19,11 +19,12 @@ aule-platform version   # which build this is (also --version); needs no setting
 | `learning` | The skill model (`skill_model`, pure), the history it is replayed from, calibrated question difficulty, the candidates for the next session |
 | `memory` | Statements about a child with pgvector embeddings; recall by meaning, or by date without an embedding model |
 | `supervisor` | The brief before a session, guidance during it, the review after it |
+| `ahead` | The plan for a child's next session, written right after a review and kept until a session asks the same question ([below](#the-plan-written-ahead)) |
 | `families`, `signin` | Families, guardians, children, append-only consent; sign-in by emailed code |
 | `passkeys` | The team console's passkeys, checked with webauthn-rs: the ceremonies in progress, a team member adding, listing and deleting their own, and signing in with one |
 | `devices` | Registration, claim codes, signed check-in and sessions, firmware |
 | `events`, `notices`, `push` | The outbox and its delivery; what families are told; pushes through Firebase Cloud Messaging |
-| `sessions` | Starting a session (its room and the token to join it), the agent's API for one session, the review job |
+| `sessions` | Starting a session (its room and the token to join it), the agent's API for one session, the review job and the job that plans the next session |
 | `engine` | A session run by the session engine (`engine/`): what the student said becomes the engine's inputs, what the engine answers becomes lines for the tutor and steps for the page |
 | `jobs` | The Postgres job queue and the housekeeping |
 | `llm`, `livekit`, `mail`, `auth`, `config`, `error` | Claude with a forced structured answer, rooms opened through LiveKit's server API and the tokens to join them, the two kinds of caller, settings, the error shape |
@@ -206,7 +207,7 @@ delete their rows in `team_passkeys`.
 
 | Route | What it does |
 |---|---|
-| `GET /v1/agent/session` | Marks the session as running; returns the student's profile as `instructions`, with the plan when it is already written, `student_name` and `session_number` (how many sessions the student had started before this one) for written lines, `student_age` (from the year of birth) and `student_grade` for the physical-safety gate, which judges for the child's age, and `tutor` (`name`, `persona`, `note`): how the tutor presents itself to this child. The same three travel in the dispatch metadata as `tutor_name`, `tutor_persona`, `tutor_persona_note`, with the agent's token as `platform_token`; the platform hands that metadata to LiveKit when it opens the room, and LiveKit gives it to the agent's job only. In a session the engine runs it also starts the engine and returns `script`: its opening lines. Optional `?homework=` (0 to 2): what the agent can do with a photo of the homework; see [below](#a-photo-of-the-homework) |
+| `GET /v1/agent/session` | Marks the session as running; returns the student's profile as `instructions`, with the plan when it is already written (it is when it was [written ahead](#the-plan-written-ahead)), `student_name` and `session_number` (how many sessions the student had started before this one) for written lines, `student_age` (from the year of birth) and `student_grade` for the physical-safety gate, which judges for the child's age, and `tutor` (`name`, `persona`, `note`): how the tutor presents itself to this child. The same three travel in the dispatch metadata as `tutor_name`, `tutor_persona`, `tutor_persona_note`, with the agent's token as `platform_token`; the platform hands that metadata to LiveKit when it opens the room, and LiveKit gives it to the agent's job only. In a session the engine runs it also starts the engine and returns `script`: its opening lines. Optional `?homework=` (0 to 2): what the agent can do with a photo of the homework; see [below](#a-photo-of-the-homework) |
 | `POST /v1/agent/session/turns` | Reports turns; returns guidance written since the last call, and `plan` (text for the tutor, or null) when the plan was finished after the tutor started. `stop` is `"warn"` after 2 turns in a row in which the student is plainly not working, `"end"` after 4: the tutor says a fixed line for each, once, and on `"end"` closes the session with `end_reason: "not_working"`. The family gets a notice when the close is asked for. `pause` is `"offer"` when a break is due: `AULE_BREAK_EVERY_MINUTES` of work have passed (default 30) or the supervisor read tiredness, no exercise is open and more than 10 minutes remain; the request's optional `breaks_taken` tells the platform a break happened, and an offer not taken in 2 minutes counts as declined. In a session the engine runs, `guidance` stays empty, `pause` stays null (the engine gives its own breaks), and `script` is present when an answer was typed on the page since the last report |
 | `POST /v1/agent/session/said` | Only in a session the engine runs: what the student said, and what the tutor does next. See [below](#sessions-run-by-the-session-engine) |
 | `POST /v1/agent/session/homework` | Only while the engine waits for a photo of the homework: what the agent read in it. See [below](#a-photo-of-the-homework) |
@@ -307,6 +308,16 @@ To refit the learner model's parameters from a log of answers:
 ```bash
 cargo run --release --example skill_model_eval -- answers.tsv
 ```
+
+## The plan written ahead
+
+The supervisor takes several seconds to write a session's plan, and the tutor does not wait for it: it greets with the student's profile and gets the plan with the answer to its first turns. So that the plan is there from the first word, it is written ahead.
+
+- **When:** the review of a session queues a second job, `plan_ahead`. It writes the plan for the child's next session, for what the family asked this time, and keeps it with the review (`session_reviews.next_brief`). One plan is kept for a child: the one that follows the latest review.
+- **Which session takes it:** a kept plan answers one question and carries its key, a hash of the supervisor's instructions and of all it reads to plan: the student, the objective, the skills the learner model offers and the reason for each, the memories and the step the last review suggested. A session that would ask the same question takes the plan, within the first moments of its start, and the supervisor is not asked. The learner model's probabilities and the order they put the skills in are left out of the key: they move a little every day while the question stays.
+- **Otherwise** the plan is written at the session's start, as it always was. That happens when the family asks for something else, when a review has become due or the learner model offers other skills, when the profile or the memories changed, when the plan has waited 7 days, and at a child's first session.
+- **Consent:** a plan written with the child's memories is kept only if the guardian still agrees to them when it is stored. Taking that consent back, or deleting one memory, deletes the kept plan. None is written for a child without consent for voice.
+- **Cost:** one plan more for each reviewed session, counted with that session; the session that takes it asks for none. Only the supervisor's plans are kept: without a supervisor nothing is.
 
 ## Checked exercises
 
@@ -459,6 +470,10 @@ Only skills present in the platform's catalog are recorded.
 
 When the session is reviewed, the family's summary (`session_reviews.guardian_summary`, and the notice made from it) is the engine's report, word for word. The supervisor's review still records its next step and flags, not its own summary. A session that ended before anything happened has no engine report and is summarized by the supervisor as before.
 
+Migration 0023 adds nullable `session_reviews.next_brief`, the plan for the
+child's next session ([written ahead](#the-plan-written-ahead)): its key, the
+plan and when it was written. Reviews from before keep null.
+
 Migration 0022 adds `team_passkeys`, the passkeys the team signs in to its
 console with: for each one, the team member's guardian account (it is erased
 with it), the credential id, the public key with its counter and flags as
@@ -475,11 +490,14 @@ Migration 0020 adds nullable `sessions.end_reason`. Existing sessions keep null;
 new closures persist the same fixed reason published in `session.ended.v1`, now
 including `provider_error`. No transcript is returned by the lifecycle endpoint.
 
-All three only add to the schema, and still an image from before one of them
+All four only add to the schema, and still an image from before one of them
 does not start on a database that has run it: every command migrates first,
 and sqlx refuses a database with a migration the image does not know
 (`VersionMissing`). To roll the image back past one, undo it and delete its row
-from `_sqlx_migrations` first, newest first. For 0022, `alter table
+from `_sqlx_migrations` first, newest first. For 0023, `alter table
+session_reviews drop column next_brief` (the plans written ahead are lost:
+each child's next plan is then written at the session's start) and `delete
+from _sqlx_migrations where version = 23`; for 0022, `alter table
 guardian_sessions drop column passkey_id`, `drop table team_passkeys` (the
 team's passkeys are lost: each member should also delete theirs from their
 devices) and `delete from _sqlx_migrations where version = 22`; for 0021,

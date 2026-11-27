@@ -699,8 +699,14 @@ async fn a_session_is_planned_watched_and_reviewed(pool: PgPool) {
     assert_eq!(end().await.0, StatusCode::NO_CONTENT, "ending twice is fine");
     assert_eq!(app.count("select count(*) from jobs").await, 1);
     assert!(jobs::work_once(&app.state).await.unwrap());
+    // The review queues one more job: the plan for the next session, written
+    // now, while nobody waits for it.
+    let kept = "select count(*) from session_reviews where next_brief is not null";
+    assert_eq!(app.count(kept).await, 0);
+    assert!(jobs::work_once(&app.state).await.unwrap());
+    assert_eq!(app.count(kept).await, 1);
     assert!(!jobs::work_once(&app.state).await.unwrap());
-    assert_eq!(app.count("select count(*) from jobs where done_at is not null").await, 1);
+    assert_eq!(app.count("select count(*) from jobs where done_at is not null").await, 2);
 
     let (_, skills) = app.admin(Method::GET, &format!("/v1/children/{child}/skills"), None).await;
     assert_eq!(skills["skills"][0]["skill_id"], "fractions.add");
@@ -723,11 +729,23 @@ async fn a_session_is_planned_watched_and_reviewed(pool: PgPool) {
         app.call(Method::POST, "/v1/agent/session/turns", agent, Some(json!({ "turns": [] }))).await.0,
         StatusCode::CONFLICT
     );
-    assert_eq!(*app.llm.asked.lock().unwrap(), ["session_brief", "guidance", "session_review"]);
+    assert_eq!(
+        *app.llm.asked.lock().unwrap(),
+        ["session_brief", "guidance", "session_review", "session_brief"]
+    );
 
-    // The next session's plan can use what was learned; memories are not duplicated.
+    // The next session takes the plan written ahead: it is there before the
+    // tutor starts, and the supervisor is not asked for it again.
     let (_, token) = app.session(&child).await;
-    app.call(Method::GET, "/v1/agent/session", Some(&token), None).await;
+    eventually("the plan written ahead became the session's", || async {
+        app.count("select count(*) from session_briefs").await == 2
+    })
+    .await;
+    let (_, start) = app.call(Method::GET, "/v1/agent/session", Some(&token), None).await;
+    let instructions = start["instructions"].as_str().unwrap();
+    assert!(instructions.contains("Review adding fractions with football examples."), "{instructions}");
+    assert_eq!(briefs_asked(&app), 2);
+    // What was learned is not learned twice: memories are not duplicated.
     app.call(
         Method::POST,
         "/v1/agent/session/turns",
@@ -743,6 +761,125 @@ async fn a_session_is_planned_watched_and_reviewed(pool: PgPool) {
     assert!(jobs::work_once(&app.state).await.unwrap());
     assert_eq!(app.count("select count(*) from memories").await, 2);
     assert_eq!(app.count("select count(*) from attempts").await, 4);
+}
+
+/// How many times the supervisor was asked for a plan.
+fn briefs_asked(app: &App) -> usize {
+    app.llm.asked.lock().unwrap().iter().filter(|asked| asked.as_str() == "session_brief").count()
+}
+
+/// Holds one whole session for the child, for what the family asked, and
+/// runs the two jobs that follow it: the review, and the plan for the next
+/// session.
+async fn hold_session(app: &App, child: &str, objective: &Value) {
+    let body = json!({ "child_id": child, "audience": "operator", "objective": objective });
+    let (status, session) = app.admin(Method::POST, "/v1/sessions", Some(body)).await;
+    assert_eq!(status, StatusCode::CREATED, "{session}");
+    let id = session["session_id"].as_str().unwrap().to_string();
+    let token = app.dispatched(&session)["platform_token"].as_str().unwrap().to_string();
+    eventually("the session has its plan", || async {
+        let plans: i64 =
+            sqlx::query_scalar("select count(*) from session_briefs where session_id = $1::uuid")
+                .bind(&id)
+                .fetch_one(&app.state.pool)
+                .await
+                .unwrap();
+        plans == 1
+    })
+    .await;
+    let turns = json!({ "turns": [{ "seq": 0, "role": "child", "content": "Hola" }] });
+    app.call(Method::POST, "/v1/agent/session/turns", Some(&token), Some(turns)).await;
+    app.call(Method::POST, "/v1/agent/session/end", Some(&token), Some(json!({}))).await;
+    eventually("guidance settled", || async { app.state.watching.lock().unwrap().is_empty() }).await;
+    assert!(jobs::work_once(&app.state).await.unwrap(), "the review");
+    assert!(jobs::work_once(&app.state).await.unwrap(), "the plan for the next session");
+    assert!(!jobs::work_once(&app.state).await.unwrap());
+}
+
+#[sqlx::test(migrator = "aule_platform::MIGRATOR")]
+async fn a_plan_written_ahead_serves_the_session_that_asks_for_the_same(pool: PgPool) {
+    let app = app(pool);
+    let child = app.child().await;
+    for purpose in ["voice", "memory"] {
+        app.consent(&child, purpose, true).await;
+    }
+    let kept = "select count(*) from session_reviews where next_brief is not null";
+    let fractions =
+        json!({ "kind": "homework", "subject": "matematica", "topic": "fracciones", "due": null });
+    let volcanoes = json!({ "kind": "explore", "subject": "ciencia", "topic": "volcanes", "due": null });
+
+    // A first session: its plan is written at its start, and the plan for the
+    // next one right after its review.
+    hold_session(&app, &child, &fractions).await;
+    assert_eq!(briefs_asked(&app), 2);
+    assert_eq!(app.count(kept).await, 1);
+
+    // The family asks for the same again: the plan is there, and only the
+    // plan for the session after this one is asked for.
+    hold_session(&app, &child, &fractions).await;
+    assert_eq!(briefs_asked(&app), 3);
+    assert_eq!(app.count(kept).await, 1, "one plan is kept for a child");
+
+    // It asks for something else: the plan kept answers another question, so
+    // this session's is written at its start, as it always was.
+    hold_session(&app, &child, &volcanoes).await;
+    assert_eq!(briefs_asked(&app), 5);
+
+    // A plan that has waited a week is written again.
+    sqlx::query(
+        "update session_reviews set next_brief = jsonb_set(next_brief, '{written_at}', '\"2020-01-01T00:00:00Z\"')
+         where next_brief is not null",
+    )
+    .execute(&app.state.pool)
+    .await
+    .unwrap();
+    hold_session(&app, &child, &volcanoes).await;
+    assert_eq!(briefs_asked(&app), 7);
+    hold_session(&app, &child, &volcanoes).await;
+    assert_eq!(briefs_asked(&app), 8, "and the one written after it is taken");
+}
+
+#[sqlx::test(migrator = "aule_platform::MIGRATOR")]
+async fn a_plan_written_ahead_goes_with_the_memories_it_was_written_from(pool: PgPool) {
+    let app = app(pool);
+    let child = app.child().await;
+    for purpose in ["voice", "memory"] {
+        app.consent(&child, purpose, true).await;
+    }
+    let kept = "select count(*) from session_reviews where next_brief is not null";
+    let none = Value::Null;
+    hold_session(&app, &child, &none).await;
+    assert_eq!((briefs_asked(&app), app.count(kept).await), (2, 1));
+
+    // A guardian deletes one memory: the plan may have it in it, and goes.
+    let (_, memories) = app.admin(Method::GET, &format!("/v1/children/{child}/memories"), None).await;
+    let one = memories["memories"][0]["id"].as_str().unwrap();
+    assert_eq!(
+        app.admin(Method::DELETE, &format!("/v1/children/{child}/memories/{one}"), None).await.0,
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(app.count(kept).await, 0);
+    hold_session(&app, &child, &none).await;
+    assert_eq!((briefs_asked(&app), app.count(kept).await), (4, 1), "planned at its start, and ahead again");
+
+    // The guardian takes back the consent for memories: the plan goes with them...
+    app.consent(&child, "memory", false).await;
+    assert_eq!(app.count(kept).await, 0);
+    // ...and the next sessions are planned without them, ahead as well.
+    hold_session(&app, &child, &none).await;
+    assert_eq!((briefs_asked(&app), app.count(kept).await), (6, 1));
+    hold_session(&app, &child, &none).await;
+    assert_eq!((briefs_asked(&app), app.count(kept).await), (7, 1));
+    assert_eq!(app.count("select count(*) from memories").await, 0);
+
+    // Without consent for voice there is no next session, and no plan for it.
+    app.consent(&child, "voice", false).await;
+    sqlx::query("update jobs set done_at = null, attempts = 0 where kind = 'plan_ahead'")
+        .execute(&app.state.pool)
+        .await
+        .unwrap();
+    while jobs::work_once(&app.state).await.unwrap() {}
+    assert_eq!(briefs_asked(&app), 7);
 }
 
 #[sqlx::test(migrator = "aule_platform::MIGRATOR")]
@@ -946,6 +1083,7 @@ async fn a_kept_transcript_expires_and_an_abandoned_session_is_closed(pool: PgPo
     app.call(Method::POST, "/v1/agent/session/end", Some(&token), Some(json!({}))).await;
     eventually("guidance settled", || async { app.state.watching.lock().unwrap().is_empty() }).await;
     assert!(jobs::work_once(&app.state).await.unwrap());
+    assert!(jobs::work_once(&app.state).await.unwrap(), "the plan for the next session");
     assert_eq!(app.count("select count(*) from session_turns").await, 1, "kept, with consent");
 
     jobs::housekeeping(&app.state).await.unwrap();
@@ -3112,6 +3250,7 @@ async fn a_notice_is_announced_on_the_guardians_phones_without_saying_what_it_is
         app.call(Method::POST, "/v1/agent/session/end", agent, Some(json!({}))).await;
         eventually("guidance settled", || async { app.state.watching.lock().unwrap().is_empty() }).await;
         assert!(jobs::work_once(&app.state).await.unwrap());
+        assert!(jobs::work_once(&app.state).await.unwrap(), "the plan for the next session");
         app.deliver_events().await;
     };
     session_with_a_flag().await;
