@@ -88,7 +88,7 @@ Planned: `family.registered`, `consent.granted`, `consent.revoked`, `device.onli
 These are requirements, not goals. Code that breaks one does not get merged.
 
 1. **Two gates on every child turn, and both fail closed.**
-   - Content moderation checks what the child said before the tutor answers and what the tutor is about to say before it is spoken.
+   - Content moderation checks what the child said before the tutor answers and what the tutor is about to say before it is spoken. The tutor's words are filtered. A child's words are not: of all that can be found in them, only a child who may be hurting themselves or telling of abuse gets a caring reply first, with the family told, and everything else reaches the tutor.
    - A physical-safety check ([TypeSafe](https://typesafe.ai) Jev) decides whether the child is describing or planning something that needs a nearby adult: heat, electricity, sharp objects, chemicals, medicines, choking, falls.
    - If either gate cannot answer in time, the child hears a fixed safe reply. An unchecked answer is never spoken.
 2. **A child's session does not start without both gates configured and working.**

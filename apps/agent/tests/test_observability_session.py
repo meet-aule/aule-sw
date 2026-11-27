@@ -30,20 +30,19 @@ SCRIPTS: dict[str, list[Spec]] = {
     ],
     # Turns the input gates stop: moderation, its second reader, and the
     # physical-safety gate, for a hazard and for one it is unsure of.
-    "redirect": SESSIONS["redirect"],
     "self_harm_support": SESSIONS["self_harm_support"],
     "second_reader_concern": SESSIONS["second_reader_concern"],
     "adult_help": [ORDINARY, Spec(extra=TRIGGERS["hazard"]), Spec(extra=TRIGGERS["hazard"])],
     "clarify": SESSIONS["clarify"],
     # A turn the input gates stop, for which the model, asked early, begins a
     # drawing.
-    "redirect_tool": SESSIONS["redirect_tool"],
+    "stopped_tool": SESSIONS["stopped_tool"],
     # Faint words the two second readers find ordinary: the first clear
     # answer settles it and stops the other.
     "faint_ordinary": [ORDINARY, Spec(extra=TRIGGERS["faint"])],
 }
 # The turns of those scripts the input gates stop.
-STOPPED_TURNS = 7
+STOPPED_TURNS = 6
 MODES = {"early_off": {}, "early_on": {"AULE_EARLY_REPLY": "1"}}
 
 

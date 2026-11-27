@@ -20,12 +20,12 @@ speech. ``--playout-speed 1`` plays the tutor's audio in real time and
 ``--gap 2,8`` leaves the child that long to think between turns, so that the
 connections the providers keep open time out as they would; by default audio
 plays ten times faster and the next press follows within a second.
-``--second-reader 0.05,0.02`` is the share of the child's turns and of the
-tutor's replies that moderation is unsure of, so that the second reader reads
-them (the default). ``--exercises 0.5`` is the share of free sessions whose
-platform opens the exercise the model poses, so that the child's answers to it
-are checked in code after the gates (the default); the session's first turn
-then poses one.
+``--second-reader 0.05,0.02`` is the share of the child's turns with a faint
+self-harm score and of the tutor's replies that moderation is unsure of, so
+that the second reader reads them (the default). ``--exercises 0.5`` is the
+share of free sessions whose platform opens the exercise the model poses, so
+that the child's answers to it are checked in code after the gates (the
+default); the session's first turn then poses one.
 """
 
 from __future__ import annotations
@@ -103,8 +103,11 @@ METADATA = json.dumps({"audience": "child", "language": "es", "platform_token": 
 # the speech (``worker.TURNS``) and the same early start, which LiveKit gives
 # both.
 MODES = ("push-to-talk", "open-mic")
-# What moderation is unsure of (fakes), so that the second reader reads it.
+# What the second reader reads (fakes): a reply of the tutor that moderation is
+# unsure of, and a child's turn with a faint self-harm score. Nothing else in a
+# child's words is read again.
 UNSURE = TRIGGERS["unsure_score"]
+FAINT = TRIGGERS["faint"]
 MEANWHILE_LINES = {REPLIES[key]["es"] for key in MEANWHILE}
 FIXED_LINES = {text for languages in REPLIES.values() for text in languages.values()}
 
@@ -355,15 +358,16 @@ def plan_turns(
 ) -> list[Turn]:
     """Turns of a free session (65 % answered in one step, 35 % with a tool
     first) or of an engine session (80 % said from the script). ``unsure`` is
-    the share of the child's turns and of the model's replies that moderation
-    is unsure of, and that the second reader then reads."""
+    the share of the child's turns that carry a faint self-harm score and of
+    the model's replies that moderation is unsure of: what the second reader
+    then reads."""
     rng = world.rng
     # Drawn apart, so that the turns are the same whatever the shares.
     readers = random.Random(f"second reader {world.seed}")
     turns = []
     for offset in range(count):
         number = start + offset
-        extra = UNSURE if readers.random() < unsure[0] else ""
+        extra = FAINT if readers.random() < unsure[0] else ""
         # Once an exercise is open, the child answers it.
         answers = world.platform.opens_exercises and offset > 0
         words = fakes.answer_of(number, extra) if answers else words_of(number, extra)

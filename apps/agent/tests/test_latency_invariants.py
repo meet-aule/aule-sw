@@ -105,7 +105,9 @@ OFFERED_WITH = "¿Seguimos con otra?"
 # session's first check (which waits longer for a new connection).
 SESSIONS: dict[str, list[Spec]] = {
     "ordinary": [ORDINARY, Spec(reply="Bien. Ahora suma tres más dos."), ORDINARY],
-    "redirect": [ORDINARY, Spec(extra=TRIGGERS["violence"])],
+    # What moderation finds in a child's words does not stop them: the turn is
+    # answered like any other.
+    "words_found": [ORDINARY, Spec(extra=TRIGGERS["violence"])],
     "self_harm_support": [ORDINARY, Spec(extra=TRIGGERS["self_harm"])],
     "child_support": [ORDINARY, Spec(extra=TRIGGERS["minors"])],
     "moderation_down": [ORDINARY, Spec(extra=TRIGGERS["moderation_down"])],
@@ -114,10 +116,6 @@ SESSIONS: dict[str, list[Spec]] = {
     "context_limit": [ORDINARY, Spec(extra="ñ" * 12_500)],
     "clarify": [ORDINARY, Spec(extra=TRIGGERS["unsure"])],
     "second_reader_concern": [ORDINARY, Spec(extra=f"{TRIGGERS['faint']} {TRIGGERS['concern']}")],
-    "second_reader_late": [
-        ORDINARY,
-        Spec(extra=f"{TRIGGERS['unsure_score']} {TRIGGERS['reader_slow']}"),
-    ],
     "adult_help": [ORDINARY, *[Spec(extra=TRIGGERS["hazard"])] * 4],
     "reply_stopped": [ORDINARY, Spec(reply=violence("Te voy a decir algo"))],
     "reply_gate_down": [ORDINARY, Spec(reply=f"Algo {TRIGGERS['moderation_down']}")],
@@ -148,10 +146,10 @@ SESSIONS: dict[str, list[Spec]] = {
         ),
     ],
     # A turn the gates stop, for which the model, asked early, begins a drawing.
-    "redirect_tool": [
+    "stopped_tool": [
         ORDINARY,
         Spec(
-            extra=TRIGGERS["violence"],
+            extra=TRIGGERS["self_harm"],
             tools=("show",),
             preamble="Primero lo muestro en la pantalla. Así lo ves.",
             tool_tokens=400,
@@ -187,7 +185,7 @@ SESSIONS: dict[str, list[Spec]] = {
     ],
     "checked_stopped": [
         POSE,
-        Spec(words=answer_of(2, TRIGGERS["violence"])),
+        Spec(words=answer_of(2, TRIGGERS["self_harm"])),
         # It answers the gate's line, not the exercise: the model reads it whole.
         Spec(words=answer_of(5), reply="Sigamos con la suma."),
         Spec(words=answer_of(9), reply="Mira otra vez los octavos."),
@@ -224,7 +222,6 @@ CHECKED = {
 }
 # What each session's last turn hears instead of an answer, and the flag it raises.
 STOPPED = {
-    "redirect": ("redirect", ("moderation_input", "redirect", ["violence"])),
     "self_harm_support": ("self_harm_support", ("moderation_input", "support", ["self_harm"])),
     "child_support": ("child_support", ("moderation_input", "support", ["sexual/minors"])),
     "moderation_down": (
@@ -242,7 +239,6 @@ STOPPED = {
         "self_harm_support",
         ("moderation_input", "support", ["self_harm"]),
     ),
-    "second_reader_late": ("redirect", ("moderation_input", "redirect", ["violence"])),
 }
 REPLY_STOPPED = {
     "reply_stopped": ("redirect", ("moderation_output", "redirect", ["violence"])),
@@ -354,7 +350,7 @@ def kept_words(world: World, words: str) -> list[str]:
 
 
 # With the microphone open, the voice detector ends each turn (``harness.MODES``).
-OPEN_MIC = ("ordinary", "redirect", "meanwhile", "checked")
+OPEN_MIC = ("ordinary", "self_harm_support", "meanwhile", "checked")
 
 
 @pytest.fixture(scope="module")
@@ -391,9 +387,9 @@ def test_with_the_microphone_open_no_words_reach_the_model_before_the_gates_let_
         assert run.world.api_errors == [], name
     checked = [[said for _, said, _ in r.checks] for r in open_mic["checked"].results]
     assert checked == CHECKED["checked"]
-    stopped = open_mic["redirect"].results[-1]
+    stopped = open_mic["self_harm_support"].results[-1]
     assert stopped.allowed is False and stopped.calls == []
-    assert heard(stopped.played) == spoken(REPLIES["redirect"]["es"])
+    assert heard(stopped.played) == spoken(REPLIES["self_harm_support"]["es"])
     answered = [heard(r.played) for r in open_mic["ordinary"].results]
     assert answered == [spoken(spec.reply) for spec in SESSIONS["ordinary"]]
 
@@ -407,6 +403,22 @@ def test_every_ordinary_turn_is_answered_with_the_models_reply(sessions):
     for result in run.results:
         assert result.allowed is True
         assert result.played[0].started_at > result.decided_at
+    assert run.world.api_errors == []
+
+
+def test_a_child_is_answered_whatever_moderation_finds_in_their_words(sessions):
+    runs, _ = sessions
+    run = runs["words_found"]
+    answered = run.results[-1]
+    words = words_of(len(run.results), SESSIONS["words_found"][-1].extra)
+
+    # The model's own reply is heard, after the gates decided, and no fixed line.
+    assert answered.allowed is True
+    assert spoken(answered.heard()) == spoken(SESSIONS["words_found"][-1].reply)
+    assert answered.played[0].started_at > answered.decided_at
+    # The turn is kept like any other, and nobody is told of it.
+    assert kept_words(run.world, words) != []
+    assert run.world.flags == []
     assert run.world.api_errors == []
 
 
@@ -622,10 +634,10 @@ def test_a_tool_steps_line_is_heard_while_the_call_is_written_and_the_tool_runs_
 
 def test_a_call_begun_early_for_a_turn_the_gates_stop_says_nothing_of_it(modes):
     for mode, (runs, _) in modes.items():
-        run = runs["redirect_tool"]
+        run = runs["stopped_tool"]
         stopped = run.results[-1]
-        assert heard(stopped.played) == spoken(REPLIES["redirect"]["es"]), mode
-        assert tuple(run.world.flags[-1]) == ("moderation_input", "redirect", ["violence"])
+        assert heard(stopped.played) == spoken(REPLIES["self_harm_support"]["es"]), mode
+        assert tuple(run.world.flags[-1]) == ("moderation_input", "support", ["self_harm"])
         assert not [at for at, what in run.world.events if what == f"sent {visuals.TOPIC}"]
         if mode == "early_on":
             (call,) = stopped.calls
@@ -858,7 +870,7 @@ def test_a_turn_stopped_while_an_exercise_is_open_reaches_neither_checker_nor_mo
         _, stopped, after, again = run.results
         assert stopped.allowed is False and stopped.open_before, mode
         assert stopped.calls == [] and stopped.checks == [], mode
-        assert heard(stopped.played) == spoken(REPLIES["redirect"]["es"]), mode
+        assert heard(stopped.played) == spoken(REPLIES["self_harm_support"]["es"]), mode
         assert kept_words(run.world, stopped.words) == [], mode
         # The turn after it answers the gate's line, not the exercise: left to
         # the model whole. The one after that is checked again.
@@ -1272,12 +1284,12 @@ EVALS = {
     # Changed on purpose again: a child's words the provider flagged only as
     # harassment or hate are read again too (Finding.heard_rereadable).
     "evals/second-reading/evaluate.py": (
-        "94e71ef1457b83a60c85e3e4aa2c5ff1256dfa06caf6804f3c83269afc5116cd"
+        "92aa73655e76eba3627a49e4f59b9b833c43a15be2537330000b348a1f5c76ca"
     ),
     # Changed on purpose: five cases for the Spanish for black, as a child names
     # the shaded part of a drawing (ordinary) and as contempt (stop).
     "evals/second-reading/cases.json": (
-        "236c17db7b61a59bd3617ee1e8a92bf1482570ac35ee27220e89a1b17900894a"
+        "c06c497d67f0d1db27c7084188c3b53c04fad676f298cb242af25cbf26f7bbc2"
     ),
     # The tutoring evaluation, which runs the real tutor, its tools and both gates.
     "evals/pedagogy/autonomous.py": (
