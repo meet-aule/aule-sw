@@ -113,14 +113,28 @@ impl Brief {
         for item in &self.approach {
             lines.push(format!("- Approach: {item}"));
         }
-        for item in &self.remember {
-            lines.push(format!("- About this student: {item}"));
-        }
+        lines.extend(self.about_the_student());
         lines.push(
             "Follow the plan when the student has no topic of their own; if they bring homework, help with that."
                 .to_string(),
         );
         lines.join("\n")
+    }
+
+    /// What the brief says about the student, as the tutor reads it in a
+    /// session the engine runs, or none when it says nothing. There is no
+    /// plan to follow there: the engine decides what is worked on and asks
+    /// every question. Given the whole plan, the tutor set the plan's
+    /// activities against the engine's (2026-11-26: «Mira la barra… cuenta
+    /// todas las partes», the plan's first activity word for word, in the
+    /// middle of the engine's own explanation).
+    pub fn as_notes(&self) -> Option<String> {
+        let notes = self.about_the_student();
+        (!notes.is_empty()).then(|| notes.join("\n"))
+    }
+
+    fn about_the_student(&self) -> Vec<String> {
+        self.remember.iter().map(|item| format!("- About this student: {item}")).collect()
     }
 }
 
@@ -721,6 +735,31 @@ pub mod tests {
         assert_eq!(brief.skills.iter().map(|skill| skill.skill_id.as_str()).collect::<Vec<_>>(), ["a", "b"]);
         assert!(brief.as_instructions().contains("Work on a: Known before and due for review."));
         assert!(fallback_brief(&[]).goal.contains("Find out"));
+        // Nothing is known about the student there, so a session the engine
+        // runs gets nothing from it.
+        assert_eq!(brief.as_notes(), None);
+    }
+
+    #[test]
+    fn in_a_session_the_engine_runs_the_tutor_reads_what_the_plan_knows_and_nothing_to_do() {
+        let brief = Brief {
+            goal: "Review adding fractions.".into(),
+            skills: vec![BriefSkill {
+                skill_id: "fractions.add".into(),
+                why: "Due.".into(),
+                start_with: "Count the pieces of this bar.".into(),
+            }],
+            approach: vec!["Ask before explaining.".into()],
+            remember: vec!["Likes football.".into(), "Mixes up the two numbers.".into()],
+        };
+
+        let whole = brief.as_instructions();
+        assert!(whole.contains("Start with: Count the pieces of this bar."));
+        assert!(whole.contains("- About this student: Likes football."));
+        assert_eq!(
+            brief.as_notes().as_deref(),
+            Some("- About this student: Likes football.\n- About this student: Mixes up the two numbers.")
+        );
     }
 
     #[tokio::test]

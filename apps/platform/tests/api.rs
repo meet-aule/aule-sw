@@ -5038,6 +5038,34 @@ async fn engine_session(app: &App, child: &str, objective: Value) -> (Value, Str
     (session, token)
 }
 
+#[sqlx::test(migrator = "aule_platform::MIGRATOR")]
+async fn in_an_engine_session_the_tutor_is_told_about_the_student_and_given_no_plan_to_follow(pool: PgPool) {
+    let app = app(pool);
+    let child = app.child().await;
+    app.consent(&child, "voice", true).await;
+    let (_, token) = engine_session(&app, &child, fractions("homework")).await;
+    eventually("the plan was written", || async {
+        app.count("select count(*) from session_briefs").await == 1
+    })
+    .await;
+
+    // The engine decides what is worked on: of the supervisor's plan the tutor
+    // reads what it knows about the student, and no activity, goal or approach.
+    let (status, start) = app.call(Method::GET, "/v1/agent/session", Some(&token), None).await;
+    assert_eq!(status, StatusCode::OK, "{start}");
+    let instructions = start["instructions"].as_str().unwrap();
+    assert!(instructions.contains("The student's name is Mateo."), "{instructions}");
+    assert!(instructions.contains("- About this student: Likes football."), "{instructions}");
+    for part in ["Plan for this session", "Goal:", "Work on", "Start with", "Approach:", "Follow the plan"] {
+        assert!(!instructions.contains(part), "{part}: {instructions}");
+    }
+    // The plan itself is kept whole, for the review and for the team.
+    let stored: Value =
+        sqlx::query_scalar("select brief from session_briefs").fetch_one(&app.state.pool).await.unwrap();
+    assert_eq!(stored["goal"], "Review adding fractions with football examples.");
+    assert_eq!(stored["approach"], json!(["One step at a time."]));
+}
+
 fn visual_contract() -> jsonschema::Validator {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../contracts/visuals/visual.v1.schema.json");
