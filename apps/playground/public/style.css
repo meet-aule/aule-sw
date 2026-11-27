@@ -868,13 +868,15 @@ html[data-screen="p03"] main {
   min-height: calc(100dvh - var(--notice-room));
 }
 
+/* 64 px above the eyebrow, clear of Aule's mark, and no more: with its four ways in the card
+   is tall, and on a 390 by 844 phone its small print has to end above the cookie notice. */
 .screen.entry:not([hidden]) {
   position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
   min-height: 0;
-  padding: 88px 24px 32px;
+  padding: 64px 24px 32px;
 }
 
 .entry .frame {
@@ -1000,7 +1002,7 @@ html[data-screen="p03"] main {
 .entry-card {
   width: 100%;
   max-width: 600px;
-  margin-top: 32px;
+  margin-top: 24px;
   padding: 20px;
   border: 1px solid var(--entry-edge);
   border-radius: 24px;
@@ -1354,14 +1356,23 @@ html[data-screen="p03"] .entry-picture.ready {
   }
 }
 
-/* A laptop's short screen: less air above the title and the card, so the card ends on the first screen. */
-@media (min-width: 960px) and (max-height: 820px) {
+/* With its four ways in the card is tall. On a screen up to 960 px tall (a laptop's, or
+   a 900 px one with the cookie notice showing) there is less air above the title and the
+   card, so the card and its small print end above the notice, not under it. */
+@media (min-width: 960px) and (max-height: 960px) {
   .screen.entry:not([hidden]) {
-    padding: 84px 32px 32px;
+    padding: 80px 32px 24px;
   }
 
   .entry-card {
-    margin-top: 40px;
+    margin-top: 24px;
+  }
+}
+
+/* From 1200 px wide the eyebrow passes beside Aule's mark, never under it: it can start higher. */
+@media (min-width: 1200px) and (max-height: 960px) {
+  .screen.entry:not([hidden]) {
+    padding-top: 56px;
   }
 }
 
