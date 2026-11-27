@@ -31,6 +31,7 @@ const ENTRY_WORDS = {
     apple: "Continuar con Apple",
     meta: "Continuar con Facebook",
     soon: "Pronto",
+    help_label: "Ayuda para entrar",
     or: "o",
     email: "Tu correo",
     email_placeholder: "nombre@correo.com",
@@ -84,6 +85,7 @@ const ENTRY_WORDS = {
     apple: "Continue with Apple",
     meta: "Continue with Facebook",
     soon: "Soon",
+    help_label: "Sign-in help",
     or: "or",
     email: "Your email",
     email_placeholder: "name@email.com",
@@ -229,6 +231,35 @@ function entryWords() {
   for (const field of document.querySelectorAll("[data-entry-placeholder]")) field.placeholder = entryText(field.dataset.entryPlaceholder);
   $("entry-greeting").textContent = greeting();
 }
+
+// The explanation stays out of the heading; hover, keyboard focus or a tap reveals it.
+const helpControl = $("entry-help-control");
+const helpTrigger = $("entry-help-trigger");
+let helpPinned = false;
+function showEntryHelp(open) {
+  $("entry-help").hidden = !open;
+  helpTrigger.setAttribute("aria-expanded", String(open));
+  if (!open) helpPinned = false;
+}
+helpControl.addEventListener("pointerenter", (event) => {
+  if (event.pointerType !== "touch") showEntryHelp(true);
+});
+helpControl.addEventListener("pointerleave", () => {
+  if (!helpPinned && document.activeElement !== helpTrigger) showEntryHelp(false);
+});
+helpTrigger.addEventListener("focus", () => showEntryHelp(true));
+helpTrigger.addEventListener("blur", () => showEntryHelp(false));
+helpTrigger.addEventListener("click", () => {
+  helpPinned = !helpPinned;
+  showEntryHelp(helpPinned);
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") showEntryHelp(false);
+});
+document.addEventListener("pointerdown", (event) => {
+  if (!helpControl.contains(event.target)) showEntryHelp(false);
+});
+onHide("p01", () => showEntryHelp(false));
 
 // What the browser keeps for the page, read and written where it may refuse.
 function recall(store, key) {
