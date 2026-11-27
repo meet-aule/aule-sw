@@ -5828,6 +5828,54 @@ async fn first_input(app: &App, session: &str) -> Value {
 }
 
 #[sqlx::test(migrator = "aule_platform::MIGRATOR")]
+async fn an_operators_session_can_start_the_engine_at_a_level_and_a_childs_cannot(pool: PgPool) {
+    let app = app(pool);
+    let child = app.child().await;
+    app.consent(&child, "voice", true).await;
+    let asked = |audience: &str, start: Value| {
+        json!({
+            "child_id": child, "audience": audience, "objective": fractions("homework"), "engine": true,
+            "engine_start": start,
+        })
+    };
+
+    // A test that begins at the same place every time: with level 2 reached
+    // the engine does not screen, and goes on to discover level 3.
+    let start = json!({ "levels": { "Fracciones": 2 } });
+    let (status, session) =
+        app.admin(Method::POST, "/v1/sessions", Some(asked("operator", start.clone()))).await;
+    assert_eq!(status, StatusCode::CREATED, "{session}");
+    assert_eq!(session["engine"], true, "{session}");
+    let token = agent_token(&app, &session);
+    let pupil = Pupil {
+        app: &app,
+        session: session["session_id"].as_str().unwrap().to_string(),
+        token: token.clone(),
+        contract: visual_contract(),
+    };
+    app.call(Method::GET, "/v1/agent/session", Some(&token), None).await;
+    let started = pupil.says(json!({ "said": "sí" })).await;
+    let said = said_in(&started);
+    assert!(!said.contains("Pregunta 1 de 5") && !said.contains("Tamizaje"), "{said}");
+    let step = pupil.step().await;
+    assert_eq!(
+        (step["stage"].as_str(), step["progress"].as_str()),
+        (Some("Etapa 1: Descubrimiento"), Some("Nivel 3"))
+    );
+    // It is the session's start, not something kept about the child.
+    assert_eq!(app.count("select count(*) from children where engine_profile is not null").await, 0);
+
+    // Only the bank's topic, and a level it has.
+    for start in [json!({ "levels": { "Decimales": 1 } }), json!({ "levels": { "Fracciones": 9 } })] {
+        let (status, body) = app.admin(Method::POST, "/v1/sessions", Some(asked("operator", start))).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    }
+    // A child's own session starts where the child's sessions left it.
+    let (status, body) = app.admin(Method::POST, "/v1/sessions", Some(asked("child", start))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+}
+
+#[sqlx::test(migrator = "aule_platform::MIGRATOR")]
 async fn the_engine_reads_the_homeworks_level_from_a_photo_only_when_allowed(pool: PgPool) {
     let mut app = app(pool);
     let child = app.child().await;

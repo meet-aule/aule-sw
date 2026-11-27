@@ -345,6 +345,8 @@ The engine runs a session only when all of this holds; otherwise the session is 
 - the session has a child and its language is Spanish (the engine's texts exist in Spanish only);
 - the objective is one the compiled-in bank covers. Today that is fractions in mathematics: `subject` is `matematica` or left out, and `topic` names fractions ("Fracciones", "suma de fracciones").
 
+An operator's session may also send `engine_start`, for a test that must begin at the same place every time: `{"levels": {"Fracciones": 2}}` starts the engine as if that level had been reached, in place of what the child's sessions left. Only the bank's topic and its levels are taken, and a child's session that sends it is answered 400.
+
 | The objective's `kind` | The engine's objective (`TipoObjetivo`) |
 |---|---|
 | `homework` | `Tarea`, with `due` as its date. The exercises are the bank's own homework, not the student's; with a [photo of the homework](#a-photo-of-the-homework), only those up to its level |
