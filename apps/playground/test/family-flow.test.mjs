@@ -324,25 +324,25 @@ test("drawn with the page in English, the entry's four screens have no Spanish l
   for (const field of fields) assert.equal(field.placeholder, WORDS.es[field.dataset.entryPlaceholder]);
   assert.equal(screens.match(/\splaceholder="/g).length, fields.length, "no placeholder without its key");
 
-  // The real entryWords, with the page in English.
+  // The real entryWords, with the page in English; the eyebrow's line is the picker's (below).
   const greeting = element();
-  const draw = (lang, returning) => runInNewContext(`
+  const draw = (lang) => runInNewContext(`
     const ENTRY_WORDS = ${JSON.stringify(WORDS)};
-    const RETURNING = "aule.returning", local = null;
+    ${signin.match(/\nconst entryLanguage = .+;/)[0]}
     ${signin.match(/\nconst entryText = .+;/)[0]}
+    const greeting = () => "the line picked for " + entryLanguage();
     ${source(signin, "entryWords")}
     entryWords()`, {
     $: (id) => (id === "entry-greeting" ? greeting : element()),
-    recall: () => (returning ? "1" : null),
     document: {
       documentElement: { lang },
       querySelectorAll: (selector) => (selector === "[data-entry]" ? named : selector === "[data-entry-placeholder]" ? fields : []),
     },
   });
-  draw("en", false);
+  draw("en");
   for (const element of named) assert.equal(element.textContent, WORDS.en[element.dataset.entry], element.dataset.entry);
   for (const field of fields) assert.equal(field.placeholder, WORDS.en[field.dataset.entryPlaceholder]);
-  assert.equal(greeting.textContent, "Welcome");
+  assert.equal(greeting.textContent, "the line picked for en");
   const drawn = [...named.map((element) => element.textContent), ...fields.map((field) => field.placeholder)];
   // No row says «Continuar con …» or «Pronto»: each reads "Continue with …" and "Soon".
   for (const label of ["google", "github", "apple", "meta"]) assert.ok(drawn.includes(WORDS.en[label]), label);
@@ -351,8 +351,6 @@ test("drawn with the page in English, the entry's four screens have no Spanish l
   // Nothing drawn is a Spanish word of the table.
   const spanish = new Set(Object.values(WORDS.es));
   for (const text of drawn) assert.ok(!spanish.has(text), text);
-  draw("en", true);
-  assert.equal(greeting.textContent, "Welcome back!");
 
   // And nothing a person reads on these screens is written outside the table: with the named elements
   // taken out, what is left is the name, an arrow, a full stop and the team's address.
@@ -362,15 +360,161 @@ test("drawn with the page in English, the entry's four screens have no Spanish l
     .replace(/(<\w+\b[^>]*\bdata-entry="\w+"[^>]*>)[^<]*/g, "$1")
     .replace(/<[^>]+>/g, "\n")
     .split("\n").map((text) => text.trim()).filter(Boolean);
-  // The greeting is written by the script from "greeting" or "returning".
+  // The eyebrow is written by the script: a line of its pool, or "greeting" or "returning".
   assert.deepEqual([...new Set(left)].sort(), [".", "Aule", "Te damos la bienvenida", "admin@meetaule.com", "←"].sort());
   assert.equal(WORDS.es.greeting, "Te damos la bienvenida");
   // No label a screen reader would read is left in Spanish either: these screens name nothing by attribute.
   assert.deepEqual([...screens.matchAll(/\b(?:aria-label|title|alt)="([^"]+)"/g)].map(([, text]) => text), ["Avance", "Avance"]);
 
   // Back in Spanish it is the page as written.
-  draw("es", false);
+  draw("es");
   for (const element of named) assert.equal(element.textContent, WORDS.es[element.dataset.entry], element.dataset.entry);
+});
+
+// --- The eyebrow's lines (D47) ---------------------------------------------------
+
+// The pool and its picker, as signin.js has them.
+const LINES_SOURCE = signin.match(/\nconst TIMED = [^;]+;[^]*?\nconst RARE = [^;]+;\nconst ENTRY_LINES = \[[^]*?\n\];/)[0];
+const drawn = runInNewContext(`
+  ${LINES_SOURCE}
+  ${["lineHolds", "pickLine"].map((name) => source(signin, name)).join("\n")}
+  ({ ENTRY_LINES, pickLine, lineHolds })`);
+const { pickLine, lineHolds } = drawn;
+// An array of this file's own, so its lists compare with lists made here.
+const LINES = [...drawn.ENTRY_LINES];
+
+/** A clock at `hour` on a weekday `day` (0 is Sunday), as the picker reads it. */
+const clock = (hour, day) => ({ getHours: () => hour, getDay: () => day });
+/** A random source that is always the same sequence (mulberry32). */
+function seeded(seed) {
+  let a = seed;
+  return () => {
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+// When each kind of line may come out, said here apart from the pool's own conditions.
+const HOURS = { morning: [5, 6, 7, 8, 9, 10, 11], afternoon: [12, 13, 14, 15, 16, 17, 18], evening: [19, 20, 21, 22], night: [23, 0, 1, 2, 3, 4] };
+const WHEN = {
+  "Buenos días. ¿Tarea temprano?": { hours: HOURS.morning },
+  "Con el desayuno entra mejor": { hours: HOURS.morning },
+  "Buenas tardes. Hora de la tarea": { hours: HOURS.afternoon },
+  "Después del cole, un ratito": { hours: HOURS.afternoon },
+  "Buenas noches. ¿Tarea de último minuto?": { hours: HOURS.evening },
+  "Todavía hay tiempo antes de dormir": { hours: HOURS.evening },
+  "¿Despiertos a esta hora?": { hours: HOURS.night },
+  "Shhh… los niños duermen": { hours: HOURS.night },
+  "La tarea puede esperar a mañana": { hours: HOURS.night },
+  "Lunes. Empezamos bien": { days: [1] },
+  "Viernes: última tarea de la semana": { days: [5] },
+  "Fin de semana y aquí estás": { days: [0, 6] },
+  "Domingo de repaso": { days: [0] },
+  "¡Qué bueno que estés de vuelta!": { returning: true },
+  "Otra vez por aquí. Bien.": { returning: true },
+  "El cuy te estaba esperando": { returning: true },
+};
+const may = (line, returning, hour, day) => {
+  const when = WHEN[line.es] ?? {};
+  return (!when.hours || when.hours.includes(hour)) && (!when.days || when.days.includes(day)) && (!when.returning || returning);
+};
+
+test("every line of the eyebrow has its English beside its Spanish, and neither is longer than 40 characters", () => {
+  assert.ok(LINES.length >= 20);
+  for (const line of LINES) {
+    for (const language of ["es", "en"]) {
+      assert.equal(typeof line[language], "string", JSON.stringify(line));
+      assert.ok(line[language].trim() === line[language] && line[language].length > 0, line.es);
+      assert.ok([...line[language]].length <= 40, `${line[language]} is ${[...line[language]].length} long`);
+    }
+    assert.notEqual(line.es, line.en, line.es);
+    // A condition is one the picker knows, and well formed.
+    for (const key of Object.keys(line)) assert.ok(["es", "en", "who", "from", "to", "days", "weight"].includes(key), `${line.es}: ${key}`);
+    if (line.who) assert.ok(["new", "returning"].includes(line.who), line.es);
+    assert.equal(line.from === undefined, line.to === undefined, `${line.es}: from and to go together`);
+    if (line.days) assert.ok(line.days.length > 0 && line.days.every((day) => Number.isInteger(day) && day >= 0 && day <= 6), line.es);
+    assert.ok((line.weight ?? 1) > 0, line.es);
+  }
+  // No line twice, in either language.
+  for (const language of ["es", "en"]) assert.equal(new Set(LINES.map((line) => line[language])).size, LINES.length, language);
+  // The two lines the eyebrow always had are in the pool and are what it falls back to, with the same English.
+  const of = (es) => LINES.find((line) => line.es === es);
+  assert.equal(of(WORDS.es.greeting).en, WORDS.en.greeting);
+  assert.equal(of(WORDS.es.returning).en, WORDS.en.returning);
+  assert.equal(of(WORDS.es.returning).who, "returning");
+  // A line tied to the hour or the day weighs three general ones; a rare one a small part of one.
+  for (const line of LINES) {
+    if (line.from !== undefined || line.days) assert.equal(line.weight, 3, line.es);
+    else assert.ok(line.weight === undefined || line.weight <= 0.2, line.es);
+  }
+  assert.equal(LINES.filter((line) => line.weight !== undefined && line.weight < 1).length, 3, "three rare lines");
+});
+
+test("only a line whose conditions hold can come out, and every such line can", () => {
+  for (const returning of [false, true]) {
+    for (let hour = 0; hour < 24; hour += 1) {
+      for (let day = 0; day < 7; day += 1) {
+        const expected = LINES.filter((line) => may(line, returning, hour, day)).map((line) => line.es).sort();
+        // The whole of the random source's range, finely: each line that may come out has its share of it.
+        const out = new Set();
+        for (let step = 0; step < 1000; step += 1) out.add(pickLine(LINES, returning, clock(hour, day), () => (step + 0.5) / 1000).es);
+        assert.deepEqual([...out].sort(), expected, `${returning ? "returning" : "new"}, ${hour} h, day ${day}`);
+        for (const line of LINES) assert.equal(lineHolds(line, returning, clock(hour, day)), may(line, returning, hour, day), line.es);
+      }
+    }
+  }
+  // The ends of the random source's range, and a pool where nothing holds.
+  assert.equal(pickLine(LINES, false, clock(10, 3), () => 0).es, LINES[0].es);
+  assert.ok(pickLine(LINES, false, clock(10, 3), () => 0.999999999));
+  assert.equal(pickLine([{ es: "a", en: "b", who: "returning" }], false, clock(10, 3), () => 0.5), null);
+  assert.equal(pickLine([], false, clock(10, 3), () => 0.5), null);
+});
+
+test("at two in the morning on a weekday a night line comes out most of the time, not always, and no two loads need agree", () => {
+  const night = new Set(LINES.filter((line) => WHEN[line.es]?.hours === HOURS.night).map((line) => line.es));
+  assert.equal(night.size, 3);
+  for (const returning of [false, true]) {
+    const random = seeded(returning ? 7 : 3);
+    const draws = Array.from({ length: 2000 }, () => pickLine(LINES, returning, clock(2, 3), random).es);
+    const distinct = new Set(draws);
+    assert.ok(distinct.size > 1, "more than one line comes out");
+    for (const line of night) assert.ok(distinct.has(line), line);
+    const share = draws.filter((line) => night.has(line)).length / draws.length;
+    assert.ok(share > 0.45 && share < 0.75, `night lines come out ${Math.round(share * 100)} % of the time`);
+    // The general lines still come out, and none tied to another hour or day does.
+    assert.ok(distinct.has("Te damos la bienvenida"));
+    assert.ok(![...distinct].some((line) => /Buenos días|Buenas tardes|Lunes|Viernes|Domingo|Fin de semana/.test(line)));
+    // A rare line is rare: together, about one draw in forty.
+    const rare = draws.filter((line) => ["El cuy dice hola", "Dos más dos sigue siendo cuatro", "Hecho en Lima, con tarea"].includes(line)).length;
+    assert.ok(rare > 0 && rare / draws.length < 0.06, `${rare} rare lines in ${draws.length}`);
+  }
+});
+
+test("the eyebrow's line is picked with Math.random and the visitor's clock, nothing is kept, and it never goes without words", () => {
+  const body = source(signin, "greeting");
+  assert.match(body, /pickLine\(ENTRY_LINES, returning, new Date\(\), Math\.random\)/);
+  assert.doesNotMatch(body, /remember\(|setItem|sessionStorage|localStorage/);
+  assert.equal(signin.match(/Math\.random/g).length, 1, "no other chance in the sign-in");
+  const greet = ({ pick, returning = false, lang = "es" }) => runInNewContext(`
+    const ENTRY_WORDS = ${JSON.stringify(WORDS)};
+    const ENTRY_LINES = [], RETURNING = "aule.returning", local = null;
+    ${signin.match(/\nconst entryLanguage = .+;/)[0]}
+    ${signin.match(/\nconst entryText = .+;/)[0]}
+    let entryLine = null;
+    ${body}
+    [greeting(), greeting()]`, { pickLine: pick, recall: () => (returning ? "1" : null), document: { documentElement: { lang } } });
+  // A picked line, in the page's language; one load keeps its line however often the entry shows.
+  let picks = 0;
+  const pick = () => { picks += 1; return { es: `línea ${picks}`, en: `line ${picks}` }; };
+  assert.deepEqual([...greet({ pick })], ["línea 1", "línea 1"]);
+  assert.deepEqual([...greet({ pick, lang: "en" })], ["line 2", "line 2"]);
+  // The picker fails, finds nothing, or hands back a line without words: the two lines of always.
+  for (const broken of [() => { throw new Error("no"); }, () => null, () => ({}), () => ({ es: "" })]) {
+    assert.deepEqual([...greet({ pick: broken })], ["Te damos la bienvenida", "Te damos la bienvenida"]);
+    assert.deepEqual([...greet({ pick: broken, returning: true })], ["¡Qué bueno que estés de vuelta!", "¡Qué bueno que estés de vuelta!"]);
+    assert.deepEqual([...greet({ pick: broken, returning: true, lang: "en" })], ["Good to see you back!", "Good to see you back!"]);
+  }
 });
 
 function reader() {

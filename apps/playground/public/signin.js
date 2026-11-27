@@ -77,7 +77,7 @@ const ENTRY_WORDS = {
   en: {
     title: "Sign in to Aule",
     greeting: "Welcome",
-    returning: "Welcome back!",
+    returning: "Good to see you back!",
     help: "Sign in or create your account, without a password.",
     google: "Continue with Google",
     github: "Continue with GitHub",
@@ -129,13 +129,105 @@ const ENTRY_WORDS = {
   },
 };
 
-const entryText = (key) => ENTRY_WORDS[document.documentElement.lang === "en" ? "en" : "es"][key];
+const entryLanguage = () => (document.documentElement.lang === "en" ? "en" : "es");
+const entryText = (key) => ENTRY_WORDS[entryLanguage()][key];
+
+// The eyebrow over the entry's title is a splash line (FIGMA.md D47): on each
+// load one line of this pool is picked at random, by weight, among those whose
+// conditions hold for the visitor and by their own clock. Nothing is seeded
+// and nothing is kept: two loads in a row may differ. A line may say who it is
+// for ("new" or "returning"; either, when it does not say), the hours it holds
+// in (from `from` up to, not including, `to`; round midnight when `from` is
+// the later), the days of the week (0 is Sunday) and its weight (1 when it
+// does not say). Each line is written in Spanish and in English, side by side,
+// and neither is longer than 40 characters, so the eyebrow keeps to one line
+// on a phone.
+// A line tied to the hour or the day weighs three general ones: there it shows
+// most of the time, not always.
+const TIMED = 3;
+// A rare line weighs a tenth of a general one: one of the three shows on about one visit in forty.
+const RARE = 0.1;
+const ENTRY_LINES = [
+  // General, for anyone.
+  { es: "Te damos la bienvenida", en: "Welcome" },
+  { es: "Pasa, que hay tarea", en: "Come in, there's homework" },
+  { es: "Lápiz, cuaderno y ganas", en: "Pencil, notebook and a will" },
+  { es: "Sin apuro, paso a paso", en: "No rush, step by step" },
+  { es: "Hoy sí sale ese ejercicio", en: "Today that exercise gives in" },
+  // General, for a browser that has signed in before.
+  { es: "¡Qué bueno que estés de vuelta!", en: "Good to see you back!", who: "returning" },
+  { es: "Otra vez por aquí. Bien.", en: "Here again. Good.", who: "returning" },
+  { es: "El cuy te estaba esperando", en: "The guinea pig was waiting for you", who: "returning" },
+  // The morning, 05:00 to 11:59.
+  { es: "Buenos días. ¿Tarea temprano?", en: "Good morning. Homework this early?", from: 5, to: 12, weight: TIMED },
+  { es: "Con el desayuno entra mejor", en: "It goes down better with breakfast", from: 5, to: 12, weight: TIMED },
+  // The afternoon, 12:00 to 18:59.
+  { es: "Buenas tardes. Hora de la tarea", en: "Good afternoon. Homework time", from: 12, to: 19, weight: TIMED },
+  { es: "Después del cole, un ratito", en: "After school, just a little while", from: 12, to: 19, weight: TIMED },
+  // The evening, 19:00 to 22:59.
+  { es: "Buenas noches. ¿Tarea de último minuto?", en: "Good evening. Last-minute homework?", from: 19, to: 23, weight: TIMED },
+  { es: "Todavía hay tiempo antes de dormir", en: "There's still time before bed", from: 19, to: 23, weight: TIMED },
+  // Late at night, 23:00 to 04:59.
+  { es: "¿Despiertos a esta hora?", en: "Up at this hour?", from: 23, to: 5, weight: TIMED },
+  { es: "Shhh… los niños duermen", en: "Shhh… the children are asleep", from: 23, to: 5, weight: TIMED },
+  { es: "La tarea puede esperar a mañana", en: "The homework can wait until morning", from: 23, to: 5, weight: TIMED },
+  // The day of the week.
+  { es: "Lunes. Empezamos bien", en: "Monday. Off to a good start", days: [1], weight: TIMED },
+  { es: "Viernes: última tarea de la semana", en: "Friday: last homework of the week", days: [5], weight: TIMED },
+  { es: "Fin de semana y aquí estás", en: "The weekend, and here you are", days: [6, 0], weight: TIMED },
+  { es: "Domingo de repaso", en: "Sunday revision", days: [0], weight: TIMED },
+  // Rare, for anyone.
+  { es: "El cuy dice hola", en: "The guinea pig says hi", weight: RARE },
+  { es: "Dos más dos sigue siendo cuatro", en: "Two plus two is still four", weight: RARE },
+  { es: "Hecho en Lima, con tarea", en: "Made in Lima, with homework", weight: RARE },
+];
+
+/** Whether a line's conditions hold for a new or a returning visitor, at `now` by the visitor's clock. */
+function lineHolds(line, returning, now) {
+  if (line.who && line.who !== (returning ? "returning" : "new")) return false;
+  if (line.days && !line.days.includes(now.getDay())) return false;
+  if (line.from === undefined) return true;
+  const hour = now.getHours();
+  return line.from < line.to ? hour >= line.from && hour < line.to : hour >= line.from || hour < line.to;
+}
+
+/**
+ * One of the `lines` whose conditions hold, at random by weight; null when none holds. `random` gives a
+ * number from 0 up to 1 and `now` is the visitor's clock: both are handed in, so a test can fix them.
+ */
+function pickLine(lines, returning, now, random) {
+  const holding = lines.filter((line) => lineHolds(line, returning, now));
+  const total = holding.reduce((sum, line) => sum + (line.weight ?? 1), 0);
+  let left = random() * total;
+  for (const line of holding) {
+    left -= line.weight ?? 1;
+    if (left < 0) return line;
+  }
+  return holding[holding.length - 1] ?? null;
+}
+
+// This load's line and whom it was picked for. Signing in or erasing the account makes the
+// visitor another, and a line is picked again; coming back from the code step keeps it.
+let entryLine = null;
+
+/** The eyebrow's words in the page's language: this load's line, or one of the two lines it always had when none can be picked. */
+function greeting() {
+  const returning = recall(local, RETURNING) === "1";
+  try {
+    if (entryLine?.returning !== returning) entryLine = { returning, line: pickLine(ENTRY_LINES, returning, new Date(), Math.random) };
+    const words = entryLine.line?.[entryLanguage()];
+    if (words) return words;
+  } catch {
+    // Whatever went wrong, the eyebrow still greets.
+  }
+  return entryText(returning ? "returning" : "greeting");
+}
 
 /** Writes the words of the four screens in the page's language, each where its key is named. */
 function entryWords() {
   for (const element of document.querySelectorAll("[data-entry]")) element.textContent = entryText(element.dataset.entry);
   for (const field of document.querySelectorAll("[data-entry-placeholder]")) field.placeholder = entryText(field.dataset.entryPlaceholder);
-  $("entry-greeting").textContent = entryText(recall(local, RETURNING) === "1" ? "returning" : "greeting");
+  $("entry-greeting").textContent = greeting();
 }
 
 // What the browser keeps for the page, read and written where it may refuse.
