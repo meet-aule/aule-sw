@@ -12,6 +12,7 @@
 // or a session's while it shows (FIGMA.md D41). app.js says which.
 
 import { SCREENS, progressAt } from "./steps.js";
+import { onLanguage, t } from "./i18n.js";
 
 const sections = new Map(
   [...document.querySelectorAll("section[data-screen]")].map((section) => [section.dataset.screen, section]),
@@ -132,11 +133,11 @@ function drawProgress(section, parts) {
       track.append(fill);
       const name = document.createElement("span");
       name.className = "segment-name";
-      name.textContent = part.name;
+      name.textContent = t(`progress.${part.key}`);
       if (part.current) {
         const where = document.createElement("span");
         where.className = "sr-only";
-        where.textContent = `: paso ${part.done} de ${part.steps}`;
+        where.textContent = t("progress.step", { done: part.done, steps: part.steps });
         name.append(where);
       }
       item.append(track, name);
@@ -144,6 +145,17 @@ function drawProgress(section, parts) {
     }),
   );
 }
+
+/** The tab's name and the progress header of the screen showing, in the page's language. */
+function nameScreen(id) {
+  document.title = `Aule · ${t(`screen.${id}`)}`;
+  drawProgress(sections.get(id), progressAt(id, flow));
+}
+
+// A language just picked: the screen showing is named again in it.
+onLanguage(() => {
+  if (showing) nameScreen(showing);
+});
 
 // Paper screens come up from below, as the Figma's phone prototype moves in;
 // going back they come down. Student screens change at once, as e-ink does.
@@ -168,8 +180,7 @@ function show(id, direction) {
   const section = sections.get(id);
   root.dataset.screen = id;
   root.dataset.surface = SCREENS[id].surface;
-  document.title = `Aule · ${SCREENS[id].name}`;
-  drawProgress(section, progressAt(id, flow));
+  nameScreen(id);
   // The one message line goes where this screen shows it.
   if (message) (section.querySelector("[data-message]") ?? section.querySelector(".screen-body, .ink-body") ?? section).append(message);
   shownAt = performance.now();

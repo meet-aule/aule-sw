@@ -5,13 +5,16 @@ import assert from "node:assert/strict";
 import { readdir, readFile } from "node:fs/promises";
 import { test } from "node:test";
 
+import es from "../public/words/es.js";
+import en from "../public/words/en.js";
+
 const pub = new URL("../public/", import.meta.url);
 const files = await readdir(pub);
 const read = (name) => readFile(new URL(name, pub), "utf8");
 const html = await read("index.html");
 const css = await read("style.css");
 const guides = { es: await read("guia.html"), en: await read("guide.html") };
-const ownScripts = ["app.js", "students.js", "signin.js", "steps.js", "screens.js", "onboarding.js", "home.js", "session-messages.js", "first-steps.js", "summaries.js", "reviews.js", "visuals.js", "choices.js", "cuy.js", "pixels.js"];
+const ownScripts = ["app.js", "students.js", "signin.js", "steps.js", "screens.js", "onboarding.js", "home.js", "session-messages.js", "first-steps.js", "summaries.js", "reviews.js", "visuals.js", "choices.js", "cuy.js", "pixels.js", "i18n.js", "language.js", "words/es.js", "words/en.js"];
 const scripts = Object.fromEntries(await Promise.all(ownScripts.map(async (name) => [name, await read(name)])));
 
 /** The body of every block that starts with `opening`, braces and all. */
@@ -95,29 +98,39 @@ test("no inline script and no style attribute in the page, so the policy stays s
   assert.doesNotMatch(html, /\sstyle="/);
   assert.doesNotMatch(html, /\son[a-z]+="/, "no inline handlers");
   const loaded = [...html.matchAll(/<script[^>]*\bsrc="([^"]+)"/g)].map(([, src]) => src);
-  assert.deepEqual(loaded, ["signin.js", "onboarding.js", "home.js", "livekit-client.js", "wobnimo.js", "app.js"]);
+  // The language first: it is settled, and the markup written in it, before any other script draws a word.
+  assert.deepEqual(loaded, ["language.js", "signin.js", "onboarding.js", "home.js", "livekit-client.js", "wobnimo.js", "app.js"]);
 });
 
 test("the page's own modules import each other without a cycle, as the plan draws them", () => {
   const graph = Object.fromEntries(
-    Object.entries(scripts).map(([name, text]) => [name, [...text.matchAll(/\bfrom\s+"\.\/([\w-]+\.js)"/g)].map(([, dep]) => dep)]),
+    Object.entries(scripts).map(([name, text]) => [name, [...text.matchAll(/\bfrom\s+"\.\/([\w/-]+\.js)"/g)].map(([, dep]) => dep)]),
   );
-  assert.deepEqual(graph["screens.js"], ["steps.js"]);
-  assert.deepEqual(graph["steps.js"], []);
-  assert.deepEqual(graph["students.js"], []);
-  assert.deepEqual(graph["session-messages.js"], []);
-  // The first steps' words lean on the session's languages, and nothing else.
-  assert.deepEqual(graph["first-steps.js"], ["session-messages.js"]);
+  // The page's words: one file a language, which i18n.js alone reads; whoever says a word asks it.
+  assert.deepEqual(graph["words/es.js"], []);
+  assert.deepEqual(graph["words/en.js"], []);
+  assert.deepEqual(graph["i18n.js"], ["words/es.js", "words/en.js"]);
+  for (const [name, deps] of Object.entries(graph)) {
+    if (name !== "i18n.js") assert.ok(!deps.some((dep) => dep.startsWith("words/")), `${name} asks i18n.js for its words`);
+  }
+  // Which language shows is settled by a script of its own, which leans on the words and nothing else.
+  assert.deepEqual(graph["language.js"], ["i18n.js"]);
+  assert.deepEqual(graph["screens.js"], ["steps.js", "i18n.js"]);
+  assert.deepEqual(graph["steps.js"], ["i18n.js"]);
+  assert.deepEqual(graph["students.js"], ["i18n.js"]);
+  assert.deepEqual(graph["session-messages.js"], ["i18n.js"]);
+  // The first steps' words are the page's, asked for in the student's language, and nothing else.
+  assert.deepEqual(graph["first-steps.js"], ["i18n.js"]);
   // The home's lines about a student's sessions are pure words and arithmetic.
-  assert.deepEqual(graph["summaries.js"], []);
-  assert.deepEqual([...graph["signin.js"]].sort(), ["screens.js", "steps.js", "students.js"]);
+  assert.deepEqual(graph["summaries.js"], ["i18n.js"]);
+  assert.deepEqual([...graph["signin.js"]].sort(), ["i18n.js", "screens.js", "steps.js", "students.js"]);
   // The name screen hands the browser to the child as the home does (home.js handOff).
-  assert.deepEqual([...graph["onboarding.js"]].sort(), ["home.js", "screens.js", "steps.js", "students.js"]);
-  assert.deepEqual([...graph["home.js"]].sort(), ["first-steps.js", "reviews.js", "screens.js", "steps.js", "students.js", "summaries.js"]);
+  assert.deepEqual([...graph["onboarding.js"]].sort(), ["home.js", "i18n.js", "screens.js", "steps.js", "students.js"]);
+  assert.deepEqual([...graph["home.js"]].sort(), ["first-steps.js", "i18n.js", "reviews.js", "screens.js", "steps.js", "students.js", "summaries.js"]);
   // Aule's face, the cuy and its pixels, is data and arithmetic: the session's page is all that takes them.
   assert.deepEqual(graph["cuy.js"], []);
   assert.deepEqual(graph["pixels.js"], []);
-  assert.deepEqual([...graph["app.js"]].sort(), ["choices.js", "cuy.js", "first-steps.js", "home.js", "pixels.js", "screens.js", "session-messages.js", "visuals.js"]);
+  assert.deepEqual([...graph["app.js"]].sort(), ["choices.js", "cuy.js", "first-steps.js", "home.js", "i18n.js", "pixels.js", "screens.js", "session-messages.js", "visuals.js"]);
   // The answers to tap are drawn from what the tutor sent, with the words they are handed.
   assert.deepEqual(graph["choices.js"], []);
   // And none, followed through, comes back to itself.
@@ -134,10 +147,22 @@ test("the page's own modules import each other without a cycle, as the plan draw
   for (const name of Object.keys(graph)) walk(name, []);
 });
 
-test("only signin.js touches the browser's storage, and only where a refusal is caught", () => {
+test("only signin.js and the language's choice touch the browser's storage, and only where a refusal is caught", () => {
   for (const [name, text] of Object.entries(scripts)) {
-    if (name !== "signin.js") assert.doesNotMatch(text, /localStorage|sessionStorage/, name);
+    if (name !== "signin.js" && name !== "language.js") assert.doesNotMatch(text, /localStorage|sessionStorage/, name);
   }
+  // The language a person chose is the one other thing kept: read and written once each, guarded, under
+  // a key of its own, and never removed or sent. Nothing about who they are goes with it.
+  const picker = scripts["language.js"];
+  assert.equal(picker.match(/localStorage\.|sessionStorage/g).length, 2);
+  assert.match(picker, /try \{\s*return localStorage\.getItem\(KEPT\);\s*\} catch/);
+  assert.match(picker, /try \{\s*localStorage\.setItem\(KEPT, code\);\s*\} catch/);
+  assert.match(picker, /const KEPT = "aule\.language";/);
+  assert.doesNotMatch(picker, /fetch\(|document\.cookie|removeItem/);
+  // Written only when the person picks a language, or leaves to sign in with the one their link asked for.
+  assert.equal(picker.match(/\bkeep\(/g).length, 3, "its definition and those two");
+  assert.match(bodyOf(picker, "choose"), /keep\(code\);/);
+  assert.match(picker, /if \(linked && event\.target\.closest\?\.\("a\[data-provider\]\[href\]"\)\) keep\(linked\);/);
   const signin = scripts["signin.js"];
   // Only local storage remains, accessed through guarded helpers; no identity is persisted.
   assert.equal(signin.match(/localStorage|sessionStorage/g).length, 1);
@@ -394,9 +419,10 @@ test("the guide says the plan in the landing's words, and the child's needs", ()
 
 test("the page's words for an ended trial and a used week are the plan's, and the cookie notice names the link's cookie", () => {
   const app = scripts["app.js"];
-  assert.match(app, /trial_over: "Tu prueba gratis de 7 días terminó\. Para seguir, escríbenos a admin@meetaule\.com y te activamos el plan Aule\."/);
-  assert.match(app, /week_used: "Ya usaste las sesiones del plan Aule de estos 7 días\./);
-  assert.doesNotMatch(app + scripts["steps.js"], /Suscríbete|suscribirte|por semana/);
+  assert.match(bodyOf(app, "startError"), /if \(body\.error === "plan_limit"\) return PLAN_LIMITS\.includes\(body\.reason\) \? t\(`plan\.limit_\$\{body\.reason\}`\) : undefined;/);
+  assert.equal(es.plan.limit_trial_over, "Tu prueba gratis de 7 días terminó. Para seguir, escríbenos a admin@meetaule.com y te activamos el plan Aule.");
+  assert.match(es.plan.limit_week_used, /^Ya usaste las sesiones del plan Aule de estos 7 días\./);
+  for (const words of [es, en]) assert.doesNotMatch(Object.values(words.plan).join(" "), /Suscríbete|suscribirte|por semana|[Ss]ubscri|per week/);
   const notice = html.match(/<div id="cookies"[\s\S]*?<\/div>/)?.[0] ?? "";
   const said = notice.replace(/<!--[\s\S]*?-->/g, "").replace(/\s+/g, " ");
   // Only the necessary ones, which is why «Entendido» is the one answer (the policy rests storage
@@ -405,7 +431,9 @@ test("the page's words for an ended trial and a used week are the plan's, and th
   assert.match(said, /Solo cookies propias y necesarias/);
   assert.match(said, /si te invitaron, tu enlace hasta que entres/);
   assert.match(said, /nada de publicidad/);
-  assert.match(notice, /<a href="https:\/\/meetaule\.com\/legal\/privacy#cookies">Política de cookies<\/a>/);
+  assert.match(notice, /<a href="https:\/\/meetaule\.com\/legal\/privacy#cookies" data-i18n="cookies\.policy">Política de cookies<\/a>/);
+  // In English it promises the same, no more and no less.
+  assert.equal(en.cookies.text, "Only our own, necessary cookies, no advertising: your account, your session and, if you were invited, your link until you sign in.");
   // The notice never named the sign-in providers, and since D46 the entry does not either.
   assert.doesNotMatch(said, /Google|GitHub|Facebook|Apple/);
   assert.doesNotMatch(html + scripts["signin.js"], /usan sus propias cookies|ways-note/);
@@ -634,7 +662,8 @@ test("the home reads the family's account again each time it shows", () => {
   assert.match(again, /if \(current\(\) !== "home" \|\| getAccount\(\)\.signed_in !== true\) return false;/);
   // Said on the entry in the page's language (students.js sessionClosed).
   assert.match(again, /message: sessionClosed\(\) \}\);/);
-  assert.match(bodyOf(scripts["students.js"], "sessionClosed"), /"Your session has ended\. Sign in again\." : "Tu sesión se cerró\. Vuelve a entrar\."/);
+  assert.match(bodyOf(scripts["students.js"], "sessionClosed"), /return t\("common\.session_closed"\);/);
+  assert.deepEqual([en.common.session_closed, es.common.session_closed], ["Your session has ended. Sign in again.", "Tu sesión se cerró. Vuelve a entrar."]);
   // A failed read keeps what is drawn.
   assert.match(again, /catch \{\s*return current\(\) === "home" && getAccount\(\)\.signed_in === true;\s*\}/);
 });
@@ -661,7 +690,7 @@ test("the entry is one card of ways in beside Aule's face, and its code step is 
   assert.deepEqual(at, [...at].sort((a, b) => a - b), "in the owner's order");
   assert.doesNotMatch(html + css + scripts["signin.js"], /other-ways|<details class="providers"|Otras formas de entrar/);
   // The field keeps its label for a screen reader; the placeholder is what shows.
-  assert.match(entry, /<label class="sr-only" id="email-label" for="email-address" data-entry="email">Tu correo<\/label>/);
+  assert.match(entry, /<label class="sr-only" id="email-label" for="email-address" data-i18n="entry.email">Tu correo<\/label>/);
   // The code step: its fields and «Continuar» in the card, and «← Atrás» the one action under it.
   assert.ok(code.indexOf('id="code-continue"') > code.indexOf('class="controls entry-card"'));
   assert.ok(code.indexOf("data-back") > code.indexOf('id="code-missing"'), "under the card");
@@ -698,7 +727,7 @@ test("every way in is a row of one size, and Google's is ours with Google's own 
   const row = entry.match(/<div class="provider google-row" data-google hidden>([\s\S]*?)<\/div>\s*<\/div>/)?.[1] ?? "";
   assert.match(row, /<span class="provider-face" aria-hidden="true">\s*<svg viewBox="0 0 48 48">/);
   for (const colour of ["#EA4335", "#4285F4", "#FBBC05", "#34A853"]) assert.ok(row.includes(`fill="${colour}"`), colour);
-  assert.match(row, /<span data-entry="google">Continuar con Google<\/span>/);
+  assert.match(row, /<span data-i18n="entry.google">Continuar con Google<\/span>/);
   assert.match(row, /<\/span>\s*<div class="google-slot" id="google-p01">$/);
   assert.doesNotMatch(row, /tabindex|role="button"|<button/, "nothing of ours to press: the press is Google's");
   // The slot lies over the row from its corner, unseen, cut to the row; the frame's focus shows as the row's ring.
@@ -726,8 +755,8 @@ test("GitHub, Apple and Facebook always have their row: a link where the server 
     const tag = entry.match(new RegExp(`<a class="provider" data-provider="${provider}"[^>]*>`))?.[0] ?? "";
     assert.equal(tag, `<a class="provider" data-provider="${provider}" role="link" aria-disabled="true">`, provider);
     const row = entry.slice(entry.indexOf(tag), entry.indexOf("</a>", entry.indexOf(tag)));
-    assert.match(row, new RegExp(`<span data-entry="${provider}">${words}</span>`), provider);
-    assert.match(row, /<span class="provider-soon" data-entry="soon">Pronto<\/span>\s*$/, provider);
+    assert.match(row, new RegExp(`<span data-i18n="entry.${provider}">${words}</span>`), provider);
+    assert.match(row, /<span class="provider-soon" data-i18n="entry\.soon">Pronto<\/span>\s*$/, provider);
   }
   assert.doesNotMatch(entry, /href="api\/signin\//, "no way in is a link before the server says so");
   const rule = (selector) => rules(css).find(([found]) => found.split("\n").pop().trim() === selector)?.[1] ?? "";
@@ -740,15 +769,15 @@ test("GitHub, Apple and Facebook always have their row: a link where the server 
 test("the small print says that continuing is with Aule's privacy policy known, and links it (D46)", () => {
   const entry = html.slice(html.indexOf('data-screen="p01"'), html.indexOf('data-screen="p03"'));
   const line = entry.match(/<p class="small-help entry-legal">([\s\S]*?)<\/p>/)?.[1] ?? "";
-  assert.equal(line, '<span data-entry="privacy_lead">Al continuar, confirmas que conoces la</span> <a href="https://meetaule.com/legal/privacy" target="_blank" rel="noopener" data-entry="privacy_link">Política de privacidad de Aule</a>.');
+  assert.equal(line, '<span data-i18n="entry.privacy_lead">Al continuar, confirmas que conoces la</span> <a href="https://meetaule.com/legal/privacy" target="_blank" rel="noopener" data-i18n="entry.privacy_link">Política de privacidad de Aule</a>.');
   assert.equal(line.replace(/<[^>]+>/g, ""), "Al continuar, confirmas que conoces la Política de privacidad de Aule.");
   const signin = scripts["signin.js"];
-  assert.match(signin, /privacy_lead: "By continuing, you confirm that you are familiar with",\s*privacy_link: "Aule’s Privacy Policy",/);
+  assert.deepEqual([en.entry.privacy_lead, en.entry.privacy_link], ["By continuing, you confirm that you are familiar with", "Aule’s Privacy Policy"]);
   // It shows with any way in: nothing hides it.
   assert.doesNotMatch(signin, /entry-legal/);
   assert.doesNotMatch(entry, /class="small-help entry-legal"[^>]*hidden/);
   // The policy is the one P04 links.
-  assert.match(html, /<a class="link" href="https:\/\/meetaule\.com\/legal\/privacy" target="_blank" rel="noopener">Política de privacidad<\/a>/);
+  assert.match(html, /<a class="link" href="https:\/\/meetaule\.com\/legal\/privacy" target="_blank" rel="noopener" data-i18n="consent\.privacy">Política de privacidad<\/a>/);
 });
 
 test("the entry's type is the brand site's: its eyebrow in handwriting, its serif statement, its button's Inter", () => {
@@ -804,13 +833,11 @@ test("the entry's near-dark palette is the entry's alone, behind one switch (D45
 
 test("an email that is missing or is not one is said under the field: a red edge, a ringed «!» and the words, in both languages (D45)", () => {
   const entry = html.slice(html.indexOf('data-screen="p01"'), html.indexOf('data-screen="p03"'));
-  assert.match(entry, /<input id="email-address"[^>]*aria-describedby="email-error" \/>\s*<p class="field-error" id="email-error" role="alert" data-entry="email_invalid" hidden>/);
+  assert.match(entry, /<input id="email-address"[^>]*aria-describedby="email-error" \/>\s*<p class="field-error" id="email-error" role="alert" data-i18n="entry\.email_invalid" hidden>/);
   const signin = scripts["signin.js"];
   // In both languages, as the entry's other words are.
-  assert.match(signin, /email_required: "Escribe tu correo electrónico\."/);
-  assert.match(signin, /email_required: "Enter your email address\."/);
-  assert.match(signin, /email_invalid: "Revisa el correo: no parece una dirección válida\."/);
-  assert.match(signin, /email_invalid: "Check the email: it does not look like a valid address\."/);
+  assert.deepEqual([es.entry.email_required, en.entry.email_required], ["Escribe tu correo electrónico.", "Enter your email address."]);
+  assert.deepEqual([es.entry.email_invalid, en.entry.email_invalid], ["Revisa el correo: no parece una dirección válida.", "Check the email: it does not look like a valid address."]);
   // A 1 px edge in the error's colour, and the line under it: a ringed «!» and the words from the left.
   const rule = (selector) => rules(css).find(([found]) => found.split("\n").pop().trim() === selector)?.[1] ?? "";
   assert.match(rule('.entry-card .field [aria-invalid="true"]'), /border-color: var\(--danger\);/);
@@ -871,7 +898,7 @@ test("a child's screen says one short sentence an element, and what only an adul
   // A04's title is César's question again, with the greeting over it; A04 · Detalles' note and the card's are one sentence.
   assert.match(html, /<p class="ink-text" id="a04-hello"><\/p>\s*<h2 class="ink-title" id="a04-title" tabindex="-1">¿Qué hacemos hoy\?<\/h2>/);
   assert.match(html, /id="subject-note" hidden>Aquí Aule te ayuda con lo que traigas\.<\/p>/);
-  assert.match(html, /<p class="note">También puedes decirlo o mostrar tu cuaderno\.<\/p>/);
+  assert.match(html, /<p class="note" data-i18n="session\.answer_also">También puedes decirlo o mostrar tu cuaderno\.<\/p>/);
 });
 
 test("A04, A04 · Detalles and A05 speak the student's language, marked on each element, as a02 does", () => {
@@ -918,10 +945,14 @@ test("the home says what each child did in their latest sessions, facts only, an
   assert.doesNotMatch(bodyOf(home, "drawHome"), /drawSessions/);
   assert.match(blocks(home, 'onShow("home"')[0], /readAgain\(\)\.then\(\(home\) => \{\s*if \(home\) drawSessions\(\);\s*\}\);/);
   assert.equal((home.match(/\bdrawSessions\(\)/g) ?? []).length, 2, "its definition and that one call");
-  const draw = bodyOf(home, "drawSessions");
+  // The lines are written from the facts as read (sayLines), which are kept to say them again in a
+  // language just picked, without asking again; signing out forgets them.
+  const draw = bodyOf(home, "drawSessions") + bodyOf(home, "sayLines");
   assert.match(draw, /call\("api\/student\/sessions", \{ student_id: item\.dataset\.student \}\)/);
   assert.match(draw, /if \(current\(\) !== "home" \|\| !item\.isConnected\) return;/);
-  assert.match(draw, /sessionLine\(facts, \{ language \}\)/);
+  assert.match(draw, /sessionLine\(facts, \{ language: language\(\) \}\)/);
+  assert.equal((home.match(/call\("api\/student\/sessions"/g) ?? []).length, 1);
+  assert.match(blocks(home, "onAccount((account) =>").join("\n"), /sessionsOf\.clear\(\);/);
   // A failed read leaves the row as it is.
   assert.match(draw, /\(\) => undefined,\s*\);/);
   // Text only: nothing the platform sent becomes markup.
@@ -929,12 +960,12 @@ test("the home says what each child did in their latest sessions, facts only, an
   // The facts and summaries link belong to the row; the link also reaches an empty state.
   const row = bodyOf(home, "row");
   assert.match(row, /sessions\.className = "student-sessions";/);
-  assert.match(row, /sessions\.setAttribute\("aria-label", homeWords\("list", language, \{ name: student\.name \}\)\);/);
+  assert.match(row, /sessions\.setAttribute\("aria-label", homeWords\("list", language\(\), \{ name: student\.name \}\)\);/);
   assert.match(row, /summaries\.className = "link student-summaries";/);
   assert.ok(row.includes('summaries.addEventListener("click", () => openSummaries(student))'));
   assert.doesNotMatch(row + draw, /summaries\.hidden|\.student-summaries.*\.hidden/);
   // Its name starts with its visible words (WCAG 2.5.3), and it is a whole 44 px target.
-  assert.match(row, /summaries\.setAttribute\("aria-label", homeWords\("see_summaries_of", language, \{ name: student\.name \}\)\);/);
+  assert.match(row, /summaries\.setAttribute\("aria-label", homeWords\("see_summaries_of", language\(\), \{ name: student\.name \}\)\);/);
   assert.match(rules(css).find(([selector]) => selector.replace(/\/\*[\s\S]*?\*\//g, "").trim() === ".student-summaries")?.[1] ?? "", /min-height: 44px;/);
   const editor = html.slice(html.indexOf('data-screen="editor"'), html.indexOf('data-screen="a02"'));
   assert.doesNotMatch(editor, /id="past"|id="past-title"/);
@@ -962,10 +993,11 @@ test("consent leads to the name, which starts the first session: P12 is folded i
   // Two ways out of the name: the first session (handed to the child) only from «Empezar su
   // primera sesión», and only while the plan has a session; else the home says the child is made.
   const name = html.slice(html.indexOf('data-screen="p10-name"'), html.indexOf('data-screen="p14"'));
-  assert.match(name, /<button type="submit" class="link" id="child-later">Empezar más tarde<\/button>\s*<button type="submit" class="primary" id="child-start">Empezar su primera sesión<\/button>/);
+  assert.match(name, /<button type="submit" class="link" id="child-later" data-i18n="child\.later">Empezar más tarde<\/button>\s*<button type="submit" class="primary" id="child-start" data-i18n="child\.start">Empezar su primera sesión<\/button>/);
   const [submit] = blocks(onboarding, '$("child-name-form").addEventListener("submit"');
   assert.match(submit, /const starting = event\.submitter\?\.id === "child-start";/);
-  assert.match(submit, /if \(starting && planOpen && handOff\(made\.id\)\) return;\s*go\("home", \{ replace: true, fresh: true, message: `Listo\. Aule ya conoce a \$\{made\.name\}\.`, tone: "info" \}\);/);
+  assert.match(submit, /if \(starting && planOpen && handOff\(made\.id\)\) return;\s*go\("home", \{ replace: true, fresh: true, message: t\("child\.done", \{ name: made\.name \}\), tone: "info" \}\);/);
+  assert.equal(es.child.done, "Listo. Aule ya conoce a {name}.");
   assert.equal((onboarding.match(/\bhandOff\(/g) ?? []).length, 1, "and nowhere else");
   // One press, one child: the buttons stay disabled once the child is made, until the screen shows again.
   assert.match(submit, /\} catch \(error\) \{\s*for \(const id of \["child-start", "child-later"\]\) \$\(id\)\.disabled = false;/);
@@ -976,16 +1008,19 @@ test("consent leads to the name, which starts the first session: P12 is folded i
   assert.match(enter, /if \(!\$\("child-start"\)\.disabled\) \$\("child-name-form"\)\.requestSubmit\(\$\("child-start"\)\);/);
   // With no session left: «Guardar» alone, and the plan's line.
   const shown = blocks(onboarding, 'onShow("p10-name"')[0];
-  assert.match(shown, /\$\("child-start"\)\.textContent = planOpen \? "Empezar su primera sesión" : "Guardar";/);
+  assert.match(shown, /\$\("child-start"\)\.textContent = t\(planOpen \? "child\.start" : "common\.save"\);/);
+  assert.deepEqual([es.child.start, es.common.save], ["Empezar su primera sesión", "Guardar"]);
   assert.match(shown, /\$\("child-later"\)\.hidden = !planOpen;/);
   assert.match(shown, /\$\("child-plan"\)\.hidden = planOpen;/);
   // The grade (A2): optional, the interview's grades and «Prefiero decirlo después», none chosen at
   // first and none for the next child; sent as the interview sends it, and nothing else of the interview.
-  assert.match(name, /<select id="child-grade">\s*<option value="" disabled selected>Elige su grado<\/option>\s*<\/select>/);
-  assert.match(name, /¿En qué grado está\? <span class="optional">opcional<\/span>/);
-  assert.match(onboarding, /\.\.\.Object\.entries\(GRADES\)\.map\(\(\[value, text\]\) => new Option\(text, value\)\),\s*new Option\("Prefiero decirlo después", "later"\),/);
+  assert.match(name, /<select id="child-grade">\s*<option value="" disabled selected data-i18n="child\.grade_choose">Elige su grado<\/option>\s*<\/select>/);
+  assert.match(name, /<span data-i18n="child\.grade_label">¿En qué grado está\?<\/span> <span class="optional" data-i18n="common\.optional">opcional<\/span>/);
+  // The first option stays the markup's own, which only asks; the grades and the last one are named in the page's language.
+  assert.match(bodyOf(onboarding, "drawGrades"), /\$\("child-grade"\)\.options\[0\],\s*\.\.\.GRADES\.map\(\(grade\) => new Option\(gradeName\(grade\), grade\)\),\s*new Option\(t\("child\.grade_later"\), "later"\),/);
+  assert.equal(es.child.grade_later, "Prefiero decirlo después");
   assert.match(bodyOf(onboarding, "drop"), /\$\("child-grade"\)\.selectedIndex = 0;/);
-  assert.match(submit, /grade: Object\.hasOwn\(GRADES, grade\) \? grade : null,/);
+  assert.match(submit, /grade: GRADES\.includes\(grade\) \? grade : null,/);
   assert.match(submit, /interests: \[\],\s*tone: "calido",\s*note: "",/);
   // Asked only after consent: the name screen needs it.
   assert.ok(html.indexOf('data-screen="p04"') < html.indexOf('data-screen="p10-name"'));
@@ -1003,7 +1038,8 @@ test("the interview is offered on the home after the first session, and its save
   const row = bodyOf(home, "row");
   assert.match(row, /if \(!student\.interests\?\.length && !student\.note\) \{/);
   assert.match(row, /interview\.dataset\.interview = student\.id;/);
-  assert.match(row, /interview\.textContent = `Cuéntale a Aule sobre \$\{student\.name\}`;/);
+  assert.match(row, /interview\.textContent = t\("home\.interview", \{ name: student\.name \}\);/);
+  assert.equal(es.home.interview, "Cuéntale a Aule sobre {name}");
   // A whole target, 44 px tall, as every paper control is (D21).
   assert.match(css.match(/\n\.student-interview \{([^}]*)\}/)?.[1] ?? "", /min-height: 44px;/);
   const onboarding = scripts["onboarding.js"];
@@ -1020,8 +1056,9 @@ test("the interview is offered on the home after the first session, and its save
     assert.ok(save.includes(kept), kept);
   }
   assert.match(save, /\.\.\.\(student\.subjects \? \{ subjects: student\.subjects \} : \{\}\)/);
-  assert.match(save, /return say\("No se pudo guardar\. Inténtalo otra vez\."\);/);
-  assert.match(save, /go\("home", \{ message: `Gracias\. Aule ya sabe más de \$\{name\}\.`, tone: "info" \}\);/);
+  assert.match(save, /return say\(t\("common\.save_failed"\)\);/);
+  assert.match(save, /go\("home", \{ message: t\("interview\.thanks", \{ name \}\), tone: "info" \}\);/);
+  assert.deepEqual([es.common.save_failed, es.interview.thanks], ["No se pudo guardar. Inténtalo otra vez.", "Gracias. Aule ya sabe más de {name}."]);
   // The interview's grade comes first, as its first question.
   const order = ["p05", "p06-grade", "p06", "p07"].map((id) => html.indexOf(`data-screen="${id}"`));
   assert.deepEqual([...order].sort((a, b) => a - b), order);
@@ -1070,7 +1107,7 @@ test("the session puts Aule's face on a stage, which a drawing or the camera tak
   // While the camera shows, a drawing waits under it.
   assert.match(css, /\.stage\[data-shows="camera"\] > \.board \{\s*display: none;/);
   // «Modo tinta» is the team's: hidden in the markup, shown and on only for the team.
-  assert.match(session, /<button type="button" class="compact" id="device" aria-pressed="false" hidden>/);
+  assert.match(session, /<button type="button" class="compact" id="device" aria-pressed="false" hidden data-i18n="session\.ink_off">/);
   assert.match(app, /let inkMode = false;/);
   assert.match(
     bodyOf(app, "join"),
@@ -1343,7 +1380,7 @@ test("the session is the screen's height and never scrolls: the conversation and
 test("the team's link goes to the team's console, and the page names no other way to it", () => {
   assert.ok(!files.includes("admin.html") && !files.includes("admin.js") && !files.includes("pilot.js"), "the panel's files are gone");
   const link = html.match(/<a [^>]*id="team-panel"[^>]*>[^<]*<\/a>/)?.[0] ?? "";
-  assert.equal(link, '<a class="link" id="team-panel" href="https://admin.meetaule.com/" hidden>Panel del equipo</a>');
+  assert.equal(link, '<a class="link" id="team-panel" href="https://admin.meetaule.com/" hidden data-i18n="account.team">Panel del equipo</a>');
   // Every other «admin» on the page is the team's mail address.
   assert.deepEqual([...new Set(html.match(/[\w.:/-]*admin[\w.:/@-]*/g))].sort(), ["admin@meetaule.com", "https://admin.meetaule.com/", "mailto:admin@meetaule.com"]);
   for (const [name, text] of Object.entries(scripts)) assert.doesNotMatch(text, /api\/admin|["'`]admin["'`]/, name);

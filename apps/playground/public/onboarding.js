@@ -9,10 +9,11 @@
 // The interview (P05 to P07) is offered on the home after the first session,
 // for a child the family already has, and saved to their profile.
 
-import { $, GRADES, call, say, sessionClosed } from "./students.js";
+import { $, GRADES, call, gradeName, say, sessionClosed } from "./students.js";
 import { LIKES, interestsFrom, planLine } from "./steps.js";
 import { getAccount, go, landing, need, onAccount, onShow, setAccount } from "./screens.js";
 import { handOff } from "./home.js";
+import { language, onLanguage, t } from "./i18n.js";
 
 // What the guardian chose on P04; null until P04 is accepted.
 let held = null;
@@ -96,19 +97,27 @@ for (const id of ["keep-memory", "keep-transcripts"]) {
 
 // --- In the place of P10 and P12 (web-only): the name, the grade, and the first session --
 
-// The interview's grades, then «Prefiero decirlo después»; the first option only asks.
-$("child-grade").append(
-  ...Object.entries(GRADES).map(([value, text]) => new Option(text, value)),
-  new Option("Prefiero decirlo después", "later"),
-);
+// The interview's grades, then «Prefiero decirlo después», after the first option, which only asks
+// (the markup's own). Drawn again in a language just picked, with none chosen: the fields are empty
+// whenever a language can be picked (drop).
+function drawGrades() {
+  $("child-grade").replaceChildren(
+    $("child-grade").options[0],
+    ...GRADES.map((grade) => new Option(gradeName(grade), grade)),
+    new Option(t("child.grade_later"), "later"),
+  );
+  $("child-grade").selectedIndex = 0;
+}
+drawGrades();
+onLanguage(drawGrades);
 
 // With a session left in the plan, «Empezar su primera sesión» and «Empezar más
 // tarde»; with none, «Guardar» alone and the plan's line, as P12 said it (D9).
 onShow("p10-name", () => {
-  const plan = planLine(getAccount().plan, document.documentElement.lang);
+  const plan = planLine(getAccount().plan, language());
   planOpen = plan.open;
   for (const id of ["child-start", "child-later"]) $(id).disabled = false;
-  $("child-start").textContent = planOpen ? "Empezar su primera sesión" : "Guardar";
+  $("child-start").textContent = t(planOpen ? "child.start" : "common.save");
   $("child-later").hidden = !planOpen;
   $("child-plan").textContent = planOpen ? "" : plan.text;
   $("child-plan").hidden = planOpen;
@@ -149,7 +158,7 @@ $("child-name-form").addEventListener("submit", async (event) => {
       consent: true,
       name,
       // The grade as the interview saves it; «Prefiero decirlo después», or none chosen, is none.
-      grade: Object.hasOwn(GRADES, grade) ? grade : null,
+      grade: GRADES.includes(grade) ? grade : null,
       language: "es",
       interests: [],
       tone: "calido",
@@ -164,7 +173,7 @@ $("child-name-form").addEventListener("submit", async (event) => {
       setAccount(account);
       return go(landing(), { replace: true, fresh: true, flow: "back", message: sessionClosed() });
     }
-    return say("No se pudo guardar. Inténtalo otra vez.");
+    return say(t("common.save_failed"));
   }
   held = null;
   // The family's students as the server has them now, for the home and the session.
@@ -173,7 +182,7 @@ $("child-name-form").addEventListener("submit", async (event) => {
   // The steps that made the child are over: Back does not make it again. With a
   // session left, «Empezar su primera sesión» hands the browser to the child.
   if (starting && planOpen && handOff(made.id)) return;
-  go("home", { replace: true, fresh: true, message: `Listo. Aule ya conoce a ${made.name}.`, tone: "info" });
+  go("home", { replace: true, fresh: true, message: t("child.done", { name: made.name }), tone: "info" });
 });
 
 // --- The interview, from the home: P05, the grade, P06 and P07 (D34) ---------------------
@@ -202,24 +211,24 @@ $("interview-later").addEventListener("click", () => go("home"));
 // --- 1 de 3 (web-only): the grade, one tap; the one answer the next session uses ---------
 
 $("grade-options").replaceChildren(
-  ...Object.entries(GRADES).map(([value, text]) => {
+  ...GRADES.map((grade) => {
     const button = document.createElement("button");
     button.type = "button";
     button.className = "option";
-    button.dataset.grade = value;
-    button.textContent = text;
+    button.dataset.grade = grade;
     button.setAttribute("aria-pressed", "false");
     button.addEventListener("click", () => {
-      interviewing.grade = value;
+      interviewing.grade = grade;
       go("p06");
     });
     return button;
   }),
 );
 
-// The grade the family chose on the name screen shows chosen.
+// The grade the family chose on the name screen shows chosen; each is named in the page's language.
 onShow("p06-grade", () => {
   for (const button of $("grade-options").children) {
+    button.textContent = gradeName(button.dataset.grade);
     button.setAttribute("aria-pressed", String(button.dataset.grade === interviewing?.grade));
   }
 });
@@ -254,14 +263,15 @@ $("likes").append(
     input.value = like;
     const face = document.createElement("span");
     face.className = "option";
-    face.textContent = like;
     label.append(input, face);
     return label;
   }),
 );
 
+// Each option is named in the page's language; what is saved for it is the same in all (words/es.js `like`).
 onShow("p07", () => {
   for (const input of document.querySelectorAll('#likes input[type="checkbox"]')) {
+    input.nextElementSibling.textContent = t(`like.${input.value.toLowerCase()}`);
     input.checked = interviewing?.picked.includes(input.value) ?? false;
   }
   $("likes-more").value = interviewing?.typed ?? "";
@@ -272,8 +282,8 @@ $("likes-form").addEventListener("submit", async (event) => {
   const picked = [...document.querySelectorAll('#likes input[type="checkbox"]:checked')].map((input) => input.value);
   const typed = $("likes-more").value;
   const liked = interestsFrom(picked, typed);
-  if (liked.error === "too_many") return say("Elige hasta diez cosas que le gusten.");
-  if (liked.error === "too_long") return say("Cada gusto puede tener hasta 40 letras.");
+  if (liked.error === "too_many") return say(t("common.too_many_likes"));
+  if (liked.error === "too_long") return say(t("interview.like_too_long"));
   Object.assign(interviewing, { picked, typed });
   await saveInterview(liked.interests);
 });
@@ -303,10 +313,10 @@ async function saveInterview(interests) {
       relationship: student.relationship,
     });
   } catch {
-    return say("No se pudo guardar. Inténtalo otra vez.");
+    return say(t("common.save_failed"));
   }
   // The home reads the account again as it shows; this only spares it a stale moment.
   const account = await call("api/account").catch(() => null);
   if (account?.signed_in) setAccount(account);
-  go("home", { message: `Gracias. Aule ya sabe más de ${name}.`, tone: "info" });
+  go("home", { message: t("interview.thanks", { name }), tone: "info" });
 }

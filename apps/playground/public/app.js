@@ -12,6 +12,7 @@ import { endedMessage, languageOf, recoveryMessage } from "./session-messages.js
 import { COACH_HOLD_MS, HINTS_MS, VOICE, WINDOW_MS, cameraProblem, heard, isTap, levelOf, micProblem, words } from "./first-steps.js";
 import { cuy } from "./cuy.js";
 import { pixelate } from "./pixels.js";
+import { count, t } from "./i18n.js";
 
 const { Room, RoomEvent, Track, ParticipantKind, DisconnectReason, createLocalVideoTrack } = LivekitClient;
 
@@ -61,22 +62,24 @@ const STEP_POLL_MS = 3000;
 // Typed messages go to the tutor on the topic LiveKit agents read.
 const CHAT_TOPIC = "lk.chat";
 
-// Why the family's plan has no session now, as the platform says it, in the
-// plan's own words (steps.js's planLine): the team activates the plan of a
-// family who writes in, since nobody can pay in the app yet.
-const PLAN_LIMITS = {
-  trial_day_used: "Hoy ya usaste la sesión de tu prueba gratis. Vuelve mañana.",
-  week_used: "Ya usaste las sesiones del plan Aule de estos 7 días. Cada una vuelve a los 7 días de usarla.",
-  trial_over: "Tu prueba gratis de 7 días terminó. Para seguir, escríbenos a admin@meetaule.com y te activamos el plan Aule.",
+// Why a session could not start, by the server's error, in the interface's
+// language: the family's plan has none left now (the platform's reason, in the
+// plan's own words: words/es.js `plan` limit_*), or the sign-in or the session
+// changed meanwhile (`session`).
+const PLAN_LIMITS = ["trial_day_used", "week_used", "trial_over"];
+const ERRORS = {
+  daily_limit: "session.daily_limit",
+  not_signed_in: "common.session_closed",
+  session_active: "session.session_active",
+  session_changed: "session.session_changed",
+  recovery_unavailable: "session.recovery_unavailable",
 };
 
-const ERRORS = {
-  daily_limit: "Ya usaste las sesiones de hoy. Vuelve mañana.",
-  not_signed_in: "Tu sesión se cerró. Vuelve a entrar.",
-  session_active: "Todavía hay una sesión en curso. Elige al mismo alumno para continuarla o cerrarla.",
-  session_changed: "La sesión cambió en otra pestaña. Vuelve a elegir al alumno.",
-  recovery_unavailable: "No pudimos comprobar la sesión. Espera un momento y vuelve a intentarlo.",
-};
+/** The words for a session the server did not start; undefined for an error with none of its own. */
+function startError(body) {
+  if (body.error === "plan_limit") return PLAN_LIMITS.includes(body.reason) ? t(`plan.limit_${body.reason}`) : undefined;
+  return Object.hasOwn(ERRORS, body.error) ? t(ERRORS[body.error]) : undefined;
+}
 
 const $ = (id) => document.getElementById(id);
 const message = $("message");
@@ -435,7 +438,7 @@ function setTutorState(state = $("tutor").dataset.state) {
 
 // The icon a compact toggle (Botón/Compacto 191:1396) shows beside its label,
 // crossed when it is off, as on A05; one without an icon says it in words only.
-const TOGGLE_ICONS = { Cámara: "videocam" };
+const TOGGLE_ICONS = { camera: "videocam" };
 
 /** An icon of Íconos · Aparato 190:995, in the colour of the control it is in. */
 function iconOf(name) {
@@ -446,12 +449,12 @@ function iconOf(name) {
   return icon;
 }
 
-function setToggle(button, label, on) {
+/** A switch under the stage, "camera" or "ink": pressed or not, and what it is now in the interface's words. */
+function setToggle(button, name, on) {
   button.setAttribute("aria-pressed", String(on));
-  // "Cámara apagada", "Modo tinta apagado": the word follows the thing's gender.
-  const off = label.split(" ")[0].endsWith("a") ? "apagada" : "apagado";
-  const words = on ? label : `${label} ${off}`;
-  const base = TOGGLE_ICONS[label];
+  // «Cámara apagada», «Modo tinta apagado»: off, each has its own words (words/es.js `session`).
+  const words = t(`session.${name}_${on ? "on" : "off"}`);
+  const base = TOGGLE_ICONS[name];
   if (!base) {
     button.textContent = words;
     return;
@@ -570,8 +573,9 @@ function followTranscript(always = false) {
  * Where a session the engine runs is now (D39): the stop in hand, after a dot
  * for each stop done. The stops still to come are not shown: a child on the
  * first one saw every level ahead of it. Out of sight, a screen reader hears
- * «Ahora: Refuerzo Nivel 2. Ya hiciste 2 partes.», in Spanish, as the engine's
- * names are. With no stop in hand (before the first, after the last) it hides.
+ * «Ahora: Refuerzo Nivel 2. Ya hiciste 2 partes.», in the interface's words
+ * around the engine's names. With no stop in hand (before the first, after the
+ * last) it hides.
  */
 function showRoute(route) {
   const now = route.find((stop) => stop.state === "current");
@@ -592,8 +596,8 @@ function showRoute(route) {
   name.textContent = now.name;
   const detail = document.createElement("span");
   detail.textContent = now.detail ?? "";
-  const tally = done ? ` Ya hiciste ${done} ${done === 1 ? "parte" : "partes"}.` : "";
-  $("route").replaceChildren(unseen("Ahora: "), dots, name, ...(now.detail ? [" ", detail] : []), unseen(`.${tally}`));
+  const tally = done ? ` ${count("session.route_done", done)}` : "";
+  $("route").replaceChildren(unseen(`${t("session.route_now")} `), dots, name, ...(now.detail ? [" ", detail] : []), unseen(`.${tally}`));
 }
 
 // The card shows the exercise Aule posed, not merely the one the engine has
@@ -772,7 +776,7 @@ $("answer").addEventListener("submit", async (event) => {
     cardShown = "";
     await showStep(id, next ?? undefined);
   } catch {
-    showMessage("No se pudo enviar tu respuesta. Inténtalo otra vez o dila en voz alta.");
+    showMessage(t("session.answer_failed"));
   } finally {
     $("answer-send").disabled = false;
   }
@@ -1202,7 +1206,7 @@ function showCamera() {
     // Nothing is filmed for a room the tutor has not reached.
     $("cam").disabled = !tutorCame;
     $("cam").removeAttribute("lang");
-    setToggle($("cam"), "Cámara", on);
+    setToggle($("cam"), "camera", on);
   }
 }
 
@@ -1441,7 +1445,7 @@ async function join(session, { resumed = false } = {}) {
   inkMode = team;
   $("device").hidden = !team;
   $("board").classList.toggle("device", team);
-  setToggle($("device"), "Modo tinta", team);
+  setToggle($("device"), "ink", team);
   room = new Room({
     adaptiveStream: true,
     dynacast: true,
@@ -2031,7 +2035,8 @@ need("session", () => room !== null);
  * The session's own words around the stage, in the student's language and
  * marked with it, as the line under Aule's face is: «Terminar», the clock's
  * name, the typed message and «Enviar», and the conversation, whose lines are
- * then read in that language. The exercise card stays the engine's Spanish.
+ * then read in that language. The exercise card is the engine's, in Spanish;
+ * its own labels around it are the interface's (index.html, `session`).
  */
 function sessionWords() {
   const language = sessionLanguage();
@@ -2147,17 +2152,14 @@ async function startSession() {
     });
     const body = await response.json();
     if (!response.ok) {
-      const why = body.error === "plan_limit" ? PLAN_LIMITS[body.reason] : ERRORS[body.error];
-      throw new Error(why ?? body.message ?? "No se pudo empezar la sesión.");
+      throw new Error(startError(body) ?? body.message ?? t("session.start_failed"));
     }
     // The room opens the devices itself, with what was chosen here.
     stopPreview();
     await join(body);
   } catch (error) {
     joinFailed(
-      error?.name === "NotAllowedError"
-        ? "El navegador bloqueó el micrófono. Permítelo y empieza otra vez."
-        : (error?.message ?? "No se pudo empezar la sesión."),
+      error?.name === "NotAllowedError" ? t("session.mic_blocked") : (error?.message ?? t("session.start_failed")),
     );
   }
 }
@@ -2194,7 +2196,7 @@ $("resume").addEventListener("click", async () => {
   try {
     await join(session, { resumed: true });
   } catch (error) {
-    if (error?.name === "NotAllowedError") joinFailed("El navegador bloqueó el micrófono. Permítelo y empieza otra vez.");
+    if (error?.name === "NotAllowedError") joinFailed(t("session.mic_blocked"));
     else joinFailed(recoveryText("failed"), sessionLanguage());
   }
 });
@@ -2243,7 +2245,7 @@ window.addEventListener("blur", () => stopTalking("cancel_turn"));
 $("device").addEventListener("click", () => {
   inkMode = !inkMode;
   $("board").classList.toggle("device", inkMode);
-  setToggle($("device"), "Modo tinta", inkMode);
+  setToggle($("device"), "ink", inkMode);
   if (inkMode) return showInk();
   // Back to the page's own board: not the card's words next to the card. An exercise on the
   // board is the last one shown (onVisual, boardToCard, showInk); another one stays.

@@ -6,9 +6,13 @@ import { test } from "node:test";
 import { runInNewContext } from "node:vm";
 import { codeDigits } from "../public/steps.js";
 import { homeWords } from "../public/summaries.js";
+import { wordsIn } from "../public/i18n.js";
+import es from "../public/words/es.js";
+import en from "../public/words/en.js";
 
 const read = (name) => readFile(new URL(`../public/${name}`, import.meta.url), "utf8");
 const signin = await read("signin.js");
+const language = await read("language.js");
 const reviews = (await read("reviews.js")).replace(/^import .*;\n/gm, "").replace(/^export /gm, "");
 
 function source(text, name) {
@@ -275,12 +279,11 @@ test("Google's own button is stretched from its corner until it covers its row e
   assert.match(fit, /drawn\.offsetHeight - 2 \* above/);
 });
 
-// Every word of the entry's four screens, as signin.js has them.
-const WORDS = runInNewContext(`(${signin.match(/\nconst ENTRY_WORDS = (\{[^]*?\n\});/)[1]})`);
+// Every word of the entry's four screens, as the page's words have them (words/es.js `entry`).
+const WORDS = { es: es.entry, en: en.entry };
 const index = await read("index.html");
 
 test("every word of the entry exists in Spanish and in English, under the same key", () => {
-  assert.deepEqual(Object.keys(WORDS).sort(), ["en", "es"]);
   assert.deepEqual(Object.keys(WORDS.en).sort(), Object.keys(WORDS.es).sort());
   for (const [language, words] of Object.entries(WORDS)) {
     for (const [key, text] of Object.entries(words)) {
@@ -296,14 +299,14 @@ test("every word of the entry exists in Spanish and in English, under the same k
   assert.equal(`${WORDS.en.privacy_lead} ${WORDS.en.privacy_link}.`, "By continuing, you confirm that you are familiar with Aule’s Privacy Policy.");
   assert.equal(WORDS.en.not_sent, "The code could not be sent. Try again in a moment.");
   assert.equal(WORDS.en.not_checked, "The code could not be checked. Try again in a moment.");
-  // Every key is used: named by an element of the page, or said by the script outside the table.
-  const script = signin.replace(/\nconst ENTRY_WORDS = \{[^]*?\n\};/, "");
+  // Every key is used: named by an element of the page, or said by the script.
   for (const key of Object.keys(WORDS.es)) {
-    const named = index.includes(`data-entry="${key}"`) || index.includes(`data-entry-placeholder="${key}"`);
-    assert.ok(named || script.includes(`"${key}"`), `${key} is used`);
+    const named = index.includes(`data-i18n="entry.${key}"`) || index.includes(`:entry.${key}"`);
+    assert.ok(named || signin.includes(`"${key}"`), `${key} is used`);
   }
   // And the script asks for no key that is not there.
   for (const [, key] of signin.matchAll(/entryText\("(\w+)"/g)) assert.ok(key in WORDS.es, key);
+  assert.match(signin, /\nconst entryText = \(key\) => t\(`entry\.\$\{key\}`\);/);
 });
 
 /** The four screens of the entry as the page has them: p01, p03, p14 and p15. */
@@ -316,59 +319,58 @@ function entryScreens() {
 test("drawn with the page in English, the entry's four screens have no Spanish left in them", () => {
   const screens = entryScreens();
   // Each element that names its words, with the Spanish the page is written in.
-  const named = [...screens.matchAll(/<(\w+)\b[^>]*\bdata-entry="(\w+)"[^>]*>([^<]*)</g)].map(([, , key, text]) => ({ dataset: { entry: key }, textContent: text }));
-  const fields = [...screens.matchAll(/<input\b[^>]*\bplaceholder="([^"]*)"[^>]*\bdata-entry-placeholder="(\w+)"/g)].map(([, text, key]) => ({ dataset: { entryPlaceholder: key }, placeholder: text }));
-  assert.ok(named.length >= 30 && fields.length === 2);
+  const named = [...screens.matchAll(/<(\w+)\b[^>]*\bdata-i18n="([\w.-]+)"[^>]*>([^<]*)</g)].map(([, , key, text]) => ({ dataset: { i18n: key }, textContent: text }));
+  const fields = [...screens.matchAll(/<(?:input|ol)\b[^>]*\b(placeholder|aria-label)="([^"]*)"[^>]*\bdata-i18n-attr="([\w.:-]+)"/g)].map(([, attribute, text, key]) => ({
+    dataset: { i18nAttr: key },
+    attribute,
+    [attribute]: text,
+    setAttribute(name, value) { this[name] = value; },
+  }));
+  assert.ok(named.length >= 30 && fields.length === 4);
   // As written, the page is the Spanish of the words, key by key.
-  for (const element of named) assert.equal(element.textContent, WORDS.es[element.dataset.entry], element.dataset.entry);
-  for (const field of fields) assert.equal(field.placeholder, WORDS.es[field.dataset.entryPlaceholder]);
-  assert.equal(screens.match(/\splaceholder="/g).length, fields.length, "no placeholder without its key");
+  for (const element of named) assert.equal(element.textContent, wordsIn("es", element.dataset.i18n), element.dataset.i18n);
+  for (const field of fields) assert.equal(field[field.attribute], wordsIn("es", field.dataset.i18nAttr.split(":")[1]));
+  assert.equal(screens.match(/\s(?:placeholder|aria-label|title|alt)="[^"]/g).length, fields.length, "no placeholder or label without its key");
 
-  // The real entryWords, with the page in English; the eyebrow's line is the picker's (below).
-  const greeting = element();
-  const draw = (lang) => runInNewContext(`
-    const ENTRY_WORDS = ${JSON.stringify(WORDS)};
-    ${signin.match(/\nconst entryLanguage = .+;/)[0]}
-    ${signin.match(/\nconst entryText = .+;/)[0]}
-    const greeting = () => "the line picked for " + entryLanguage();
-    ${source(signin, "entryWords")}
-    entryWords()`, {
-    $: (id) => (id === "entry-greeting" ? greeting : element()),
+  // The real write() of language.js, with the page in English.
+  const root = { lang: "es" };
+  const draw = (lang) => runInNewContext(`${source(language, "write")}\nwrite()`, {
+    language: () => lang,
+    t: (key, values) => wordsIn(lang, key, values),
     document: {
-      documentElement: { lang },
-      querySelectorAll: (selector) => (selector === "[data-entry]" ? named : selector === "[data-entry-placeholder]" ? fields : []),
+      documentElement: root,
+      querySelectorAll: (selector) => (selector === "[data-i18n]" ? named : selector === "[data-i18n-attr]" ? fields : []),
     },
   });
   draw("en");
-  for (const element of named) assert.equal(element.textContent, WORDS.en[element.dataset.entry], element.dataset.entry);
-  for (const field of fields) assert.equal(field.placeholder, WORDS.en[field.dataset.entryPlaceholder]);
-  assert.equal(greeting.textContent, "the line picked for en");
-  const drawn = [...named.map((element) => element.textContent), ...fields.map((field) => field.placeholder)];
+  assert.equal(root.lang, "en");
+  for (const element of named) assert.equal(element.textContent, wordsIn("en", element.dataset.i18n), element.dataset.i18n);
+  for (const field of fields) assert.equal(field[field.attribute], wordsIn("en", field.dataset.i18nAttr.split(":")[1]));
+  const drawn = [...named.map((element) => element.textContent), ...fields.map((field) => field[field.attribute])];
   // No row says «Continuar con …» or «Pronto»: each reads "Continue with …" and "Soon".
   for (const label of ["google", "github", "apple", "meta"]) assert.ok(drawn.includes(WORDS.en[label]), label);
   assert.equal(drawn.filter((text) => text === "Soon").length, 3);
   assert.ok(!drawn.some((text) => /Continuar con|Pronto/.test(text)));
-  // Nothing drawn is a Spanish word of the table.
-  const spanish = new Set(Object.values(WORDS.es));
+  // Nothing drawn is a Spanish word of the page.
+  const spanish = new Set(Object.values(es).flatMap((group) => Object.values(group)));
   for (const text of drawn) assert.ok(!spanish.has(text), text);
 
-  // And nothing a person reads on these screens is written outside the table: with the named elements
-  // taken out, what is left is the name, an arrow, a full stop and the team's address.
+  // And nothing a person reads on these screens is written outside the page's words: with the named
+  // elements taken out, what is left is the name, an arrow, a full stop and the team's address.
   const left = screens
     .replace(/<!--[\s\S]*?-->/g, "")
     .replace(/<svg[\s\S]*?<\/svg>/g, "")
-    .replace(/(<\w+\b[^>]*\bdata-entry="\w+"[^>]*>)[^<]*/g, "$1")
+    .replace(/(<\w+\b[^>]*\bdata-i18n="[\w.-]+"[^>]*>)[^<]*/g, "$1")
     .replace(/<[^>]+>/g, "\n")
     .split("\n").map((text) => text.trim()).filter(Boolean);
-  // The eyebrow is written by the script: a line of its pool, or "greeting" or "returning".
-  assert.deepEqual([...new Set(left)].sort(), [".", "Aule", "Te damos la bienvenida", "admin@meetaule.com", "←"].sort());
-  assert.equal(WORDS.es.greeting, "Te damos la bienvenida");
-  // No label a screen reader would read is left in Spanish either: these screens name nothing by attribute.
-  assert.deepEqual([...screens.matchAll(/\b(?:aria-label|title|alt)="([^"]+)"/g)].map(([, text]) => text), ["Avance", "Avance"]);
+  assert.deepEqual([...new Set(left)].sort(), [".", "Aule", "admin@meetaule.com", "←"].sort());
+  // The eyebrow is written by the script over the markup's own: a line of its pool, or "welcome" or "back".
+  assert.match(screens, /<p class="question-step" id="entry-greeting" data-i18n="lines\.welcome">Te damos la bienvenida<\/p>/);
 
   // Back in Spanish it is the page as written.
   draw("es");
-  for (const element of named) assert.equal(element.textContent, WORDS.es[element.dataset.entry], element.dataset.entry);
+  assert.equal(root.lang, "es");
+  for (const element of named) assert.equal(element.textContent, wordsIn("es", element.dataset.i18n), element.dataset.i18n);
 });
 
 // --- The eyebrow's lines (D47) ---------------------------------------------------
@@ -380,8 +382,9 @@ const drawn = runInNewContext(`
   ${["lineHolds", "pickLine"].map((name) => source(signin, name)).join("\n")}
   ({ ENTRY_LINES, pickLine, lineHolds })`);
 const { pickLine, lineHolds } = drawn;
-// An array of this file's own, so its lists compare with lists made here.
-const LINES = [...drawn.ENTRY_LINES];
+// An array of this file's own, so its lists compare with lists made here; each line with its words in
+// both languages, as the page's words have them under its key (words/es.js `lines`).
+const LINES = [...drawn.ENTRY_LINES].map((line) => ({ ...line, es: es.lines[line.key], en: en.lines[line.key] }));
 
 /** A clock at `hour` on a weekday `day` (0 is Sunday), as the picker reads it. */
 const clock = (hour, day) => ({ getHours: () => hour, getDay: () => day });
@@ -430,7 +433,7 @@ test("every line of the eyebrow has its English beside its Spanish, and neither 
     }
     assert.notEqual(line.es, line.en, line.es);
     // A condition is one the picker knows, and well formed.
-    for (const key of Object.keys(line)) assert.ok(["es", "en", "who", "from", "to", "days", "weight"].includes(key), `${line.es}: ${key}`);
+    for (const key of Object.keys(line)) assert.ok(["key", "es", "en", "who", "from", "to", "days", "weight"].includes(key), `${line.es}: ${key}`);
     if (line.who) assert.ok(["new", "returning"].includes(line.who), line.es);
     assert.equal(line.from === undefined, line.to === undefined, `${line.es}: from and to go together`);
     if (line.days) assert.ok(line.days.length > 0 && line.days.every((day) => Number.isInteger(day) && day >= 0 && day <= 6), line.es);
@@ -438,11 +441,15 @@ test("every line of the eyebrow has its English beside its Spanish, and neither 
   }
   // No line twice, in either language.
   for (const language of ["es", "en"]) assert.equal(new Set(LINES.map((line) => line[language])).size, LINES.length, language);
-  // The two lines the eyebrow always had are in the pool and are what it falls back to, with the same English.
-  const of = (es) => LINES.find((line) => line.es === es);
-  assert.equal(of(WORDS.es.greeting).en, WORDS.en.greeting);
-  assert.equal(of(WORDS.es.returning).en, WORDS.en.returning);
-  assert.equal(of(WORDS.es.returning).who, "returning");
+  // Every line of the page's words is in the pool, once, and the pool has no other.
+  assert.deepEqual(LINES.map((line) => line.key), Object.keys(es.lines));
+  assert.deepEqual(Object.keys(en.lines), Object.keys(es.lines));
+  // The two lines the eyebrow always had are in the pool and are what it falls back to.
+  const of = (key) => LINES.find((line) => line.key === key);
+  assert.deepEqual([of("welcome").es, of("welcome").en], ["Te damos la bienvenida", "Welcome"]);
+  assert.deepEqual([of("back").es, of("back").en], ["¡Qué bueno que estés de vuelta!", "Good to see you back!"]);
+  assert.equal(of("back").who, "returning");
+  assert.equal(of("welcome").who, undefined);
   // A line tied to the hour or the day weighs three general ones; a rare one a small part of one.
   for (const line of LINES) {
     if (line.from !== undefined || line.days) assert.equal(line.weight, 3, line.es);
@@ -497,20 +504,17 @@ test("the eyebrow's line is picked with Math.random and the visitor's clock, not
   assert.doesNotMatch(body, /remember\(|setItem|sessionStorage|localStorage/);
   assert.equal(signin.match(/Math\.random/g).length, 1, "no other chance in the sign-in");
   const greet = ({ pick, returning = false, lang = "es" }) => runInNewContext(`
-    const ENTRY_WORDS = ${JSON.stringify(WORDS)};
     const ENTRY_LINES = [], RETURNING = "aule.returning", local = null;
-    ${signin.match(/\nconst entryLanguage = .+;/)[0]}
-    ${signin.match(/\nconst entryText = .+;/)[0]}
     let entryLine = null;
     ${body}
-    [greeting(), greeting()]`, { pickLine: pick, recall: () => (returning ? "1" : null), document: { documentElement: { lang } } });
+    [greeting(), greeting()]`, { pickLine: pick, recall: () => (returning ? "1" : null), t: (key, values) => wordsIn(lang, key, values) });
   // A picked line, in the page's language; one load keeps its line however often the entry shows.
   let picks = 0;
-  const pick = () => { picks += 1; return { es: `línea ${picks}`, en: `line ${picks}` }; };
-  assert.deepEqual([...greet({ pick })], ["línea 1", "línea 1"]);
-  assert.deepEqual([...greet({ pick, lang: "en" })], ["line 2", "line 2"]);
+  const pick = () => { picks += 1; return { key: ["come_in", "pencil"][picks - 1] }; };
+  assert.deepEqual([...greet({ pick })], ["Pasa, que hay tarea", "Pasa, que hay tarea"]);
+  assert.deepEqual([...greet({ pick, lang: "en" })], ["Pencil, notebook and the will to try", "Pencil, notebook and the will to try"]);
   // The picker fails, finds nothing, or hands back a line without words: the two lines of always.
-  for (const broken of [() => { throw new Error("no"); }, () => null, () => ({}), () => ({ es: "" })]) {
+  for (const broken of [() => { throw new Error("no"); }, () => null, () => ({}), () => ({ key: "nope" })]) {
     assert.deepEqual([...greet({ pick: broken })], ["Te damos la bienvenida", "Te damos la bienvenida"]);
     assert.deepEqual([...greet({ pick: broken, returning: true })], ["¡Qué bueno que estés de vuelta!", "¡Qué bueno que estés de vuelta!"]);
     assert.deepEqual([...greet({ pick: broken, returning: true, lang: "en" })], ["Good to see you back!", "Good to see you back!"]);
@@ -528,7 +532,9 @@ function reader() {
   };
   const page = runInNewContext(`${reviews}\n({ openSummaries, load })`, {
     $, homeWords,
-    document: { documentElement: { lang: "es" }, createElement: element },
+    language: () => "es",
+    locale: () => "es-PE",
+    document: { createElement: element },
     current: () => screen,
     getAccount: () => account,
     go: (next) => { hidden.get(screen)?.(); screen = next; shown.get(next)?.(); },

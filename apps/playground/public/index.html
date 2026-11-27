@@ -7,8 +7,8 @@
     <!-- The build this page comes from, written in by the server (src/build.ts). -->
     <meta name="aule-version" content="{{version}}" />
     <meta name="aule-commit" content="{{commit}}" />
-    <title>Aule · Tu tutor con IA</title>
-    <meta name="description" content="Aule, el tutor con IA que conversa por voz con tu hijo y practica matemática sin darle la respuesta." />
+    <title data-i18n="page.title">Aule · Tu tutor con IA</title>
+    <meta name="description" content="Aule, el tutor con IA que conversa por voz con tu hijo y practica matemática sin darle la respuesta." data-i18n-attr="content:page.description" />
     <meta name="theme-color" content="#f5f2ea" />
     <link rel="icon" href="icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="apple-touch-icon.png" />
@@ -19,6 +19,7 @@
     <!-- Signing in comes first: its scripts are fetched at once. Google's is
          not: signin.js fetches it only on the screens where a guardian signs in
          (P01), never on a student's screens. -->
+    <link rel="modulepreload" href="language.js" />
     <link rel="modulepreload" href="students.js" />
     <link rel="modulepreload" href="steps.js" />
     <link rel="modulepreload" href="screens.js" />
@@ -42,17 +43,19 @@
           <header class="screen-head">
             <div class="head-row">
               <p class="wordmark"><img class="wordmark-mark" src="icon.svg" alt="" width="28" height="28" />Aule</p>
+              <!-- The language picker (language.js draws it): each language by its own name. -->
+              <div class="language" data-language hidden></div>
             </div>
-            <ol class="progress" aria-label="Avance"></ol>
+            <ol class="progress" aria-label="Avance" data-i18n-attr="aria-label:progress.label"></ol>
           </header>
           <div class="screen-body">
             <div class="question">
-              <p class="question-step" id="entry-greeting">Te damos la bienvenida</p>
+              <p class="question-step" id="entry-greeting" data-i18n="lines.welcome">Te damos la bienvenida</p>
               <div class="entry-heading">
-                <h2 class="question-title" id="p01-title" tabindex="-1" data-entry="title">Entra a Aule</h2>
+                <h2 class="question-title" id="p01-title" tabindex="-1" data-i18n="entry.title">Entra a Aule</h2>
                 <div class="entry-help-control" id="entry-help-control">
-                  <button class="entry-help-trigger" id="entry-help-trigger" type="button" aria-describedby="entry-help" aria-expanded="false" aria-controls="entry-help"><span class="sr-only" data-entry="help_label">Ayuda para entrar</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 11v6" /><circle cx="12" cy="7.5" r=".75" fill="currentColor" stroke="none" /></svg></button>
-                  <p class="entry-tooltip" id="entry-help" data-entry="help" role="tooltip" hidden>Entra o crea tu cuenta, sin contraseña.</p>
+                  <button class="entry-help-trigger" id="entry-help-trigger" type="button" aria-describedby="entry-help" aria-expanded="false" aria-controls="entry-help"><span class="sr-only" data-i18n="entry.help_label">Ayuda para entrar</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 11v6" /><circle cx="12" cy="7.5" r=".75" fill="currentColor" stroke="none" /></svg></button>
+                  <p class="entry-tooltip" id="entry-help" data-i18n="entry.help" role="tooltip" hidden>Entra o crea tu cuenta, sin contraseña.</p>
                 </div>
               </div>
             </div>
@@ -67,7 +70,7 @@
               <div class="provider google-row" data-google hidden>
                 <span class="provider-face" aria-hidden="true">
                   <svg viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
-                  <span data-entry="google">Continuar con Google</span>
+                  <span data-i18n="entry.google">Continuar con Google</span>
                 </span>
                 <div class="google-slot" id="google-p01"></div>
               </div>
@@ -76,38 +79,38 @@
               <a class="provider" data-provider="github" role="link" aria-disabled="true">
                 <span class="provider-face">
                   <svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/></svg>
-                  <span data-entry="github">Continuar con GitHub</span>
+                  <span data-i18n="entry.github">Continuar con GitHub</span>
                 </span>
-                <span class="provider-soon" data-entry="soon">Pronto</span>
+                <span class="provider-soon" data-i18n="entry.soon">Pronto</span>
               </a>
               <a class="provider" data-provider="apple" role="link" aria-disabled="true">
                 <span class="provider-face">
                   <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"/></svg>
-                  <span data-entry="apple">Continuar con Apple</span>
+                  <span data-i18n="entry.apple">Continuar con Apple</span>
                 </span>
-                <span class="provider-soon" data-entry="soon">Pronto</span>
+                <span class="provider-soon" data-i18n="entry.soon">Pronto</span>
               </a>
               <a class="provider" data-provider="meta" role="link" aria-disabled="true">
                 <span class="provider-face">
                   <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#0866FF" d="M24 12.073C24 5.405 18.627 0 12 0S0 5.405 0 12.073C0 18.1 4.388 23.094 10.125 24v-8.437H7.078v-3.49h3.047V9.413c0-3.026 1.792-4.697 4.533-4.697 1.312 0 2.686.236 2.686.236v2.971H15.83c-1.491 0-1.956.93-1.956 1.886v2.264h3.328l-.532 3.49h-2.796V24C19.612 23.094 24 18.1 24 12.073z"/></svg>
-                  <span data-entry="meta">Continuar con Facebook</span>
+                  <span data-i18n="entry.meta">Continuar con Facebook</span>
                 </span>
-                <span class="provider-soon" data-entry="soon">Pronto</span>
+                <span class="provider-soon" data-i18n="entry.soon">Pronto</span>
               </a>
-              <p class="ways-or" id="ways-or" data-entry="or" hidden>o</p>
+              <p class="ways-or" id="ways-or" data-i18n="entry.or" hidden>o</p>
               <!-- P02's email field and action, on the same screen as the other ways in (D42). -->
               <form id="email-start" class="email-entry" novalidate autocomplete="on" hidden>
                 <div class="field">
-                  <label class="sr-only" id="email-label" for="email-address" data-entry="email">Tu correo</label>
-                  <input id="email-address" type="email" autocomplete="email" inputmode="email" placeholder="nombre@correo.com" data-entry-placeholder="email_placeholder" maxlength="254" aria-describedby="email-error" />
-                  <p class="field-error" id="email-error" role="alert" data-entry="email_invalid" hidden>Revisa el correo: no parece una dirección válida.</p>
+                  <label class="sr-only" id="email-label" for="email-address" data-i18n="entry.email">Tu correo</label>
+                  <input id="email-address" type="email" autocomplete="email" inputmode="email" placeholder="nombre@correo.com" data-i18n-attr="placeholder:entry.email_placeholder" maxlength="254" aria-describedby="email-error" />
+                  <p class="field-error" id="email-error" role="alert" data-i18n="entry.email_invalid" hidden>Revisa el correo: no parece una dirección válida.</p>
                 </div>
-                <button type="submit" class="primary" id="email-send" data-entry="send">Enviarme un código</button>
+                <button type="submit" class="primary" id="email-send" data-i18n="entry.send">Enviarme un código</button>
               </form>
               <!-- The message line shows here, inside the card (screens.js). -->
               <div class="entry-says" data-message></div>
               <!-- The small print (D46): the owner's words, and the policy P04 links too. -->
-              <p class="small-help entry-legal"><span data-entry="privacy_lead">Al continuar, confirmas que conoces la</span> <a href="https://meetaule.com/legal/privacy" target="_blank" rel="noopener" data-entry="privacy_link">Política de privacidad de Aule</a>.</p>
+              <p class="small-help entry-legal"><span data-i18n="entry.privacy_lead">Al continuar, confirmas que conoces la</span> <a href="https://meetaule.com/legal/privacy" target="_blank" rel="noopener" data-i18n="entry.privacy_link">Política de privacidad de Aule</a>.</p>
             </div>
           </div>
         </div>
@@ -120,36 +123,36 @@
             <div class="head-row">
               <p class="wordmark"><img class="wordmark-mark" src="icon.svg" alt="" width="28" height="28" />Aule</p>
             </div>
-            <ol class="progress" aria-label="Avance"></ol>
+            <ol class="progress" aria-label="Avance" data-i18n-attr="aria-label:progress.label"></ol>
           </header>
           <div class="screen-body">
             <div class="question">
-              <h2 class="question-title" id="p03-title" tabindex="-1" data-entry="code_title">Escribe el código que te enviamos</h2>
-              <p class="question-help" id="code-help" data-entry="code_help">Puedes pegarlo. Llega en un minuto.</p>
+              <h2 class="question-title" id="p03-title" tabindex="-1" data-i18n="entry.code_title">Escribe el código que te enviamos</h2>
+              <p class="question-help" id="code-help" data-i18n="entry.code_help">Puedes pegarlo. Llega en un minuto.</p>
             </div>
             <div class="controls entry-card">
               <!-- Figma: Dígito/Base 160:1405 (Vacío 160:1406, Foco 160:1408, Lleno 160:1410): one real field over six boxes. -->
               <div class="digits">
-                <label class="sr-only" for="email-code" data-entry="code_label">Código de 6 dígitos</label>
+                <label class="sr-only" for="email-code" data-i18n="entry.code_label">Código de 6 dígitos</label>
                 <input id="email-code" class="digits-input" inputmode="numeric" autocomplete="one-time-code" enterkeyhint="go" spellcheck="false" />
                 <div class="digit-boxes" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span><span></span></div>
               </div>
               <!-- Only a valid code for a new account reveals this field. The platform rechecks the code when it is sent (D42). -->
               <div class="field" id="email-name-field" hidden>
-                <label id="email-name-label" for="email-name" data-entry="name">Tu nombre</label>
-                <input id="email-name" type="text" autocomplete="name" maxlength="120" placeholder="Ej.: Ana" data-entry-placeholder="name_placeholder" aria-describedby="code-help email-name-error" />
-                <p class="field-error" id="email-name-error" role="alert" data-entry="name_error" hidden>Escribe tu nombre para crear tu cuenta.</p>
+                <label id="email-name-label" for="email-name" data-i18n="entry.name">Tu nombre</label>
+                <input id="email-name" type="text" autocomplete="name" maxlength="120" placeholder="Ej.: Ana" data-i18n-attr="placeholder:entry.name_placeholder" aria-describedby="code-help email-name-error" />
+                <p class="field-error" id="email-name-error" role="alert" data-i18n="entry.name_error" hidden>Escribe tu nombre para crear tu cuenta.</p>
               </div>
-              <p class="wait" id="code-wait" role="status" data-entry="code_wait" hidden>Revisando tu código. Suele tardar unos segundos; si no avanza, pide uno nuevo.</p>
+              <p class="wait" id="code-wait" role="status" data-i18n="entry.code_wait" hidden>Revisando tu código. Suele tardar unos segundos; si no avanza, pide uno nuevo.</p>
               <div class="entry-says" data-message></div>
-              <button type="submit" class="primary" id="code-continue" data-entry="continue">Continuar</button>
+              <button type="submit" class="primary" id="code-continue" data-i18n="entry.continue">Continuar</button>
               <div class="links">
-                <button type="button" class="link" id="code-resend" data-entry="resend">Reenviar</button>
-                <button type="button" class="link" id="code-missing" data-entry="missing">No me llega el correo</button>
+                <button type="button" class="link" id="code-resend" data-i18n="entry.resend">Reenviar</button>
+                <button type="button" class="link" id="code-missing" data-i18n="entry.missing">No me llega el correo</button>
               </div>
             </div>
             <!-- «← Atrás» is the one action under the card (D45). -->
-            <button type="button" class="entry-pill" data-back><span aria-hidden="true">←</span> <span data-entry="back">Atrás</span></button>
+            <button type="button" class="entry-pill" data-back><span aria-hidden="true">←</span> <span data-i18n="common.back">Atrás</span></button>
           </div>
         </form>
       </section>
@@ -160,23 +163,23 @@
           <header class="screen-head">
             <div class="head-row">
               <p class="wordmark">Aule</p>
-              <button type="button" class="link back" data-back><span aria-hidden="true">←</span> Atrás</button>
+              <button type="button" class="link back" data-back><span aria-hidden="true">←</span> <span data-i18n="common.back">Atrás</span></button>
             </div>
-            <ol class="progress" aria-label="Avance"></ol>
+            <ol class="progress" aria-label="Avance" data-i18n-attr="aria-label:progress.label"></ol>
           </header>
           <div class="screen-body">
             <div class="question">
-              <h2 class="question-title" id="p04-title" tabindex="-1">Antes de empezar, tu autorización</h2>
-              <p class="question-help">Aule es un tutor por voz para tu hijo. Necesitamos tu permiso antes de crear su perfil.</p>
+              <h2 class="question-title" id="p04-title" tabindex="-1" data-i18n="consent.title">Antes de empezar, tu autorización</h2>
+              <p class="question-help" data-i18n="consent.help">Aule es un tutor por voz para tu hijo. Necesitamos tu permiso antes de crear su perfil.</p>
             </div>
             <div class="controls">
               <!-- Figma: Casilla/Base 160:1397; P04 · Marcada · Móvil 160:1994 when the box is checked -->
               <label class="check boxed">
                 <input type="checkbox" id="consent" />
                 <span class="box" aria-hidden="true"></span>
-                <span>Soy su padre, madre o apoderado y autorizo que Aule procese su voz para conversar con él y, si usa la cámara, las imágenes de su cuaderno para revisar sus ejercicios.</span>
+                <span data-i18n="consent.agree">Soy su padre, madre o apoderado y autorizo que Aule procese su voz para conversar con él y, si usa la cámara, las imágenes de su cuaderno para revisar sus ejercicios.</span>
               </label>
-              <button type="button" class="link" id="keep-toggle" aria-expanded="true" aria-controls="keep-panel">Qué guardamos</button>
+              <button type="button" class="link" id="keep-toggle" aria-expanded="true" aria-controls="keep-panel" data-i18n="consent.keep_toggle">Qué guardamos</button>
               <!-- The Figma does not draw where «Qué guardamos» goes: the two choices the editor keeps, here (D5).
                    Both start unticked: keeping anything is the parent's express choice, a tick of their own
                    (Ley 29733, DS 016-2024-JUS), like the consent above. Open before «Autorizo», so both are seen. -->
@@ -184,20 +187,20 @@
                 <label class="check">
                   <input type="checkbox" id="keep-memory" />
                   <span class="box" aria-hidden="true"></span>
-                  <span>Recordar entre sesiones lo que aprende y lo que le gusta</span>
+                  <span data-i18n="consent.keep_memory">Recordar entre sesiones lo que aprende y lo que le gusta</span>
                 </label>
                 <label class="check">
                   <input type="checkbox" id="keep-transcripts" />
                   <span class="box" aria-hidden="true"></span>
-                  <span>Guardar por escrito la conversación de cada sesión</span>
+                  <span data-i18n="consent.keep_transcripts">Guardar por escrito la conversación de cada sesión</span>
                 </label>
-                <p class="small-help">El audio y el video nunca se guardan. Puedes cambiarlo cuando quieras en Configurar.</p>
-                <a class="link" href="https://meetaule.com/legal/privacy" target="_blank" rel="noopener">Política de privacidad</a>
+                <p class="small-help" data-i18n="consent.keep_note">El audio y el video nunca se guardan. Puedes cambiarlo cuando quieras en Configurar.</p>
+                <a class="link" href="https://meetaule.com/legal/privacy" target="_blank" rel="noopener" data-i18n="consent.privacy">Política de privacidad</a>
               </div>
             </div>
           </div>
           <div class="screen-foot">
-            <button type="submit" class="primary" id="consent-ok" disabled>Autorizo</button>
+            <button type="submit" class="primary" id="consent-ok" disabled data-i18n="consent.ok">Autorizo</button>
           </div>
         </form>
       </section>
@@ -208,19 +211,19 @@
           <header class="screen-head">
             <div class="head-row">
               <p class="wordmark">Aule</p>
-              <button type="button" class="link back" data-back><span aria-hidden="true">←</span> Atrás</button>
+              <button type="button" class="link back" data-back><span aria-hidden="true">←</span> <span data-i18n="common.back">Atrás</span></button>
             </div>
-            <ol class="progress" aria-label="Avance"></ol>
+            <ol class="progress" aria-label="Avance" data-i18n-attr="aria-label:progress.label"></ol>
           </header>
           <div class="screen-body">
             <div class="question">
-              <h2 class="question-title" id="p05-title" tabindex="-1">Conozcamos a tu hijo</h2>
-              <p class="question-help">Para que las sesiones sean realmente personalizadas, nos gustaría conocer un poco más a tu hijo.<br />3 preguntas, un par de minutos. Es opcional y solo lo usamos para personalizar sus sesiones.</p>
+              <h2 class="question-title" id="p05-title" tabindex="-1" data-i18n="interview.title">Conozcamos a tu hijo</h2>
+              <p class="question-help"><span data-i18n="interview.intro">Para que las sesiones sean realmente personalizadas, nos gustaría conocer un poco más a tu hijo.</span><br /><span data-i18n="interview.intro_more">3 preguntas, un par de minutos. Es opcional y solo lo usamos para personalizar sus sesiones.</span></p>
             </div>
           </div>
           <div class="screen-foot">
-            <button type="button" class="link" id="interview-later">En otro momento</button>
-            <button type="button" class="primary" id="interview-start">Empezar entrevista</button>
+            <button type="button" class="link" id="interview-later" data-i18n="interview.later">En otro momento</button>
+            <button type="button" class="primary" id="interview-start" data-i18n="interview.start">Empezar entrevista</button>
           </div>
         </div>
       </section>
@@ -231,22 +234,22 @@
           <header class="screen-head">
             <div class="head-row">
               <p class="wordmark">Aule</p>
-              <button type="button" class="link back" data-back><span aria-hidden="true">←</span> Atrás</button>
+              <button type="button" class="link back" data-back><span aria-hidden="true">←</span> <span data-i18n="common.back">Atrás</span></button>
             </div>
-            <ol class="progress" aria-label="Avance"></ol>
+            <ol class="progress" aria-label="Avance" data-i18n-attr="aria-label:progress.label"></ol>
           </header>
           <div class="screen-body">
             <div class="question">
-              <p class="question-step">1 de 3</p>
-              <h2 class="question-title" id="p06-grade-title" tabindex="-1">¿En qué grado está?</h2>
-              <p class="question-help">Así Aule le propone ejercicios de su nivel.</p>
+              <p class="question-step" data-i18n="interview.step_1">1 de 3</p>
+              <h2 class="question-title" id="p06-grade-title" tabindex="-1" data-i18n="interview.grade_title">¿En qué grado está?</h2>
+              <p class="question-help" data-i18n="interview.grade_help">Así Aule le propone ejercicios de su nivel.</p>
             </div>
             <div class="controls">
               <div class="options two" id="grade-options"></div>
             </div>
           </div>
           <div class="screen-foot">
-            <button type="button" class="link" id="grade-skip">Saltar pregunta</button>
+            <button type="button" class="link" id="grade-skip" data-i18n="interview.skip">Saltar pregunta</button>
           </div>
         </div>
       </section>
@@ -257,26 +260,26 @@
           <header class="screen-head">
             <div class="head-row">
               <p class="wordmark">Aule</p>
-              <button type="button" class="link back" data-back><span aria-hidden="true">←</span> Atrás</button>
+              <button type="button" class="link back" data-back><span aria-hidden="true">←</span> <span data-i18n="common.back">Atrás</span></button>
             </div>
-            <ol class="progress" aria-label="Avance"></ol>
+            <ol class="progress" aria-label="Avance" data-i18n-attr="aria-label:progress.label"></ol>
           </header>
           <div class="screen-body">
             <div class="question">
-              <p class="question-step">2 de 3</p>
-              <h2 class="question-title" id="p06-title" tabindex="-1">¿Qué esperas de Aule en el día a día?</h2>
+              <p class="question-step" data-i18n="interview.step_2">2 de 3</p>
+              <h2 class="question-title" id="p06-title" tabindex="-1" data-i18n="interview.expect_title">¿Qué esperas de Aule en el día a día?</h2>
             </div>
             <div class="controls">
               <div class="field">
-                <label class="sr-only" for="expect">Tu respuesta</label>
-                <textarea id="expect" rows="3" maxlength="200" placeholder="Escribe aquí tu respuesta" aria-describedby="expect-help"></textarea>
-                <p class="small-help" id="expect-help">Hasta 200 caracteres.</p>
+                <label class="sr-only" for="expect" data-i18n="interview.expect_label">Tu respuesta</label>
+                <textarea id="expect" rows="3" maxlength="200" placeholder="Escribe aquí tu respuesta" aria-describedby="expect-help" data-i18n-attr="placeholder:interview.expect_placeholder"></textarea>
+                <p class="small-help" id="expect-help" data-i18n="interview.expect_help">Hasta 200 caracteres.</p>
               </div>
             </div>
           </div>
           <div class="screen-foot">
-            <button type="button" class="link" id="expect-skip">Saltar pregunta</button>
-            <button type="submit" class="primary">Siguiente</button>
+            <button type="button" class="link" id="expect-skip" data-i18n="interview.skip">Saltar pregunta</button>
+            <button type="submit" class="primary" data-i18n="common.next">Siguiente</button>
           </div>
         </form>
       </section>
@@ -287,29 +290,29 @@
           <header class="screen-head">
             <div class="head-row">
               <p class="wordmark">Aule</p>
-              <button type="button" class="link back" data-back><span aria-hidden="true">←</span> Atrás</button>
+              <button type="button" class="link back" data-back><span aria-hidden="true">←</span> <span data-i18n="common.back">Atrás</span></button>
             </div>
-            <ol class="progress" aria-label="Avance"></ol>
+            <ol class="progress" aria-label="Avance" data-i18n-attr="aria-label:progress.label"></ol>
           </header>
           <div class="screen-body">
             <div class="question">
-              <p class="question-step">3 de 3</p>
-              <h2 class="question-title" id="p07-title" tabindex="-1">¿Qué le gusta a tu hijo?</h2>
-              <p class="question-help">Elige todos los que apliquen y, si falta algo, escríbelo abajo.</p>
+              <p class="question-step" data-i18n="interview.step_3">3 de 3</p>
+              <h2 class="question-title" id="p07-title" tabindex="-1" data-i18n="interview.likes_title">¿Qué le gusta a tu hijo?</h2>
+              <p class="question-help" data-i18n="interview.likes_help">Elige todos los que apliquen y, si falta algo, escríbelo abajo.</p>
             </div>
             <div class="controls spaced">
               <fieldset class="options wrap" id="likes">
-                <legend class="sr-only">Lo que le gusta</legend>
+                <legend class="sr-only" data-i18n="interview.likes_legend">Lo que le gusta</legend>
               </fieldset>
               <div class="field">
-                <label for="likes-more">¿Algo más que le guste?</label>
-                <input id="likes-more" type="text" maxlength="200" placeholder="Ej.: dinosaurios, cocinar, ajedrez" aria-describedby="likes-help" />
-                <p class="small-help" id="likes-help">Opcional. Escríbelo como lo dirías tú.</p>
+                <label for="likes-more" data-i18n="interview.likes_more">¿Algo más que le guste?</label>
+                <input id="likes-more" type="text" maxlength="200" placeholder="Ej.: dinosaurios, cocinar, ajedrez" aria-describedby="likes-help" data-i18n-attr="placeholder:interview.likes_more_placeholder" />
+                <p class="small-help" id="likes-help" data-i18n="interview.likes_more_help">Opcional. Escríbelo como lo dirías tú.</p>
               </div>
             </div>
           </div>
           <div class="screen-foot">
-            <button type="submit" class="primary">Siguiente</button>
+            <button type="submit" class="primary" data-i18n="common.next">Siguiente</button>
           </div>
         </form>
       </section>
@@ -320,27 +323,27 @@
           <header class="screen-head">
             <div class="head-row">
               <p class="wordmark">Aule</p>
-              <button type="button" class="link back" data-back><span aria-hidden="true">←</span> Atrás</button>
+              <button type="button" class="link back" data-back><span aria-hidden="true">←</span> <span data-i18n="common.back">Atrás</span></button>
             </div>
-            <ol class="progress" aria-label="Avance"></ol>
+            <ol class="progress" aria-label="Avance" data-i18n-attr="aria-label:progress.label"></ol>
           </header>
           <div class="screen-body">
             <div class="question">
-              <h2 class="question-title" id="p10-name-title" tabindex="-1">¿Cómo quieres que lo llamemos?</h2>
-              <p class="question-help">Aule lo llamará así en sus sesiones. Basta un nombre corto o un apodo.</p>
+              <h2 class="question-title" id="p10-name-title" tabindex="-1" data-i18n="child.title">¿Cómo quieres que lo llamemos?</h2>
+              <p class="question-help" data-i18n="child.help">Aule lo llamará así en sus sesiones. Basta un nombre corto o un apodo.</p>
             </div>
             <div class="controls">
               <div class="field">
-                <label class="sr-only" for="child-name">Su nombre o apodo</label>
-                <input id="child-name" type="text" maxlength="40" placeholder="Ej.: Mati" aria-describedby="child-name-error" />
-                <p class="field-error" id="child-name-error" role="alert" hidden>Escribe cómo quieres que lo llamemos.</p>
+                <label class="sr-only" for="child-name" data-i18n="child.name_label">Su nombre o apodo</label>
+                <input id="child-name" type="text" maxlength="40" placeholder="Ej.: Mati" aria-describedby="child-name-error" data-i18n-attr="placeholder:child.name_placeholder" />
+                <p class="field-error" id="child-name-error" role="alert" hidden data-i18n="child.name_error">Escribe cómo quieres que lo llamemos.</p>
               </div>
               <!-- Optional, after P04 like everything about the child: the interview's grades and «Prefiero decirlo
                    después», with none chosen at first. Saved as the interview saves it, which then shows it chosen. -->
               <div class="field">
-                <label for="child-grade">¿En qué grado está? <span class="optional">opcional</span></label>
+                <label for="child-grade"><span data-i18n="child.grade_label">¿En qué grado está?</span> <span class="optional" data-i18n="common.optional">opcional</span></label>
                 <select id="child-grade">
-                  <option value="" disabled selected>Elige su grado</option>
+                  <option value="" disabled selected data-i18n="child.grade_choose">Elige su grado</option>
                 </select>
               </div>
               <!-- With no session left in the plan, the plan's line, as the home says it (D9). -->
@@ -349,8 +352,8 @@
           </div>
           <div class="screen-foot">
             <!-- P12's «Empezar su primera sesión», folded in here (D34); «Empezar más tarde» saves and goes home. -->
-            <button type="submit" class="link" id="child-later">Empezar más tarde</button>
-            <button type="submit" class="primary" id="child-start">Empezar su primera sesión</button>
+            <button type="submit" class="link" id="child-later" data-i18n="child.later">Empezar más tarde</button>
+            <button type="submit" class="primary" id="child-start" data-i18n="child.start">Empezar su primera sesión</button>
           </div>
         </form>
       </section>
@@ -361,22 +364,22 @@
           <header class="screen-head">
             <div class="head-row">
               <p class="wordmark">Aule</p>
-              <button type="button" class="link back" data-back><span aria-hidden="true">←</span> <span data-entry="back">Atrás</span></button>
+              <button type="button" class="link back" data-back><span aria-hidden="true">←</span> <span data-i18n="common.back">Atrás</span></button>
             </div>
             <ol class="progress plain" aria-hidden="true"></ol>
           </header>
           <div class="screen-body">
             <div class="question">
-              <h2 class="question-title" id="p14-title" tabindex="-1" data-entry="check_title">Revisa tu correo</h2>
-              <p class="question-help" data-entry="check_help">Te enviamos un código para entrar. Si no lo ves, revisa la carpeta de spam o de promociones; puede tardar un minuto.</p>
+              <h2 class="question-title" id="p14-title" tabindex="-1" data-i18n="entry.check_title">Revisa tu correo</h2>
+              <p class="question-help" data-i18n="entry.check_help">Te enviamos un código para entrar. Si no lo ves, revisa la carpeta de spam o de promociones; puede tardar un minuto.</p>
             </div>
             <div class="controls">
-              <p class="sent-to"><span data-entry="sent_to">Lo enviamos a</span> <span id="masked-email"></span></p>
-              <button type="button" class="link link-small" id="write-us-go" data-entry="still_missing">¿Sigue sin llegar? Escríbenos</button>
+              <p class="sent-to"><span data-i18n="entry.sent_to">Lo enviamos a</span> <span id="masked-email"></span></p>
+              <button type="button" class="link link-small" id="write-us-go" data-i18n="entry.still_missing">¿Sigue sin llegar? Escríbenos</button>
             </div>
           </div>
           <div class="screen-foot">
-            <button type="button" class="primary" id="other-email" data-entry="other_email">Probar con otro correo</button>
+            <button type="button" class="primary" id="other-email" data-i18n="entry.other_email">Probar con otro correo</button>
           </div>
         </div>
       </section>
@@ -387,19 +390,19 @@
           <header class="screen-head">
             <div class="head-row">
               <p class="wordmark">Aule</p>
-              <button type="button" class="link back" data-back><span aria-hidden="true">←</span> <span data-entry="back">Atrás</span></button>
+              <button type="button" class="link back" data-back><span aria-hidden="true">←</span> <span data-i18n="common.back">Atrás</span></button>
             </div>
             <ol class="progress plain" aria-hidden="true"></ol>
           </header>
           <div class="screen-body">
             <div class="question">
-              <p class="question-step" data-entry="help_step">¿No llega el código?</p>
-              <h2 class="question-title" id="p15-title" tabindex="-1" data-entry="help_title">Te ayudamos por correo</h2>
-              <p class="question-help" data-entry="help_text">Escríbenos y te ayudamos a entrar personalmente.</p>
+              <p class="question-step" data-i18n="entry.help_step">¿No llega el código?</p>
+              <h2 class="question-title" id="p15-title" tabindex="-1" data-i18n="entry.help_title">Te ayudamos por correo</h2>
+              <p class="question-help" data-i18n="entry.help_text">Escríbenos y te ayudamos a entrar personalmente.</p>
             </div>
           </div>
           <div class="screen-foot">
-            <a class="primary" id="write-us" href="mailto:admin@meetaule.com"><span><span data-entry="write_us">Escribir a</span> admin@meetaule.com</span></a>
+            <a class="primary" id="write-us" href="mailto:admin@meetaule.com"><span><span data-i18n="entry.write_us">Escribir a</span> admin@meetaule.com</span></a>
           </div>
         </div>
       </section>
@@ -414,7 +417,7 @@
           <div class="screen-body">
             <div class="question">
               <p class="question-step" id="hello"></p>
-              <h2 class="question-title" id="home-title" tabindex="-1">¿Quién va a estudiar hoy?</h2>
+              <h2 class="question-title" id="home-title" tabindex="-1" data-i18n="home.title">¿Quién va a estudiar hoy?</h2>
               <!-- The family's plan: the trial's days, or the sessions left this week. -->
               <p class="question-help" id="plan-line" hidden></p>
             </div>
@@ -422,32 +425,34 @@
               <!-- Figma: Fila/Alumno 161:2110, one per student. Under each, web-only and built from it, ul.student-sessions:
                    the student's latest sessions as facts (summaries.js), and the link «Ver resúmenes» (Enlace/Base) to the
                    review's summaries on their own screen (D43). -->
-              <ul class="student-list" id="student-list" aria-label="Tus alumnos"></ul>
-              <p class="question-help" id="no-students" hidden>Todavía no hay alumnos en tu cuenta. Agrega al primero para empezar.</p>
-              <button type="button" class="link" id="add-student">+ Agregar un alumno</button>
+              <ul class="student-list" id="student-list" aria-label="Tus alumnos" data-i18n-attr="aria-label:home.students"></ul>
+              <p class="question-help" id="no-students" hidden data-i18n="home.none">Todavía no hay alumnos en tu cuenta. Agrega al primero para empezar.</p>
+              <button type="button" class="link" id="add-student" data-i18n="home.add">+ Agregar un alumno</button>
             </div>
             <div class="account-links">
               <!-- The account: what is kept, and how to remove it. -->
               <details class="account" id="account">
-                <summary class="link">Mi cuenta y mis datos</summary>
-                <p class="small-help">Guardamos tu nombre y tu correo, y de cada alumno lo que tú decidas al configurarlo. No guardamos audio ni video.</p>
+                <summary class="link" data-i18n="account.summary">Mi cuenta y mis datos</summary>
+                <p class="small-help" data-i18n="account.kept">Guardamos tu nombre y tu correo, y de cada alumno lo que tú decidas al configurarlo. No guardamos audio ni video.</p>
                 <form id="erase" class="erase" novalidate autocomplete="off">
                   <div class="field">
-                    <label for="erase-email">Para borrar tu cuenta y todo lo guardado, escribe tu correo</label>
+                    <label for="erase-email" data-i18n="account.erase_label">Para borrar tu cuenta y todo lo guardado, escribe tu correo</label>
                     <input id="erase-email" type="email" autocomplete="off" />
                   </div>
-                  <button type="submit" class="primary danger">Borrar mi cuenta</button>
-                  <p class="small-help">No se puede deshacer.</p>
+                  <button type="submit" class="primary danger" data-i18n="account.erase">Borrar mi cuenta</button>
+                  <p class="small-help" data-i18n="account.no_undo">No se puede deshacer.</p>
                 </form>
                 <!-- The build, for a report to the team: the name and numbers only (src/build.ts). -->
                 <p class="build">{{build}}</p>
               </details>
-              <button type="button" class="link" id="sign-out">Salir de la cuenta</button>
-              <a class="link" id="team-panel" href="https://admin.meetaule.com/" hidden>Panel del equipo</a>
+              <button type="button" class="link" id="sign-out" data-i18n="account.sign_out">Salir de la cuenta</button>
+              <a class="link" id="team-panel" href="https://admin.meetaule.com/" hidden data-i18n="account.team">Panel del equipo</a>
+              <!-- The language picker again, among the account's own links. -->
+              <div class="language" data-language hidden></div>
             </div>
           </div>
           <div class="screen-foot">
-            <button type="button" class="primary" id="add-first" hidden>Agregar un alumno</button>
+            <button type="button" class="primary" id="add-first" hidden data-i18n="home.add_first">Agregar un alumno</button>
           </div>
         </div>
       </section>
@@ -458,19 +463,19 @@
           <header class="screen-head">
             <div class="head-row">
               <p class="wordmark">Aule</p>
-              <button type="button" class="link back" id="summaries-back" data-back>Volver al inicio</button>
+              <button type="button" class="link back" id="summaries-back" data-back data-i18n="summary.back_home">Volver al inicio</button>
             </div>
             <ol class="progress plain" aria-hidden="true"></ol>
           </header>
           <div class="screen-body">
             <div class="question">
-              <h2 class="question-title" id="summaries-title" tabindex="-1">Resúmenes</h2>
-              <p class="question-help" id="summaries-help">Lo que practicó y qué puede trabajar después.</p>
+              <h2 class="question-title" id="summaries-title" tabindex="-1" data-i18n="screen.summaries">Resúmenes</h2>
+              <p class="question-help" id="summaries-help" data-i18n="summary.summaries_help">Lo que practicó y qué puede trabajar después.</p>
             </div>
             <div class="controls">
               <p class="small-help" id="summaries-status" role="status"></p>
-              <ul class="review-list" id="summary-list" aria-label="Últimos resúmenes"></ul>
-              <button type="button" class="link" id="summaries-retry" hidden>Intentar otra vez</button>
+              <ul class="review-list" id="summary-list" aria-label="Últimos resúmenes" data-i18n-attr="aria-label:summary.summary_list"></ul>
+              <button type="button" class="link" id="summaries-retry" hidden data-i18n="summary.retry">Intentar otra vez</button>
             </div>
           </div>
           <div class="screen-foot"></div>
@@ -483,7 +488,7 @@
           <header class="screen-head">
             <div class="head-row">
               <p class="wordmark">Aule</p>
-              <button type="button" class="link back" data-back><span aria-hidden="true">←</span> Atrás</button>
+              <button type="button" class="link back" data-back><span aria-hidden="true">←</span> <span data-i18n="common.back">Atrás</span></button>
             </div>
             <ol class="progress plain" aria-hidden="true"></ol>
           </header>
@@ -493,72 +498,72 @@
             </div>
             <div class="controls editor-fields">
               <div class="field">
-                <label for="student-name">¿Cómo quieres que lo llamemos?</label>
+                <label for="student-name" data-i18n="editor.name_label">¿Cómo quieres que lo llamemos?</label>
                 <input id="student-name" type="text" maxlength="40" required autocomplete="off" />
               </div>
               <div class="field">
-                <label for="student-grade">Grado <span class="optional">opcional</span></label>
+                <label for="student-grade"><span data-i18n="editor.grade">Grado</span> <span class="optional" data-i18n="common.optional">opcional</span></label>
                 <select id="student-grade"></select>
               </div>
               <div class="field">
-                <label for="student-relationship"><span id="relationship-label"></span> <span class="optional">opcional</span></label>
+                <label for="student-relationship"><span id="relationship-label"></span> <span class="optional" data-i18n="common.optional">opcional</span></label>
                 <select id="student-relationship"></select>
               </div>
               <fieldset id="subjects-field" class="group" hidden>
-                <legend>Asignaturas que quieres reforzar</legend>
+                <legend data-i18n="editor.subjects">Asignaturas que quieres reforzar</legend>
                 <div id="student-subjects" class="chips"></div>
               </fieldset>
               <fieldset class="group">
-                <legend>Lo que le gusta</legend>
+                <legend data-i18n="editor.likes">Lo que le gusta</legend>
                 <div id="student-interests" class="chips"></div>
                 <div class="add-row">
-                  <input id="interest-new" type="text" maxlength="40" placeholder="Otra cosa que le guste" aria-label="Otro interés" />
-                  <button type="button" class="small" id="interest-add">Agregar</button>
+                  <input id="interest-new" type="text" maxlength="40" placeholder="Otra cosa que le guste" aria-label="Otro interés" data-i18n-attr="placeholder:editor.interest_placeholder aria-label:editor.interest_label" />
+                  <button type="button" class="small" id="interest-add" data-i18n="editor.add">Agregar</button>
                 </div>
-                <p class="small-help">Aule usa hasta diez para ambientar los ejemplos y los ejercicios.</p>
+                <p class="small-help" data-i18n="editor.interests_help">Aule usa hasta diez para ambientar los ejemplos y los ejercicios.</p>
               </fieldset>
               <fieldset class="group">
-                <legend>Cómo le habla Aule</legend>
-                <div id="student-tone" class="tones" role="radiogroup" aria-label="Tono de Aule"></div>
+                <legend data-i18n="editor.tone_legend">Cómo le habla Aule</legend>
+                <div id="student-tone" class="tones" role="radiogroup" aria-label="Tono de Aule" data-i18n-attr="aria-label:editor.tone_label"></div>
                 <div class="field">
-                  <label for="student-note">Algo que Aule deba tener en cuenta <span class="optional">opcional</span></label>
-                  <input id="student-note" type="text" maxlength="200" placeholder="Ej.: se frustra rápido, ve despacio" />
+                  <label for="student-note"><span data-i18n="editor.note">Algo que Aule deba tener en cuenta</span> <span class="optional" data-i18n="common.optional">opcional</span></label>
+                  <input id="student-note" type="text" maxlength="200" placeholder="Ej.: se frustra rápido, ve despacio" data-i18n-attr="placeholder:editor.note_placeholder" />
                 </div>
               </fieldset>
               <div class="field">
-                <label for="student-language">Idioma de las sesiones</label>
+                <label for="student-language" data-i18n="editor.language">Idioma de las sesiones</label>
                 <select id="student-language">
-                  <option value="es">Español</option>
-                  <option value="en">English</option>
+                  <option value="es" lang="es">Español</option>
+                  <option value="en" lang="en">English</option>
                 </select>
               </div>
               <fieldset class="group">
-                <legend>Lo que guardamos</legend>
+                <legend data-i18n="editor.kept">Lo que guardamos</legend>
                 <label class="check">
                   <input id="student-remembers" type="checkbox" />
                   <span class="box" aria-hidden="true"></span>
-                  <span>Recordar entre sesiones lo que aprende y lo que le gusta</span>
+                  <span data-i18n="consent.keep_memory">Recordar entre sesiones lo que aprende y lo que le gusta</span>
                 </label>
                 <label class="check">
                   <input id="student-transcripts" type="checkbox" />
                   <span class="box" aria-hidden="true"></span>
-                  <span>Guardar por escrito la conversación de cada sesión</span>
+                  <span data-i18n="consent.keep_transcripts">Guardar por escrito la conversación de cada sesión</span>
                 </label>
-                <p class="small-help">El audio y el video nunca se guardan.</p>
+                <p class="small-help" data-i18n="editor.kept_note">El audio y el video nunca se guardan.</p>
               </fieldset>
 
               <!-- What is kept about a student who already has sessions, to read and to prune. -->
               <section id="known" class="known" hidden>
                 <h3 id="known-title" tabindex="-1"></h3>
                 <p id="progress-known" class="small-help"></p>
-                <ul id="memories" aria-label="Lo que Aule recuerda"></ul>
+                <ul id="memories" aria-label="Lo que Aule recuerda" data-i18n-attr="aria-label:editor.memories"></ul>
               </section>
 
-              <button type="button" class="link danger" id="remove-student">Quitar a este alumno</button>
+              <button type="button" class="link danger" id="remove-student" data-i18n="editor.remove">Quitar a este alumno</button>
             </div>
           </div>
           <div class="screen-foot">
-            <button type="submit" class="primary" id="save-student">Guardar</button>
+            <button type="submit" class="primary" id="save-student" data-i18n="common.save">Guardar</button>
           </div>
         </form>
       </section>
@@ -768,7 +773,7 @@
                 <button type="button" class="ink-button send" id="cam-send" hidden>Listo</button>
                 <button type="button" class="ink-link" id="cam-cancel" hidden>Cancelar</button>
                 <!-- For Aule's team only: the drawing as the device's panel would show it (D32). -->
-                <button type="button" class="compact" id="device" aria-pressed="false" hidden>Modo tinta apagado</button>
+                <button type="button" class="compact" id="device" aria-pressed="false" hidden data-i18n="session.ink_off">Modo tinta apagado</button>
               </div>
               <!-- The exercise in hand, with room to answer in writing. -->
               <section id="card" class="card" hidden aria-live="polite">
@@ -776,16 +781,16 @@
                 <p id="card-statement" class="card-statement"></p>
                 <form id="answer" autocomplete="off" hidden>
                   <label id="answer-line">
-                    Tu respuesta
+                    <span data-i18n="session.answer">Tu respuesta</span>
                     <input id="answer-text" type="text" maxlength="200" autocomplete="off" />
                   </label>
                   <label id="explanation-line" hidden>
-                    ¿Cómo lo pensaste?
+                    <span data-i18n="session.explanation">¿Cómo lo pensaste?</span>
                     <textarea id="explanation-text" rows="2" maxlength="600"></textarea>
                   </label>
                   <p id="card-help" class="note" hidden></p>
-                  <button type="submit" class="compact" id="answer-send">Responder</button>
-                  <p class="note">También puedes decirlo o mostrar tu cuaderno.</p>
+                  <button type="submit" class="compact" id="answer-send" data-i18n="session.answer_send">Responder</button>
+                  <p class="note" data-i18n="session.answer_also">También puedes decirlo o mostrar tu cuaderno.</p>
                 </form>
               </section>
             </div>
@@ -840,9 +845,9 @@
             <!-- Ended: «Volver» is the one button, as on C00 · Padre (190:1035). Cut but still open:
                  «Seguir con la sesión» takes its place and «Volver» becomes the link. -->
             <span id="ended-spacer"></span>
-            <button type="button" class="ink-link" id="ended-back" data-back hidden>Volver</button>
+            <button type="button" class="ink-link" id="ended-back" data-back hidden data-i18n="session.back">Volver</button>
             <button type="button" class="ink-button" id="ended-resume" hidden>Seguir con la sesión</button>
-            <button type="button" class="ink-button" id="ended-home" data-back>Volver</button>
+            <button type="button" class="ink-button" id="ended-home" data-back data-i18n="session.back">Volver</button>
           </div>
         </div>
       </section>
@@ -871,22 +876,21 @@
     </svg>
 
     <!-- What the page keeps in the browser, said once; out of the way on a student's screen (FIGMA.md D36). -->
-    <div id="cookies" class="cookie-notice" role="region" aria-label="Aviso de cookies" hidden>
+    <div id="cookies" class="cookie-notice" role="region" aria-label="Aviso de cookies" data-i18n-attr="aria-label:cookies.label" hidden>
       <p>
-        Solo cookies propias y necesarias, nada de publicidad: tu cuenta, tu sesión y, si te invitaron, tu enlace
-        hasta que entres.
-        <a href="https://meetaule.com/legal/privacy#cookies">Política de cookies</a>
+        <span data-i18n="cookies.text">Solo cookies propias y necesarias, nada de publicidad: tu cuenta, tu sesión y, si te invitaron, tu enlace hasta que entres.</span>
+        <a href="https://meetaule.com/legal/privacy#cookies" data-i18n="cookies.policy">Política de cookies</a>
       </p>
       <!-- Figma: Acción/Pequeña 161:2104 -->
-      <button type="button" class="small" id="cookies-ok">Entendido</button>
+      <button type="button" class="small" id="cookies-ok" data-i18n="cookies.ok">Entendido</button>
     </div>
 
     <!-- Who runs Aule and its terms; out of the way during a session. -->
     <footer class="site-footer">
       <a href="https://meetaule.com">Aule</a>
-      <a href="https://meetaule.com/legal/privacy">Privacidad</a>
-      <a href="https://meetaule.com/legal/terms">Términos</a>
-      <a href="https://meetaule.com/libro-de-reclamaciones">Libro de Reclamaciones</a>
+      <a href="https://meetaule.com/legal/privacy" data-i18n="footer.privacy">Privacidad</a>
+      <a href="https://meetaule.com/legal/terms" data-i18n="footer.terms">Términos</a>
+      <a href="https://meetaule.com/libro-de-reclamaciones" lang="es">Libro de Reclamaciones</a>
       <a href="mailto:admin@meetaule.com">admin@meetaule.com</a>
     </footer>
 
@@ -902,7 +906,9 @@
       </filter>
     </svg>
 
-    <!-- In this order: signing in runs before the call library has arrived. -->
+    <!-- In this order: the language is settled before any script draws a word, and signing in runs
+         before the call library has arrived. -->
+    <script type="module" src="language.js"></script>
     <script type="module" src="signin.js"></script>
     <script type="module" src="onboarding.js"></script>
     <script type="module" src="home.js"></script>

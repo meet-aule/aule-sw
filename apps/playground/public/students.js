@@ -4,53 +4,24 @@
 // made by the onboarding (onboarding.js), never here: the editor is for the
 // students a family already has.
 
+import { count, locale, t } from "./i18n.js";
+
 export const $ = (id) => document.getElementById(id);
 
-export const GRADES = {
-  P1: "1.º de primaria",
-  P2: "2.º de primaria",
-  P3: "3.º de primaria",
-  P4: "4.º de primaria",
-  P5: "5.º de primaria",
-  P6: "6.º de primaria",
-  S1: "1.º de secundaria",
-  S2: "2.º de secundaria",
-  S3: "3.º de secundaria",
-  S4: "4.º de secundaria",
-  S5: "5.º de secundaria",
-};
+// What can be chosen, by the platform's codes. Their names are the page's
+// words, in its language (words/es.js `grade`, `subject`, `relationship`, `tone`).
+export const GRADES = ["P1", "P2", "P3", "P4", "P5", "P6", "S1", "S2", "S3", "S4", "S5"];
+export const SUBJECTS = ["matematica", "comunicacion", "ciencia", "personal_social", "ingles"];
+// What the guardian is to the student.
+const RELATIONSHIPS = ["MTH", "FTH", "STPMTH", "STPFTH", "GRMTH", "GRFTH", "AUNT", "UNCLE", "SIB", "GUARD", "FAMMEMB"];
+const TONES = ["calido", "jugueton", "aventurero", "tranquilo"];
 
-export const SUBJECTS = {
-  matematica: "Matemática",
-  comunicacion: "Comunicación",
-  ciencia: "Ciencia y Tecnología",
-  personal_social: "Personal Social",
-  ingles: "Inglés",
-};
+/** A grade's name in the page's language. */
+export const gradeName = (grade) => t(`grade.${grade}`);
 
-// What the guardian is to the student, by the platform's codes.
-const RELATIONSHIPS = {
-  MTH: "Mamá",
-  FTH: "Papá",
-  STPMTH: "Madrastra",
-  STPFTH: "Padrastro",
-  GRMTH: "Abuela",
-  GRFTH: "Abuelo",
-  AUNT: "Tía",
-  UNCLE: "Tío",
-  SIB: "Hermano o hermana",
-  GUARD: "Tutor o tutora legal",
-  FAMMEMB: "Otro familiar",
-};
-
-const TONES = {
-  calido: ["Cálido", "cercano y paciente"],
-  jugueton: ["Juguetón", "con humor ligero"],
-  aventurero: ["Aventurero", "cada tema es un reto por descubrir"],
-  tranquilo: ["Tranquilo", "pausado, sin apuro"],
-};
-
-// Things many students like, to pick from; a family can add its own.
+// Things many students like, to pick from; a family can add its own. These are
+// what is saved for each, the same in every language: the tutor reads them, and
+// a family that changes the page's language keeps what it chose.
 const INTERESTS = [
   "fútbol",
   "vóley",
@@ -67,6 +38,9 @@ const INTERESTS = [
 ];
 const MAX_INTERESTS = 10;
 
+/** An interest as the page shows it: one it offers, in the page's language; a family's own, as they wrote it. */
+const interestName = (interest) => t(`interest.${interest}`) || interest;
+
 export async function call(path, body) {
   const response = await fetch(path, {
     method: body === undefined ? "GET" : "POST",
@@ -80,7 +54,7 @@ export async function call(path, body) {
 
 /** What the entry says to a family whose session ended while a screen of theirs was open, in the page's language. */
 export function sessionClosed() {
-  return document.documentElement.lang === "en" ? "Your session has ended. Sign in again." : "Tu sesión se cerró. Vuelve a entrar.";
+  return t("common.session_closed");
 }
 
 /** Writes the message line: an error unless `tone` is "info"; nothing hides it. */
@@ -112,9 +86,9 @@ const checked = (name) =>
 /** One line about a student for their row: what the family told Aule. */
 export function describe(student) {
   const parts = [];
-  if (student.grade) parts.push(GRADES[student.grade]);
-  if (student.tone && student.tone !== "calido") parts.push(`tono ${TONES[student.tone][0].toLowerCase()}`);
-  if (student.interests?.length) parts.push(student.interests.slice(0, 3).join(", "));
+  if (student.grade) parts.push(gradeName(student.grade));
+  if (student.tone && student.tone !== "calido") parts.push(t("home.tone", { tone: t(`tone.${student.tone}`).toLocaleLowerCase(locale()) }));
+  if (student.interests?.length) parts.push(student.interests.slice(0, 3).map(interestName).join(", "));
   return parts.join(" · ");
 }
 
@@ -124,10 +98,6 @@ let done = () => {};
 /** The student the editor is open for, or null. */
 export function editingStudent() {
   return editing;
-}
-
-function count(number, one, many) {
-  return `${number} ${number === 1 ? one : many}`;
 }
 
 // What is kept about a student, to inspect or forget in their settings.
@@ -143,19 +113,17 @@ async function showKnown(student) {
   }
   // The editor may have moved on to another student while this was on its way.
   if (editing?.id !== student.id) return;
-  $("known-title").textContent = `Lo que Aule sabe de ${student.name}`;
+  $("known-title").textContent = t("editor.known_title", { name: student.name });
   const worked = known.mastered + known.practising;
-  let progress = worked
-    ? `Domina ${count(known.mastered, "habilidad", "habilidades")} y está practicando ${known.practising}.`
-    : "Todavía no hay ejercicios resueltos.";
-  if (known.next.length) progress += ` Lo que viene: ${known.next.join(", ")}.`;
+  let progress = worked ? count("editor.mastered", known.mastered, { practising: known.practising }) : t("editor.no_exercises");
+  if (known.next.length) progress += ` ${t("editor.coming", { skills: known.next.join(", ") })}`;
   $("progress-known").textContent = progress;
   for (const memory of known.memories) {
     const item = document.createElement("li");
     const forget = document.createElement("button");
     forget.type = "button";
     forget.className = "small";
-    forget.textContent = "Olvidar";
+    forget.textContent = t("editor.forget");
     forget.addEventListener("click", async () => {
       forget.disabled = true;
       try {
@@ -163,7 +131,7 @@ async function showKnown(student) {
         item.remove();
       } catch {
         forget.disabled = false;
-        say("No se pudo olvidar. Inténtalo otra vez.");
+        say(t("editor.forget_failed"));
       }
     });
     const text = document.createElement("span");
@@ -174,30 +142,30 @@ async function showKnown(student) {
   if (!known.memories.length) {
     const none = document.createElement("li");
     none.className = "none";
-    none.textContent = `Aule todavía no recuerda nada de ${student.name}.`;
+    none.textContent = t("editor.no_memories", { name: student.name });
     $("memories").append(none);
   }
   section.hidden = false;
 }
 
 function fill(student, subjects) {
-  $("editor-title").textContent = `Configurar a ${student.name}`;
+  $("editor-title").textContent = t("editor.title", { name: student.name });
   $("student-name").value = student.name ?? "";
   $("student-grade").replaceChildren(
-    new Option("Prefiero no decirlo", ""),
-    ...Object.entries(GRADES).map(([value, text]) => new Option(text, value)),
+    new Option(t("editor.prefer_not"), ""),
+    ...GRADES.map((grade) => new Option(gradeName(grade), grade)),
   );
   $("student-grade").value = student.grade ?? "";
-  $("relationship-label").textContent = `¿Qué eres de ${student.name}?`;
+  $("relationship-label").textContent = t("editor.relationship", { name: student.name });
   $("student-relationship").replaceChildren(
-    new Option("Prefiero no decirlo", ""),
-    ...Object.entries(RELATIONSHIPS).map(([value, text]) => new Option(text, value)),
+    new Option(t("editor.prefer_not"), ""),
+    ...RELATIONSHIPS.map((relationship) => new Option(t(`relationship.${relationship}`), relationship)),
   );
   $("student-relationship").value = student.relationship ?? "";
   $("subjects-field").hidden = !subjects;
   $("student-subjects").replaceChildren(
     ...(subjects ?? []).map((value) =>
-      chip("checkbox", "subjects", value, SUBJECTS[value], student.subjects?.includes(value) ?? false),
+      chip("checkbox", "subjects", value, t(`subject.${value}`), student.subjects?.includes(value) ?? false),
     ),
   );
   // The student's own come first and keep their order: the first ones are
@@ -205,17 +173,17 @@ function fill(student, subjects) {
   const liked = student.interests ?? [];
   $("student-interests").replaceChildren(
     ...[...new Set([...liked, ...INTERESTS])].map((interest) =>
-      chip("checkbox", "interests", interest, interest, liked.includes(interest)),
+      chip("checkbox", "interests", interest, interestName(interest), liked.includes(interest)),
     ),
   );
   $("interest-new").value = "";
   $("student-tone").replaceChildren(
-    ...Object.entries(TONES).map(([value, [title, text]]) => {
+    ...TONES.map((value) => {
       const label = chip("radio", "tone", value, "", (student.tone ?? "calido") === value);
       label.className = "tone";
       const strong = document.createElement("b");
-      strong.textContent = title;
-      label.lastChild.append(strong, ` ${text}`);
+      strong.textContent = t(`tone.${value}`);
+      label.lastChild.append(strong, ` ${t(`tone.${value}_about`)}`);
       return label;
     }),
   );
@@ -270,8 +238,9 @@ function close(result) {
 $("interest-add").addEventListener("click", () => {
   const interest = $("interest-new").value.trim().toLowerCase();
   if (!interest) return;
+  // One the page already offers, by what is saved for it or by the name it shows in the page's language.
   const there = [...document.querySelectorAll('input[name="interests"]')].find(
-    (input) => input.value.toLowerCase() === interest,
+    (input) => input.value.toLowerCase() === interest || interestName(input.value).toLowerCase() === interest,
   );
   if (there) there.checked = true;
   else $("student-interests").append(chip("checkbox", "interests", interest, interest, true));
@@ -290,7 +259,7 @@ $("student-editor").addEventListener("submit", async (event) => {
   if (!editing) return;
   say("");
   const interests = checked("interests");
-  if (interests.length > MAX_INTERESTS) return say("Elige hasta diez cosas que le gusten.");
+  if (interests.length > MAX_INTERESTS) return say(t("common.too_many_likes"));
   const profile = {
     name: $("student-name").value.trim(),
     grade: $("student-grade").value || null,
@@ -303,13 +272,13 @@ $("student-editor").addEventListener("submit", async (event) => {
     keeps_transcripts: $("student-transcripts").checked,
     relationship: $("student-relationship").value || null,
   };
-  if (!profile.name) return say("Escribe cómo quieres que llamemos al alumno.");
+  if (!profile.name) return say(t("editor.name_needed"));
   $("save-student").disabled = true;
   try {
     const saved = await call("api/student/save", { student_id: editing.id, ...profile });
     close(saved.id);
   } catch {
-    say("No se pudo guardar. Inténtalo otra vez.");
+    say(t("common.save_failed"));
   } finally {
     $("save-student").disabled = false;
   }
@@ -318,14 +287,12 @@ $("student-editor").addEventListener("submit", async (event) => {
 $("remove-student").addEventListener("click", async () => {
   const student = editing;
   if (!student) return;
-  const sure = window.confirm(
-    `¿Quitar a ${student.name}? Se borra lo que Aule recuerda de este alumno. No se puede deshacer.`,
-  );
+  const sure = window.confirm(t("editor.remove_confirm", { name: student.name }));
   if (!sure) return;
   try {
     await call("api/student/remove", { student_id: student.id });
     close(null);
   } catch {
-    say("No se pudo quitar al alumno. Inténtalo otra vez.");
+    say(t("editor.remove_failed"));
   }
 });
