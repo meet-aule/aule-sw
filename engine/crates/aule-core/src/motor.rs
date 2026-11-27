@@ -174,6 +174,51 @@ pub enum Esperando {
     FotoTarea,
 }
 
+/// [PROPUESTA] E1-06: ¿lo dicho empieza asintiendo («Ya,», «Sí, listo.», «Ah,
+/// ya,», «Ya entendí») y en lo que sigue no pregunta, no objeta ni pide que se
+/// le repita? «Ya, entendí. Los pedazos siguen siendo quintos.» avanza; «Sí,
+/// ¿pero por qué?» y «Ya, pero no me sale» son conversación.
+///
+/// Asentir es una palabra de avance seguida de una coma o un punto, o dos
+/// seguidas («ya entendí»): al transcribir la voz, la marca se pierde una de
+/// cada trece veces. Una sola sin marca («Ya cinco sextos», «Si divido…») no
+/// asiente: contesta otra cosa.
+fn empieza_asintiendo(t: &str, avance: &[&str]) -> bool {
+    const MULETILLAS: [&str; 6] = ["ah", "eh", "oh", "mmm", "aja", "bueno"];
+    // «ya está», «ya entiendo»: asienten junto a una palabra de avance.
+    const CON_OTRA: [&str; 3] = ["esta", "entiendo", "comprendo"];
+    let corta = |c: char| matches!(c, ',' | '.' | ';' | ':' | '!' | '…');
+    let palabras: Vec<&str> = t.split_whitespace().collect();
+    let (mut usadas, mut de_avance, mut con_marca) = (0, 0, false);
+    for palabra in &palabras {
+        let n = normalizar(palabra);
+        let asiente = avance.contains(&n.as_str());
+        if !(asiente || MULETILLAS.contains(&n.as_str()) || CON_OTRA.contains(&n.as_str())) {
+            break;
+        }
+        usadas += 1;
+        de_avance += usize::from(asiente);
+        con_marca = palabra.ends_with(corta);
+    }
+    if de_avance == 0 || usadas > 4 || !(con_marca || usadas >= 2) {
+        return false;
+    }
+    // Lo que viene después de asentir.
+    let resto = palabras[usadas..].join(" ");
+    let n = normalizar(&resto);
+    let objeta = resto.contains('?')
+        || resto.contains('¿')
+        || n == "no"
+        || n.starts_with("no ")
+        || n.starts_with("pero ")
+        || n.contains(" pero ")
+        || n.ends_with(" no se")
+        || ["no entend", "no comprend", "otra vez", "repite", "no se "]
+            .iter()
+            .any(|p| n.contains(p));
+    !objeta
+}
+
 /// [PROPUESTA] TAR-05: lo que se leyó en una foto de la Tarea, fuera del
 /// motor. Llega solo el nivel, nunca la foto (DAT-03).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -3915,6 +3960,8 @@ impl Motor {
         let es_avance = n.split_whitespace().count() <= 4
             && n.split_whitespace().any(|w| palabras_avance.contains(&w))
             && !n.contains("no entend");
+        // E1-06: quien empieza asintiendo y sigue hablando también avanza.
+        let asiente = empieza_asintiendo(t, &palabras_avance);
         let sugerida = match self.esperando() {
             Esperando::Conversacion { sugerencias } => {
                 sugerencias.iter().any(|s| normalizar(s) == n)
@@ -3925,6 +3972,7 @@ impl Motor {
             Actividad::Etapa1(e) if matches!(e.fase, FaseE1::Teoria(_) | FaseE1::NoAsistido(_)) => {
                 sugerida
                     || es_avance
+                    || asiente
                     || n.contains("no entend")
                     || n.contains("otra vez")
                     || n.contains("repite")
