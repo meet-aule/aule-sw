@@ -19,7 +19,7 @@ test("the console has its pages and their scripts, and nothing else of the playg
     "admin.js", "common.js", "credential.js", "families.js", "family.js", "labels.js", "live.js", "passkeys.js", "pilot.js", "signin.js",
   ]);
   assert.deepEqual(files.sort(), [
-    "admin.js", "common.js", "credential.js", "families.html", "families.js", "family.html", "family.js", "icon.svg", "index.html",
+    "admin.js", "aule-logo.svg", "common.js", "credential.js", "families.html", "families.js", "family.html", "family.js", "icon.svg", "index.html",
     "labels.js", "live.html", "live.js", "passkeys.html", "passkeys.js", "pilot.js", "signin.html", "signin.js", "style.css",
   ]);
 });
@@ -155,6 +155,29 @@ test("every page but the sign-in has the same header, with its own link marked",
     assert.match(nav, /<button type="button" class="link" id="signout">Salir<\/button>\s*$/, page);
   }
   assert.doesNotMatch(pages["signin.html"], /<nav\b|id="signout"/);
+});
+
+test("every page has Aule's logo over the panel's title, once, and its cuy in the tab", async () => {
+  for (const [name, html] of Object.entries(pages)) {
+    // One image named «Aule», sized in the markup so the title does not move as it loads: not a heading, not a link.
+    assert.match(html, /<header>\s*<p class="wordmark"><img src="aule-logo\.svg" alt="Aule" width="65" height="32" \/><\/p>\s*<h1>Panel del equipo<\/h1>/, name);
+    assert.equal(html.match(/<img\b/g).length, 1, name);
+    assert.match(html, /<link rel="icon" href="icon\.svg" type="image\/svg\+xml" \/>/, name);
+  }
+  assert.match(css, /\.admin \.wordmark img \{\s*display: block;\s*width: auto;\s*height: 32px;\s*\}/);
+  // The console is on paper only, so it has the logo with brown letters and no other.
+  assert.match(css, /color-scheme: light;/);
+  assert.doesNotMatch(css + Object.values(pages).join(""), /prefers-color-scheme|aule-logo-dark/);
+  // Both files are drawings and nothing else: no script, no address, no picture inside, no palette of their own.
+  for (const name of ["aule-logo.svg", "icon.svg"]) {
+    const svg = await read(name);
+    assert.deepEqual([...new Set([...svg.matchAll(/<([a-zA-Z][\w:-]*)/g)].map(([, tag]) => tag))].sort(), ["g", "path", "svg", "title"], name);
+    assert.doesNotMatch(svg, /<script|\son[a-z]+\s*=|javascript:/i, `${name}: script`);
+    assert.doesNotMatch(svg.replace('xmlns="http://www.w3.org/2000/svg"', ""), /https?:|\/\/|href|url\(|@import/i, `${name}: a reference`);
+    assert.doesNotMatch(svg, /<image|data:|base64/i, `${name}: an embedded picture`);
+    assert.doesNotMatch(svg, /<style|@media|prefers-color-scheme/i, `${name}: a palette of its own`);
+  }
+  assert.match(await read("aule-logo.svg"), /^<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg" viewBox="0 0 1502 745"/);
 });
 
 test("the overview is today's panel, moved as it was, with «Salir» where «Volver a Aule» was", () => {

@@ -29,7 +29,7 @@ const versionOf = (text: string, name: string) =>
 test("the pages point at fingerprinted files, and those are kept for a year", async () => {
   for (const path of ["/", "/live", "/families", "/family", "/passkeys", "/signin"]) {
     const html = await (await fetch(`${base}${path}`)).text();
-    for (const name of ["style.css", "icon.svg"]) assert.ok(versionOf(html, name), `${path} names ${name} by its fingerprint`);
+    for (const name of ["style.css", "icon.svg", "aule-logo.svg"]) assert.ok(versionOf(html, name), `${path} names ${name} by its fingerprint`);
   }
   const html = await (await fetch(`${base}/`)).text();
   const style = await fetch(`${base}/style.css?v=${versionOf(html, "style.css")}`);
@@ -129,6 +129,7 @@ test("only the console's own files are served: no italic, no other package, noth
     "pilot.js",
     "signin.js",
     "style.css",
+    "aule-logo.svg",
     "icon.svg",
   ]) {
     assert.ok((await readFile(new URL(name, dir))).length > 0, name);

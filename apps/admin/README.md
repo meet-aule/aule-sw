@@ -15,6 +15,11 @@ database. Every piece of data comes from the [platform](../platform/README.md),
 asked with the signed-in team member's own token, and the platform's Staff check
 decides each call.
 
+Every page's header shows Aule's logo over «Panel del equipo», and the tab its
+cuy alone: `public/aule-logo.svg` and `public/icon.svg`, copies of the
+playground's (`apps/playground/FIGMA.md`, D49). The console is on paper only,
+so it has no logo for a dark background.
+
 ## Routes
 
 | Method | Path | Needs | What it does |
@@ -25,7 +30,7 @@ decides each call.
 | GET, HEAD | `/family?id=<uuid>` | nothing | One family's page |
 | GET, HEAD | `/passkeys` | nothing | «Passkeys»: the team member's own, to create and delete |
 | GET, HEAD | `/signin` | nothing | The sign-in page |
-| GET, HEAD | `/style.css`, `/admin.js`, `/live.js`, `/families.js`, `/family.js`, `/passkeys.js`, `/credential.js`, `/common.js`, `/labels.js`, `/pilot.js`, `/signin.js`, `/icon.svg`, `/fonts/serif.woff2`, `/fonts/sans.woff2` | nothing | The pages' files, fingerprinted (`src/assets.ts`, a copy of the playground's) |
+| GET, HEAD | `/style.css`, `/admin.js`, `/live.js`, `/families.js`, `/family.js`, `/passkeys.js`, `/credential.js`, `/common.js`, `/labels.js`, `/pilot.js`, `/signin.js`, `/aule-logo.svg`, `/icon.svg`, `/fonts/serif.woff2`, `/fonts/sans.woff2` | nothing | The pages' files, fingerprinted (`src/assets.ts`, a copy of the playground's) |
 | GET, HEAD | `/healthz` | nothing | `{"ok":true,"version":"0.0.1","commit":"abc123456789"}` |
 | GET, HEAD | `/robots.txt` | nothing | Disallows everything |
 | POST | `/api/signin/start` | the write rules | `{email}`: a code by mail, for a team address only. Always `202 {"sent":true}` |

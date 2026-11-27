@@ -111,6 +111,14 @@ p {
   padding: 32px 16px 48px;
 }
 
+/* Aule's logo over the panel's title, at the size of the playground's paper screens
+   (apps/playground/FIGMA.md D49). The console is always on paper: the brown letters. */
+.admin .wordmark img {
+  display: block;
+  width: auto;
+  height: 32px;
+}
+
 .admin h1,
 .admin h2 {
   font: 500 28px/1.25 var(--serif);
