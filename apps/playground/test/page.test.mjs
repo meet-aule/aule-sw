@@ -412,7 +412,8 @@ test("the page's words for an ended trial and a used week are the plan's, and th
     const line = screen.match(/<p class="small-help ways-note"[^>]*>([^<]*)<\/p>/);
     assert.ok(line, `${id} has the providers' line`);
     assert.equal(line[1], "Google, GitHub, Facebook y Apple usan sus propias cookies cuando entras con ellos.", id);
-    assert.ok(screen.indexOf("ways-note") > screen.indexOf('class="other-ways"'), `${id}: after the ways in`);
+    assert.ok(screen.indexOf("ways-note") > screen.lastIndexOf("data-provider="), `${id}: after the ways in`);
+    assert.ok(screen.indexOf("ways-note") > screen.indexOf('id="email-start"'), `${id}: the card's last line`);
   }
   // It shows wherever Google or another provider is offered, and only there.
   assert.match(bodyOf(scripts["signin.js"], "showWays"), /for \(const note of document\.querySelectorAll\("\.ways-note"\)\) note\.hidden = !google && others\.length === 0;/);
@@ -652,6 +653,91 @@ test("every signed-out visit uses the shared entry, with the email field beside 
   const entry = html.slice(html.indexOf('data-screen="p01"'), html.indexOf('data-screen="p03"'));
   assert.doesNotMatch(entry, /data-back/);
   assert.ok(entry.includes('id="email-start"') && entry.includes('data-google'));
+});
+
+test("the entry is one card of ways in beside Aule's face, and its code step is laid out the same (D45)", () => {
+  const entry = html.slice(html.indexOf('data-screen="p01"'), html.indexOf('data-screen="p03"'));
+  const code = html.slice(html.indexOf('data-screen="p03"'), html.indexOf('data-screen="p04"'));
+  for (const id of ["p01", "p03"]) assert.match(html, new RegExp(`<section class="screen entry" data-screen="${id}" data-surface="paper"`), id);
+  // The ways in, top to bottom: Google's own button, Apple, GitHub and Facebook, «o», the email field and its
+  // action, the message line and the small print. Nothing folds away any more.
+  const order = ['id="google-p01"', 'data-provider="apple"', 'data-provider="github"', 'data-provider="meta"', 'id="ways-or"', 'id="email-start"', "data-message", "ways-note"];
+  const at = order.map((mark) => entry.indexOf(mark));
+  assert.ok(at.every((place) => place > entry.indexOf('class="controls ways entry-card"')), "all inside the card");
+  assert.deepEqual(at, [...at].sort((a, b) => a - b), "in the reference's order");
+  assert.doesNotMatch(html + css + scripts["signin.js"], /other-ways|<details class="providers"|Otras formas de entrar/);
+  for (const provider of ["apple", "github", "meta"]) {
+    assert.match(entry, new RegExp(`<a class="provider" data-provider="${provider}" href="api/signin/${provider}/start" hidden>`), provider);
+  }
+  // Each shows only where the server has it, and «o» only between providers and the email field.
+  const ways = bodyOf(scripts["signin.js"], "showWays");
+  assert.match(ways, /for \(const link of document\.querySelectorAll\("\[data-provider\]"\)\) link\.hidden = !others\.includes\(link\.dataset\.provider\);/);
+  assert.match(ways, /\$\("ways-or"\)\.hidden = !email \|\| \(!google && others\.length === 0\);/);
+  // The field keeps its label for a screen reader; the placeholder is what shows.
+  assert.match(entry, /<label class="sr-only" id="email-label" for="email-address">Tu correo<\/label>/);
+  // The code step: its fields and «Continuar» in the card, and «← Atrás» the one action under it.
+  assert.ok(code.indexOf('id="code-continue"') > code.indexOf('class="controls entry-card"'));
+  assert.ok(code.indexOf("data-back") > code.indexOf('id="code-missing"'), "under the card");
+  assert.match(code, /<button type="button" class="entry-pill" data-back>/);
+  // The wordmark has Aule's mark, the page's own icon; no other image, and nothing from elsewhere.
+  const images = [...html.matchAll(/<img\b[^>]*>/g)].map(([tag]) => tag);
+  assert.equal(images.length, 2);
+  for (const tag of images) assert.equal(tag, '<img class="wordmark-mark" src="icon.svg" alt="" width="28" height="28" />');
+  // One picture for both screens, after them in the page, so it stays as they change: the session's cuy, dancing.
+  assert.equal(html.match(/class="entry-picture face-box"/g).length, 1);
+  assert.ok(html.indexOf('class="entry-picture face-box"') > html.lastIndexOf("<section"));
+  assert.ok(html.indexOf('class="entry-picture face-box"') < html.indexOf("</main>"));
+  assert.match(html, /<wobnimo-mascot id="entry-face" character="mochi" state="celebrating" floor="0" aria-hidden="true">/);
+  assert.match(css, /\n\.entry-picture \{\s*display: none;\s*\}/, "not drawn on any other screen");
+  assert.match(css, /html\[data-screen="p01"\] \.entry-picture\.ready,\s*html\[data-screen="p03"\] \.entry-picture\.ready \{\s*display: grid;/);
+  // Two columns from 960 px, 54 to 46; under it one column, and never wider than the screen.
+  const wide = blocks(css, "@media (min-width: 960px) {").join("\n");
+  assert.match(wide, /html\[data-screen="p01"\] main,\s*html\[data-screen="p03"\] main \{\s*display: grid;\s*grid-template-columns: 54fr 46fr;/);
+  const [, card] = rules(css).find(([selector]) => selector.endsWith("\n.entry-card") || selector === ".entry-card") ?? [];
+  assert.match(card ?? "", /width: 100%;\s*max-width: 600px;/);
+});
+
+test("the entry's near-dark palette is the entry's alone, behind one switch (D45)", () => {
+  // One place asks whether the system is dark, and all it holds is the entry's tokens.
+  assert.equal(css.match(/prefers-color-scheme/g).length, 1);
+  const dark = blocks(css, "@media (prefers-color-scheme: dark)")[0];
+  const scoped = rules(dark);
+  assert.equal(scoped.length, 1);
+  assert.equal(scoped[0][0].replace(/\s+/g, " "), 'html[data-screen="p01"], html[data-screen="p03"]');
+  for (const token of ["--bg: #141413;", "--ink:", "--surface:", "--muted:", "--line:", "--danger:", "--focus:", "--fibre:", "--entry-google: filled_black;", "color-scheme: dark;"]) {
+    assert.ok(scoped[0][1].includes(token), token);
+  }
+  // Every other screen keeps the paper of :root in both modes.
+  const [, root] = rules(css).find(([selector]) => selector.endsWith(":root")) ?? [];
+  assert.match(root, /--bg: #f5f2ea;/);
+  assert.match(root, /color-scheme: light;/);
+  assert.doesNotMatch(html, /prefers-color-scheme/);
+  // Scripts do not decide the palette: Google's button and the browser's bars read what the sheet says.
+  const signin = scripts["signin.js"];
+  assert.match(bodyOf(signin, "renderGoogle"), /theme: getComputedStyle\(slot\)\.getPropertyValue\("--entry-google"\)\.trim\(\) \|\| "outline",/);
+  assert.match(bodyOf(signin, "tintBars"), /getComputedStyle\(document\.documentElement\)\.getPropertyValue\("--bg"\)/);
+  assert.match(html, /<meta name="theme-color" content="#f5f2ea" \/>/);
+  // The paper's fibres are light on the near-dark: the same texture, from a token.
+  assert.match(css, /repeating-linear-gradient\(0deg, rgb\(var\(--fibre\) \/ 0\.02\) 0 1px, transparent 1px 4px\)/);
+  assert.match(root, /--fibre: 154 91 46;/);
+});
+
+test("an email that is missing or is not one is said under the field: a red edge, a ringed «!» and the words, in both languages (D45)", () => {
+  const entry = html.slice(html.indexOf('data-screen="p01"'), html.indexOf('data-screen="p03"'));
+  assert.match(entry, /<input id="email-address"[^>]*aria-describedby="email-error" \/>\s*<p class="field-error" id="email-error" role="alert" hidden>/);
+  const signin = scripts["signin.js"];
+  // In both languages, as the entry's other words are.
+  assert.match(signin, /email_required: "Escribe tu correo electrónico\."/);
+  assert.match(signin, /email_required: "An email address is required\."/);
+  assert.match(signin, /email_invalid: "Revisa el correo: no parece una dirección válida\."/);
+  assert.match(signin, /email_invalid: "Check the email: it does not look like a valid address\."/);
+  // A 1 px edge in the error's colour, and the line under it: a ringed «!» and the words from the left.
+  const rule = (selector) => rules(css).find(([found]) => found.split("\n").pop().trim() === selector)?.[1] ?? "";
+  assert.match(rule('.entry-card .field [aria-invalid="true"]'), /border-color: var\(--danger\);/);
+  assert.match(rule(".entry-card .field input"), /border: 1px solid transparent;/);
+  assert.match(rule(".entry-card .field-error"), /display: flex;[^}]*font: 400 15px\/20px var\(--sans\);[^}]*text-align: left;/);
+  assert.match(rule(".entry-card .field-error::before"), /border: 1\.5px solid currentColor;\s*border-radius: 50%;/);
+  assert.match(rule(".entry-card .field-error::before"), /content: "!" \/ "";/);
 });
 
 test("a02 hands the browser to the child: first-steps.js's words in the child's language, the name as the parent wrote it", () => {

@@ -4,7 +4,7 @@
 
 import { $, call, say } from "./students.js";
 import { codeDigits, maskEmail } from "./steps.js";
-import { current, getAccount, go, landing, need, onShow, setAccount } from "./screens.js";
+import { current, getAccount, go, landing, need, onHide, onShow, setAccount } from "./screens.js";
 
 const GOOGLE_SCRIPT = "https://accounts.google.com/gsi/client";
 // Sign-ins that leave the page for the provider's and come back with a code.
@@ -26,7 +26,10 @@ const ENTRY_WORDS = {
     greeting: "Te damos la bienvenida",
     returning: "¡Qué bueno que estés de vuelta!",
     help: "Entra o crea tu cuenta, sin contraseña.",
+    or: "o",
     email: "Tu correo",
+    email_required: "Escribe tu correo electrónico.",
+    email_invalid: "Revisa el correo: no parece una dirección válida.",
     send: "Enviarme un código",
     name: "Tu nombre",
     name_error: "Escribe tu nombre para crear tu cuenta.",
@@ -41,7 +44,10 @@ const ENTRY_WORDS = {
     greeting: "Welcome",
     returning: "Welcome back!",
     help: "Sign in or create your account, without a password.",
+    or: "or",
     email: "Your email",
+    email_required: "An email address is required.",
+    email_invalid: "Check the email: it does not look like a valid address.",
     send: "Send me a code",
     name: "Your name",
     name_error: "Enter your name to create your account.",
@@ -57,7 +63,7 @@ const entryText = (key) => ENTRY_WORDS[document.documentElement.lang === "en" ? 
 
 function entryWords() {
   for (const [id, key] of [
-    ["p01-title", "title"], ["entry-help", "help"], ["email-label", "email"],
+    ["p01-title", "title"], ["entry-help", "help"], ["ways-or", "or"], ["email-label", "email"],
     ["email-send", "send"], ["email-name-label", "name"], ["email-name-error", "name_error"],
     ["p03-title", "code_title"], ["code-help", "code_help"], ["code-continue", "continue"],
   ]) $(id).textContent = entryText(key);
@@ -105,20 +111,17 @@ function forgetAddress() {
 
 // --- One entry: email and the configured providers ----------------------------
 
-/** Shows each way in only where the server has it set up; GitHub, Facebook and Apple fold away under «Otras formas de entrar». */
+/** Shows each way in only where the server has it set up: Google's button, Apple's, GitHub's and Facebook's, then the email field (FIGMA.md D45). */
 function showWays(account) {
   const providers = account.providers ?? [];
   const google = Boolean(account.google_client_id) && !googleFailed;
   const email = providers.includes("email");
   const others = CODE_PROVIDERS.filter((provider) => providers.includes(provider));
   for (const slot of document.querySelectorAll("[data-google]")) slot.hidden = !google;
+  for (const link of document.querySelectorAll("[data-provider]")) link.hidden = !others.includes(link.dataset.provider);
   $("email-start").hidden = !email;
-  for (const details of document.querySelectorAll(".other-ways")) {
-    details.hidden = others.length === 0;
-    // When they are the only ways in, they show open.
-    if (!google && !email) details.open = true;
-    for (const link of details.querySelectorAll("[data-provider]")) link.hidden = !others.includes(link.dataset.provider);
-  }
+  // «o» stands between the providers' buttons and the email field, where both show.
+  $("ways-or").hidden = !email || (!google && others.length === 0);
   // Their own cookies are said where they are offered, not in the cookie notice.
   for (const note of document.querySelectorAll(".ways-note")) note.hidden = !google && others.length === 0;
 }
@@ -129,14 +132,16 @@ let googleFailed = false;
 let googleScript = null;
 
 // Google draws its own button (Figma: Botón/Google 168:991, «no restyle»):
-// only its options and its slot's width are ours, up to Google's 400 px.
+// only its options and its slot's width are ours, up to Google's 400 px. Its
+// theme follows the entry's palette, which style.css names in --entry-google:
+// Google's outlined button on paper, its black one on the near-dark.
 function renderGoogle(id) {
   const slot = $(id);
   if (!googleReady || slot.hidden) return;
   const width = Math.min(400, Math.max(200, Math.round(slot.getBoundingClientRect().width) || 342));
   window.google.accounts.id.renderButton(slot, {
     type: "standard",
-    theme: "outline",
+    theme: getComputedStyle(slot).getPropertyValue("--entry-google").trim() || "outline",
     size: "large",
     text: "continue_with",
     shape: "rectangular",
@@ -149,6 +154,28 @@ function renderGoogle(id) {
 function googleTrouble() {
   if (googleFailed && !getAccount().signed_in) say("No se pudo cargar el botón de Google.");
 }
+
+// The entry and its code step have a palette of their own, which style.css
+// switches (FIGMA.md D45). The browser's own bars follow the screen showing:
+// the entry's background, and the paper's again on every other screen.
+const barColor = document.querySelector('meta[name="theme-color"]');
+
+function tintBars() {
+  const background = getComputedStyle(document.documentElement).getPropertyValue("--bg").trim();
+  if (background) barColor.content = background;
+}
+
+for (const id of ["p01", "p03"]) {
+  onShow(id, tintBars);
+  // Read once the next screen shows: until then the page still has this one's palette.
+  onHide(id, () => queueMicrotask(tintBars));
+}
+
+// The system changed between light and dark with the page open.
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
+  tintBars();
+  if (current() === "p01") renderGoogle("google-p01");
+});
 
 onShow("p01", () => {
   entryWords();
@@ -212,8 +239,10 @@ function entered(account) {
 
 // --- The email field on the entry --------------------------------------------
 
-function emailError(on) {
+/** The line under the email field: `words` names what it says, that an address is needed or that this is not one. */
+function emailError(on, words = "email_invalid") {
   $("email-address").setAttribute("aria-invalid", String(on));
+  if (on) $("email-error").textContent = entryText(words);
   $("email-error").hidden = !on;
   if (on) $("email-address").focus();
 }
@@ -232,9 +261,11 @@ $("email-name").addEventListener("input", () => {
   if ($("email-name").getAttribute("aria-invalid") === "true") nameError(false);
 });
 
-$("email-start").addEventListener("submit", async (event) => {
+/** «Enviarme un código»: an address that is missing or is not one is said under the field and nothing is sent; else the code goes out and P03 shows. */
+async function startEmail(event) {
   event.preventDefault();
   const address = $("email-address").value.trim();
+  if (!address) return emailError(true, "email_required");
   if (!EMAIL.test(address) || address.length > 254) return emailError(true);
   emailError(false);
   say("");
@@ -251,7 +282,9 @@ $("email-start").addEventListener("submit", async (event) => {
   emailAddress = address;
   clearCode();
   go("p03");
-});
+}
+
+$("email-start").addEventListener("submit", startEmail);
 
 // --- P03 Código: six boxes over one field ---------------------------------------
 

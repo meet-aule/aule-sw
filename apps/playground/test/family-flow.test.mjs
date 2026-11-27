@@ -112,6 +112,81 @@ test("submitting twice while a code is being checked sends only one request", as
   assert.equal(page.accounts.length, 1);
 });
 
+/** The entry's email field and «Enviarme un código», with the words' keys in place of the words. */
+function entry(respond) {
+  const fields = new Map();
+  const $ = (id) => {
+    if (!fields.has(id)) fields.set(id, element());
+    return fields.get(id);
+  };
+  $("email-error").hidden = true;
+  $("email-start").querySelector = () => $("email-send");
+  const calls = [], messages = [], screens = [];
+  const page = runInNewContext(`
+    let emailAddress = "";
+    const EMAIL = ${signin.match(/\nconst EMAIL = (\/.+\/);/)[1]};
+    const NOT_SENT = "not sent";
+    const entryText = (key) => key;
+    const clearCode = () => {};
+    ${["emailError", "startEmail"].map((name) => source(signin, name)).join("\n")}
+    ({ startEmail, address: () => emailAddress })`, {
+    $,
+    say: (message) => messages.push(message),
+    go: (screen) => screens.push(screen),
+    call: async (path, body) => {
+      calls.push({ path, body: JSON.parse(JSON.stringify(body)) });
+      return respond(body);
+    },
+  });
+  const send = () => page.startEmail({ preventDefault() {}, submitter: $("email-send") });
+  return { ...page, $, send, calls, messages, screens };
+}
+
+test("an empty email is asked for and a malformed one is said, under the field, and neither is sent", async () => {
+  const page = entry(async ({ email }) => {
+    if (email === "refused@example.test") throw new Error("bad_email");
+    return {};
+  });
+  const field = page.$("email-address"), line = page.$("email-error");
+
+  // Nothing written, or only spaces: an address is required.
+  for (const empty of ["", "   "]) {
+    field.value = empty;
+    field.focused = false;
+    await page.send();
+    assert.equal(line.hidden, false);
+    assert.equal(line.textContent, "email_required");
+    assert.equal(field.attributes["aria-invalid"], "true");
+    assert.equal(field.focused, true, "the field takes the focus");
+  }
+
+  // Something that is not an address: the other line, in the same place.
+  field.value = "family.example.test";
+  await page.send();
+  assert.equal(line.hidden, false);
+  assert.equal(line.textContent, "email_invalid");
+  assert.equal(field.attributes["aria-invalid"], "true");
+  assert.deepEqual(page.calls, [], "nothing was sent");
+  assert.deepEqual(page.screens, [], "and the entry stays");
+
+  // An address the platform refuses is said the same way.
+  field.value = "refused@example.test";
+  await page.send();
+  assert.equal(line.textContent, "email_invalid");
+  assert.equal(line.hidden, false);
+  assert.equal(page.$("email-send").disabled, false, "the button works again");
+  assert.deepEqual(page.screens, []);
+
+  // A good one clears the line and goes on to the code, trimmed.
+  field.value = "  family@example.test ";
+  await page.send();
+  assert.equal(line.hidden, true);
+  assert.equal(field.attributes["aria-invalid"], "false");
+  assert.deepEqual(page.calls.at(-1), { path: "api/signin/email/start", body: { email: "family@example.test" } });
+  assert.equal(page.address(), "family@example.test");
+  assert.deepEqual(page.screens, ["p03"]);
+});
+
 function reader() {
   let account = { signed_in: true, students: [{ id: "one", name: "Example A" }, { id: "two", name: "Example B" }] };
   let screen = "home";

@@ -54,6 +54,7 @@
   /* Opción/Grande · Foco 160:1384's ring in color/acento, solid: the Figma's 40 % is
      1.73:1 on the paper, under the 3:1 a focus indicator needs (4.80:1 solid). */
   --focus: #9a5b2e;
+  --fibre: 154 91 46; /* the paper's fibres (D38): the accent's red, green and blue */
   /* Figma «Aparato — e-ink» (VariableCollectionId:90:691), mode Papel: the student's screens. */
   --device-ink: #000000; /* nivel/negro VariableID:162:427 */
   --device-paper: #ffffff; /* nivel/blanco VariableID:162:430 */
@@ -99,8 +100,8 @@ body {
   background: var(--bg);
   /* Static paper fibres in CSS, with no image or filter to load (D38). */
   background-image:
-    repeating-linear-gradient(0deg, rgb(154 91 46 / 0.02) 0 1px, transparent 1px 4px),
-    repeating-linear-gradient(90deg, rgb(154 91 46 / 0.015) 0 1px, transparent 1px 6px);
+    repeating-linear-gradient(0deg, rgb(var(--fibre) / 0.02) 0 1px, transparent 1px 4px),
+    repeating-linear-gradient(90deg, rgb(var(--fibre) / 0.015) 0 1px, transparent 1px 6px);
   color: var(--ink);
   font: 400 16px/1.5 var(--sans);
   -webkit-font-smoothing: antialiased;
@@ -782,59 +783,6 @@ h3[tabindex="-1"]:focus {
   opacity: 0.55;
 }
 
-/* Figma: Botón/Google 168:991 (Google draws it; only its slot is ours). */
-.google-slot {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 48px;
-}
-
-/* GitHub, Facebook and Apple share Google's button look, so they read as
-   siblings; 44 px tall (Google's own is 40) for a finger. */
-.other-ways summary {
-  display: inline-block;
-  list-style: none;
-}
-
-.other-ways summary::-webkit-details-marker {
-  display: none;
-}
-
-.providers {
-  display: grid;
-  gap: 0;
-  margin-top: 8px;
-}
-
-.provider {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  width: 100%;
-  max-width: 400px;
-  height: 44px;
-  margin: 4px auto;
-  padding: 0 12px;
-  border: 1px solid #747775;
-  border-radius: 4px;
-  background: #fff;
-  color: #1f1f1f;
-  font: 500 14px/1.2 var(--sans);
-  text-decoration: none;
-}
-
-.provider:hover {
-  background: #f8f9fa;
-}
-
-.provider svg {
-  flex: none;
-  width: 18px;
-  height: 18px;
-}
-
 /* P04's «Qué guardamos»: the two choices and what is never kept. Open from the
    start, and tight enough that «Autorizo» stays on a 390×844 phone's screen. */
 .keep-panel {
@@ -850,6 +798,431 @@ h3[tabindex="-1"]:focus {
 .keep-panel .link {
   justify-self: start;
   margin-block: -8px;
+}
+
+/* ---- The sign-in: P01 and its code step P03, in two columns (web-only, D45) -- */
+
+/* The entry's own tones, over the page's tokens: here on paper, the ones that
+   have no token of the Figma's. --entry-google names the theme Google's own
+   button is asked for (signin.js). */
+html[data-screen="p01"],
+html[data-screen="p03"] {
+  --entry-edge: #dcd6c6; /* the card's and the picture's 1 px edge */
+  --entry-way: #ebe4d3; /* a provider's button, the pill under the card */
+  --entry-way-over: #e2dac6;
+  --entry-field: #f1ecdf; /* the email field and the digits, between the card and a button */
+  --entry-link: #2b5c8a;
+  --entry-sheet: #fbfaf6; /* the picture's sheet */
+  --entry-google: outline;
+}
+
+/* THE ENTRY'S PALETTE SWITCH. As written, the entry is near-dark where the
+   system asks for dark and on paper otherwise. For near-dark always, change
+   the next line to `@media all {`; for paper always, delete this block. Every
+   other screen keeps the paper tokens of :root in both modes. */
+@media (prefers-color-scheme: dark) {
+  html[data-screen="p01"],
+  html[data-screen="p03"] {
+    --bg: #141413;
+    --surface: #191918;
+    --ink: #f3f0e8;
+    --muted: #a6a299;
+    --line: #3a3835;
+    --copper: #d9a06c;
+    --picked: #2f2e2b;
+    --danger: #f0867b;
+    --focus: #d9a06c;
+    --fibre: 243 240 232;
+    --entry-edge: #2b2a27;
+    --entry-way: #262624;
+    --entry-way-over: #302f2c;
+    --entry-field: #1f1e1d;
+    --entry-link: #8ab4e8;
+    --entry-sheet: #1d1c1b;
+    --entry-google: filled_black;
+    color-scheme: dark;
+  }
+}
+
+/* A visit starts on paper until the page knows who it is for: where the entry is
+   near-dark, the page fades to it instead of cutting. */
+@media (prefers-reduced-motion: no-preference) {
+  html[data-screen="p01"],
+  html[data-screen="p01"] body {
+    transition: background-color 200ms ease-out;
+  }
+}
+
+/* One column on a phone: the wordmark, the title, the card, and the picture after it. */
+html[data-screen="p01"] main,
+html[data-screen="p03"] main {
+  min-height: calc(100vh - var(--notice-room));
+  min-height: calc(100dvh - var(--notice-room));
+}
+
+.screen.entry:not([hidden]) {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-height: 0;
+  padding: 88px 24px 32px;
+}
+
+.entry .frame {
+  width: 100%;
+  min-height: 0;
+  padding: 0;
+}
+
+/* The mark and the name, top left; the plain line of the other paper screens is not drawn. */
+.entry .screen-head {
+  position: absolute;
+  top: 24px;
+  left: 24px;
+}
+
+.entry .wordmark {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font: 600 22px/1 var(--serif);
+}
+
+.wordmark-mark {
+  flex: none;
+  width: 28px;
+  height: 28px;
+}
+
+.entry .progress {
+  display: none;
+}
+
+.entry .screen-body {
+  flex: none;
+  align-items: center;
+  gap: 0;
+  padding: 0;
+}
+
+/* Pregunta/Base 161:2101, centred: the title large and light, the help under it in the serif. */
+.entry .question {
+  justify-items: center;
+  gap: 10px;
+  max-width: min(100%, 640px);
+  text-align: center;
+}
+
+.entry .question-title {
+  font: 300 40px/1.1 var(--serif);
+  letter-spacing: -0.01em;
+  text-wrap: balance;
+}
+
+/* The code step's title is a sentence: smaller, so it keeps to two lines on a phone. */
+.screen[data-screen="p03"] .question-title {
+  font-size: 30px;
+}
+
+.entry .question-help {
+  font: 400 19px/1.4 var(--serif);
+  text-wrap: balance;
+}
+
+/* The card: the ways in, 54 px each and 16 apart. */
+.entry-card {
+  width: 100%;
+  max-width: 600px;
+  margin-top: 32px;
+  padding: 20px;
+  border: 1px solid var(--entry-edge);
+  border-radius: 24px;
+  background: var(--surface);
+}
+
+/* Figma: Botón/Google 168:991 (Google draws it, up to its 400 px; only its slot is ours). */
+.google-slot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 54px;
+}
+
+/* Apple, GitHub and Facebook: the provider's mark left of its words, both centred. */
+.provider {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 54px;
+  padding: 0 16px;
+  border-radius: 12px;
+  background: var(--entry-way);
+  color: var(--ink);
+  font: 500 16px/1.2 var(--sans);
+  text-decoration: none;
+}
+
+.provider:hover {
+  background: var(--entry-way-over);
+}
+
+.provider svg {
+  flex: none;
+  width: 20px;
+  height: 20px;
+}
+
+/* «o», between the providers and the email field: 20 px above and below with the card's gap. */
+.ways-or {
+  margin: 4px 0;
+  color: var(--muted);
+  font: 400 14px/1.3 var(--sans);
+  text-align: center;
+}
+
+/* The entry combines P01 and P02 (D42): the field, then its action 22 px under it. */
+.email-entry {
+  display: grid;
+  gap: 22px;
+  width: 100%;
+}
+
+/* Campo/Línea 160:1355 drawn as a box here: a fill, no rule, and a 1 px edge in the
+   error colour when the address is missing or is not one. */
+.entry-card .field {
+  gap: 0;
+}
+
+.entry-card .field > label:not(.sr-only) {
+  margin-bottom: 8px;
+}
+
+.entry-card .field input {
+  height: 54px;
+  min-height: 0;
+  padding: 0 16px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: var(--entry-field);
+  font: 400 16px/1.2 var(--sans);
+}
+
+.entry-card .field input:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+  box-shadow: none;
+}
+
+.entry-card .field [aria-invalid="true"] {
+  border-color: var(--danger);
+}
+
+/* With the error showing the field has the focus: its ring is the error's colour
+   too, and fine, against the edge, so the field reads as one red box. */
+.entry-card .field [aria-invalid="true"]:focus-visible {
+  outline: 1px solid var(--danger);
+  outline-offset: 0;
+}
+
+/* The error, right under its field: a ringed «!» and the words, from the left.
+   A line of it takes 30 px, which the two-column layout counts on (below). */
+.entry-card .field-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  font: 400 15px/20px var(--sans);
+  text-align: left;
+}
+
+.entry-card .field-error::before {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border: 1.5px solid currentColor;
+  border-radius: 50%;
+  font: 700 11px/1 var(--sans);
+  content: "!";
+  /* Drawn, not read: the words after it say it. */
+  content: "!" / "";
+}
+
+/* Botón/Principal 160:1392 at the card's 54 px: ink on paper, off-white on the near-dark. */
+.entry-card .primary {
+  min-height: 54px;
+  border-radius: 12px;
+}
+
+/* The message line shows inside the card, where its slot is. */
+.entry-says {
+  display: contents;
+}
+
+.entry-card .message,
+.entry-card .wait {
+  text-align: center;
+}
+
+/* The small print: the providers' own cookies (D36). */
+.entry-card .ways-note {
+  margin-top: 6px;
+  font: 400 13px/1.5 var(--sans);
+  text-align: center;
+  text-wrap: balance;
+}
+
+/* Dígito/Base 160:1405 in the card: the field's fill inside a fine edge, so six empty
+   boxes can be counted, and the copper edge on the one to fill. */
+.entry-card .digit-boxes span {
+  height: 64px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--entry-field);
+}
+
+.entry-card .digit-boxes span.focus {
+  border: 2px solid var(--copper);
+}
+
+/* «Reenviar» and «No me llega el correo», side by side under «Continuar». */
+.entry-card .links {
+  flex-flow: row wrap;
+  justify-content: center;
+  gap: 0 28px;
+}
+
+.entry-card .link:not(:disabled) {
+  color: var(--entry-link);
+}
+
+/* The one action under the card: «← Atrás» on the code step. */
+.entry-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  margin-top: 24px;
+  padding: 0 20px;
+  border: 0;
+  border-radius: 22px;
+  background: var(--entry-way);
+  color: var(--ink);
+  font: 500 15px/1.2 var(--sans);
+}
+
+.entry-pill:hover {
+  background: var(--entry-way-over);
+}
+
+/* The picture: the session's pixel cuy on a sheet, shown once it can be drawn
+   (app.js). Its edge is --entry-edge: inside a face's box, --line is a pixel's width. */
+.entry-picture {
+  display: none;
+}
+
+html[data-screen="p01"] .entry-picture.ready,
+html[data-screen="p03"] .entry-picture.ready {
+  display: grid;
+  width: min(100% - 48px, 600px);
+  aspect-ratio: 4 / 3;
+  margin: 0 auto 32px;
+  overflow: hidden;
+  border: 1px solid var(--entry-edge);
+  border-radius: 24px;
+  background: var(--entry-sheet);
+}
+
+@media (max-width: 359px) {
+  .screen.entry:not([hidden]) {
+    padding-inline: 16px;
+  }
+
+  .entry .screen-head {
+    left: 16px;
+  }
+
+  .entry-card {
+    padding: 16px;
+  }
+}
+
+/* From 960 px, two columns: the entry in the left 54 %, centred both ways, and the
+   picture upright in the right 46 %. */
+@media (min-width: 960px) {
+  html[data-screen="p01"] main,
+  html[data-screen="p03"] main {
+    display: grid;
+    grid-template-columns: 54fr 46fr;
+  }
+
+  .screen.entry:not([hidden]) {
+    justify-content: center;
+    padding: 96px 32px 48px;
+  }
+
+  .entry .screen-head {
+    top: 44px;
+    left: 44px;
+  }
+
+  .entry .question {
+    gap: 12px;
+  }
+
+  .entry .question-title {
+    font-size: 64px;
+    line-height: 1.08;
+  }
+
+  .screen[data-screen="p03"] .question-title {
+    font-size: 40px;
+  }
+
+  .entry .question-help {
+    font-size: 24px;
+    line-height: 1.35;
+  }
+
+  .entry-card {
+    margin-top: 60px;
+    padding: 38px;
+    border-radius: 28px;
+  }
+
+  /* The email's error moves down only what is under its field: the room its line
+     takes is given back under the card, so the centred column stays where it was. */
+  .screen[data-screen="p01"] .entry-card:has(#email-error:not([hidden])) {
+    margin-bottom: -30px;
+  }
+
+  .entry-pill {
+    margin-top: 34px;
+  }
+
+  html[data-screen="p01"] .entry-picture.ready,
+  html[data-screen="p03"] .entry-picture.ready {
+    align-self: center;
+    justify-self: end;
+    width: min(38.5vw - 24px, (100vh - var(--notice-room)) * 0.62);
+    aspect-ratio: 4 / 5;
+    margin: 0 7.5vw 0 0;
+  }
+}
+
+/* A laptop's short screen: less air above the title and the card, so the card ends on the first screen. */
+@media (min-width: 960px) and (max-height: 820px) {
+  .screen.entry:not([hidden]) {
+    padding: 84px 32px 32px;
+  }
+
+  .entry-card {
+    margin-top: 40px;
+  }
 }
 
 /* ---- Paper: the family's account and a student's settings ---------------- */
@@ -1146,13 +1519,7 @@ h3[tabindex="-1"]:focus {
   color: var(--muted);
 }
 
-/* The entry combines P01 and P02; reviews have their own reading column (D42, D43). */
-.email-entry {
-  display: grid;
-  gap: 20px;
-  width: 100%;
-}
-
+/* Reviews have their own reading column (D43). */
 .review-list {
   display: grid;
   gap: 24px;

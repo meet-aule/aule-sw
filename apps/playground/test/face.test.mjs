@@ -87,16 +87,20 @@ test("in pixels a face is drawn whole, however slowly the frames come", () => {
   assert.match(app, /face\.spec = cuy;\s*pixelate\(face\);/);
 });
 
-test("the check, session and farewell faces share the cuy and its pixel rendering", () => {
+test("the check, session, farewell and entry faces share the cuy and its pixel rendering", () => {
   for (const [id, box] of [
     ["mascot", "mascot"],
     ["check-face", "check-face"],
     ["ended-face", "ended-face"],
+    ["entry-face", "entry-picture"],
   ]) {
     const tag = new RegExp(`<div class="${box} face-box">\\s*<wobnimo-mascot id="${id}" character="mochi" state="\\w+" floor="0" aria-hidden="true"></wobnimo-mascot>\\s*</div>`);
     assert.match(html, tag, id);
   }
-  assert.match(app, /for \(const face of \[\$\("mascot"\), \$\("check-face"\), \$\("ended-face"\)\]\) \{\s*face\.spec = cuy;\s*pixelate\(face\);\s*\}/);
+  assert.match(app, /for \(const face of \[\$\("mascot"\), \$\("check-face"\), \$\("ended-face"\), \$\("entry-face"\)\]\) \{\s*face\.spec = cuy;\s*pixelate\(face\);\s*\}/);
+  // Beside the sign-in the cuy dances, and its panel shows only once it can be drawn.
+  assert.ok(Object.keys(cuy.acting).includes("celebrating"));
+  assert.match(app, /\$\("entry-face"\)\.parentElement\.classList\.add\("ready"\);/);
   // The filter the style sheet names is in the page, and takes no room.
   assert.match(html, /<svg class="filters" width="0" height="0" aria-hidden="true" focusable="false">\s*<filter id="flat"/);
   assert.match(css, /\.face-box\.pixels > wobnimo-mascot \{[^}]*filter: url\(#flat\) drop-shadow\(var\(--line\) 0 0 var\(--device-ink\)\)/);
