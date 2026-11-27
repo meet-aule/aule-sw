@@ -393,13 +393,15 @@ const MASCOT_STATE = {
 // that cannot run it, the dot stays, and A05's check does without a face.
 // Aule is a cuy (cuy.js), shown in pixel art (pixels.js).
 customElements.whenDefined("wobnimo-mascot").then(() => {
-  for (const face of [$("mascot"), $("check-face"), $("ended-face")]) {
+  for (const face of [$("mascot"), $("check-face"), $("ended-face"), $("entry-face")]) {
     face.spec = cuy;
     pixelate(face);
   }
   $("tutor").classList.add("has-mascot");
   $("mic-check").classList.add("has-mascot");
   $("ended-face").parentElement.classList.add("ready");
+  // Beside the sign-in (FIGMA.md D45) the panel shows only once its cuy can be drawn.
+  $("entry-face").parentElement.classList.add("ready");
 });
 
 /**
