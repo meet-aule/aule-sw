@@ -174,6 +174,48 @@ pub enum Esperando {
     FotoTarea,
 }
 
+/// [PROPUESTA] E1-06: ¿lo dicho empieza asintiendo («Ya,», «Sí, listo.», «Ah,
+/// ya,») y en lo que sigue no pregunta, no objeta ni pide que se le repita?
+/// «Ya, entendí. Los pedazos siguen siendo quintos.» avanza; «Sí, ¿pero por
+/// qué?» y «Ya, pero no me sale» son conversación. Lo que solo asiente, sin
+/// nada más, ya lo toman las palabras de avance.
+fn empieza_asintiendo(t: &str, avance: &[&str]) -> bool {
+    const MULETILLAS: [&str; 6] = ["ah", "eh", "oh", "mmm", "aja", "bueno"];
+    let corta = |c: char| matches!(c, ',' | '.' | ';' | ':' | '!' | '…');
+    let mut resto = t.trim();
+    let mut asintio = false;
+    // Las frases cortas con que empieza: muletillas y palabras de avance.
+    while let Some(corte) = resto.find(corta) {
+        let frase = normalizar(&resto[..corte]);
+        let palabras: Vec<&str> = frase.split_whitespace().collect();
+        let solo_asiente = !palabras.is_empty()
+            && palabras.len() <= 3
+            && palabras
+                .iter()
+                .all(|w| avance.contains(w) || MULETILLAS.contains(w));
+        if !solo_asiente {
+            break;
+        }
+        asintio |= palabras.iter().any(|w| avance.contains(w));
+        resto = resto[corte..].trim_start_matches(|c: char| corta(c) || c.is_whitespace());
+    }
+    if !asintio || resto.is_empty() {
+        return false;
+    }
+    let n = normalizar(resto);
+    let objeta = resto.contains('?')
+        || resto.contains('¿')
+        || n == "no"
+        || n.starts_with("no ")
+        || n.starts_with("pero ")
+        || n.contains(" pero ")
+        || n.ends_with(" no se")
+        || ["no entend", "no comprend", "otra vez", "repite", "no se "]
+            .iter()
+            .any(|p| n.contains(p));
+    !objeta
+}
+
 /// [PROPUESTA] TAR-05: lo que se leyó en una foto de la Tarea, fuera del
 /// motor. Llega solo el nivel, nunca la foto (DAT-03).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -3915,6 +3957,8 @@ impl Motor {
         let es_avance = n.split_whitespace().count() <= 4
             && n.split_whitespace().any(|w| palabras_avance.contains(&w))
             && !n.contains("no entend");
+        // E1-06: quien empieza asintiendo y sigue hablando también avanza.
+        let asiente = empieza_asintiendo(t, &palabras_avance);
         let sugerida = match self.esperando() {
             Esperando::Conversacion { sugerencias } => {
                 sugerencias.iter().any(|s| normalizar(s) == n)
@@ -3925,6 +3969,7 @@ impl Motor {
             Actividad::Etapa1(e) if matches!(e.fase, FaseE1::Teoria(_) | FaseE1::NoAsistido(_)) => {
                 sugerida
                     || es_avance
+                    || asiente
                     || n.contains("no entend")
                     || n.contains("otra vez")
                     || n.contains("repite")

@@ -643,6 +643,26 @@ fn e1_lo_que_se_contesta_a_seguimos_lo_toma_el_motor() {
     for dicho in ["Tres partes de cuatro", "Cuatro", "no sé qué es eso"] {
         assert!(!p.m.texto_es_flujo(dicho), "{dicho}");
     }
+    // Quien empieza asintiendo y sigue hablando también avanza (por voz un
+    // niño no contesta con una sola palabra): «Ya, entendí. Los pedazos…».
+    for dicho in [
+        "Ya, entendí. Los pedazos siguen siendo quintos.",
+        "Sí, es como partir cada pedazo en dos",
+        "Ah, ya, cuatro cuartos hacen un entero",
+        "Listo. Dos cuartos es lo mismo que un medio.",
+    ] {
+        assert!(p.m.texto_es_flujo(dicho), "{dicho}");
+    }
+    // Salvo que pregunte, objete o no haya asentido de verdad.
+    for dicho in [
+        "Sí, ¿pero por qué no cambia el de abajo?",
+        "Ya, pero no me sale cuando lo hago yo",
+        "Sí, no sé por qué se multiplica",
+        "Si divido cuatro entre dos me da dos",
+        "Ah, cuatro cuartos hacen un entero",
+    ] {
+        assert!(!p.m.texto_es_flujo(dicho), "{dicho}");
+    }
 
     let r = p.e(Entrada::Texto("No".into()));
     assert_eq!(p.act(), "etapa1:2:teoria");
@@ -659,6 +679,25 @@ fn e1_lo_que_se_contesta_a_seguimos_lo_toma_el_motor() {
     let r = p.e(Entrada::Texto("Sigamos".into()));
     assert!(r.iter().all(|m| m.texto != primera), "{}", texto(&r));
     assert_eq!(r.last().unwrap().texto, SEGUIMOS);
+
+    // Y lo que empieza asintiendo también: no es una pregunta ni un «no entendí».
+    let segunda = r
+        .iter()
+        .find(|m| m.clase == Clase::Teoria)
+        .map(|m| m.texto.clone());
+    let r = p.e(Entrada::Texto(
+        "Ya, entendí. Los pedazos siguen siendo quintos.".into(),
+    ));
+    assert!(
+        r.iter().all(|m| Some(&m.texto) != segunda.as_ref()),
+        "{}",
+        texto(&r)
+    );
+    assert!(
+        r.iter().all(|m| !m.texto.starts_with("Vamos de nuevo")),
+        "{}",
+        texto(&r)
+    );
 }
 
 /// [PROPUESTA] Conversar sobre una explicación no la hace avanzar: un Alumno

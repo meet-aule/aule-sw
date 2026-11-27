@@ -857,6 +857,16 @@ fn an_explanation_asks_whether_to_go_on_and_talk_on_it_has_a_limit() {
     let on = student.says("sigamos");
     assert_eq!(on.converse, None, "{on:?}");
     assert_ne!(student.engine.card().unwrap().enunciado, card);
+
+    // By voice a child rarely says one word: what starts by agreeing goes on
+    // too, and the model is not asked; with a question in it, it is talk.
+    let card = student.engine.card().unwrap().enunciado;
+    let asked = student.says("Sí, ¿pero por qué no cambia el de abajo?");
+    assert!(asked.lines.is_empty() && asked.converse.is_some(), "{asked:?}");
+    assert_eq!(student.engine.card().unwrap().enunciado, card);
+    let on = student.says("Ya, entendí. Los pedazos siguen siendo iguales.");
+    assert_eq!(on.converse, None, "{on:?}");
+    assert_ne!(student.engine.card().unwrap().enunciado, card);
 }
 
 #[test]
