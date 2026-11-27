@@ -87,7 +87,9 @@ fn numero(toks: &[&str], i: usize) -> Option<(i64, usize)> {
     if let Ok(n) = t.parse::<i64>() {
         return Some((n, 1));
     }
-    let n = unidad(t)?;
+    // Por voz un número suelto llega a veces en plural («Cincos» por
+    // «Cinco.»): es el mismo número. «Unos» es otra palabra.
+    let n = unidad(t).or_else(|| t.strip_suffix('s').and_then(unidad).filter(|n| *n != 1))?;
     // "treinta y dos"
     if n >= 30 && n % 10 == 0 && toks.get(i + 1) == Some(&"y") {
         if let Some(u) = toks.get(i + 2).and_then(|x| unidad(x)) {
@@ -97,6 +99,23 @@ fn numero(toks: &[&str], i: usize) -> Option<(i64, usize)> {
         }
     }
     Some((n, 1))
+}
+
+/// Números que el oído confunde al transcribir la voz: «dos» y «doce» suenan
+/// casi igual, y «tres» y «trece» también, así que cada uno llega escrito
+/// por el otro (2026-11-26: «Dos» escrito «Doce» en cuatro de diez voces de
+/// niño).
+const SE_OYEN_PARECIDO: [(i64, i64); 2] = [(2, 12), (3, 13)];
+
+/// ¿Lo leído es un número que suena casi igual que el esperado, sin serlo?
+pub fn se_oye_como(leida: &FraccionEscrita, esperada: &FraccionEscrita) -> bool {
+    let entero = |f: &FraccionEscrita| (f.entero.is_none() && f.den == 1).then_some(f.num);
+    match (entero(leida), entero(esperada)) {
+        (Some(a), Some(b)) => SE_OYEN_PARECIDO
+            .iter()
+            .any(|&(x, y)| (a, b) == (x, y) || (a, b) == (y, x)),
+        _ => false,
+    }
 }
 
 /// Denominador dicho con palabras: "medio", "tercios", "doceavos"...
@@ -438,6 +457,43 @@ mod tests {
         assert!(es_no_se("la verdad no se como"));
         assert!(!es_no_se("no sé, creo que 3/4"));
         assert_eq!(v("tres veinticuatroavos"), Fraccion::new(3, 24));
+    }
+
+    #[test]
+    fn un_numero_en_plural_es_el_mismo_numero() {
+        // «Cinco.» llega a veces escrito «Cincos».
+        assert_eq!(v("Cincos"), Fraccion::new(5, 1));
+        assert_eq!(v("cuatros"), Fraccion::new(4, 1));
+        assert_eq!(v("doces"), Fraccion::new(12, 1));
+        // Los que ya terminan en s son ellos mismos.
+        assert_eq!(v("dos"), Fraccion::new(2, 1));
+        assert_eq!(v("seis"), Fraccion::new(6, 1));
+        // «Unos» no es el número uno.
+        assert!(leer_fraccion("unos").is_none());
+        assert_eq!(v("unos tres cuartos"), Fraccion::new(3, 4));
+    }
+
+    #[test]
+    fn numeros_que_se_oyen_parecido() {
+        let n = |x: i64| FraccionEscrita {
+            entero: None,
+            num: x,
+            den: 1,
+        };
+        assert!(se_oye_como(&n(12), &n(2)));
+        assert!(se_oye_como(&n(2), &n(12)));
+        assert!(se_oye_como(&n(13), &n(3)));
+        // El mismo número no es otro que suena parecido, ni lo es uno cualquiera.
+        assert!(!se_oye_como(&n(2), &n(2)));
+        assert!(!se_oye_como(&n(5), &n(2)));
+        assert!(!se_oye_como(&n(12), &n(3)));
+        // Solo números enteros: 12/5 no se confunde con 2.
+        let f = FraccionEscrita {
+            entero: None,
+            num: 12,
+            den: 5,
+        };
+        assert!(!se_oye_como(&f, &n(2)));
     }
 
     #[test]

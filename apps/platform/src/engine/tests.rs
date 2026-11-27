@@ -569,6 +569,48 @@ fn talk_three_times_running_at_a_question_gets_the_question_again() {
 }
 
 #[test]
+fn an_answer_that_cannot_be_taken_is_asked_for_again_by_the_tutor_itself() {
+    // A number too long to be an answer still sounds like one: the tutor asks
+    // for it again in its own words, and the model is not asked.
+    let mut student = in_screening();
+    let at = student.at();
+    let turn = student.says("1234567890");
+    assert_eq!(turn.converse, None, "{turn:?}");
+    assert_eq!(said_by_tutor(&turn), SAY_AGAIN);
+    assert_eq!(student.at(), at);
+    assert!(matches!(
+        &student.records.last().unwrap().input,
+        Input::Chat { intent: Intencion::RespuestaAlEjercicio, .. }
+    ));
+    // Talk is still talk, and goes to the model.
+    let turn = student.says("mi perro se llama Rocky");
+    assert!(turn.lines.is_empty() && turn.converse.is_some(), "{turn:?}");
+    // The third time running that nothing could be taken, the engine says
+    // its question again in place of the tutor's line.
+    let turn = student.says("1234567890");
+    assert_eq!(turn.converse, None, "{turn:?}");
+    assert_ne!(said_by_tutor(&turn), SAY_AGAIN);
+    assert_eq!(student.at(), at);
+}
+
+#[test]
+fn a_number_the_hearing_writes_for_the_right_one_is_told_from_a_wrong_answer() {
+    // «Dos» is written «Doce» often, and «Tres» «Trece».
+    assert!(heard_for("2", "Doce"));
+    assert!(heard_for("2", "es doce"));
+    assert!(heard_for("12", "Dos."));
+    assert!(heard_for("3", "trece"));
+    // The right answer, or any other wrong one, is graded as it was heard.
+    assert!(!heard_for("2", "dos"));
+    assert!(!heard_for("2", "cinco"));
+    assert!(!heard_for("12", "trece"));
+    // Only whole numbers: a fraction is not mistaken for one.
+    assert!(!heard_for("2/5", "doce"));
+    assert!(!heard_for("2", "doce quintos"));
+    assert!(!heard_for("Verdadero", "doce"));
+}
+
+#[test]
 fn what_is_not_an_answer_goes_where_the_engine_expects_it() {
     // In the screening there are no hints: asking for one gets the engine's fixed line.
     let mut student = in_screening();
