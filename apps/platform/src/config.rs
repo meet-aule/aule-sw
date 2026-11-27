@@ -84,6 +84,8 @@ pub struct Mail {
     /// For example `smtps://user:password@smtp.example.org:465`.
     pub smtp_url: String,
     pub from: String,
+    /// Public family page, including its base path, for email actions.
+    pub public_url: String,
 }
 
 /// Where events are delivered outside the platform, signed with the secret.
@@ -270,7 +272,28 @@ impl Config {
                 if !from.contains('@') {
                     problems.push("AULE_MAIL_FROM must be an email address".into());
                 }
-                Some(Mail { smtp_url: smtp_url.to_string(), from: from.to_string() })
+                let public_url = get("AULE_MAIL_PUBLIC_URL")
+                    .unwrap_or("https://playground.meetaule.com/session")
+                    .trim_end_matches('/');
+                let valid = Url::parse(public_url).ok().is_some_and(|url| {
+                    url.scheme() == "https"
+                        && url.host_str().is_some()
+                        && url.username().is_empty()
+                        && url.password().is_none()
+                        && url.query().is_none()
+                        && url.fragment().is_none()
+                });
+                if !valid {
+                    problems.push(
+                        "AULE_MAIL_PUBLIC_URL must be an HTTPS URL without credentials, query or fragment"
+                            .into(),
+                    );
+                }
+                Some(Mail {
+                    smtp_url: smtp_url.to_string(),
+                    from: from.to_string(),
+                    public_url: public_url.to_string(),
+                })
             }
             (None, None) => None,
             _ => {
@@ -602,6 +625,25 @@ mod tests {
         ] {
             assert!(message.contains(expected), "{expected} not in {message}");
         }
+    }
+
+    #[test]
+    fn mail_links_need_a_safe_public_url() {
+        let mut env = complete();
+        env.insert("AULE_SMTP_URL".into(), "smtps://smtp.example.org".into());
+        env.insert("AULE_MAIL_FROM".into(), "admin@example.org".into());
+        for bad in [
+            "http://example.org/session",
+            "https://user:secret@example.org",
+            "https://example.org/?token=secret",
+            "https://example.org/#fragment",
+            "javascript:alert(1)",
+        ] {
+            env.insert("AULE_MAIL_PUBLIC_URL".into(), bad.into());
+            assert!(Config::from_map(&env).is_err(), "{bad}");
+        }
+        env.insert("AULE_MAIL_PUBLIC_URL".into(), "https://example.org/session/".into());
+        assert_eq!(Config::from_map(&env).unwrap().mail.unwrap().public_url, "https://example.org/session");
     }
 
     #[test]

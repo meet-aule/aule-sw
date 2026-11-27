@@ -3083,7 +3083,13 @@ async fn events_become_notices_for_the_family_and_reach_the_webhook(pool: PgPool
     );
     tokio::spawn(async move { axum::serve(listener, receiver).await.unwrap() });
     let secret = "a-webhook-secret-of-32-characters!";
-    let app = app_with(pool, Some(EventsWebhook { url, secret: secret.into() }));
+    let mut app = app_with(pool, Some(EventsWebhook { url, secret: secret.into() }));
+    Arc::make_mut(&mut app.state.config).mail = Some(aule_platform::config::Mail {
+        smtp_url: "smtp://localhost:1025".into(),
+        from: "Aule <admin@example.org>".into(),
+        public_url: "https://example.org/session".into(),
+    });
+    app.router = http::router(app.state.clone());
 
     let ana = app.sign_in("ana@example.org", "Ana").await;
     let (_, me) = app.call(Method::GET, "/v1/me", Some(&ana), None).await;
@@ -3153,6 +3159,13 @@ async fn events_become_notices_for_the_family_and_reach_the_webhook(pool: PgPool
     let mail = app.mail.sent.lock().unwrap().clone();
     assert_eq!(mail.len(), 2);
     assert!(mail.iter().all(|(to, _, _)| to == "ana@example.org"));
+    for (_, _, text) in &mail {
+        let token = text.split("/unsubscribe?token=").nth(1).unwrap();
+        assert_eq!(
+            app.call(Method::POST, "/v1/notices/unsubscribe", None, Some(json!({ "token": token }))).await.0,
+            StatusCode::NO_CONTENT
+        );
+    }
 
     // Delivering the same events again changes nothing.
     sqlx::query("update outbox set delivered_at = null").execute(&app.state.pool).await.unwrap();
@@ -6161,4 +6174,36 @@ async fn lifecycle_deadline_and_provider_failure_have_distinct_reasons(pool: PgP
     app.admin(Method::POST, &format!("{path}/end"), Some(json!({}))).await;
     assert_eq!(app.admin(Method::GET, &path, None).await.1["end_reason"], "budget_reached");
     events_follow_the_contracts(&app).await;
+}
+
+#[sqlx::test(migrator = "aule_platform::MIGRATOR")]
+async fn unsubscribing_needs_a_valid_capability_and_changes_only_its_guardian(pool: PgPool) {
+    let app = app(pool);
+    let first = app.sign_in("first@example.org", "First").await;
+    let second = app.sign_in("second@example.org", "Second").await;
+    let me = app.call(Method::GET, "/v1/me", Some(&first), None).await.1;
+    let id = me["guardian"]["id"].as_str().unwrap().parse().unwrap();
+    let token = aule_platform::unsubscribe::token(ADMIN, id, "en", chrono::Utc::now().timestamp());
+    let path = "/v1/notices/unsubscribe";
+    assert_eq!(app.call(Method::GET, path, None, None).await.0, StatusCode::METHOD_NOT_ALLOWED);
+    assert_eq!(
+        app.call(Method::POST, path, None, Some(json!({ "token": "forged" }))).await.0,
+        StatusCode::BAD_REQUEST
+    );
+    for _ in 0..2 {
+        assert_eq!(
+            app.call(Method::POST, path, None, Some(json!({ "token": token }))).await.0,
+            StatusCode::NO_CONTENT
+        );
+    }
+    let me = app.call(Method::GET, "/v1/me", Some(&first), None).await.1;
+    assert_eq!(me["guardian"]["notices_by_email"], false);
+    let other = app.call(Method::GET, "/v1/me", Some(&second), None).await.1;
+    assert_eq!(other["guardian"]["notices_by_email"], true);
+    // Signing in remains available after opting out of notices.
+    assert_eq!(
+        app.call(Method::POST, "/v1/auth/start", None, Some(json!({ "email": "first@example.org" }))).await.0,
+        StatusCode::NO_CONTENT
+    );
+    assert!(!app.mail.sent.lock().unwrap().is_empty());
 }

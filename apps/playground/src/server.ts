@@ -63,6 +63,7 @@ import {
   sourceOf,
 } from "./signin.ts";
 import { RecoveryTickets, recoveryCookie, recoveryTicket, resumeToken, STATUS_GRACE_SECONDS } from "./recovery.ts";
+import { unsubscribe } from "./unsubscribe.ts";
 import { appApi, LIMITS, type Limits } from "./passthrough.ts";
 
 const publicDir = new URL("../public/", import.meta.url);
@@ -728,6 +729,7 @@ export function createPlayground(
     const path = pathname.slice(settings.basePath.length);
 
     const handle = async () => {
+      if (path === "/unsubscribe") return unsubscribe(request, response, settings, url);
       if (path.startsWith(APP_API)) {
         const answer = await forApp(request, path.slice(APP_API.length), url.searchParams);
         // Null: the app went away before its request was in.

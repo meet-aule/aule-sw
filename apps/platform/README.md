@@ -505,3 +505,33 @@ team's passkeys are lost: each member should also delete theirs from their
 devices) and `delete from _sqlx_migrations where version = 22`; for 0021,
 `alter table families drop column source` (the links families came from are
 lost) and `delete from _sqlx_migrations where version = 21`.
+
+## Email format and opting out
+
+Codes and family notices are UTF-8 `multipart/alternative`: plain text plus HTML,
+with escaped content, inline styles and no remote images or tracking pixels.
+`cargo run --example mail-preview` (or `-- en`) prints a synthetic HTML preview
+without sending mail. Synthetic mobile previews: [Spanish](screenshots/mail-es.png)
+and [English](screenshots/mail-en.png). The SMTP sender remains `AULE_MAIL_FROM`; use the company
+address, `Aule <admin@meetaule.com>`.
+
+Family notices include an Open Aule action and an unsubscribe button. The
+button reaches `AULE_MAIL_PUBLIC_URL/unsubscribe` (default: the public session
+page). Deploy the playground route **before** the platform and worker start
+sending these links. A GET only shows confirmation; a POST validates a signed
+capability and turns off that guardian's existing `notices_by_email` preference.
+Summaries and attention notices remain in the app, push preferences stay as
+configured, and sign-in/security codes keep working. Re-enabling is the existing
+authenticated `PUT /v1/me` setting, not an action available to the email token.
+
+Tokens expire in 90 days, contain no email address or child details, and use a
+purpose-separated HMAC under the existing operator secret. Rotating that secret
+invalidates old links. The public handler forwards no browser credentials, has
+bounded bodies and a timeout, and returns no-store/no-referrer pages. No database
+migration or new secret is needed.
+
+Notices also include List-Unsubscribe and List-Unsubscribe-Post headers. For mail
+clients to offer RFC 8058 one-click unsubscribe, the SMTP provider must DKIM-sign
+both headers; verify that in a delivered test message when configuring delivery.
+The HTML button works independently. Sign-in and passkey emails never get list
+headers or a notice unsubscribe action.
