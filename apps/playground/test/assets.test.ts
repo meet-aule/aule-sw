@@ -33,7 +33,7 @@ test("the page points at fingerprinted files, and those are kept for a year", as
   assert.equal(style.headers.get("cache-control"), YEAR);
   const text = await style.text();
 
-  // The page's own fonts are the only files its stylesheet names.
+  // The page's own fonts are the only files its stylesheet names, with the entry's logo for each palette (FIGMA.md D49).
   for (const name of ["fonts/sans.woff2", "fonts/sans-italic.woff2", "fonts/serif.woff2", "fonts/serif-italic.woff2", "fonts/caveat-semibold-latin.woff2"]) {
     const version = versionOf(text, name);
     assert.ok(version, `${name} is fingerprinted in the stylesheet`);
@@ -41,6 +41,17 @@ test("the page points at fingerprinted files, and those are kept for a year", as
     assert.equal(file.headers.get("cache-control"), YEAR, name);
     assert.equal(fingerprint(Buffer.from(await file.arrayBuffer())), version, `${name}'s version is its hash`);
   }
+  for (const name of ["aule-logo.svg", "aule-logo-dark.svg"]) {
+    const version = versionOf(text, name);
+    assert.ok(version, `${name} is fingerprinted in the stylesheet`);
+    const file = await fetch(`${base}/${name}?v=${version}`);
+    assert.equal(file.headers.get("cache-control"), YEAR, name);
+    assert.equal(file.headers.get("content-type"), "image/svg+xml", name);
+    assert.equal(fingerprint(Buffer.from(await file.arrayBuffer())), version, `${name}'s version is its hash`);
+  }
+  // The logo has one address, in the page's wordmarks and in the stylesheet, so it is fetched once.
+  assert.equal(versionOf(html, "aule-logo.svg"), versionOf(text, "aule-logo.svg"));
+  assert.equal(html.split("aule-logo.svg?v=").length - 1, 13, "every wordmark names the fingerprinted logo");
   for (const name of ["livekit-client.js", "wobnimo.js", "icon.svg", "apple-touch-icon.png", "manifest.webmanifest"]) {
     assert.ok(versionOf(html, name), `${name} is fingerprinted in the page`);
   }

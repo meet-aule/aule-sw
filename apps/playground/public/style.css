@@ -259,9 +259,24 @@ h3[tabindex="-1"]:focus {
   min-height: 25px;
 }
 
+/* Aule's logo: the cuy reading its notebook, which stands for the «A», then «ule»
+   (aule-logo.svg, 1502 by 745; D49). The type is what its name is written in if it
+   cannot be drawn. */
 .wordmark {
   font: 600 18px/1.35 var(--serif);
   color: var(--ink);
+}
+
+.wordmark img {
+  display: block;
+  width: auto;
+  height: 32px;
+}
+
+/* 32 px tall, past the header's 25 px row above and below it, as «← Atrás» is: the
+   row is no taller than it was with the name in type. */
+.head-row .wordmark {
+  margin-block: -4px -3px;
 }
 
 /* Figma: Barra de progreso/Base 160:1415 (Sin avance 160:1416; 1–12 de 12 160:1417…160:1439).
@@ -891,6 +906,7 @@ html[data-screen="p03"] {
   --entry-field: #f1ecdf; /* the email field and the digits, between the card and a button */
   --entry-link: #2b5c8a;
   --entry-sheet: #fbfaf6; /* the picture's sheet */
+  --entry-logo: url("aule-logo.svg"); /* Aule's logo, its letters in brown */
 }
 
 /* THE ENTRY'S PALETTE SWITCH. As written, the entry is near-dark where the
@@ -916,6 +932,7 @@ html[data-screen="p03"] {
     --entry-field: #1f1e1d;
     --entry-link: #8ab4e8;
     --entry-sheet: #1d1c1b;
+    --entry-logo: url("aule-logo-dark.svg"); /* its letters in cream; the cuy keeps its colours */
     color-scheme: dark;
   }
 }
@@ -929,14 +946,14 @@ html[data-screen="p03"] {
   }
 }
 
-/* One column on a phone: the wordmark, the title, the card, and the picture after it. */
+/* One column on a phone: the logo, the title, the card, and the picture after it. */
 html[data-screen="p01"] main,
 html[data-screen="p03"] main {
   min-height: calc(100vh - var(--notice-room));
   min-height: calc(100dvh - var(--notice-room));
 }
 
-/* 64 px above the eyebrow, clear of Aule's mark, and no more: with its four ways in the card
+/* 64 px above the eyebrow, clear of Aule's logo, and no more: with its four ways in the card
    is tall, and on a 390 by 844 phone its small print has to end above the cookie notice. */
 .screen.entry:not([hidden]) {
   position: relative;
@@ -953,7 +970,7 @@ html[data-screen="p03"] main {
   padding: 0;
 }
 
-/* The mark and the name, top left, and the language picker across from them, top right; the plain
+/* The logo, top left, and the language picker across from it, top right; the plain
    line of the other paper screens is not drawn. */
 .entry .screen-head {
   position: absolute;
@@ -962,17 +979,18 @@ html[data-screen="p03"] main {
   left: 24px;
 }
 
+/* Larger here than on the other paper screens: 36 px, in a row that stays 28 px tall, so
+   the picker is where it was and the logo ends 8 px above the eyebrow. */
 .entry .wordmark {
-  display: flex;
-  align-items: center;
-  gap: 10px;
+  margin-block: -4px;
   font: 600 22px/1 var(--serif);
 }
 
-.wordmark-mark {
-  flex: none;
-  width: 28px;
-  height: 28px;
+/* Which logo is the palette's to say, as its tones are: the image is drawn from its token,
+   so the one switch above changes the letters with everything else. */
+.entry .wordmark img {
+  content: var(--entry-logo);
+  height: 36px;
 }
 
 .entry .progress {
@@ -1396,6 +1414,15 @@ html[data-screen="p03"] .entry-picture.ready {
     left: 44px;
   }
 
+  /* 44 px, still in the 28 px row: it ends where the eyebrow starts at its highest (80 px down). */
+  .entry .wordmark {
+    margin-block: -8px;
+  }
+
+  .entry .wordmark img {
+    height: 44px;
+  }
+
   .entry .question {
     gap: 12px;
   }
@@ -1453,7 +1480,7 @@ html[data-screen="p03"] .entry-picture.ready {
   }
 }
 
-/* From 1200 px wide the eyebrow passes beside Aule's mark, never under it: it can start higher. */
+/* From 1200 px wide the eyebrow passes beside Aule's logo, never under it: it can start higher. */
 @media (min-width: 1200px) and (max-height: 960px) {
   .screen.entry:not([hidden]) {
     padding-top: 56px;

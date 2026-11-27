@@ -678,6 +678,100 @@ test("every signed-out visit uses the shared entry, with the email field beside 
   assert.ok(entry.includes('id="email-start"') && entry.includes('data-google'));
 });
 
+// Aule's logo as every wordmark holds it: named once, and sized in the markup so nothing moves as it loads.
+const LOGO = '<img src="aule-logo.svg" alt="Aule" width="65" height="32" />';
+
+test("the wordmark is Aule's logo: one image named «Aule» at the head of every paper screen and of the guide (D49)", async () => {
+  // A paragraph that holds the logo and nothing else: no name in type beside it, not a heading, not a link.
+  const wordmarks = (page) => [...page.matchAll(/<(\w+) class="wordmark">([\s\S]*?)<\/\1>/g)].map(([, tag, inside]) => [tag, inside]);
+  for (const [name, page] of [["index.html", html], ["guia.html", guides.es], ["guide.html", guides.en]]) {
+    assert.equal(page.split('class="wordmark"').length - 1, wordmarks(page).length, name);
+    for (const mark of wordmarks(page)) assert.deepEqual(mark, ["p", LOGO], name);
+    // The logo is the page's only image, so a screen says the name once.
+    assert.deepEqual(page.match(/<img\b[^>]*>/g), wordmarks(page).map(() => LOGO), name);
+    assert.doesNotMatch(page, /wordmark-mark|<img[^>]*src="icon\.svg"/, name);
+  }
+  // One in the head of each paper screen; the student's screens, the device's black on white, have none.
+  const starts = [...html.matchAll(/<section class="[^"]*" data-screen="([\w-]+)" data-surface="(\w+)"/g)];
+  assert.equal(starts.length, 19);
+  starts.forEach(({ 1: id, 2: surface, index }, at) => {
+    const screen = html.slice(index, starts[at + 1]?.index ?? html.indexOf("</main>"));
+    assert.equal(wordmarks(screen).length, surface === "paper" ? 1 : 0, id);
+    if (surface === "paper") assert.match(screen, /<header class="screen-head">\s*<div class="head-row">\s*<p class="wordmark">/, `${id}: first in its header's row`);
+  });
+  for (const guide of Object.values(guides)) {
+    assert.equal(wordmarks(guide).length, 1);
+    assert.match(guide, /<header class="guide-head">\s*<p class="wordmark">/);
+  }
+  // The markup's size is the logo's own proportion (1502 by 745), to the pixel.
+  const [, viewBox] = (await read("aule-logo.svg")).match(/<svg [^>]*viewBox="0 0 (\d+ \d+)"/);
+  const [wide, tall] = viewBox.split(" ").map(Number);
+  assert.equal(Math.round((32 * wide) / tall), 65);
+  // Drawn by its height, the width following: 32 px, and on the entry 36 px, 44 from 960 px.
+  const rule = (text, selector) => rules(text).find(([found]) => found.split("\n").pop().trim() === selector)?.[1] ?? "";
+  assert.match(rule(css, ".wordmark img"), /display: block;\s*width: auto;\s*height: 32px;/);
+  assert.match(rule(css, ".entry .wordmark img"), /height: 36px;/);
+  const wide960 = blocks(css, "@media (min-width: 960px) {").join("\n");
+  assert.match(rule(wide960, ".entry .wordmark img"), /height: 44px;/);
+  // No row grew for it: past the 25 px row of a paper screen by 7 px in all, and on the entry in the 28 px row its mark had.
+  assert.match(rule(css, ".head-row"), /min-height: 25px;/);
+  assert.match(rule(css, ".head-row .wordmark"), /margin-block: -4px -3px;/);
+  assert.match(rule(css, ".entry .wordmark"), /margin-block: -4px;/);
+  assert.match(rule(wide960, ".entry .wordmark"), /margin-block: -8px;/);
+  // The name is not translated: no words of the page's are the logo's, in either language.
+  assert.doesNotMatch(html, /<p class="wordmark"[^>]*data-i18n|<img[^>]*data-i18n/);
+});
+
+test("the logo's letters are cream on the entry's near-dark and nowhere else: the palette's switch says which (D49)", () => {
+  const scope = 'html[data-screen="p01"], html[data-screen="p03"]';
+  // The dark logo is named once in the sheet: a token of the entry's two screens, inside the one dark block.
+  assert.equal(css.split("aule-logo-dark.svg").length - 1, 1);
+  const dark = blocks(css, "@media (prefers-color-scheme: dark)");
+  assert.equal(dark.length, 1);
+  const [[selector, tokens]] = rules(dark[0]);
+  assert.equal(selector.replace(/\s+/g, " "), scope);
+  assert.match(tokens, /--entry-logo: url\("aule-logo-dark\.svg"\);/);
+  // On paper the same two screens name the logo with brown letters.
+  const named = rules(css.replace(dark[0], "")).filter(([, body]) => body.includes("--entry-logo:"));
+  assert.equal(named.length, 1);
+  assert.ok(named[0][0].replace(/\s+/g, " ").endsWith(scope), named[0][0]);
+  assert.match(named[0][1], /--entry-logo: url\("aule-logo\.svg"\);/);
+  // Only the entry's wordmark is drawn from the token; every other screen shows the image its markup names.
+  const users = rules(css).filter(([, body]) => body.includes("var(--entry-logo)"));
+  assert.equal(users.length, 1);
+  assert.equal(users[0][0].split("\n").pop().trim(), ".entry .wordmark img");
+  assert.match(users[0][1], /content: var\(--entry-logo\);/);
+  assert.equal(css.split("content: var(").length - 1, 1);
+  const entries = [...html.matchAll(/<section class="screen entry" data-screen="([\w-]+)"/g)].map(([, id]) => id);
+  assert.deepEqual(entries, ["p01", "p03"], "the screens the token is set for are the ones that draw from it");
+  // Neither the page nor a script picks a logo, and the logo does not switch by itself.
+  assert.doesNotMatch(html + Object.values(guides).join("") + Object.values(scripts).join(""), /aule-logo-dark/);
+});
+
+test("the logo and the icon are drawings and nothing else: no script, no address, no picture inside, no palette of their own", async () => {
+  for (const name of ["aule-logo.svg", "aule-logo-dark.svg", "icon.svg"]) {
+    const svg = await read(name);
+    assert.match(svg, /^<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg" viewBox="0 0 \d+ \d+"/, name);
+    // Only shapes: a title, groups and paths.
+    assert.deepEqual([...new Set([...svg.matchAll(/<([a-zA-Z][\w:-]*)/g)].map(([, tag]) => tag))].sort(), ["g", "path", "svg", "title"], name);
+    assert.doesNotMatch(svg, /<script|\son[a-z]+\s*=|javascript:/i, `${name}: script`);
+    assert.doesNotMatch(svg.replace('xmlns="http://www.w3.org/2000/svg"', ""), /https?:|\/\/|href|url\(|@import|<use|<foreignObject/i, `${name}: a reference`);
+    assert.doesNotMatch(svg, /<image|data:|base64/i, `${name}: an embedded picture`);
+    // A logo that changed with the system's palette would change on the paper screens too.
+    assert.doesNotMatch(svg, /<style|@media|prefers-color-scheme|currentColor/i, `${name}: a palette of its own`);
+    assert.match(svg, /<title>Aule<\/title>/, name);
+  }
+  // The two logos are one drawing: only the letters' colour differs, cream on the near-dark.
+  const [light, dark] = [await read("aule-logo.svg"), await read("aule-logo-dark.svg")];
+  assert.equal(dark.replace('<g id="letters" fill="#fdf3e6">', '<g id="letters">'), light);
+  // The installed app's icons are the logo's cuy, in the sizes the manifest and the page say.
+  const size = async (name) => { const png = await readFile(new URL(name, pub)); return [png.subarray(1, 4).toString("latin1"), png.readUInt32BE(16), png.readUInt32BE(20)]; };
+  assert.deepEqual(await size("apple-touch-icon.png"), ["PNG", 180, 180]);
+  assert.deepEqual(await size("icon-192.png"), ["PNG", 192, 192]);
+  assert.deepEqual(await size("icon-512.png"), ["PNG", 512, 512]);
+  assert.deepEqual(await size("icon-maskable-512.png"), ["PNG", 512, 512]);
+});
+
 test("the entry is one card of ways in beside Aule's face, and its code step is laid out the same (D45)", () => {
   const entry = html.slice(html.indexOf('data-screen="p01"'), html.indexOf('data-screen="p03"'));
   const code = html.slice(html.indexOf('data-screen="p03"'), html.indexOf('data-screen="p04"'));
@@ -695,10 +789,8 @@ test("the entry is one card of ways in beside Aule's face, and its code step is 
   assert.ok(code.indexOf('id="code-continue"') > code.indexOf('class="controls entry-card"'));
   assert.ok(code.indexOf("data-back") > code.indexOf('id="code-missing"'), "under the card");
   assert.match(code, /<button type="button" class="entry-pill" data-back>/);
-  // The wordmark has Aule's mark, the page's own icon; no other image, and nothing from elsewhere.
-  const images = [...html.matchAll(/<img\b[^>]*>/g)].map(([tag]) => tag);
-  assert.equal(images.length, 2);
-  for (const tag of images) assert.equal(tag, '<img class="wordmark-mark" src="icon.svg" alt="" width="28" height="28" />');
+  // The head is Aule's logo, as on every paper screen (D49): each has no other image, and nothing from elsewhere.
+  for (const screen of [entry, code]) assert.deepEqual(screen.match(/<img\b[^>]*>/g), [LOGO]);
   // One picture for both screens, after them in the page, so it stays as they change: the session's cuy, dancing.
   assert.equal(html.match(/class="entry-picture face-box"/g).length, 1);
   assert.ok(html.indexOf('class="entry-picture face-box"') > html.lastIndexOf("<section"));
@@ -792,10 +884,10 @@ test("the entry's type is the brand site's: its eyebrow in handwriting, its seri
 
 test("the entry leaves less air above its title on a screen that is not tall, so the small print ends above the cookie notice", () => {
   const rule = (text, selector) => rules(text).find(([found]) => found.split("\n").pop().trim() === selector)?.[1] ?? "";
-  // A phone: 64 px above the eyebrow, clear of Aule's mark (24 px down, 28 tall), and the card 24 under the help.
+  // A phone: 64 px above the eyebrow, clear of Aule's logo (20 px down, 36 tall), and the card 24 under the help.
   assert.match(rule(css, ".screen.entry:not([hidden])"), /padding: 64px 24px 32px;/);
   assert.match(rule(css, ".entry-card"), /margin-top: 24px;/);
-  // Two columns on a screen up to 960 px tall: 80 px above, 56 from 1200 px wide, where the eyebrow passes beside the mark.
+  // Two columns on a screen up to 960 px tall: 80 px above, 56 from 1200 px wide, where the eyebrow passes beside the logo.
   const short = blocks(css, "@media (min-width: 960px) and (max-height: 960px)").join("\n");
   assert.match(rule(short, ".screen.entry:not([hidden])"), /padding: 80px 32px 24px;/);
   assert.match(rule(short, ".entry-card"), /margin-top: 24px;/);
