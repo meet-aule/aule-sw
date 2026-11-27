@@ -54,6 +54,9 @@ class Reply:
     closed: bool = False
     # What the engine waits for now; None for nothing in particular.
     awaits: Awaits | None = None
+    # The engine's own activity is over while the room stays open: its rules
+    # then ask the model for a goodbye, which is said (``closing``).
+    over: bool = False
 
 
 class Engine(Protocol):
@@ -107,4 +110,5 @@ def reply_from(value: object) -> Reply | None:
     if not lines and rules is None and not closed:
         return None
     awaits = next((known for known in AWAITS if value.get("awaits") == known), None)
-    return Reply(lines=lines, converse=rules, closed=closed, awaits=awaits)
+    over = value.get("over") is True
+    return Reply(lines=lines, converse=rules, closed=closed, awaits=awaits, over=over)
