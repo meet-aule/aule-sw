@@ -703,6 +703,25 @@ fn a_spoken_number_that_sounds_like_the_right_one_is_asked_for_once_more() {
 }
 
 #[test]
+fn asking_for_a_hint_is_not_the_answer_one() {
+    // By voice «una pista» was read as the number 1 and marked wrong.
+    for said in ["No sé. ¿Aula me das una pista?", "No sé cuánto es, me das una pista."] {
+        let mut student = at_an_answer_of_two();
+        let (at, marked, stored) = (student.at(), marks(&student), student.records.len());
+        let turn = says_at_once(&mut student, said, false);
+        assert_eq!(turn.converse, None, "{said}: {turn:?}");
+        assert_eq!((student.at(), marks(&student)), (at, marked), "{said}");
+        assert!(student.records[stored..].iter().any(|record| record.input == Input::Help), "{said}");
+    }
+    // Nor does an article make an answer of talk: it goes to the model.
+    let mut student = in_screening();
+    let marked = marks(&student);
+    let turn = student.says("tengo una duda");
+    assert!(turn.lines.is_empty() && turn.converse.is_some(), "{turn:?}");
+    assert_eq!(marks(&student), marked);
+}
+
+#[test]
 fn what_is_not_an_answer_goes_where_the_engine_expects_it() {
     // In the screening there are no hints: asking for one gets the engine's fixed line.
     let mut student = in_screening();
