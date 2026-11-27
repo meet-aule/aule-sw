@@ -106,6 +106,8 @@ impl ContextoChat {
         }
         if self.terminada {
             r.push("The session has ended: chat briefly and say a warm goodbye.".into());
+        } else {
+            r.push("The session is not over until the session engine ends it. Never say goodbye, never say or hint that the session is finished or that it is enough for today, and never send the student away to rest, to their homework or to another day. If the student wants to stop, acknowledge it warmly in one line; the engine decides what happens next.".into());
         }
         r.join("\n- ")
     }
@@ -472,6 +474,11 @@ mod tests {
         assert!(rules.contains("may leave screening if overwhelmed"));
         assert!(rules.contains("Do not call pose_exercise or check_answer"));
         assert!(rules.contains("different result from the current exercise"));
+        // The session is the engine's to end: the model never closes it.
+        assert!(rules.contains(
+            "The session is not over until the session engine ends it. Never say goodbye"
+        ));
+        assert!(!rules.contains("The session has ended"));
         // The model sets no exercise of its own and does not go back to an earlier step.
         assert!(rules.contains(
             "Set no task of your own: never ask the student to count, compute or solve anything"
@@ -501,6 +508,7 @@ mod tests {
         ended.hay_pistas = false;
         ended.terminada = true;
         assert!(ended.reglas().contains("The session has ended"));
+        assert!(!ended.reglas().contains("The session is not over"));
         assert_eq!(minutos(20), "20 seconds");
         assert_eq!(minutos(60), "1 minute");
         assert_eq!(minutos(120), "2 minutes");
