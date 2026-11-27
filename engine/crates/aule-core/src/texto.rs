@@ -311,7 +311,7 @@ pub fn es_no_se(texto: &str) -> bool {
         && leer_fraccion(texto).is_none()
 }
 
-/// Elige una opción (p. ej. "Verdadero", "<", "Ana") dentro del texto.
+/// Elige una opción (p. ej. "Verdadero", "<", "Ana", "5/6") dentro del texto.
 pub fn leer_opcion(texto: &str, opciones: &[String]) -> Option<usize> {
     let n = normalizar(texto);
     let toks: Vec<&str> = n.split_whitespace().collect();
@@ -349,7 +349,18 @@ pub fn leer_opcion(texto: &str, opciones: &[String]) -> Option<usize> {
             }
         }
     }
-    hallada.map(|(_, k)| k)
+    if let Some((_, k)) = hallada {
+        return Some(k);
+    }
+    // Una opción escrita como fracción o número («5/6») también se dice, y
+    // por voz llega en palabras («cinco sextos», «cinco sobre seis»): se
+    // compara lo que dijo el Alumno, leído como su respuesta, con cada opción
+    // tal como está escrita. Vale la forma escrita, no el valor: «diez
+    // doceavos» no es la opción «5/6».
+    let dicha = leer_respuesta(texto)?;
+    opciones
+        .iter()
+        .position(|o| leer_fraccion(o) == Some(dicha))
 }
 
 /// ¿El texto es un sí?
@@ -437,6 +448,32 @@ mod tests {
         let s = vec!["<".to_string(), ">".to_string(), "=".to_string()];
         assert_eq!(leer_opcion("es mayor", &s), Some(1));
         assert_eq!(leer_opcion("=", &s), Some(2));
+    }
+
+    #[test]
+    fn una_opcion_escrita_como_fraccion_se_elige_al_decirla() {
+        // «¿Cuál de las fracciones originales es mayor?», con sus dos opciones.
+        let o = vec!["2/3".to_string(), "5/6".to_string()];
+        // Escrita o tocada, como siempre.
+        assert_eq!(leer_opcion("5/6", &o), Some(1));
+        // Dicha: por voz llega en palabras.
+        assert_eq!(leer_opcion("Cinco sextos", &o), Some(1));
+        assert_eq!(leer_opcion("Cinco sextos,", &o), Some(1));
+        assert_eq!(leer_opcion("cinco sobre seis", &o), Some(1));
+        assert_eq!(leer_opcion("la mayor es cinco sextos", &o), Some(1));
+        assert_eq!(leer_opcion("dos tercios", &o), Some(0));
+        // Lo que no es una de las opciones no elige ninguna, aunque valga lo mismo.
+        assert_eq!(leer_opcion("diez doceavos", &o), None);
+        assert_eq!(leer_opcion("cuatro sextos", &o), None);
+        assert_eq!(leer_opcion("doce", &o), None);
+        assert_eq!(leer_opcion("mi perro se llama Rocky", &o), None);
+        // Opciones que son números enteros.
+        let n = vec!["2".to_string(), "5".to_string()];
+        assert_eq!(leer_opcion("cinco", &n), Some(1));
+        assert_eq!(leer_opcion("tres", &n), None);
+        // Las opciones en palabras no se leen como números.
+        let vf = vec!["Verdadero".to_string(), "Falso".to_string()];
+        assert_eq!(leer_opcion("cinco sextos", &vf), None);
     }
 
     #[test]
