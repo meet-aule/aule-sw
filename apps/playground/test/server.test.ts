@@ -65,6 +65,8 @@ test("serves the page and its scripts with a strict policy", async () => {
     "/fonts/serif-italic.woff2",
     "/fonts/sans.woff2",
     "/fonts/sans-italic.woff2",
+    "/fonts/caveat-semibold-latin.woff2",
+    "/fonts/OFL-caveat.txt",
   ]) {
     const response = await fetch(base + path);
     assert.equal(response.status, 200, path);

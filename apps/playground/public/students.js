@@ -78,6 +78,11 @@ export async function call(path, body) {
   return answer;
 }
 
+/** What the entry says to a family whose session ended while a screen of theirs was open, in the page's language. */
+export function sessionClosed() {
+  return document.documentElement.lang === "en" ? "Your session has ended. Sign in again." : "Tu sesión se cerró. Vuelve a entrar.";
+}
+
 /** Writes the message line: an error unless `tone` is "info"; nothing hides it. */
 export function say(text, tone = "error") {
   const message = $("message");

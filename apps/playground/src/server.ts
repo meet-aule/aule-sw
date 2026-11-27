@@ -123,6 +123,9 @@ const STATIC: Record<string, { file: string | URL; type: string }> = {
   "/fonts/serif-italic.woff2": { file: join(serif, "source-serif-4-latin-wght-italic.woff2"), type: "font/woff2" },
   "/fonts/sans.woff2": { file: join(sans, "inter-latin-wght-normal.woff2"), type: "font/woff2" },
   "/fonts/sans-italic.woff2": { file: join(sans, "inter-latin-wght-italic.woff2"), type: "font/woff2" },
+  // The handwriting of the sign-in's eyebrow, as on the brand site: Caveat Semi Bold's Latin subset, with its licence.
+  "/fonts/caveat-semibold-latin.woff2": { file: new URL("fonts/caveat-semibold-latin.woff2", publicDir), type: "font/woff2" },
+  "/fonts/OFL-caveat.txt": { file: new URL("fonts/OFL-caveat.txt", publicDir), type: "text/plain; charset=utf-8" },
   "/livekit-client.js": { file: livekitClient, type: "text/javascript; charset=utf-8" },
   "/wobnimo.js": { file: mascot, type: "text/javascript; charset=utf-8" },
 };

@@ -51,7 +51,7 @@ test("the Andean layer is gone, and the favicon and touch icons stay", () => {
   }
 });
 
-test("the page's fonts are its own: Inter and Source Serif 4 from fonts/, nothing from elsewhere", () => {
+test("the page's fonts are its own: Inter and Source Serif 4 from fonts/, nothing from elsewhere", async () => {
   const urls = [...css.matchAll(/url\(\s*["']?([^"')]+)/g)].map(([, url]) => url);
   assert.ok(urls.length > 0);
   for (const url of urls) assert.ok(url.startsWith("data:") || url.startsWith("#") || /^[\w./-]+$/.test(url), url);
@@ -61,6 +61,9 @@ test("the page's fonts are its own: Inter and Source Serif 4 from fonts/, nothin
   assert.ok(face("Inter", "sans-italic.woff2"));
   assert.ok(face("Source Serif 4", "serif.woff2"));
   assert.ok(face("Source Serif 4", "serif-italic.woff2"));
+  // The brand site's handwriting, for the sign-in's eyebrow: the file and its licence are the page's own.
+  assert.ok(face("Caveat", "caveat-semibold-latin.woff2"));
+  assert.ok((await readdir(new URL("fonts/", pub))).includes("OFL-caveat.txt"));
   assert.doesNotMatch(html + css, /fonts\.googleapis|fonts\.gstatic|fonts\.bunny/);
   assert.match(css, /--sans: "Inter"/);
 });
@@ -403,20 +406,9 @@ test("the page's words for an ended trial and a used week are the plan's, and th
   assert.match(said, /si te invitaron, tu enlace hasta que entres/);
   assert.match(said, /nada de publicidad/);
   assert.match(notice, /<a href="https:\/\/meetaule\.com\/legal\/privacy#cookies">Política de cookies<\/a>/);
-  // The sign-in providers' own cookies are said beside their buttons, not here (D36).
+  // The notice never named the sign-in providers, and since D46 the entry does not either.
   assert.doesNotMatch(said, /Google|GitHub|Facebook|Apple/);
-  for (const [id, next] of [
-    ["p01", "p03"],
-  ]) {
-    const screen = html.slice(html.indexOf(`data-screen="${id}"`), html.indexOf(`data-screen="${next}"`));
-    const line = screen.match(/<p class="small-help ways-note"[^>]*>([^<]*)<\/p>/);
-    assert.ok(line, `${id} has the providers' line`);
-    assert.equal(line[1], "Google, GitHub, Facebook y Apple usan sus propias cookies cuando entras con ellos.", id);
-    assert.ok(screen.indexOf("ways-note") > screen.lastIndexOf("data-provider="), `${id}: after the ways in`);
-    assert.ok(screen.indexOf("ways-note") > screen.indexOf('id="email-start"'), `${id}: the card's last line`);
-  }
-  // It shows wherever Google or another provider is offered, and only there.
-  assert.match(bodyOf(scripts["signin.js"], "showWays"), /for \(const note of document\.querySelectorAll\("\.ways-note"\)\) note\.hidden = !google && others\.length === 0;/);
+  assert.doesNotMatch(html + scripts["signin.js"], /usan sus propias cookies|ways-note/);
 });
 
 test("the cookie notice is a slim bar along the bottom edge on a phone and a short screen, and a card from 481 px", () => {
@@ -640,7 +632,9 @@ test("the home reads the family's account again each time it shows", () => {
   const again = bodyOf(home, "readAgain");
   assert.match(again, /await call\("api\/account"\)/);
   assert.match(again, /if \(current\(\) !== "home" \|\| getAccount\(\)\.signed_in !== true\) return false;/);
-  assert.match(again, /"Tu sesión se cerró\. Vuelve a entrar\."/);
+  // Said on the entry in the page's language (students.js sessionClosed).
+  assert.match(again, /message: sessionClosed\(\) \}\);/);
+  assert.match(bodyOf(scripts["students.js"], "sessionClosed"), /"Your session has ended\. Sign in again\." : "Tu sesión se cerró\. Vuelve a entrar\."/);
   // A failed read keeps what is drawn.
   assert.match(again, /catch \{\s*return current\(\) === "home" && getAccount\(\)\.signed_in === true;\s*\}/);
 });
@@ -659,22 +653,15 @@ test("the entry is one card of ways in beside Aule's face, and its code step is 
   const entry = html.slice(html.indexOf('data-screen="p01"'), html.indexOf('data-screen="p03"'));
   const code = html.slice(html.indexOf('data-screen="p03"'), html.indexOf('data-screen="p04"'));
   for (const id of ["p01", "p03"]) assert.match(html, new RegExp(`<section class="screen entry" data-screen="${id}" data-surface="paper"`), id);
-  // The ways in, top to bottom: Google's own button, Apple, GitHub and Facebook, «o», the email field and its
-  // action, the message line and the small print. Nothing folds away any more.
-  const order = ['id="google-p01"', 'data-provider="apple"', 'data-provider="github"', 'data-provider="meta"', 'id="ways-or"', 'id="email-start"', "data-message", "ways-note"];
+  // The ways in, top to bottom (D46): Google, GitHub, Apple, Facebook, «o», the email field and its action, the
+  // message line and the small print.
+  const order = ['id="google-p01"', 'data-provider="github"', 'data-provider="apple"', 'data-provider="meta"', 'id="ways-or"', 'id="email-start"', "data-message", "entry-legal"];
   const at = order.map((mark) => entry.indexOf(mark));
   assert.ok(at.every((place) => place > entry.indexOf('class="controls ways entry-card"')), "all inside the card");
-  assert.deepEqual(at, [...at].sort((a, b) => a - b), "in the reference's order");
+  assert.deepEqual(at, [...at].sort((a, b) => a - b), "in the owner's order");
   assert.doesNotMatch(html + css + scripts["signin.js"], /other-ways|<details class="providers"|Otras formas de entrar/);
-  for (const provider of ["apple", "github", "meta"]) {
-    assert.match(entry, new RegExp(`<a class="provider" data-provider="${provider}" href="api/signin/${provider}/start" hidden>`), provider);
-  }
-  // Each shows only where the server has it, and «o» only between providers and the email field.
-  const ways = bodyOf(scripts["signin.js"], "showWays");
-  assert.match(ways, /for \(const link of document\.querySelectorAll\("\[data-provider\]"\)\) link\.hidden = !others\.includes\(link\.dataset\.provider\);/);
-  assert.match(ways, /\$\("ways-or"\)\.hidden = !email \|\| \(!google && others\.length === 0\);/);
   // The field keeps its label for a screen reader; the placeholder is what shows.
-  assert.match(entry, /<label class="sr-only" id="email-label" for="email-address">Tu correo<\/label>/);
+  assert.match(entry, /<label class="sr-only" id="email-label" for="email-address" data-entry="email">Tu correo<\/label>/);
   // The code step: its fields and «Continuar» in the card, and «← Atrás» the one action under it.
   assert.ok(code.indexOf('id="code-continue"') > code.indexOf('class="controls entry-card"'));
   assert.ok(code.indexOf("data-back") > code.indexOf('id="code-missing"'), "under the card");
@@ -697,6 +684,83 @@ test("the entry is one card of ways in beside Aule's face, and its code step is 
   assert.match(card ?? "", /width: 100%;\s*max-width: 600px;/);
 });
 
+test("every way in is a row of one size, and Google's is ours with Google's own button unseen over it (D46)", () => {
+  const entry = html.slice(html.indexOf('data-screen="p01"'), html.indexOf('data-screen="p03"'));
+  const rule = (selector) => rules(css).find(([found]) => found.split("\n").pop().trim() === selector)?.[1] ?? "";
+  // One rule gives every row its box: Google's row carries the same class as GitHub's, Apple's and Facebook's.
+  assert.match(rule(".provider"), /width: 100%;\s*min-height: 54px;/);
+  assert.match(rule(".provider"), /border-radius: 12px;/);
+  assert.match(rule(".entry-card .field input"), /height: 54px;[^}]*border-radius: 12px;/);
+  assert.match(rule(".entry-card .primary"), /min-height: 54px;\s*border-radius: 12px;/);
+  assert.equal(entry.match(/class="provider(?: google-row)?"/g).length, 4);
+  // Google's row: the mark in Google's four colours and the words, hidden from a screen reader, which is left
+  // with the one button Google's script draws in the slot.
+  const row = entry.match(/<div class="provider google-row" data-google hidden>([\s\S]*?)<\/div>\s*<\/div>/)?.[1] ?? "";
+  assert.match(row, /<span class="provider-face" aria-hidden="true">\s*<svg viewBox="0 0 48 48">/);
+  for (const colour of ["#EA4335", "#4285F4", "#FBBC05", "#34A853"]) assert.ok(row.includes(`fill="${colour}"`), colour);
+  assert.match(row, /<span data-entry="google">Continuar con Google<\/span>/);
+  assert.match(row, /<\/span>\s*<div class="google-slot" id="google-p01">$/);
+  assert.doesNotMatch(row, /tabindex|role="button"|<button/, "nothing of ours to press: the press is Google's");
+  // The slot lies over the row from its corner, unseen, cut to the row; the frame's focus shows as the row's ring.
+  assert.match(rule(".google-slot"), /position: absolute;\s*top: 0;\s*left: 0;\s*width: max-content;\s*opacity: 0\.001;\s*transform-origin: 0 0;/);
+  assert.match(rule(".provider"), /position: relative;/);
+  assert.match(rule(".google-row"), /overflow: hidden;/);
+  assert.match(rule(".google-row:focus-within"), /outline: 3px solid var\(--focus\);\s*outline-offset: 2px;/);
+  // Google's script still draws it, with the options it had; what fits it over the row follows its frame and the row.
+  const signin = scripts["signin.js"];
+  const draw = bodyOf(signin, "renderGoogle");
+  assert.match(draw, /window\.google\.accounts\.id\.renderButton\(slot, \{/);
+  assert.match(draw, /if \(!googleReady \|\| row\.hidden\) return;/);
+  assert.match(draw, /new ResizeObserver\(\(\) => fitGoogle\(slot\)\)/);
+  assert.match(draw, /new MutationObserver\(/);
+  assert.match(bodyOf(signin, "fitGoogle"), /slot\.style\.transform = cover\(/);
+  assert.match(bodyOf(signin, "drawGoogle"), /ux_mode: "popup",/);
+  // With no client id, or when Google's script does not load, the row is not there.
+  assert.match(bodyOf(signin, "showWays"), /const google = Boolean\(account\.google_client_id\) && !googleFailed;\s*const email[^;]*;\s*for \(const row of document\.querySelectorAll\("\[data-google\]"\)\) row\.hidden = !google;/);
+});
+
+test("GitHub, Apple and Facebook always have their row: a link where the server has them, «Pronto» where it does not (D46)", () => {
+  const entry = html.slice(html.indexOf('data-screen="p01"'), html.indexOf('data-screen="p03"'));
+  // In the page each starts as no link at all, with the tag: the script alone makes it one.
+  for (const [provider, words] of [["github", "Continuar con GitHub"], ["apple", "Continuar con Apple"], ["meta", "Continuar con Facebook"]]) {
+    const tag = entry.match(new RegExp(`<a class="provider" data-provider="${provider}"[^>]*>`))?.[0] ?? "";
+    assert.equal(tag, `<a class="provider" data-provider="${provider}" role="link" aria-disabled="true">`, provider);
+    const row = entry.slice(entry.indexOf(tag), entry.indexOf("</a>", entry.indexOf(tag)));
+    assert.match(row, new RegExp(`<span data-entry="${provider}">${words}</span>`), provider);
+    assert.match(row, /<span class="provider-soon" data-entry="soon">Pronto<\/span>\s*$/, provider);
+  }
+  assert.doesNotMatch(entry, /href="api\/signin\//, "no way in is a link before the server says so");
+  const rule = (selector) => rules(css).find(([found]) => found.split("\n").pop().trim() === selector)?.[1] ?? "";
+  assert.match(rule('.provider[aria-disabled="true"]'), /color: var\(--muted\);\s*cursor: default;/);
+  assert.match(rule(".provider-soon"), /grid-column: 3;\s*justify-self: end;/);
+  // «o» stands before the email field whenever there is one: there is always a row above it now.
+  assert.match(bodyOf(scripts["signin.js"], "showWays"), /\$\("ways-or"\)\.hidden = !email;/);
+});
+
+test("the small print says that continuing is with Aule's privacy policy known, and links it (D46)", () => {
+  const entry = html.slice(html.indexOf('data-screen="p01"'), html.indexOf('data-screen="p03"'));
+  const line = entry.match(/<p class="small-help entry-legal">([\s\S]*?)<\/p>/)?.[1] ?? "";
+  assert.equal(line, '<span data-entry="privacy_lead">Al continuar, confirmas que conoces la</span> <a href="https://meetaule.com/legal/privacy" target="_blank" rel="noopener" data-entry="privacy_link">Política de privacidad de Aule</a>.');
+  assert.equal(line.replace(/<[^>]+>/g, ""), "Al continuar, confirmas que conoces la Política de privacidad de Aule.");
+  const signin = scripts["signin.js"];
+  assert.match(signin, /privacy_lead: "By continuing, you confirm that you are familiar with",\s*privacy_link: "Aule’s Privacy Policy",/);
+  // It shows with any way in: nothing hides it.
+  assert.doesNotMatch(signin, /entry-legal/);
+  assert.doesNotMatch(entry, /class="small-help entry-legal"[^>]*hidden/);
+  // The policy is the one P04 links.
+  assert.match(html, /<a class="link" href="https:\/\/meetaule\.com\/legal\/privacy" target="_blank" rel="noopener">Política de privacidad<\/a>/);
+});
+
+test("the entry's type is the brand site's: its eyebrow in handwriting, its serif statement, its button's Inter", () => {
+  const rule = (selector) => rules(css).find(([found]) => found.split("\n").pop().trim() === selector)?.[1] ?? "";
+  assert.match(css, /--hand: "Caveat", var\(--sans\);/);
+  assert.match(rule(".entry .question-step"), /font: 600 22px\/1\.3 var\(--hand\);\s*letter-spacing: 0;/);
+  assert.match(rule(".entry .question-title"), /font: 400 40px\/1\.08 var\(--serif\);\s*letter-spacing: -0\.025em;/);
+  assert.match(rule('.screen[data-screen="p03"] .question-title'), /font: 500 30px\/1\.12 var\(--serif\);\s*letter-spacing: -0\.01em;/);
+  assert.match(rule(".provider"), /font: 600 16px\/1\.2 var\(--sans\);\s*letter-spacing: 0;/);
+  assert.match(rule(".primary"), /font: 600 16px\/1\.2 var\(--sans\);/);
+});
+
 test("the entry's near-dark palette is the entry's alone, behind one switch (D45)", () => {
   // One place asks whether the system is dark, and all it holds is the entry's tokens.
   assert.equal(css.match(/prefers-color-scheme/g).length, 1);
@@ -704,7 +768,7 @@ test("the entry's near-dark palette is the entry's alone, behind one switch (D45
   const scoped = rules(dark);
   assert.equal(scoped.length, 1);
   assert.equal(scoped[0][0].replace(/\s+/g, " "), 'html[data-screen="p01"], html[data-screen="p03"]');
-  for (const token of ["--bg: #141413;", "--ink:", "--surface:", "--muted:", "--line:", "--danger:", "--focus:", "--fibre:", "--entry-google: filled_black;", "color-scheme: dark;"]) {
+  for (const token of ["--bg: #141413;", "--ink:", "--surface:", "--muted:", "--line:", "--danger:", "--focus:", "--fibre:", "color-scheme: dark;"]) {
     assert.ok(scoped[0][1].includes(token), token);
   }
   // Every other screen keeps the paper of :root in both modes.
@@ -712,9 +776,10 @@ test("the entry's near-dark palette is the entry's alone, behind one switch (D45
   assert.match(root, /--bg: #f5f2ea;/);
   assert.match(root, /color-scheme: light;/);
   assert.doesNotMatch(html, /prefers-color-scheme/);
-  // Scripts do not decide the palette: Google's button and the browser's bars read what the sheet says.
+  // Scripts do not decide the palette: the browser's bars read what the sheet says. (Google's button is
+  // unseen since D46, so its theme follows nothing.)
   const signin = scripts["signin.js"];
-  assert.match(bodyOf(signin, "renderGoogle"), /theme: getComputedStyle\(slot\)\.getPropertyValue\("--entry-google"\)\.trim\(\) \|\| "outline",/);
+  assert.doesNotMatch(css + signin, /--entry-google/);
   assert.match(bodyOf(signin, "tintBars"), /getComputedStyle\(document\.documentElement\)\.getPropertyValue\("--bg"\)/);
   assert.match(html, /<meta name="theme-color" content="#f5f2ea" \/>/);
   // The paper's fibres are light on the near-dark: the same texture, from a token.
@@ -724,7 +789,7 @@ test("the entry's near-dark palette is the entry's alone, behind one switch (D45
 
 test("an email that is missing or is not one is said under the field: a red edge, a ringed «!» and the words, in both languages (D45)", () => {
   const entry = html.slice(html.indexOf('data-screen="p01"'), html.indexOf('data-screen="p03"'));
-  assert.match(entry, /<input id="email-address"[^>]*aria-describedby="email-error" \/>\s*<p class="field-error" id="email-error" role="alert" hidden>/);
+  assert.match(entry, /<input id="email-address"[^>]*aria-describedby="email-error" \/>\s*<p class="field-error" id="email-error" role="alert" data-entry="email_invalid" hidden>/);
   const signin = scripts["signin.js"];
   // In both languages, as the entry's other words are.
   assert.match(signin, /email_required: "Escribe tu correo electrónico\."/);

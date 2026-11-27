@@ -5,7 +5,7 @@
 // 190:891). The session itself is app.js's; this builds the request it is
 // asked with, and says whether it is the student's first run.
 
-import { $, SUBJECTS, call, clearEditor, describe, editingStudent, openEditor } from "./students.js";
+import { $, SUBJECTS, call, clearEditor, describe, editingStudent, openEditor, sessionClosed } from "./students.js";
 import { DATED, KINDS, OWN_SUBJECT, REVIEW, defaultSubject, kindKey, objectiveFor, planLine } from "./steps.js";
 import { back, current, getAccount, go, landing, need, onAccount, onShow, readdress, sessionNamed, setAccount } from "./screens.js";
 import { languageOf, words } from "./first-steps.js";
@@ -222,7 +222,7 @@ async function readAgain() {
     // Each module forgets what it drew about the family before signing in shows.
     setAccount(latest);
     const land = landing();
-    go(land, { replace: true, fresh: true, flow: "back", message: "Tu sesión se cerró. Vuelve a entrar." });
+    go(land, { replace: true, fresh: true, flow: "back", message: sessionClosed() });
     return false;
   }
   const drawn = (account) => JSON.stringify([account.name, account.team, account.plan, account.students]);

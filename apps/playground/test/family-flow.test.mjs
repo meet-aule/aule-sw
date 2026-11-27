@@ -39,7 +39,6 @@ function login(respond) {
   const page = runInNewContext(`
     let verifying = false, emailAddress = "family@example.test";
     const codeInput = $("email-code");
-    const WRONG_CODE = "wrong", NOT_CHECKED = "unavailable";
     const drawDigits = () => {};
     const entryText = (key) => key;
     ${["nameError", "clearCode", "waiting", "verify"].map((name) => source(signin, name)).join("\n")}
@@ -125,7 +124,6 @@ function entry(respond) {
   const page = runInNewContext(`
     let emailAddress = "";
     const EMAIL = ${signin.match(/\nconst EMAIL = (\/.+\/);/)[1]};
-    const NOT_SENT = "not sent";
     const entryText = (key) => key;
     const clearCode = () => {};
     ${["emailError", "startEmail"].map((name) => source(signin, name)).join("\n")}
@@ -185,6 +183,194 @@ test("an empty email is asked for and a malformed one is said, under the field, 
   assert.deepEqual(page.calls.at(-1), { path: "api/signin/email/start", body: { email: "family@example.test" } });
   assert.equal(page.address(), "family@example.test");
   assert.deepEqual(page.screens, ["p03"]);
+});
+
+/** A row of the card as the script handles it: its attributes, its tag, and whether it shows. */
+function way(provider) {
+  const tag = { hidden: false };
+  const attributes = new Map([["role", "link"], ["aria-disabled", "true"]]);
+  return {
+    dataset: { provider }, tag, attributes, hidden: false,
+    setAttribute: (name, value) => attributes.set(name, value),
+    removeAttribute: (name) => attributes.delete(name),
+    querySelector: (selector) => (selector === ".provider-soon" ? tag : null),
+  };
+}
+
+/** The card's rows under the real showWays and offer, for what the server says is set up. */
+function ways(account, googleFailed = false) {
+  const links = ["github", "apple", "meta"].map(way);
+  const google = { hidden: true };
+  const fields = new Map();
+  const $ = (id) => {
+    if (!fields.has(id)) fields.set(id, element());
+    return fields.get(id);
+  };
+  const page = runInNewContext(`
+    const CODE_PROVIDERS = ${signin.match(/\nconst CODE_PROVIDERS = (\[.+\]);/)[1]};
+    let googleFailed = ${googleFailed};
+    ${["showWays", "offer"].map((name) => source(signin, name)).join("\n")}
+    ({ showWays })`, {
+    $,
+    document: { querySelectorAll: (selector) => (selector === "[data-google]" ? [google] : selector === "[data-provider]" ? links : []) },
+  });
+  page.showWays(account);
+  const row = (provider) => links.find((link) => link.dataset.provider === provider);
+  return { row, google, or: $("ways-or"), email: $("email-start") };
+}
+
+test("a way in the server has is a link, and one it does not have yet stays in its place as «Pronto», no link at all", () => {
+  // What production says today: Google and GitHub, and the emailed code.
+  const today = ways({ google_client_id: "client-1", providers: ["github", "email"], signed_in: false });
+  assert.equal(today.google.hidden, false);
+  assert.equal(today.row("github").attributes.get("href"), "api/signin/github/start");
+  assert.equal(today.row("github").attributes.has("aria-disabled"), false);
+  assert.equal(today.row("github").attributes.has("role"), false, "a link with an address needs no role said");
+  assert.equal(today.row("github").tag.hidden, true);
+  for (const later of ["apple", "meta"]) {
+    const row = today.row(later);
+    assert.equal(row.hidden, false, `${later}'s row shows`);
+    assert.equal(row.attributes.has("href"), false, `${later}: nothing to follow, and Tab passes it`);
+    assert.equal(row.attributes.get("aria-disabled"), "true", later);
+    assert.equal(row.attributes.get("role"), "link", later);
+    assert.equal(row.tag.hidden, false, `${later} says «Pronto»`);
+  }
+  assert.equal(today.or.hidden, false);
+  assert.equal(today.email.hidden, false);
+
+  // Once the server reports them, Apple and Facebook work as GitHub does.
+  const later = ways({ google_client_id: "client-1", providers: ["github", "apple", "meta", "email"], signed_in: false });
+  assert.equal(later.row("apple").attributes.get("href"), "api/signin/apple/start");
+  assert.equal(later.row("meta").attributes.get("href"), "api/signin/meta/start");
+  for (const provider of ["apple", "meta"]) {
+    assert.equal(later.row(provider).attributes.has("aria-disabled"), false, provider);
+    assert.equal(later.row(provider).tag.hidden, true, provider);
+  }
+
+  // No client id, or Google's script did not load: Google's row is not there. The others keep their places.
+  const none = ways({ google_client_id: null, providers: ["email"], signed_in: false });
+  assert.equal(none.google.hidden, true);
+  assert.equal(ways({ google_client_id: "client-1", providers: ["email"], signed_in: false }, true).google.hidden, true);
+  for (const provider of ["github", "apple", "meta"]) {
+    assert.equal(none.row(provider).hidden, false, provider);
+    assert.equal(none.row(provider).attributes.has("href"), false, provider);
+  }
+  // A provider the page does not know is never made a link, whatever the server says.
+  assert.equal(ways({ providers: ["github", "x"], signed_in: false }).row("github").attributes.get("href"), "api/signin/github/start");
+});
+
+test("Google's own button is stretched from its corner until it covers its row exactly", () => {
+  const { cover } = runInNewContext(`${source(signin, "cover")}\n({ cover })`);
+  // A desktop's row is 522 by 54; Google's button is 400 by 40, at the slot's corner.
+  assert.equal(cover({ width: 522, height: 54 }, { left: 0, top: 0, width: 400, height: 40 }), "scale(1.305, 1.35) translate(0px, 0px)");
+  // A phone's row is as wide as the button asked for: stretched down only.
+  assert.equal(cover({ width: 300, height: 54 }, { left: 0, top: 0, width: 300, height: 40 }), "scale(1, 1.35) translate(0px, 0px)");
+  // A button laid out away from the corner is brought to it first.
+  assert.equal(cover({ width: 400, height: 80 }, { left: 10, top: 2, width: 200, height: 40 }), "scale(2, 2) translate(-10px, -2px)");
+  // The fit reads the frame's own place and size and the margins that say where its button is, never a fixed number.
+  const fit = source(signin, "fitGoogle");
+  assert.match(fit, /slot\.querySelector\("iframe"\) \?\? slot\.firstElementChild/);
+  assert.match(fit, /getComputedStyle\(drawn\)/);
+  assert.match(fit, /drawn\.offsetWidth - 2 \* aside/);
+  assert.match(fit, /drawn\.offsetHeight - 2 \* above/);
+});
+
+// Every word of the entry's four screens, as signin.js has them.
+const WORDS = runInNewContext(`(${signin.match(/\nconst ENTRY_WORDS = (\{[^]*?\n\});/)[1]})`);
+const index = await read("index.html");
+
+test("every word of the entry exists in Spanish and in English, under the same key", () => {
+  assert.deepEqual(Object.keys(WORDS).sort(), ["en", "es"]);
+  assert.deepEqual(Object.keys(WORDS.en).sort(), Object.keys(WORDS.es).sort());
+  for (const [language, words] of Object.entries(WORDS)) {
+    for (const [key, text] of Object.entries(words)) {
+      assert.equal(typeof text, "string", `${language}.${key}`);
+      assert.ok(text.trim() === text && text.length > 0, `${language}.${key} is said, with no space around it`);
+    }
+  }
+  // A few words are the same in both; every other one is translated, not copied.
+  const same = Object.keys(WORDS.es).filter((key) => WORDS.es[key] === WORDS.en[key]);
+  assert.deepEqual(same, []);
+  // The small print, as the owner wrote it in each language.
+  assert.equal(`${WORDS.es.privacy_lead} ${WORDS.es.privacy_link}.`, "Al continuar, confirmas que conoces la Política de privacidad de Aule.");
+  assert.equal(`${WORDS.en.privacy_lead} ${WORDS.en.privacy_link}.`, "By continuing, you confirm that you are familiar with Aule’s Privacy Policy.");
+  assert.equal(WORDS.en.not_sent, "The code could not be sent. Try again in a moment.");
+  assert.equal(WORDS.en.not_checked, "The code could not be checked. Try again in a moment.");
+  // Every key is used: named by an element of the page, or said by the script outside the table.
+  const script = signin.replace(/\nconst ENTRY_WORDS = \{[^]*?\n\};/, "");
+  for (const key of Object.keys(WORDS.es)) {
+    const named = index.includes(`data-entry="${key}"`) || index.includes(`data-entry-placeholder="${key}"`);
+    assert.ok(named || script.includes(`"${key}"`), `${key} is used`);
+  }
+  // And the script asks for no key that is not there.
+  for (const [, key] of signin.matchAll(/entryText\("(\w+)"/g)) assert.ok(key in WORDS.es, key);
+});
+
+/** The four screens of the entry as the page has them: p01, p03, p14 and p15. */
+function entryScreens() {
+  const start = (id) => index.lastIndexOf("<section", index.indexOf(`data-screen="${id}"`));
+  const between = (from, to) => index.slice(start(from), start(to));
+  return between("p01", "p04") + between("p14", "home");
+}
+
+test("drawn with the page in English, the entry's four screens have no Spanish left in them", () => {
+  const screens = entryScreens();
+  // Each element that names its words, with the Spanish the page is written in.
+  const named = [...screens.matchAll(/<(\w+)\b[^>]*\bdata-entry="(\w+)"[^>]*>([^<]*)</g)].map(([, , key, text]) => ({ dataset: { entry: key }, textContent: text }));
+  const fields = [...screens.matchAll(/<input\b[^>]*\bplaceholder="([^"]*)"[^>]*\bdata-entry-placeholder="(\w+)"/g)].map(([, text, key]) => ({ dataset: { entryPlaceholder: key }, placeholder: text }));
+  assert.ok(named.length >= 30 && fields.length === 2);
+  // As written, the page is the Spanish of the words, key by key.
+  for (const element of named) assert.equal(element.textContent, WORDS.es[element.dataset.entry], element.dataset.entry);
+  for (const field of fields) assert.equal(field.placeholder, WORDS.es[field.dataset.entryPlaceholder]);
+  assert.equal(screens.match(/\splaceholder="/g).length, fields.length, "no placeholder without its key");
+
+  // The real entryWords, with the page in English.
+  const greeting = element();
+  const draw = (lang, returning) => runInNewContext(`
+    const ENTRY_WORDS = ${JSON.stringify(WORDS)};
+    const RETURNING = "aule.returning", local = null;
+    ${signin.match(/\nconst entryText = .+;/)[0]}
+    ${source(signin, "entryWords")}
+    entryWords()`, {
+    $: (id) => (id === "entry-greeting" ? greeting : element()),
+    recall: () => (returning ? "1" : null),
+    document: {
+      documentElement: { lang },
+      querySelectorAll: (selector) => (selector === "[data-entry]" ? named : selector === "[data-entry-placeholder]" ? fields : []),
+    },
+  });
+  draw("en", false);
+  for (const element of named) assert.equal(element.textContent, WORDS.en[element.dataset.entry], element.dataset.entry);
+  for (const field of fields) assert.equal(field.placeholder, WORDS.en[field.dataset.entryPlaceholder]);
+  assert.equal(greeting.textContent, "Welcome");
+  const drawn = [...named.map((element) => element.textContent), ...fields.map((field) => field.placeholder)];
+  // No row says «Continuar con …» or «Pronto»: each reads "Continue with …" and "Soon".
+  for (const label of ["google", "github", "apple", "meta"]) assert.ok(drawn.includes(WORDS.en[label]), label);
+  assert.equal(drawn.filter((text) => text === "Soon").length, 3);
+  assert.ok(!drawn.some((text) => /Continuar con|Pronto/.test(text)));
+  // Nothing drawn is a Spanish word of the table.
+  const spanish = new Set(Object.values(WORDS.es));
+  for (const text of drawn) assert.ok(!spanish.has(text), text);
+  draw("en", true);
+  assert.equal(greeting.textContent, "Welcome back!");
+
+  // And nothing a person reads on these screens is written outside the table: with the named elements
+  // taken out, what is left is the name, an arrow, a full stop and the team's address.
+  const left = screens
+    .replace(/<!--[\s\S]*?-->/g, "")
+    .replace(/<svg[\s\S]*?<\/svg>/g, "")
+    .replace(/(<\w+\b[^>]*\bdata-entry="\w+"[^>]*>)[^<]*/g, "$1")
+    .replace(/<[^>]+>/g, "\n")
+    .split("\n").map((text) => text.trim()).filter(Boolean);
+  // The greeting is written by the script from "greeting" or "returning".
+  assert.deepEqual([...new Set(left)].sort(), [".", "Aule", "Te damos la bienvenida", "admin@meetaule.com", "←"].sort());
+  assert.equal(WORDS.es.greeting, "Te damos la bienvenida");
+  // No label a screen reader would read is left in Spanish either: these screens name nothing by attribute.
+  assert.deepEqual([...screens.matchAll(/\b(?:aria-label|title|alt)="([^"]+)"/g)].map(([, text]) => text), ["Avance", "Avance"]);
+
+  // Back in Spanish it is the page as written.
+  draw("es", false);
+  for (const element of named) assert.equal(element.textContent, WORDS.es[element.dataset.entry], element.dataset.entry);
 });
 
 function reader() {

@@ -34,7 +34,7 @@ test("the page points at fingerprinted files, and those are kept for a year", as
   const text = await style.text();
 
   // The page's own fonts are the only files its stylesheet names.
-  for (const name of ["fonts/sans.woff2", "fonts/sans-italic.woff2", "fonts/serif.woff2", "fonts/serif-italic.woff2"]) {
+  for (const name of ["fonts/sans.woff2", "fonts/sans-italic.woff2", "fonts/serif.woff2", "fonts/serif-italic.woff2", "fonts/caveat-semibold-latin.woff2"]) {
     const version = versionOf(text, name);
     assert.ok(version, `${name} is fingerprinted in the stylesheet`);
     const file = await fetch(`${base}/${name}?v=${version}`);
