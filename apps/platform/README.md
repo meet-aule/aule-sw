@@ -26,6 +26,7 @@ aule-platform version   # which build this is (also --version); needs no setting
 | `events`, `notices`, `push` | The outbox and its delivery; what families are told; pushes through Firebase Cloud Messaging |
 | `sessions` | Starting a session (its room and the token to join it), the agent's API for one session, the review job and the job that plans the next session |
 | `engine` | A session run by the session engine (`engine/`): what the student said becomes the engine's inputs, what the engine answers becomes lines for the tutor and steps for the page |
+| `billing` | Hosted Mercado Pago subscriptions, durable device orders, verified receipts, included months and reconciliation; see [BILLING.md](BILLING.md) |
 | `jobs` | The Postgres job queue and the housekeeping |
 | `llm`, `livekit`, `mail`, `auth`, `config`, `error` | Claude with a forced structured answer, rooms opened through LiveKit's server API and the tokens to join them, the two kinds of caller, settings, the error shape |
 

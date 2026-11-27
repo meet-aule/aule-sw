@@ -18,6 +18,7 @@ use crate::push::{Fcm, Pusher, ServiceAccount};
 #[derive(Clone)]
 pub struct AppState {
     pub pool: PgPool,
+    pub payments: Option<Arc<dyn crate::billing::gateway::Gateway>>,
     /// The same pool, for the code that goes through SeaORM.
     pub db: sea_orm::DatabaseConnection,
     pub config: Arc<Config>,
@@ -55,6 +56,10 @@ pub struct AppState {
 
 impl AppState {
     pub fn new(pool: PgPool, config: Config) -> Self {
+        let payments = config.payments.clone().map(|settings| {
+            Arc::new(crate::billing::gateway::MercadoPago::new(settings))
+                as Arc<dyn crate::billing::gateway::Gateway>
+        });
         let db = sea_orm::SqlxPostgresConnector::from_sqlx_postgres_pool(pool.clone());
         let rooms =
             config.livekit.clone().map(|livekit| Arc::new(LiveKitRooms::new(livekit)) as Arc<dyn Rooms>);
@@ -116,6 +121,7 @@ impl AppState {
         Self {
             db,
             pool,
+            payments,
             config: Arc::new(config),
             rooms,
             llm,

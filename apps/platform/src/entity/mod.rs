@@ -4,6 +4,8 @@
 //! a test fails while an entity has something the migrations do not create.
 
 pub mod attempt;
+pub mod billing_checkout;
+pub mod billing_payment;
 pub mod child;
 pub mod consent_record;
 pub mod correction;
@@ -67,5 +69,7 @@ pub fn schema() -> sea_orm::SchemaBuilder {
         .register(session_model_usage::Entity)
         .register(session_engine_input::Entity)
         .register(subscription::Entity)
+        .register(billing_checkout::Entity)
+        .register(billing_payment::Entity)
         .register(team_passkey::Entity)
 }

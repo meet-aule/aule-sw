@@ -430,6 +430,19 @@
               <button type="button" class="link" id="add-student" data-i18n="home.add">+ Agregar un alumno</button>
             </div>
             <div class="account-links">
+              <details class="account" id="billing-panel">
+                <summary class="link" data-i18n="billing.title">Mi plan y mis pagos</summary>
+                <p class="small-help" id="billing-state" role="status" aria-live="polite"></p>
+                <div id="billing-offer" hidden>
+                  <p data-i18n="billing.offer">S/59 al mes · 3 sesiones por semana.</p>
+                  <label><input type="checkbox" id="billing-consent" /> <span data-i18n="billing.consent">Autorizo la renovación automática de S/59 cada mes. Puedo cancelarla desde mi cuenta.</span></label>
+                  <button class="primary" type="button" id="billing-subscribe" data-i18n="billing.subscribe">Continuar a Mercado Pago</button>
+                </div>
+                <button class="link" type="button" id="billing-cancel" hidden data-i18n="billing.cancel">Cancelar renovación</button>
+                <button class="link" type="button" id="billing-refresh" data-i18n="billing.refresh">Actualizar pagos</button>
+                <ul id="billing-devices"></ul>
+                <ul id="billing-history" aria-label="Pagos" data-i18n-attr="aria-label:billing.history"></ul>
+              </details>
               <!-- The account: what is kept, and how to remove it. -->
               <details class="account" id="account">
                 <summary class="link" data-i18n="account.summary">Mi cuenta y mis datos</summary>

@@ -4,6 +4,8 @@
 
 #[path = "support/authenticator.rs"]
 mod authenticator;
+#[path = "support/billing_cases.rs"]
+mod billing_cases;
 
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, LazyLock, Mutex};
@@ -238,6 +240,7 @@ fn app_with(pool: PgPool, events_webhook: Option<EventsWebhook>) -> App {
         // The console as the tests' browser would reach it.
         admin_passkeys: AdminPasskeys { rp_id: "localhost".into(), origin: "http://localhost:8092".into() },
         free_access: false,
+        payments: None,
         github: None,
         meta: None,
         apple: None,
@@ -250,6 +253,7 @@ fn app_with(pool: PgPool, events_webhook: Option<EventsWebhook>) -> App {
     let rooms = Arc::new(PretendLiveKit::default());
     let webauthn = Arc::new(aule_platform::passkeys::relying_party(&config.admin_passkeys).unwrap());
     let state = AppState {
+        payments: None,
         db: sea_orm::SqlxPostgresConnector::from_sqlx_postgres_pool(pool.clone()),
         pool,
         config: Arc::new(config),

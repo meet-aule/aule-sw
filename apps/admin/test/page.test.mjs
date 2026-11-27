@@ -14,13 +14,13 @@ const scripts = Object.fromEntries(await Promise.all(files.filter((name) => name
 const css = await read("style.css");
 
 test("the console has its pages and their scripts, and nothing else of the playground's", () => {
-  assert.deepEqual(Object.keys(pages).sort(), ["families.html", "family.html", "index.html", "live.html", "passkeys.html", "signin.html"]);
+  assert.deepEqual(Object.keys(pages).sort(), ["families.html", "family.html", "index.html", "live.html", "orders.html", "passkeys.html", "signin.html"]);
   assert.deepEqual(Object.keys(scripts).sort(), [
-    "admin.js", "common.js", "credential.js", "families.js", "family.js", "labels.js", "live.js", "passkeys.js", "pilot.js", "signin.js",
+    "admin.js", "common.js", "credential.js", "families.js", "family.js", "labels.js", "live.js", "orders.js", "passkeys.js", "pilot.js", "signin.js",
   ]);
   assert.deepEqual(files.sort(), [
     "admin.js", "common.js", "credential.js", "families.html", "families.js", "family.html", "family.js", "icon.svg", "index.html",
-    "labels.js", "live.html", "live.js", "passkeys.html", "passkeys.js", "pilot.js", "signin.html", "signin.js", "style.css",
+    "labels.js", "live.html", "live.js", "orders.html", "orders.js", "passkeys.html", "passkeys.js", "pilot.js", "signin.html", "signin.js", "style.css",
   ]);
 });
 
@@ -29,6 +29,7 @@ const NAVIGATION = [
   ["/", "index.html", "Resumen"],
   ["/live", "live.html", "En vivo"],
   ["/families", "families.html", "Familias"],
+  ["/orders", "orders.html", "Pedidos"],
   ["/passkeys", "passkeys.html", "Passkeys"],
 ];
 // A family's page has the same header, with no link of its own.
@@ -107,7 +108,7 @@ test("a page sends people only to the console's fixed addresses, and never to on
   assert.match(scripts["common.js"], /if \(typeof id !== "string" \|\| !FAMILY_ID\.test\(id\)\) return document\.createTextNode\(text\);\s*const link = document\.createElement\("a"\);\s*link\.href = `\/family\?id=\$\{id\}`;/);
   // Signed out on any data call, a page goes to the sign-in; signed in, the sign-in goes to the overview.
   assert.match(scripts["common.js"], /if \(response\.status !== 401 && response\.status !== 403\) return false;\s*location\.replace\("\/signin"\);/);
-  for (const name of ["admin.js", "live.js", "families.js", "family.js", "passkeys.js"]) {
+  for (const name of ["admin.js", "live.js", "families.js", "family.js", "orders.js", "passkeys.js"]) {
     assert.doesNotMatch(scripts[name], /\bfetch\(/, `${name} asks the API only through common.js`);
   }
   assert.match(scripts["signin.js"], /if \(status === 200\) return location\.replace\("\/"\);/);
@@ -116,7 +117,7 @@ test("a page sends people only to the console's fixed addresses, and never to on
 test("the scripts import each other as the pages draw them, and the sign-in stands alone", () => {
   const imports = (text) => [...text.matchAll(/\bfrom\s+"\.\/([\w-]+\.js)"/g)].map(([, dep]) => dep);
   assert.deepEqual(imports(scripts["admin.js"]), ["common.js", "pilot.js"]);
-  for (const page of ["live.js", "families.js", "family.js"]) assert.deepEqual(imports(scripts[page]), ["common.js", "labels.js"], page);
+  for (const page of ["live.js", "families.js", "family.js", "orders.js"]) assert.deepEqual(imports(scripts[page]), ["common.js", "labels.js"], page);
   assert.deepEqual(imports(scripts["passkeys.js"]), ["common.js", "credential.js", "labels.js"]);
   // The sign-in takes nothing of the pages behind it: only a passkey's JSON.
   assert.deepEqual(imports(scripts["signin.js"]), ["credential.js"]);

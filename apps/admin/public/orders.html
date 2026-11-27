@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <!-- The build this page comes from, written in by the server (src/build.ts). -->
+    <meta name="aule-version" content="{{version}}" />
+    <meta name="aule-commit" content="{{commit}}" />
+    <title>Aule · Panel del equipo · Pedidos</title>
+    <link rel="icon" href="icon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <main class="admin">
+      <header>
+        <h1>Panel del equipo</h1>
+        <nav class="nav" aria-label="Consola del equipo">
+          <a href="/">Resumen</a>
+          <a href="/live">En vivo</a>
+          <a href="/families">Familias</a>
+          <a href="/orders" aria-current="page">Pedidos</a>
+          <a href="/passkeys">Passkeys</a>
+          <button type="button" class="link" id="signout">Salir</button>
+        </nav>
+      </header>
+
+      <p id="message" class="message" role="alert" hidden></p>
+
+      <section aria-labelledby="orders-title">
+        <h2 id="orders-title">Pedidos de dispositivos</h2>
+        <p>Entrega en hasta 30 días. Envío incluido a Lima Metropolitana y Callao. Tres meses de tutoría por dispositivo.</p>
+        <button id="refresh" type="button">Actualizar</button>
+        <p id="count" class="lead" role="status"></p>
+        <div id="orders"></div>
+      </section>
+    </main>
+    <script type="module" src="orders.js"></script>
+  </body>
+</html>
