@@ -234,12 +234,17 @@ pub fn leer_fraccion(texto: &str) -> Option<FraccionEscrita> {
                     }
                 }
             }
+            // «un» y «una» son también artículos («dame una pista», «espera
+            // un momento»): sueltos valen uno solo cuando con ellos termina
+            // lo dicho o sigue «entero». «uno» siempre es el número.
+            let articulo = matches!(toks[i], "un" | "una")
+                && toks.get(j).is_some_and(|t| !t.starts_with("entero"));
             // Un entero suelto (solo si no hay más fracciones después).
             let resto = &toks[j..];
             let hay_mas = resto
                 .iter()
                 .any(|t| denominador(t).is_some() || t.contains('/'));
-            if !hay_mas {
+            if !hay_mas && !articulo {
                 return Some(FraccionEscrita {
                     entero: None,
                     num: a,
@@ -457,6 +462,40 @@ mod tests {
         assert!(es_no_se("la verdad no se como"));
         assert!(!es_no_se("no sé, creo que 3/4"));
         assert_eq!(v("tres veinticuatroavos"), Fraccion::new(3, 24));
+    }
+
+    #[test]
+    fn un_articulo_no_es_el_numero_uno() {
+        // Por voz, pedir una pista se corregía como la respuesta 1.
+        for dicho in [
+            "dame una pista",
+            "No sé. ¿Aula me das una pista?",
+            "No sé cuánto es, me das una pista.",
+            "espera un momento",
+            "tengo una duda",
+            "¿me lo explicas con un ejemplo?",
+            "una pregunta",
+        ] {
+            assert!(leer_fraccion(dicho).is_none(), "{dicho}");
+            assert!(leer_respuesta(dicho).is_none(), "{dicho}");
+        }
+        assert!(es_no_se("No sé. ¿Aula me das una pista?"));
+        // Sueltos al final de lo dicho, o antes de «entero», valen uno.
+        assert_eq!(v("una"), Fraccion::new(1, 1));
+        assert_eq!(v("creo que es un"), Fraccion::new(1, 1));
+        assert_eq!(v("un entero"), Fraccion::new(1, 1));
+        assert_eq!(v("uno más"), Fraccion::new(1, 1));
+        // Como parte de un número se leen igual que antes.
+        assert_eq!(v("un medio"), Fraccion::new(1, 2));
+        assert_eq!(v("una y media"), Fraccion::new(3, 2));
+        assert_eq!(v("un entero y dos tercios"), Fraccion::new(5, 3));
+        assert_eq!(v("uno sobre cuatro"), Fraccion::new(1, 4));
+        // Y el número que sigue al artículo es el que se dijo.
+        assert_eq!(v("me sale un tres"), Fraccion::new(3, 1));
+        assert_eq!(
+            leer_respuesta("es un 5").map(|f| f.valor()),
+            Some(Fraccion::new(5, 1))
+        );
     }
 
     #[test]

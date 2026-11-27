@@ -536,6 +536,11 @@ mod tests {
         assert_eq!(clasificar("me ayudas?"), Intencion::PedirAyuda);
         assert_eq!(clasificar("linea 1 linea 2"), Intencion::Charla);
         assert_eq!(clasificar("es 12"), Intencion::RespuestaAlEjercicio);
+        // Un artículo no hace de una frase una respuesta.
+        assert_eq!(clasificar("tengo una duda"), Intencion::Charla);
+        assert_eq!(clasificar("espera un momento"), Intencion::Charla);
+        assert_eq!(clasificar("dame una pista"), Intencion::PedirAyuda);
+        assert_eq!(clasificar("una"), Intencion::RespuestaAlEjercicio);
         for i in Intencion::TODAS {
             assert_eq!(Intencion::desde_str(i.nombre()), Some(i));
         }
