@@ -543,6 +543,32 @@ fn a_spoken_answer_is_split_into_the_number_and_how_it_was_worked_out() {
 }
 
 #[test]
+fn talk_three_times_running_at_a_question_gets_the_question_again() {
+    // In the screening, where the engine's clock brings no hint between turns.
+    let mut student = in_screening();
+    let at = student.at();
+    let asked = match student.engine.motor.esperando() {
+        aule_core::motor::Esperando::Respuesta { enunciado, .. } => enunciado,
+        other => panic!("the screening waits for an answer: {other:?}"),
+    };
+    // Twice the model answers, and nothing moves.
+    for said in ["mi perro se llama Rocky", "hoy comí pizza"] {
+        let turn = student.says(said);
+        assert!(turn.lines.is_empty() && turn.converse.is_some(), "{turn:?}");
+    }
+    // The third time running, the engine says its question again and that is
+    // the whole turn: the model is not asked. By voice a misheard number is
+    // talk too, and the exercise would wait behind it for ever.
+    let turn = student.says("me gusta el fútbol");
+    assert_eq!(turn.converse, None, "{turn:?}");
+    assert_eq!(said_by_tutor(&turn), asked);
+    assert_eq!(student.at(), at);
+    // Then talk is talk again.
+    let turn = student.says("mi perro se llama Rocky");
+    assert!(turn.lines.is_empty() && turn.converse.is_some(), "{turn:?}");
+}
+
+#[test]
 fn what_is_not_an_answer_goes_where_the_engine_expects_it() {
     // In the screening there are no hints: asking for one gets the engine's fixed line.
     let mut student = in_screening();
@@ -558,6 +584,7 @@ fn what_is_not_an_answer_goes_where_the_engine_expects_it() {
     assert!(rules.contains("screening") && rules.contains("Never give the current exercise"), "{rules}");
     assert!(rules.contains("do not judge it or say whether it is correct"), "{rules}");
     assert!(rules.contains("Set no task of your own"), "{rules}");
+    assert!(rules.contains("The session is not over until the session engine ends it."), "{rules}");
     assert!(rules.contains("no help with solving is allowed"), "{rules}");
     assert!(!rules.contains("Mateo") && !rules.contains("3/8"), "{rules}");
     assert_eq!(student.at(), "tamizaje:1");

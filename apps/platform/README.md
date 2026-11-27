@@ -393,6 +393,7 @@ Spoken words arrive as one text, and no model reads them:
 3. "No sé" is a wrong answer where there are no hints (the screening, the simulated exam) and a request for a hint elsewhere. "No entiendo" in the screening is a question, not an answer.
 4. In the guided moments (a date, "¿empezamos?", the theory) text that moves the session on goes to the engine as text.
 5. Anything else is conversation: the engine is told its intent, from its own deterministic classifier, and `converse` is returned. Asking for help or for the answer gets the engine's hints, or its fixed line where there are none; asking to hear the exercise again gets its statement.
+6. Conversation does not bring the answer the engine waits for, and by voice a misheard number is conversation too. The third time running at a step that waits for an answer or an explanation, the engine says its question again, as the whole turn (`converse` is `null`); an answer, a hint asked for or any other step starts the count again. In the theory it moves on by itself instead.
 
 An answer typed on the page is only ever an answer: rules 1 and 5 do not apply to it.
 

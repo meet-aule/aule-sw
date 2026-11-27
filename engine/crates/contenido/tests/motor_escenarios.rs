@@ -720,11 +720,13 @@ fn e1_a_la_tercera_charla_seguida_el_motor_sigue_solo() {
         charla(&mut p, "no sé");
     }
     assert_eq!(p.act(), "etapa1:2:asistido");
-    // En el ejemplo acompañado la conversación no se cuenta: ahí hay pistas.
+    // En el ejemplo acompañado la conversación no hace seguir con lo
+    // siguiente: ahí hay pistas, y lo que se repite es la pregunta (CHAT-02).
     for _ in 0..5 {
         charla(&mut p, "hola");
     }
     assert_eq!(p.act(), "etapa1:2:asistido");
+    assert!(!p.registro_tiene("4 turnos de conversación sobre la misma explicación"));
 
     // Con el tope en 0 el motor nunca sigue solo.
     let (mut q, _) = en_la_teoria();
@@ -733,6 +735,76 @@ fn e1_a_la_tercera_charla_seguida_el_motor_sigue_solo() {
         assert!(charla(&mut q, "hola").is_empty());
     }
     assert_eq!(q.act(), "etapa1:2:teoria");
+}
+
+/// [PROPUESTA] CHAT-02: con una respuesta pendiente, conversar no la trae, y
+/// por voz un número mal oído ni siquiera llega como respuesta. A la tercera
+/// vez seguida el motor vuelve a decir su pregunta, tal cual.
+#[test]
+fn chat02_a_la_tercera_charla_seguida_el_motor_repite_su_pregunta() {
+    let mut p = llegar_a_e2(1);
+    let ejercicio = p.act();
+    let Esperando::Respuesta { enunciado, .. } = p.m.esperando() else {
+        panic!("la Etapa 2 espera una respuesta: {:?}", p.m.esperando());
+    };
+    assert_eq!(p.m.cfg.charlas_por_pregunta, 3);
+
+    // Dos veces el motor calla (contesta el modelo) y el ejercicio sigue ahí.
+    assert!(charla(&mut p, "Doce").is_empty());
+    assert!(charla(&mut p, "Doce").is_empty());
+    // A la tercera dice su pregunta otra vez, y nada más: el ejercicio es el mismo.
+    let r = charla(&mut p, "Doce");
+    assert_eq!(textos(&r), [enunciado.as_str()], "{}", texto(&r));
+    assert_eq!(p.act(), ejercicio);
+    assert!(p.registro_tiene("3 turnos de conversación seguidos con una respuesta pendiente"));
+
+    // La cuenta empieza de nuevo.
+    assert!(charla(&mut p, "Doce").is_empty());
+    assert!(charla(&mut p, "Doce").is_empty());
+    // El paso del tiempo no la corta; una ayuda pedida sí, y lo que el motor
+    // contesta entonces ya vuelve a dejar la pregunta a la vista.
+    assert!(p.e(Entrada::Tick).is_empty());
+    assert!(!p.e(Entrada::Ayuda).is_empty());
+    assert!(charla(&mut p, "uno").is_empty());
+    assert!(charla(&mut p, "dos").is_empty());
+    assert!(!charla(&mut p, "tres").is_empty());
+
+    // Con el tope en 0 el motor nunca la repite.
+    let mut q = llegar_a_e2(1);
+    q.m.cfg.charlas_por_pregunta = 0;
+    for _ in 0..8 {
+        assert!(charla(&mut q, "Doce").is_empty());
+    }
+}
+
+/// CHAT-02 vale también para la explicación con sus propias palabras: lo que
+/// se repite es la pregunta de la explicación.
+#[test]
+fn chat02_tambien_repite_la_pregunta_de_la_explicacion() {
+    let mut p = Prueba::new(Some(1), vec![obj(1, TipoObjetivo::Tarea, 5, Some(2))]);
+    p.iniciar();
+    let mut guard = 0;
+    let pregunta = loop {
+        guard += 1;
+        assert!(guard < 100, "la Etapa 1 no llega a pedir la explicación");
+        match p.m.esperando() {
+            Esperando::Explicacion { pregunta, .. } => break pregunta,
+            Esperando::Conversacion { .. } => {
+                p.e(Entrada::Texto("Entendido, sigue".into()));
+            }
+            Esperando::Respuesta { .. } => {
+                p.responder(true);
+            }
+            otro => panic!("estado inesperado en E1: {otro:?}"),
+        }
+    };
+    let paso = p.act();
+
+    assert!(charla(&mut p, "hola").is_empty());
+    assert!(charla(&mut p, "¿y tú cómo te llamas?").is_empty());
+    let r = charla(&mut p, "ya");
+    assert_eq!(textos(&r), [pregunta.as_str()], "{}", texto(&r));
+    assert_eq!(p.act(), paso);
 }
 
 /// [PROPUESTA] E1-03: si los pasos del primer ejemplo guiado salen bien al
