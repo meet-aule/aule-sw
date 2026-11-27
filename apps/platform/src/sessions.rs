@@ -112,6 +112,11 @@ pub struct NewSession {
     /// see `engine::goal`.
     #[serde(default)]
     engine: bool,
+    /// Where the engine starts, in place of what the child's sessions have
+    /// left. An operator's session only: a test that begins at the same place
+    /// every time.
+    #[serde(default)]
+    engine_start: Option<engine::StartAt>,
 }
 
 const TOKEN_GRACE_SECONDS: i64 = 5 * 60;
@@ -176,17 +181,24 @@ pub async fn create_session(
         None => None,
     };
     let objective = body.objective.map(ObjectiveInput::checked).transpose()?;
+    // A child's own sessions start where the last one left them.
+    if body.engine_start.is_some() && body.audience != "operator" {
+        return Err(ApiError::bad_request("engine_start is for an operator's session"));
+    }
+    let start_at = body.engine_start.map(engine::StartAt::kept).transpose()?;
     // A family's sessions are what its plan allows; the team's are not counted.
     if let (Caller::Guardian { .. }, Some(child)) = (&caller, &child) {
         crate::plans::admit(&state, child.family_id).await?;
     }
     let session =
-        open_session(&state, child, &body.audience, body.language, None, objective, body.engine).await?;
+        open_session(&state, child, &body.audience, body.language, None, objective, body.engine, start_at)
+            .await?;
     Ok((StatusCode::CREATED, Json(session)))
 }
 
 /// Creates a session, opens its room and makes the token to join it. Every
 /// way of starting one comes through here, so the consent rule is in one place.
+#[allow(clippy::too_many_arguments)]
 pub async fn open_session(
     state: &AppState,
     child: Option<Child>,
@@ -197,6 +209,8 @@ pub async fn open_session(
     // Whether the session engine was asked for. It runs the session only for
     // a child and an objective its bank covers; otherwise nothing changes.
     engine: bool,
+    // Where the engine starts, when it is not where the child's sessions left it.
+    start_at: Option<engine::Kept>,
 ) -> ApiResult<Value> {
     let livekit = state.config.livekit.as_ref().ok_or(ApiError::Unavailable("LiveKit is not configured"))?;
     let rooms = state.rooms.as_ref().ok_or(ApiError::Unavailable("LiveKit is not configured"))?;
@@ -230,9 +244,10 @@ pub async fn open_session(
     let local = Utc::now() + Duration::minutes(i64::from(state.config.timezone_offset_minutes));
     let minute = (local.time().num_seconds_from_midnight() / 60) as u16;
     let engine_start = match (&child, runs_engine) {
-        (Some(child), true) => {
-            Some(engine::start_for(&txn, child.id, state.config.session_minutes, minute).await?)
-        }
+        (Some(child), true) => Some(match start_at {
+            Some(kept) => engine::start_from(kept, state.config.session_minutes, minute)?,
+            None => engine::start_for(&txn, child.id, state.config.session_minutes, minute).await?,
+        }),
         _ => None,
     };
 

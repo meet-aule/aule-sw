@@ -191,6 +191,37 @@ pub struct Kept {
     pub sessions: u32,
 }
 
+/// Where an operator's session starts the engine, in place of what the
+/// child's earlier sessions left: the level reached in the bank's topic. It
+/// lets a test begin at the same place every time; a family's session always
+/// starts from the child's own.
+#[derive(Deserialize)]
+pub struct StartAt {
+    levels: BTreeMap<String, u8>,
+}
+
+impl StartAt {
+    /// What it stands for, when its topics and levels are the bank's.
+    pub fn kept(self) -> ApiResult<Kept> {
+        let bank = bank().ok_or(ApiError::Unavailable("the session engine is off"))?;
+        let highest = bank.niveles.iter().map(|level| level.nivel).max().unwrap_or(0);
+        for (topic, level) in &self.levels {
+            if *topic != bank.tema {
+                return Err(ApiError::bad_request(format!(
+                    "engine_start.levels: the only topic is {}",
+                    bank.tema
+                )));
+            }
+            if *level > highest {
+                return Err(ApiError::bad_request(format!(
+                    "engine_start.levels: a level is from 0 to {highest}"
+                )));
+            }
+        }
+        Ok(Kept { levels: self.levels, ..Kept::default() })
+    }
+}
+
 /// What a session started from, fixed when it was created: a session rebuilt
 /// later must not see a profile or a setting that changed since.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -1583,6 +1614,11 @@ pub async fn start_for(
         .await?
         .flatten();
     let kept: Kept = kept.and_then(|kept| serde_json::from_value(kept).ok()).unwrap_or_default();
+    start_from(kept, minutes, minute)
+}
+
+/// What an engine session starts from, given what is kept about the child.
+pub fn start_from(kept: Kept, minutes: u32, minute: u16) -> Result<Value, sea_orm::DbErr> {
     serde_json::to_value(Start { minutes, kept, minute: Some(minute) })
         .map_err(|error| sea_orm::DbErr::Custom(error.to_string()))
 }

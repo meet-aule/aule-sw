@@ -574,7 +574,8 @@ pub async fn start_session(
     };
     let child = find_child(&state.db, child_id).await?;
     let session =
-        sessions::open_session(&state, Some(child), "child", None, Some(device_id), None, false).await?;
+        sessions::open_session(&state, Some(child), "child", None, Some(device_id), None, false, None)
+            .await?;
     Ok((StatusCode::CREATED, Json(session)))
 }
 
