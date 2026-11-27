@@ -51,13 +51,7 @@
           <div class="screen-body">
             <div class="question">
               <p class="question-step" id="entry-greeting" data-i18n="lines.welcome">Te damos la bienvenida</p>
-              <div class="entry-heading">
-                <h2 class="question-title" id="p01-title" tabindex="-1" data-i18n="entry.title">Entra a Aule</h2>
-                <div class="entry-help-control" id="entry-help-control">
-                  <button class="entry-help-trigger" id="entry-help-trigger" type="button" aria-describedby="entry-help" aria-expanded="false" aria-controls="entry-help"><span class="sr-only" data-i18n="entry.help_label">Ayuda para entrar</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 11v6" /><circle cx="12" cy="7.5" r=".75" fill="currentColor" stroke="none" /></svg></button>
-                  <p class="entry-tooltip" id="entry-help" data-i18n="entry.help" role="tooltip" hidden>Entra o crea tu cuenta, sin contraseña.</p>
-                </div>
-              </div>
+              <h2 class="question-title" id="p01-title" tabindex="-1" data-i18n="entry.title">Entra a Aule</h2>
             </div>
             <!-- The card (D45, D46): the ways in, each a row of the same size, then the email field and its action. -->
             <div class="controls ways entry-card">
@@ -102,7 +96,14 @@
               <form id="email-start" class="email-entry" novalidate autocomplete="on" hidden>
                 <div class="field">
                   <label class="sr-only" id="email-label" for="email-address" data-i18n="entry.email">Tu correo</label>
-                  <input id="email-address" type="email" autocomplete="email" inputmode="email" placeholder="nombre@correo.com" data-i18n-attr="placeholder:entry.email_placeholder" maxlength="254" aria-describedby="email-error" />
+                  <!-- The field, and at its end the help that says what this way in is: shown on hover, focus or a tap (signin.js). -->
+                  <div class="entry-email">
+                    <input id="email-address" type="email" autocomplete="email" inputmode="email" placeholder="Ingresa tu correo electrónico" data-i18n-attr="placeholder:entry.email_placeholder" maxlength="254" aria-describedby="email-error" />
+                    <div class="entry-help-control" id="entry-help-control">
+                      <button class="entry-help-trigger" id="entry-help-trigger" type="button" aria-describedby="entry-help" aria-expanded="false" aria-controls="entry-help"><span class="sr-only" data-i18n="entry.help_label">Ayuda para entrar</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 11v6" /><circle cx="12" cy="7.5" r=".75" fill="currentColor" stroke="none" /></svg></button>
+                      <p class="entry-tooltip" id="entry-help" data-i18n="entry.help" role="tooltip" hidden>Entra o crea tu cuenta, sin contraseña.</p>
+                    </div>
+                  </div>
                   <p class="field-error" id="email-error" role="alert" data-i18n="entry.email_invalid" hidden>Revisa el correo: no parece una dirección válida.</p>
                 </div>
                 <button type="submit" class="primary" id="email-send" data-i18n="entry.send">Enviarme un código</button>

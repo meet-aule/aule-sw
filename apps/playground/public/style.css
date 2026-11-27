@@ -1019,12 +1019,24 @@ html[data-screen="p03"] main {
   text-wrap: balance;
 }
 
-.entry-heading {
+/* The help sits at the end of the email field, inside its box: a 44 px target
+   whose mark is 20. Its words open above the field, from its right edge and
+   4 px clear of it, so they cover neither the field nor its action; in
+   Spanish they take one line where the screen has 320 px for them. */
+.entry-email {
   position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
+  display: grid;
+}
+
+/* Over the field's own padding (below): what is written stops short of the mark. */
+.entry-card .field .entry-email input {
+  padding-right: 54px;
+}
+
+.entry-help-control {
+  position: absolute;
+  top: 5px;
+  right: 5px;
 }
 
 .entry-help-trigger {
@@ -1053,10 +1065,10 @@ html[data-screen="p03"] main {
 .entry-tooltip {
   position: absolute;
   z-index: 2;
-  top: 100%;
-  left: 50%;
+  right: 0;
+  bottom: calc(100% + 9px);
   width: max-content;
-  max-width: min(280px, calc(100vw - 48px));
+  max-width: min(320px, calc(100vw - 48px));
   margin: 0;
   padding: 12px 16px;
   border: 1px solid var(--entry-edge);
@@ -1065,7 +1077,6 @@ html[data-screen="p03"] main {
   color: var(--ink);
   font: 400 14px/1.5 var(--sans);
   text-align: center;
-  transform: translateX(-50%);
 }
 
 /* The card: the ways in, 54 px each and 16 apart. */

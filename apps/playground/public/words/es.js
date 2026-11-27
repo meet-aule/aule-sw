@@ -76,7 +76,7 @@ export default {
     help_label: "Ayuda para entrar",
     or: "o",
     email: "Tu correo",
-    email_placeholder: "nombre@correo.com",
+    email_placeholder: "Ingresa tu correo electrónico",
     email_required: "Escribe tu correo electrónico.",
     email_invalid: "Revisa el correo: no parece una dirección válida.",
     send: "Enviarme un código",
