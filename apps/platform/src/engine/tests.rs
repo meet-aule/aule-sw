@@ -544,11 +544,12 @@ fn a_spoken_answer_is_split_into_the_number_and_how_it_was_worked_out() {
 
 #[test]
 fn talk_three_times_running_at_a_question_gets_the_question_again() {
-    let mut student = in_practice();
+    // In the screening, where the engine's clock brings no hint between turns.
+    let mut student = in_screening();
     let at = student.at();
     let asked = match student.engine.motor.esperando() {
         aule_core::motor::Esperando::Respuesta { enunciado, .. } => enunciado,
-        other => panic!("practice waits for an answer: {other:?}"),
+        other => panic!("the screening waits for an answer: {other:?}"),
     };
     // Twice the model answers, and nothing moves.
     for said in ["mi perro se llama Rocky", "hoy comí pizza"] {
