@@ -175,34 +175,37 @@ pub enum Esperando {
 }
 
 /// [PROPUESTA] E1-06: ¿lo dicho empieza asintiendo («Ya,», «Sí, listo.», «Ah,
-/// ya,») y en lo que sigue no pregunta, no objeta ni pide que se le repita?
-/// «Ya, entendí. Los pedazos siguen siendo quintos.» avanza; «Sí, ¿pero por
-/// qué?» y «Ya, pero no me sale» son conversación. Lo que solo asiente, sin
-/// nada más, ya lo toman las palabras de avance.
+/// ya,», «Ya entendí») y en lo que sigue no pregunta, no objeta ni pide que se
+/// le repita? «Ya, entendí. Los pedazos siguen siendo quintos.» avanza; «Sí,
+/// ¿pero por qué?» y «Ya, pero no me sale» son conversación.
+///
+/// Asentir es una palabra de avance seguida de una coma o un punto, o dos
+/// seguidas («ya entendí»): al transcribir la voz, la marca se pierde una de
+/// cada trece veces. Una sola sin marca («Ya cinco sextos», «Si divido…») no
+/// asiente: contesta otra cosa.
 fn empieza_asintiendo(t: &str, avance: &[&str]) -> bool {
     const MULETILLAS: [&str; 6] = ["ah", "eh", "oh", "mmm", "aja", "bueno"];
+    // «ya está», «ya entiendo»: asienten junto a una palabra de avance.
+    const CON_OTRA: [&str; 3] = ["esta", "entiendo", "comprendo"];
     let corta = |c: char| matches!(c, ',' | '.' | ';' | ':' | '!' | '…');
-    let mut resto = t.trim();
-    let mut asintio = false;
-    // Las frases cortas con que empieza: muletillas y palabras de avance.
-    while let Some(corte) = resto.find(corta) {
-        let frase = normalizar(&resto[..corte]);
-        let palabras: Vec<&str> = frase.split_whitespace().collect();
-        let solo_asiente = !palabras.is_empty()
-            && palabras.len() <= 3
-            && palabras
-                .iter()
-                .all(|w| avance.contains(w) || MULETILLAS.contains(w));
-        if !solo_asiente {
+    let palabras: Vec<&str> = t.split_whitespace().collect();
+    let (mut usadas, mut de_avance, mut con_marca) = (0, 0, false);
+    for palabra in &palabras {
+        let n = normalizar(palabra);
+        let asiente = avance.contains(&n.as_str());
+        if !(asiente || MULETILLAS.contains(&n.as_str()) || CON_OTRA.contains(&n.as_str())) {
             break;
         }
-        asintio |= palabras.iter().any(|w| avance.contains(w));
-        resto = resto[corte..].trim_start_matches(|c: char| corta(c) || c.is_whitespace());
+        usadas += 1;
+        de_avance += usize::from(asiente);
+        con_marca = palabra.ends_with(corta);
     }
-    if !asintio || resto.is_empty() {
+    if de_avance == 0 || usadas > 4 || !(con_marca || usadas >= 2) {
         return false;
     }
-    let n = normalizar(resto);
+    // Lo que viene después de asentir.
+    let resto = palabras[usadas..].join(" ");
+    let n = normalizar(&resto);
     let objeta = resto.contains('?')
         || resto.contains('¿')
         || n == "no"

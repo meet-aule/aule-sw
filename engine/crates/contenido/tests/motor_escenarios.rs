@@ -650,6 +650,11 @@ fn e1_lo_que_se_contesta_a_seguimos_lo_toma_el_motor() {
         "Sí, es como partir cada pedazo en dos",
         "Ah, ya, cuatro cuartos hacen un entero",
         "Listo. Dos cuartos es lo mismo que un medio.",
+        // Al transcribir la voz la marca se pierde a veces: dos palabras de
+        // avance seguidas asienten sin ella.
+        "Ya entendí, los pedazos siguen siendo quintos",
+        "Ya entendí los pedazos siguen siendo quintos",
+        "Ya está, es como partir cada pedazo en dos",
     ] {
         assert!(p.m.texto_es_flujo(dicho), "{dicho}");
     }
@@ -660,6 +665,10 @@ fn e1_lo_que_se_contesta_a_seguimos_lo_toma_el_motor() {
         "Sí, no sé por qué se multiplica",
         "Si divido cuatro entre dos me da dos",
         "Ah, cuatro cuartos hacen un entero",
+        // Una sola palabra de avance sin marca contesta otra cosa.
+        "Ya cinco sextos son más que cuatro sextos",
+        "Ya tres cuartos es mayor que un medio",
+        "Ya entendí, ¿pero por qué se multiplica?",
     ] {
         assert!(!p.m.texto_es_flujo(dicho), "{dicho}");
     }
