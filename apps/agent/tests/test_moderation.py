@@ -352,9 +352,26 @@ async def test_logs_carry_categories_and_never_the_text(caplog):
         (Finding(), Action.ALLOW, None),
         # A child who swears is not treated as malicious.
         (Finding(profanity=True), Action.ALLOW, None),
-        (Finding(categories=("violence",)), Action.REDIRECT, "redirect"),
-        (Finding(categories=("prompt_injection",)), Action.REDIRECT, "redirect"),
+        # A child's words are not filtered: whatever else is found in them,
+        # the turn reaches the tutor.
+        *[
+            (Finding(categories=found), Action.ALLOW, None)
+            for found in [
+                ("sexual",),
+                ("violence",),
+                ("sexual", "violence"),
+                ("violence/graphic",),
+                ("harassment", "hate"),
+                ("harassment/threatening",),
+                ("hate/threatening",),
+                ("illicit", "illicit/violent"),
+                ("prompt_injection",),
+            ]
+        ],
+        # Two findings get a caring reply first: a child who may be telling of
+        # abuse, and a child who may be hurting themselves.
         (Finding(categories=("sexual/minors",)), Action.SUPPORT, "child_support"),
+        (Finding(categories=("sexual", "sexual/minors")), Action.SUPPORT, "child_support"),
         (Finding(categories=("self-harm",)), Action.SUPPORT, "self_harm_support"),
         # Self-harm outranks everything, including a check that failed.
         (
@@ -371,7 +388,7 @@ async def test_logs_carry_categories_and_never_the_text(caplog):
         (Finding(available=False, categories=("harassment",)), Action.UNAVAILABLE, "unavailable"),
     ],
 )
-def test_what_is_heard_gets_support_redirection_or_a_safe_failure(finding, action, reply):
+def test_what_is_heard_passes_or_gets_support_or_a_safe_failure(finding, action, reply):
     decision = classify_heard(finding)
 
     assert (decision.action, decision.reply) == (action, reply)
@@ -413,25 +430,6 @@ async def test_only_scores_the_provider_did_not_act_on_in_settled_categories_are
     ):
         guard, _ = moderator(answer)
         assert not (await guard.check("x")).unsure
-
-
-async def test_only_harassment_or_hate_the_provider_flagged_may_be_read_again_when_heard():
-    # "El negrito es la parte pintada": the Spanish for black names the shaded part.
-    for scores in ({"harassment": 0.9, "hate": 0.8}, {"hate": 0.7}, {"harassment": 0.6}):
-        guard, _ = moderator(provider_response(flagged=True, **scores))
-        finding = await guard.check("el negrito es la parte pintada")
-        assert finding.heard_rereadable and not finding.unsure, scores
-    for answer in (
-        provider_response(flagged=True, harassment=0.9, harassment_threatening=0.6),
-        provider_response(flagged=True, hate=0.9, sexual=0.7),
-        provider_response(harassment=0.4),
-        provider_response(),
-    ):
-        guard, _ = moderator(answer)
-        assert not (await guard.check("cuenta con el dedo")).heard_rereadable
-    # A word of our own list is a finding of its own, never read again.
-    guard, _ = moderator(provider_response(flagged=True, harassment=0.9))
-    assert not (await guard.check("te odio")).heard_rereadable
 
 
 async def test_self_harm_is_faint_when_low_alone_and_not_acted_on_by_the_provider():

@@ -273,9 +273,9 @@ async def test_a_failed_request_names_the_model_and_a_retried_one_is_no_failure(
         (Finding(faint_self_harm=True), ("CONCERN", "CONCERN"), False),
         # Neither answers.
         (Finding(faint_self_harm=True), (RuntimeError("PRIVATE"), RuntimeError("PRIVATE")), True),
-        # A score over our thresholds the provider did not act on: one reader.
-        (Finding(categories=("violence",), unsure=True), ("ORDINARY",), True),
-        (Finding(categories=("violence",), unsure=True), ("CONCERN",), False),
+        # A faint score just over our thresholds: one reader.
+        (Finding(categories=("self-harm",), faint_self_harm=True), ("ORDINARY",), True),
+        (Finding(categories=("self-harm",), faint_self_harm=True), ("CONCERN",), False),
     ],
 )
 async def test_no_reading_of_what_the_child_said_is_sent_whatever_it_finds(

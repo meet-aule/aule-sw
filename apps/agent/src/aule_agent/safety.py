@@ -258,23 +258,20 @@ class Gates:
         """What moderation found, once a second reader has settled what a
         score could not.
 
-        A sentence is read again when the provider did not act on it and all
-        it found is either a faint self-harm score or one of the categories
-        where ordinary words score high (see ``Finding``), and also when the
-        provider flagged it only as harassment or hate, which a child's word
-        for the shaded part of a drawing ("negrito") is. Over our thresholds,
-        only a clear "ordinary" lets it through. Under them, two readers are
-        asked at once, and a "concern" that the other reader does not contradict
-        stops it with the line for a child in distress. Otherwise the
-        finding stays as it was. A turn the physical-safety gate stopped for a
-        hazard keeps that gate's own line, which fits a curious child ("I'm
+        Only a faint self-harm score is read again, in a sentence the provider
+        did not act on and where nothing else was found: a student who is only
+        tired lands there, and so do the veiled words of a child in distress
+        (see ``Finding``). Over our thresholds, only a clear "ordinary" lets it
+        through. Under them, two readers are asked at once, and a "concern"
+        that the other reader does not contradict stops it with the line for a
+        child in distress. Otherwise the finding stays as it was. Nothing else
+        found in a child's words is read again, because nothing else stops
+        them (``classify_heard``). A turn the physical-safety gate stopped for
+        a hazard keeps that gate's own line, which fits a curious child ("I'm
         going to stick a fork in the socket" scores as faint self-harm too);
         one it could not judge at all is stopped anyway. Neither is read again.
         """
-        if (
-            not (finding.faint_self_harm or finding.unsure or finding.heard_rereadable)
-            or self._second_opinion is None
-        ):
+        if not finding.faint_self_harm or self._second_opinion is None:
             return finding
         if verdict not in (None, Verdict.ALLOW, Verdict.UNCERTAIN):
             return finding

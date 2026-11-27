@@ -384,13 +384,8 @@ async def test_cancelling_a_turn_cancels_both_gates():
             "context_limit",
             ("physical_safety", "unavailable", ["gate_unavailable"]),
         ),
-        # Moderation alone.
-        (
-            Finding(categories=("violence/graphic", "violence")),
-            Verdict.ALLOW,
-            "redirect",
-            ("moderation_input", "redirect", ["violence"]),
-        ),
+        # Moderation alone: only a child who may be hurting themselves or
+        # telling of abuse, and a check that failed.
         (
             Finding(categories=("harassment", "self-harm/intent")),
             Verdict.ALLOW,
@@ -429,23 +424,25 @@ async def test_cancelling_a_turn_cancels_both_gates():
             "unavailable",
             ("moderation_input", "unavailable", ["physical_hazard", "gate_unavailable"]),
         ),
+        # What else moderation found in a child's words is no reason to stop
+        # them, and is not reported with the hazard.
         (
             Finding(categories=("violence",)),
             Verdict.ADULT_HELP,
             "adult_help",
-            ("physical_safety", "adult_help", ["physical_hazard", "violence"]),
+            ("physical_safety", "adult_help", ["physical_hazard"]),
         ),
         (
             Finding(categories=("violence",)),
             Verdict.UNCERTAIN,
-            "redirect",
-            ("moderation_input", "redirect", ["violence"]),
+            "clarify",
+            ("physical_safety", "clarify", ["physical_hazard"]),
         ),
         (
             Finding(categories=("violence",)),
             Verdict.UNAVAILABLE,
             "unavailable",
-            ("physical_safety", "unavailable", ["gate_unavailable", "violence"]),
+            ("physical_safety", "unavailable", ["gate_unavailable"]),
         ),
         # Swearing alone does not stop a child, and is not what gets reported
         # when something else does.
@@ -472,6 +469,34 @@ async def test_a_child_who_swears_is_answered():
 
     assert (await both.heard(llm.ChatContext.empty(), said())).allowed
     assert flags == []
+
+
+@pytest.mark.parametrize(
+    "finding",
+    [
+        # «Abajo es el total de partes, arriba las que están pintadas», the
+        # right answer to "explain it in your own words", was flagged as this.
+        Finding(categories=("sexual", "violence")),
+        Finding(categories=("violence/graphic", "violence")),
+        # "El negrito es la parte pintada": the shaded part of a drawing.
+        Finding(categories=("harassment", "hate")),
+        Finding(categories=("harassment/threatening",)),
+        Finding(categories=("illicit",)),
+        Finding(categories=("prompt_injection",)),
+        Finding(categories=("sexual",), unsure=True),
+    ],
+)
+async def test_a_child_is_answered_whatever_else_is_found_in_their_words(finding, caplog):
+    reader = Opinion(False)
+    built, flags = unsure_gates(reader, finding)
+
+    with caplog.at_level("DEBUG"):
+        decision = await built.heard(after("Explícalo con tus propias palabras."), said())
+
+    # Nothing stops the turn, nobody is told, and no second reader delays it.
+    assert decision == Decision(Action.ALLOW)
+    assert flags == [] and reader.read == []
+    assert caplog.records == []
 
 
 @pytest.mark.parametrize(
@@ -542,9 +567,10 @@ async def test_in_an_operator_session_a_missing_gate_is_skipped():
     assert not physical_only.checks_spoken
     assert flags == [("physical_safety", "adult_help", ["physical_hazard"])]
 
-    moderation_only, flags = gates(Moderation(Finding(categories=("hate",))))
-    assert (await moderation_only.heard(llm.ChatContext.empty(), said())).reply == "redirect"
-    assert flags == [("moderation_input", "redirect", ["hate"])]
+    moderation_only, flags = gates(Moderation(Finding(categories=("self-harm",))))
+    reply = (await moderation_only.heard(llm.ChatContext.empty(), said())).reply
+    assert reply == "self_harm_support"
+    assert flags == [("moderation_input", "support", ["self_harm"])]
 
     assert (await Gates().heard(llm.ChatContext.empty(), said())).allowed
     assert (await Gates().spoken("x")).allowed
@@ -560,7 +586,7 @@ async def test_silence_is_not_sent_to_any_provider():
 
 
 async def test_a_stopped_turn_is_logged_by_category_only(caplog):
-    both, _ = gates(Moderation(Finding(categories=("violence",))), Physical())
+    both, _ = gates(Moderation(Finding(categories=("self-harm",))), Physical())
 
     with caplog.at_level("DEBUG"):
         await both.heard(llm.ChatContext.empty(), said("secret words of a child"))
@@ -568,8 +594,8 @@ async def test_a_stopped_turn_is_logged_by_category_only(caplog):
     (record,) = caplog.records
     assert (record.gate, record.action, record.categories) == (
         "moderation_input",
-        "redirect",
-        ["violence"],
+        "support",
+        ["self_harm"],
     )
     assert "secret" not in str(record.__dict__)
 
@@ -609,12 +635,21 @@ def test_every_reply_exists_in_every_language():
     assert set(ADULT_HELP_SEQUENCE) | ANSWERABLE <= set(REPLIES)
 
 
-@pytest.mark.parametrize("finding", [Finding(available=False), Finding(categories=("hate",))])
+@pytest.mark.parametrize(
+    "finding",
+    [
+        Finding(available=False),
+        Finding(categories=("hate",)),
+        Finding(categories=("self-harm",)),
+        Finding(categories=("sexual/minors",)),
+    ],
+)
 @pytest.mark.parametrize("verdict", list(Verdict))
 async def test_every_reply_a_decision_can_name_exists(finding, verdict):
     both, _ = gates(Moderation(finding), Physical(verdict))
 
-    assert (await both.heard(llm.ChatContext.empty(), said())).reply in REPLIES
+    heard = await both.heard(llm.ChatContext.empty(), said())
+    assert heard.allowed or heard.reply in REPLIES
     assert (await both.spoken("x")).reply in REPLIES
 
 
@@ -678,62 +713,16 @@ async def test_what_the_provider_is_sure_about_never_gets_a_second_reading():
     assert opinion.read == []
 
 
-async def test_ordinary_words_the_provider_was_unsure_about_are_answered():
-    # "I'm back, I stretched" scores as sexual; the provider did not act on it.
+async def test_what_the_tutor_says_is_still_stopped_for_what_a_child_may_say():
+    # The filter on the tutor's own words did not change: an insult is not
+    # spoken, and no second reader is asked about one the provider acted on.
     reader = Opinion(True)
-    built, flags = unsure_gates(reader)
+    built, flags = unsure_gates(reader, Finding(categories=("harassment", "hate")))
 
-    decision = await built.heard(after("Ponte de pie y estírate."), said("ya volví, ya me estiré"))
-
-    assert decision.allowed and flags == []
-    assert reader.read == [("Ponte de pie y estírate.", "ya volví, ya me estiré")]
-
-
-@pytest.mark.parametrize("answer", [False, None])
-async def test_unsure_words_the_reader_does_not_clear_stay_stopped(answer):
-    built, flags = unsure_gates(Opinion(answer))
-
-    decision = await built.heard(after("¿Seguimos?"), said("x"))
-
-    assert decision.reply == "redirect"
-    assert [flag[:2] for flag in flags] == [("moderation_input", "redirect")]
-
-
-async def test_words_the_provider_flagged_only_as_insults_are_read_again_when_a_child_says_them():
-    # "El negrito es la parte pintada" was flagged as harassment and hate, out of context.
-    insult = Finding(categories=("harassment", "hate"), heard_rereadable=True)
-    reader = Opinion(True)
-    built, flags = unsure_gates(reader, insult)
-
-    decision = await built.heard(
-        after("¿Qué parte del círculo está pintada?"), said("el negrito es la parte pintada")
-    )
-
-    assert decision.allowed and flags == []
-    assert reader.read == [
-        ("¿Qué parte del círculo está pintada?", "el negrito es la parte pintada")
-    ]
-
-
-@pytest.mark.parametrize("answer", [False, None])
-async def test_an_insult_the_reader_does_not_clear_stays_stopped(answer):
-    insult = Finding(categories=("harassment", "hate"), heard_rereadable=True)
-    built, flags = unsure_gates(Opinion(answer), insult)
-
-    decision = await built.heard(after("¿Seguimos?"), said("x"))
-
-    assert decision.reply == "redirect"
-    assert [flag[:2] for flag in flags] == [("moderation_input", "redirect")]
-
-
-async def test_what_the_tutor_says_is_never_read_again_for_an_insult():
-    reader = Opinion(True)
-    built, _ = unsure_gates(
-        reader, Finding(categories=("harassment", "hate"), heard_rereadable=True)
-    )
-
-    assert not (await built.spoken("x")).allowed
+    assert (await built.heard(after("¿Seguimos?"), said("x"))).allowed
+    assert (await built.spoken("x")).reply == "redirect"
     assert reader.read == []
+    assert [flag[:2] for flag in flags] == [("moderation_output", "redirect")]
 
 
 async def test_the_second_reader_is_closed_with_the_gates():

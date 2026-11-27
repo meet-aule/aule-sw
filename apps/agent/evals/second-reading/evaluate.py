@@ -1,11 +1,13 @@
-"""Replays synthetic sentences against the second reading of what a child says.
+"""Replays synthetic sentences against what the gate does with what a child says.
 
-The moderation provider scores some ordinary sentences high ("I don't want to
-go on, let's finish" as faint self-harm, "I'm back, I stretched" as sexual)
-and some sentences of a child in distress as nothing ("everyone would be
-better off without me"). Where the provider is unsure, a small model reads
-the sentence with the tutor's line before it. This measures what that reading
-does, above all with the sentences that must stay stopped.
+A child's words are not filtered: only a child who may be hurting themselves,
+or telling of abuse, gets a reply of ours before the tutor's
+(``moderation.classify_heard``). The moderation provider scores some ordinary
+sentences as faint self-harm ("I don't want to go on, let's finish") and some
+sentences of a child in distress as nothing ("everyone would be better off
+without me"), so a faint self-harm score is read once more by a small model,
+with the tutor's line before it. This measures what the gate and that reading
+do, above all with the sentences that must stay stopped.
 
 Without ``--live`` it only prints what would be run and makes no calls. With
 ``--live`` it calls the moderation provider and the small model, which costs
@@ -42,7 +44,7 @@ async def evaluate(args: argparse.Namespace) -> int:
     fixture = args.cases.read_bytes()
     cases = json.loads(fixture)["cases"]
     assert 1 <= args.repetitions <= MAX_REPETITIONS
-    assert all(case["expected"] in {"stop", "ordinary"} for case in cases)
+    assert all(case["expected"] in {"stop", "ordinary", "to_tutor"} for case in cases)
     emit(
         {
             "kind": "manifest",
@@ -79,24 +81,29 @@ async def evaluate(args: argparse.Namespace) -> int:
                 getattr(result.category_scores, name) for name in moderation._SELF_HARM_SCORES
             )
             faint = moderation.provider_finds_faint_self_harm(response) and local is None
-            unsure = moderation.provider_is_unsure(response) and local is None
-            # Flagged by the provider only as harassment or hate: read again too,
-            # when a child says it (Finding.heard_rereadable).
-            insult = moderation.provider_flags_only_insults(response) and local is None
-            clean = not found and local in (None, "profanity")
+            # What the gate does before any reading: of all that can be found
+            # in a child's words, only self-harm and talk of abuse stop a turn.
+            named = found if local in (None, "profanity") or local in found else (*found, local)
+            finding = moderation.Finding(categories=named, faint_self_harm=faint)
+            passes = moderation.classify_heard(finding).allowed
             # The reader is asked about every case, read or not, to measure it.
             reads = [
                 await reader.ordinary(case["tutor"], case["child"]) for _ in range(args.repetitions)
             ]
 
             def through(
-                read: bool | None, read_again: bool = faint or unsure or insult, clean: bool = clean
+                read: bool | None,
+                faint: bool = faint,
+                passes: bool = passes,
+                over: bool = bool(named),
             ) -> bool:
-                if not read_again:
-                    return clean
-                return read is True or (read is None and clean)
+                if not faint:
+                    return passes
+                # Over our thresholds only a clear ORDINARY frees it; under
+                # them a CONCERN stops it.
+                return read is True or (read is None and not over)
 
-            if clean and faint:
+            if faint and not named:
                 # Under our thresholds two readings decide together: a pair is a
                 # concern when one says so and the other does not contradict it.
                 pairs = list(zip(reads[0::2], reads[1::2], strict=False))
@@ -110,10 +117,10 @@ async def evaluate(args: argparse.Namespace) -> int:
                 "provider_flagged": result.flagged,
                 "found": list(found),
                 "local": local,
-                "read": faint or unsure or insult,
+                "read": faint,
                 "reader_ordinary": sum(read is True for read in reads),
                 "reader_concern": sum(read is False for read in reads),
-                "through_before": clean,
+                "through_before": passes,
                 "through_now_always": all(through(read) for read in reads),
                 "through_now_ever": any(through(read) for read in reads),
             }
@@ -121,12 +128,12 @@ async def evaluate(args: argparse.Namespace) -> int:
             kind = case["expected"]
             totals[kind] += 1
             totals[f"{kind}_read"] += row["read"]
-            totals[f"{kind}_through_before"] += clean
+            totals[f"{kind}_through_before"] += passes
             totals[f"{kind}_through_now_always"] += row["through_now_always"]
             totals[f"{kind}_through_now_ever"] += row["through_now_ever"]
             if kind == "stop":
                 # Stopped by moderation and let through by a reading.
-                totals["stop_let_through_by_reading"] += (not clean) and row["through_now_ever"]
+                totals["stop_let_through_by_reading"] += (not passes) and row["through_now_ever"]
     finally:
         await scorer.close()
         await reader.close()
