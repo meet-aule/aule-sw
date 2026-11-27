@@ -16,57 +16,125 @@ const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 // «Reenviar» rests this long after a code is sent again.
 const RESEND_REST_MS = 30_000;
 
-const WRONG_CODE = "Ese código no es correcto o ya venció. Pide uno nuevo si hace falta.";
-const NOT_SENT = "No se pudo enviar el código. Inténtalo otra vez en un momento.";
-const NOT_CHECKED = "No se pudo revisar el código. Inténtalo otra vez en un momento.";
-
+// Every word of the entry (P01), its code and name step (P03) and the two help
+// screens after it (P14, P15), in Spanish and in English: the same keys in
+// both. An element of the page names its key in data-entry, a field its
+// placeholder's in data-entry-placeholder; the rest is said from here.
 const ENTRY_WORDS = {
   es: {
     title: "Entra a Aule",
     greeting: "Te damos la bienvenida",
     returning: "¡Qué bueno que estés de vuelta!",
     help: "Entra o crea tu cuenta, sin contraseña.",
+    google: "Continuar con Google",
+    github: "Continuar con GitHub",
+    apple: "Continuar con Apple",
+    meta: "Continuar con Facebook",
+    soon: "Pronto",
     or: "o",
     email: "Tu correo",
+    email_placeholder: "nombre@correo.com",
     email_required: "Escribe tu correo electrónico.",
     email_invalid: "Revisa el correo: no parece una dirección válida.",
     send: "Enviarme un código",
-    name: "Tu nombre",
-    name_error: "Escribe tu nombre para crear tu cuenta.",
+    privacy_lead: "Al continuar, confirmas que conoces la",
+    privacy_link: "Política de privacidad de Aule",
+    google_failed: "No se pudo cargar el botón de Google.",
+    google_refused: "No se pudo entrar con esa cuenta de Google. Inténtalo otra vez.",
+    provider_failed: "No se pudo entrar con esa cuenta. Inténtalo otra vez o usa otra.",
+    not_sent: "No se pudo enviar el código. Inténtalo otra vez en un momento.",
+    erased: "Tu cuenta y tus datos se borraron.",
+    code_tab: "Código",
     code_title: "Escribe el código que te enviamos",
     code_help: "Puedes pegarlo. Llega en un minuto.",
+    code_label: "Código de 6 dígitos",
+    code_wait: "Revisando tu código. Suele tardar unos segundos; si no avanza, pide uno nuevo.",
+    code_short: "Escribe los seis dígitos del código.",
+    wrong_code: "Ese código no es correcto o ya venció. Pide uno nuevo si hace falta.",
+    not_checked: "No se pudo revisar el código. Inténtalo otra vez en un momento.",
+    code_resent: "Te enviamos un código nuevo.",
+    name: "Tu nombre",
+    name_placeholder: "Ej.: Ana",
+    name_error: "Escribe tu nombre para crear tu cuenta.",
     name_help: "Código correcto. Para crear tu cuenta, dinos cómo te llamas.",
     continue: "Continuar",
-    provider_failed: "No se pudo entrar con esa cuenta. Inténtalo otra vez o usa otra.",
+    resend: "Reenviar",
+    missing: "No me llega el correo",
+    back: "Atrás",
+    check_title: "Revisa tu correo",
+    check_help: "Te enviamos un código para entrar. Si no lo ves, revisa la carpeta de spam o de promociones; puede tardar un minuto.",
+    sent_to: "Lo enviamos a",
+    still_missing: "¿Sigue sin llegar? Escríbenos",
+    other_email: "Probar con otro correo",
+    help_tab: "Escríbenos",
+    help_step: "¿No llega el código?",
+    help_title: "Te ayudamos por correo",
+    help_text: "Escríbenos y te ayudamos a entrar personalmente.",
+    write_us: "Escribir a",
+    mail_subject: "No me llega el código",
+    mail_body: "Intenté entrar con",
   },
   en: {
     title: "Sign in to Aule",
     greeting: "Welcome",
     returning: "Welcome back!",
     help: "Sign in or create your account, without a password.",
+    google: "Continue with Google",
+    github: "Continue with GitHub",
+    apple: "Continue with Apple",
+    meta: "Continue with Facebook",
+    soon: "Soon",
     or: "or",
     email: "Your email",
+    email_placeholder: "name@email.com",
     email_required: "An email address is required.",
     email_invalid: "Check the email: it does not look like a valid address.",
     send: "Send me a code",
-    name: "Your name",
-    name_error: "Enter your name to create your account.",
+    privacy_lead: "By continuing, you confirm that you are familiar with",
+    privacy_link: "Aule’s Privacy Policy",
+    google_failed: "Google’s button could not be loaded.",
+    google_refused: "We could not sign you in with that Google account. Try again.",
+    provider_failed: "We could not sign you in with that account. Try again or use another.",
+    not_sent: "The code could not be sent. Try again in a moment.",
+    erased: "Your account and your data were erased.",
+    code_tab: "Code",
     code_title: "Enter the code we sent you",
     code_help: "You can paste it. It should arrive within a minute.",
+    code_label: "6-digit code",
+    code_wait: "Checking your code. It usually takes a few seconds; if nothing happens, ask for a new one.",
+    code_short: "Enter the six digits of the code.",
+    wrong_code: "That code is not right or has expired. Ask for a new one if you need to.",
+    not_checked: "The code could not be checked. Try again in a moment.",
+    code_resent: "We sent you a new code.",
+    name: "Your name",
+    name_placeholder: "E.g. Ana",
+    name_error: "Enter your name to create your account.",
     name_help: "Code confirmed. Tell us your name to create your account.",
     continue: "Continue",
-    provider_failed: "We could not sign you in with that account. Try again or use another.",
+    resend: "Resend",
+    missing: "I am not getting the email",
+    back: "Back",
+    check_title: "Check your email",
+    check_help: "We sent you a code to sign in. If you do not see it, check your spam or promotions folder; it can take a minute.",
+    sent_to: "We sent it to",
+    still_missing: "Still not there? Write to us",
+    other_email: "Try another email",
+    help_tab: "Write to us",
+    help_step: "Is the code not arriving?",
+    help_title: "We will help you by email",
+    help_text: "Write to us and we will help you sign in personally.",
+    write_us: "Write to",
+    mail_subject: "I am not getting the code",
+    mail_body: "I tried to sign in with",
   },
 };
 
 const entryText = (key) => ENTRY_WORDS[document.documentElement.lang === "en" ? "en" : "es"][key];
 
+/** Writes the words of the four screens in the page's language, each where its key is named. */
 function entryWords() {
-  for (const [id, key] of [
-    ["p01-title", "title"], ["entry-help", "help"], ["ways-or", "or"], ["email-label", "email"],
-    ["email-send", "send"], ["email-name-label", "name"], ["email-name-error", "name_error"],
-    ["p03-title", "code_title"], ["code-help", "code_help"], ["code-continue", "continue"],
-  ]) $(id).textContent = entryText(key);
+  for (const element of document.querySelectorAll("[data-entry]")) element.textContent = entryText(element.dataset.entry);
+  for (const field of document.querySelectorAll("[data-entry-placeholder]")) field.placeholder = entryText(field.dataset.entryPlaceholder);
   $("entry-greeting").textContent = entryText(recall(local, RETURNING) === "1" ? "returning" : "greeting");
 }
 
@@ -111,37 +179,64 @@ function forgetAddress() {
 
 // --- One entry: email and the configured providers ----------------------------
 
-/** Shows each way in only where the server has it set up: Google's button, Apple's, GitHub's and Facebook's, then the email field (FIGMA.md D45). */
+/**
+ * The ways in, top to bottom (FIGMA.md D46): Google's row where there is a client id, then GitHub, Apple and
+ * Facebook, whose rows always show, as a link where the server has the provider set up and as «Pronto» where
+ * it does not, then «o» and the email field where a code can be sent.
+ */
 function showWays(account) {
   const providers = account.providers ?? [];
   const google = Boolean(account.google_client_id) && !googleFailed;
   const email = providers.includes("email");
-  const others = CODE_PROVIDERS.filter((provider) => providers.includes(provider));
-  for (const slot of document.querySelectorAll("[data-google]")) slot.hidden = !google;
-  for (const link of document.querySelectorAll("[data-provider]")) link.hidden = !others.includes(link.dataset.provider);
+  for (const row of document.querySelectorAll("[data-google]")) row.hidden = !google;
+  for (const link of document.querySelectorAll("[data-provider]")) offer(link, CODE_PROVIDERS.includes(link.dataset.provider) && providers.includes(link.dataset.provider));
   $("email-start").hidden = !email;
-  // «o» stands between the providers' buttons and the email field, where both show.
-  $("ways-or").hidden = !email || (!google && others.length === 0);
-  // Their own cookies are said where they are offered, not in the cookie notice.
-  for (const note of document.querySelectorAll(".ways-note")) note.hidden = !google && others.length === 0;
+  // «o» stands between the providers' rows and the email field.
+  $("ways-or").hidden = !email;
+}
+
+/**
+ * A provider's row. Set up, it is a link to that provider's sign-in. Not yet, it stays in its place with
+ * «Pronto» at its end and is no link at all: no address, so nothing to follow or to reach with Tab, and
+ * said as unavailable.
+ */
+function offer(link, on) {
+  if (on) {
+    link.setAttribute("href", `api/signin/${link.dataset.provider}/start`);
+    link.removeAttribute("role");
+    link.removeAttribute("aria-disabled");
+  } else {
+    link.removeAttribute("href");
+    link.setAttribute("role", "link");
+    link.setAttribute("aria-disabled", "true");
+  }
+  link.querySelector(".provider-soon").hidden = on;
 }
 
 let googleReady = false;
 let googleFailed = false;
 // Google's script, once a sign-in screen has asked for it.
 let googleScript = null;
+// What keeps Google's button fitted to its row: its sizes, and what Google's script draws.
+let googleFit = null;
+let googleDrawn = null;
 
-// Google draws its own button (Figma: Botón/Google 168:991, «no restyle»):
-// only its options and its slot's width are ours, up to Google's 400 px. Its
-// theme follows the entry's palette, which style.css names in --entry-google:
-// Google's outlined button on paper, its black one on the near-dark.
+// Google draws its own button (Figma: Botón/Google 168:991, «no restyle»), in
+// a frame of its own and at most 400 px wide and 40 tall: it cannot be made
+// the size of the other rows. So the row a person sees is the page's own
+// (index.html), and Google's button lies over it, unseen, stretched until it
+// covers the row exactly (fitGoogle). A click anywhere on the row is then a
+// click on Google's own button, and the sign-in is Google's, as it was.
+// What it looks like no longer matters; its words still follow the language,
+// since a screen reader reads Google's button and not the row under it.
 function renderGoogle(id) {
   const slot = $(id);
-  if (!googleReady || slot.hidden) return;
-  const width = Math.min(400, Math.max(200, Math.round(slot.getBoundingClientRect().width) || 342));
+  const row = slot.parentElement;
+  if (!googleReady || row.hidden) return;
+  const width = Math.min(400, Math.max(200, Math.round(row.getBoundingClientRect().width) || 342));
   window.google.accounts.id.renderButton(slot, {
     type: "standard",
-    theme: getComputedStyle(slot).getPropertyValue("--entry-google").trim() || "outline",
+    theme: "outline",
     size: "large",
     text: "continue_with",
     shape: "rectangular",
@@ -149,10 +244,55 @@ function renderGoogle(id) {
     locale: document.documentElement.lang === "en" ? "en" : "es",
     width,
   });
+  // Fitted now, and again whenever the row changes size or Google's script puts in or resizes its frame.
+  googleFit?.disconnect();
+  googleDrawn?.disconnect();
+  googleFit = new ResizeObserver(() => fitGoogle(slot));
+  googleFit.observe(row);
+  googleDrawn = new MutationObserver(() => {
+    for (const frame of slot.querySelectorAll("iframe")) googleFit.observe(frame);
+    fitGoogle(slot);
+  });
+  googleDrawn.observe(slot, { childList: true, subtree: true });
+  for (const frame of slot.querySelectorAll("iframe")) googleFit.observe(frame);
+  fitGoogle(slot);
+}
+
+/**
+ * The transform that lays a button exactly over its row: the button is `width` by `height`, at `left`, `top`
+ * in its slot, whose corner is the row's; the row is `width` by `height`. Moved so the button's corner is the
+ * slot's, then stretched from that corner.
+ */
+function cover(row, button) {
+  return `scale(${row.width / button.width}, ${row.height / button.height}) translate(${-button.left}px, ${-button.top}px)`;
+}
+
+/** Lays Google's button over the whole of its row. */
+function fitGoogle(slot) {
+  const row = slot.parentElement;
+  // Google's script draws the button in a frame; before the frame is in, whatever it has put there.
+  const drawn = slot.querySelector("iframe") ?? slot.firstElementChild;
+  if (!drawn?.offsetWidth || !drawn.offsetHeight || !row.clientWidth) return;
+  // Where it is laid out in the slot and its size, as they are before any stretching.
+  let left = 0;
+  let top = 0;
+  for (let box = drawn; box && box !== slot; box = box.offsetParent) {
+    left += box.offsetLeft;
+    top += box.offsetTop;
+  }
+  // Google's frame is larger than the button in it, with room for the button's ring, and is pulled back by
+  // as much with negative margins: those say where in the frame the button is.
+  const margins = getComputedStyle(drawn);
+  const aside = Math.max(0, -parseFloat(margins.marginLeft) || 0);
+  const above = Math.max(0, -parseFloat(margins.marginTop) || 0);
+  slot.style.transform = cover(
+    { width: row.clientWidth, height: row.clientHeight },
+    { left: left + aside, top: top + above, width: drawn.offsetWidth - 2 * aside, height: drawn.offsetHeight - 2 * above },
+  );
 }
 
 function googleTrouble() {
-  if (googleFailed && !getAccount().signed_in) say("No se pudo cargar el botón de Google.");
+  if (googleFailed && !getAccount().signed_in) say(entryText("google_failed"));
 }
 
 // The entry and its code step have a palette of their own, which style.css
@@ -172,10 +312,12 @@ for (const id of ["p01", "p03"]) {
 }
 
 // The system changed between light and dark with the page open.
-matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
-  tintBars();
-  if (current() === "p01") renderGoogle("google-p01");
-});
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", tintBars);
+
+// The tab's name, as steps.js has it in Spanish, in the page's language.
+for (const [id, name] of Object.entries({ p01: "title", p03: "code_tab", p14: "check_title", p15: "help_tab" })) {
+  onShow(id, () => (document.title = `Aule · ${entryText(name)}`));
+}
 
 onShow("p01", () => {
   entryWords();
@@ -218,7 +360,7 @@ function drawGoogle(clientId) {
       try {
         entered(await call("api/signin", { credential }));
       } catch {
-        say("No se pudo entrar con esa cuenta de Google. Inténtalo otra vez.");
+        say(entryText("google_refused"));
       }
     },
   });
@@ -275,7 +417,7 @@ async function startEmail(event) {
     await call("api/signin/email/start", { email: address });
   } catch (error) {
     if (error.message === "bad_email") return emailError(true);
-    return say(NOT_SENT);
+    return say(entryText("not_sent"));
   } finally {
     send.disabled = false;
   }
@@ -336,7 +478,7 @@ async function verify() {
   if (verifying) return;
   const code = codeDigits(codeInput.value);
   if (code.length !== 6) {
-    say("Escribe los seis dígitos del código.");
+    say(entryText("code_short"));
     codeInput.focus();
     return;
   }
@@ -365,7 +507,7 @@ async function verify() {
     $("email-name").focus();
     return;
   }
-  say(failure === "wrong_code" ? WRONG_CODE : NOT_CHECKED);
+  say(entryText(failure === "wrong_code" ? "wrong_code" : "not_checked"));
   clearCode();
   codeInput.focus();
 }
@@ -382,9 +524,9 @@ $("code-resend").addEventListener("click", async () => {
   try {
     await call("api/signin/email/start", { email: emailAddress });
     clearCode();
-    say("Te enviamos un código nuevo.", "info");
+    say(entryText("code_resent"), "info");
   } catch {
-    say(NOT_SENT);
+    say(entryText("not_sent"));
   }
 });
 
@@ -407,8 +549,8 @@ $("other-email").addEventListener("click", () => {
 
 // Help by email, with the address that was tried already written in.
 onShow("p15", () => {
-  const subject = encodeURIComponent("No me llega el código");
-  const body = emailAddress ? `&body=${encodeURIComponent(`Intenté entrar con ${emailAddress}.`)}` : "";
+  const subject = encodeURIComponent(entryText("mail_subject"));
+  const body = emailAddress ? `&body=${encodeURIComponent(`${entryText("mail_body")} ${emailAddress}.`)}` : "";
   $("write-us").href = `mailto:admin@meetaule.com?subject=${subject}${body}`;
 });
 
@@ -452,7 +594,7 @@ $("erase").addEventListener("submit", async (event) => {
   $("erase-email").value = "";
   // The account is gone: this browser no longer greets it as coming back.
   forget(local, RETURNING);
-  await signedOut("Tu cuenta y tus datos se borraron.");
+  await signedOut(entryText("erased"));
 });
 
 // --- The cookie notice ----------------------------------------------------------

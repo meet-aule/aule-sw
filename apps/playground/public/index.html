@@ -48,39 +48,61 @@
           <div class="screen-body">
             <div class="question">
               <p class="question-step" id="entry-greeting">Te damos la bienvenida</p>
-              <h2 class="question-title" id="p01-title" tabindex="-1">Entra a Aule</h2>
-              <p class="question-help" id="entry-help">Entra o crea tu cuenta, sin contraseña.</p>
+              <h2 class="question-title" id="p01-title" tabindex="-1" data-entry="title">Entra a Aule</h2>
+              <p class="question-help" id="entry-help" data-entry="help">Entra o crea tu cuenta, sin contraseña.</p>
             </div>
-            <!-- The card (D45): each way in the server has set up, then the email field and its action. -->
+            <!-- The card (D45, D46): the ways in, each a row of the same size, then the email field and its action. -->
             <div class="controls ways entry-card">
-              <!-- Figma: Botón/Google 168:991. Google draws its own button here. -->
-              <div class="google-slot" id="google-p01" data-google hidden></div>
-              <a class="provider" data-provider="apple" href="api/signin/apple/start" hidden>
-                <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"/></svg>
-                <span>Continuar con Apple</span>
+              <!-- Figma: Botón/Google 168:991. Google's own button is drawn by Google's script in a frame of its own, at
+                   most 400 px wide and 40 tall: it cannot be given the size of the other rows. So the row that shows is
+                   ours, drawn as the others are, and Google's button lies over it, unseen and stretched to the row's
+                   size (signin.js fitGoogle): a click anywhere on the row is a click on Google's button, and the
+                   sign-in is Google's, unchanged. What shows is hidden from a screen reader, which finds one button,
+                   Google's own in its frame; the keyboard reaches that one too, and the row draws its ring. -->
+              <div class="provider google-row" data-google hidden>
+                <span class="provider-face" aria-hidden="true">
+                  <svg viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+                  <span data-entry="google">Continuar con Google</span>
+                </span>
+                <div class="google-slot" id="google-p01"></div>
+              </div>
+              <!-- GitHub, Apple and Facebook always have their row (D46). Each starts with no link and «Pronto» at its
+                   end; signin.js makes it a link where the server has that way in set up. -->
+              <a class="provider" data-provider="github" role="link" aria-disabled="true">
+                <span class="provider-face">
+                  <svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/></svg>
+                  <span data-entry="github">Continuar con GitHub</span>
+                </span>
+                <span class="provider-soon" data-entry="soon">Pronto</span>
               </a>
-              <a class="provider" data-provider="github" href="api/signin/github/start" hidden>
-                <svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/></svg>
-                <span>Continuar con GitHub</span>
+              <a class="provider" data-provider="apple" role="link" aria-disabled="true">
+                <span class="provider-face">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"/></svg>
+                  <span data-entry="apple">Continuar con Apple</span>
+                </span>
+                <span class="provider-soon" data-entry="soon">Pronto</span>
               </a>
-              <a class="provider" data-provider="meta" href="api/signin/meta/start" hidden>
-                <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#0866FF" d="M24 12.073C24 5.405 18.627 0 12 0S0 5.405 0 12.073C0 18.1 4.388 23.094 10.125 24v-8.437H7.078v-3.49h3.047V9.413c0-3.026 1.792-4.697 4.533-4.697 1.312 0 2.686.236 2.686.236v2.971H15.83c-1.491 0-1.956.93-1.956 1.886v2.264h3.328l-.532 3.49h-2.796V24C19.612 23.094 24 18.1 24 12.073z"/></svg>
-                <span>Continuar con Facebook</span>
+              <a class="provider" data-provider="meta" role="link" aria-disabled="true">
+                <span class="provider-face">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#0866FF" d="M24 12.073C24 5.405 18.627 0 12 0S0 5.405 0 12.073C0 18.1 4.388 23.094 10.125 24v-8.437H7.078v-3.49h3.047V9.413c0-3.026 1.792-4.697 4.533-4.697 1.312 0 2.686.236 2.686.236v2.971H15.83c-1.491 0-1.956.93-1.956 1.886v2.264h3.328l-.532 3.49h-2.796V24C19.612 23.094 24 18.1 24 12.073z"/></svg>
+                  <span data-entry="meta">Continuar con Facebook</span>
+                </span>
+                <span class="provider-soon" data-entry="soon">Pronto</span>
               </a>
-              <p class="ways-or" id="ways-or" hidden>o</p>
+              <p class="ways-or" id="ways-or" data-entry="or" hidden>o</p>
               <!-- P02's email field and action, on the same screen as the other ways in (D42). -->
               <form id="email-start" class="email-entry" novalidate autocomplete="on" hidden>
                 <div class="field">
-                  <label class="sr-only" id="email-label" for="email-address">Tu correo</label>
-                  <input id="email-address" type="email" autocomplete="email" inputmode="email" placeholder="nombre@correo.com" maxlength="254" aria-describedby="email-error" />
-                  <p class="field-error" id="email-error" role="alert" hidden>Revisa el correo: no parece una dirección válida.</p>
+                  <label class="sr-only" id="email-label" for="email-address" data-entry="email">Tu correo</label>
+                  <input id="email-address" type="email" autocomplete="email" inputmode="email" placeholder="nombre@correo.com" data-entry-placeholder="email_placeholder" maxlength="254" aria-describedby="email-error" />
+                  <p class="field-error" id="email-error" role="alert" data-entry="email_invalid" hidden>Revisa el correo: no parece una dirección válida.</p>
                 </div>
-                <button type="submit" class="primary" id="email-send">Enviarme un código</button>
+                <button type="submit" class="primary" id="email-send" data-entry="send">Enviarme un código</button>
               </form>
               <!-- The message line shows here, inside the card (screens.js). -->
               <div class="entry-says" data-message></div>
-              <!-- Where their scripts and links are reached, the providers' own cookies are said (D36). -->
-              <p class="small-help ways-note" hidden>Google, GitHub, Facebook y Apple usan sus propias cookies cuando entras con ellos.</p>
+              <!-- The small print (D46): the owner's words, and the policy P04 links too. -->
+              <p class="small-help entry-legal"><span data-entry="privacy_lead">Al continuar, confirmas que conoces la</span> <a href="https://meetaule.com/legal/privacy" target="_blank" rel="noopener" data-entry="privacy_link">Política de privacidad de Aule</a>.</p>
             </div>
           </div>
         </div>
@@ -97,32 +119,32 @@
           </header>
           <div class="screen-body">
             <div class="question">
-              <h2 class="question-title" id="p03-title" tabindex="-1">Escribe el código que te enviamos</h2>
-              <p class="question-help" id="code-help">Puedes pegarlo. Llega en un minuto.</p>
+              <h2 class="question-title" id="p03-title" tabindex="-1" data-entry="code_title">Escribe el código que te enviamos</h2>
+              <p class="question-help" id="code-help" data-entry="code_help">Puedes pegarlo. Llega en un minuto.</p>
             </div>
             <div class="controls entry-card">
               <!-- Figma: Dígito/Base 160:1405 (Vacío 160:1406, Foco 160:1408, Lleno 160:1410): one real field over six boxes. -->
               <div class="digits">
-                <label class="sr-only" for="email-code">Código de 6 dígitos</label>
+                <label class="sr-only" for="email-code" data-entry="code_label">Código de 6 dígitos</label>
                 <input id="email-code" class="digits-input" inputmode="numeric" autocomplete="one-time-code" enterkeyhint="go" spellcheck="false" />
                 <div class="digit-boxes" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span><span></span></div>
               </div>
               <!-- Only a valid code for a new account reveals this field. The platform rechecks the code when it is sent (D42). -->
               <div class="field" id="email-name-field" hidden>
-                <label id="email-name-label" for="email-name">Tu nombre</label>
-                <input id="email-name" type="text" autocomplete="name" maxlength="120" placeholder="Ej.: Ana" aria-describedby="code-help email-name-error" />
-                <p class="field-error" id="email-name-error" role="alert" hidden>Escribe tu nombre para crear tu cuenta.</p>
+                <label id="email-name-label" for="email-name" data-entry="name">Tu nombre</label>
+                <input id="email-name" type="text" autocomplete="name" maxlength="120" placeholder="Ej.: Ana" data-entry-placeholder="name_placeholder" aria-describedby="code-help email-name-error" />
+                <p class="field-error" id="email-name-error" role="alert" data-entry="name_error" hidden>Escribe tu nombre para crear tu cuenta.</p>
               </div>
-              <p class="wait" id="code-wait" role="status" hidden>Revisando tu código. Suele tardar unos segundos; si no avanza, pide uno nuevo.</p>
+              <p class="wait" id="code-wait" role="status" data-entry="code_wait" hidden>Revisando tu código. Suele tardar unos segundos; si no avanza, pide uno nuevo.</p>
               <div class="entry-says" data-message></div>
-              <button type="submit" class="primary" id="code-continue">Continuar</button>
+              <button type="submit" class="primary" id="code-continue" data-entry="continue">Continuar</button>
               <div class="links">
-                <button type="button" class="link" id="code-resend">Reenviar</button>
-                <button type="button" class="link" id="code-missing">No me llega el correo</button>
+                <button type="button" class="link" id="code-resend" data-entry="resend">Reenviar</button>
+                <button type="button" class="link" id="code-missing" data-entry="missing">No me llega el correo</button>
               </div>
             </div>
             <!-- «← Atrás» is the one action under the card (D45). -->
-            <button type="button" class="entry-pill" data-back><span aria-hidden="true">←</span> Atrás</button>
+            <button type="button" class="entry-pill" data-back><span aria-hidden="true">←</span> <span data-entry="back">Atrás</span></button>
           </div>
         </form>
       </section>
@@ -334,22 +356,22 @@
           <header class="screen-head">
             <div class="head-row">
               <p class="wordmark">Aule</p>
-              <button type="button" class="link back" data-back><span aria-hidden="true">←</span> Atrás</button>
+              <button type="button" class="link back" data-back><span aria-hidden="true">←</span> <span data-entry="back">Atrás</span></button>
             </div>
             <ol class="progress plain" aria-hidden="true"></ol>
           </header>
           <div class="screen-body">
             <div class="question">
-              <h2 class="question-title" id="p14-title" tabindex="-1">Revisa tu correo</h2>
-              <p class="question-help">Te enviamos un código para entrar. Si no lo ves, revisa la carpeta de spam o de promociones; puede tardar un minuto.</p>
+              <h2 class="question-title" id="p14-title" tabindex="-1" data-entry="check_title">Revisa tu correo</h2>
+              <p class="question-help" data-entry="check_help">Te enviamos un código para entrar. Si no lo ves, revisa la carpeta de spam o de promociones; puede tardar un minuto.</p>
             </div>
             <div class="controls">
-              <p class="sent-to">Lo enviamos a <span id="masked-email"></span></p>
-              <button type="button" class="link link-small" id="write-us-go">¿Sigue sin llegar? Escríbenos</button>
+              <p class="sent-to"><span data-entry="sent_to">Lo enviamos a</span> <span id="masked-email"></span></p>
+              <button type="button" class="link link-small" id="write-us-go" data-entry="still_missing">¿Sigue sin llegar? Escríbenos</button>
             </div>
           </div>
           <div class="screen-foot">
-            <button type="button" class="primary" id="other-email">Probar con otro correo</button>
+            <button type="button" class="primary" id="other-email" data-entry="other_email">Probar con otro correo</button>
           </div>
         </div>
       </section>
@@ -360,19 +382,19 @@
           <header class="screen-head">
             <div class="head-row">
               <p class="wordmark">Aule</p>
-              <button type="button" class="link back" data-back><span aria-hidden="true">←</span> Atrás</button>
+              <button type="button" class="link back" data-back><span aria-hidden="true">←</span> <span data-entry="back">Atrás</span></button>
             </div>
             <ol class="progress plain" aria-hidden="true"></ol>
           </header>
           <div class="screen-body">
             <div class="question">
-              <p class="question-step">¿No llega el código?</p>
-              <h2 class="question-title" id="p15-title" tabindex="-1">Te ayudamos por correo</h2>
-              <p class="question-help">Escríbenos y te ayudamos a entrar personalmente.</p>
+              <p class="question-step" data-entry="help_step">¿No llega el código?</p>
+              <h2 class="question-title" id="p15-title" tabindex="-1" data-entry="help_title">Te ayudamos por correo</h2>
+              <p class="question-help" data-entry="help_text">Escríbenos y te ayudamos a entrar personalmente.</p>
             </div>
           </div>
           <div class="screen-foot">
-            <a class="primary" id="write-us" href="mailto:admin@meetaule.com">Escribir a admin@meetaule.com</a>
+            <a class="primary" id="write-us" href="mailto:admin@meetaule.com"><span><span data-entry="write_us">Escribir a</span> admin@meetaule.com</span></a>
           </div>
         </div>
       </section>
@@ -843,8 +865,7 @@
       </filter>
     </svg>
 
-    <!-- What the page keeps in the browser, said once; out of the way on a student's screen. The sign-in
-         providers' own cookies are said beside their buttons, on P01 and P13 (FIGMA.md D36). -->
+    <!-- What the page keeps in the browser, said once; out of the way on a student's screen (FIGMA.md D36). -->
     <div id="cookies" class="cookie-notice" role="region" aria-label="Aviso de cookies" hidden>
       <p>
         Solo cookies propias y necesarias, nada de publicidad: tu cuenta, tu sesión y, si te invitaron, tu enlace

@@ -9,7 +9,7 @@
 // The interview (P05 to P07) is offered on the home after the first session,
 // for a child the family already has, and saved to their profile.
 
-import { $, GRADES, call, say } from "./students.js";
+import { $, GRADES, call, say, sessionClosed } from "./students.js";
 import { LIKES, interestsFrom, planLine } from "./steps.js";
 import { getAccount, go, landing, need, onAccount, onShow, setAccount } from "./screens.js";
 import { handOff } from "./home.js";
@@ -162,7 +162,7 @@ $("child-name-form").addEventListener("submit", async (event) => {
     if (error.message === "not_signed_in") {
       const account = await call("api/account").catch(() => ({ signed_in: false }));
       setAccount(account);
-      return go(landing(), { replace: true, fresh: true, flow: "back", message: "Tu sesión se cerró. Vuelve a entrar." });
+      return go(landing(), { replace: true, fresh: true, flow: "back", message: sessionClosed() });
     }
     return say("No se pudo guardar. Inténtalo otra vez.");
   }
