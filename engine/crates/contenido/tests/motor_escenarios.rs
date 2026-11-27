@@ -807,6 +807,62 @@ fn chat02_tambien_repite_la_pregunta_de_la_explicacion() {
     assert_eq!(p.act(), paso);
 }
 
+/// Por voz, la respuesta a un paso con opciones en cifras llega en palabras.
+/// En el ejemplo acompañado del nivel 2, «¿Cuál de las fracciones originales
+/// es mayor?» tiene las opciones «2/3» y «5/6»: «cinco sextos» la contesta
+/// (2026-11-26: dicha quince veces seguidas, nunca se corrigió).
+#[test]
+fn las_opciones_en_cifras_del_banco_se_contestan_en_palabras() {
+    use aule_core::correccion::{corregir, Clave, Veredicto};
+    let mut p = Prueba::new(Some(1), vec![obj(1, TipoObjetivo::Tarea, 5, Some(2))]);
+    p.iniciar();
+    while p.act() != "etapa1:2:asistido" {
+        assert!(p.act().starts_with("etapa1:2"), "{}", p.act());
+        p.e(Entrada::Texto("Entendido, sigue".into()));
+    }
+    // Con un error en el primer ejemplo guiado, el segundo sigue (E1-03): es
+    // el que compara 2/3 y 5/6.
+    for ok in [true, false, true, true] {
+        p.responder(ok);
+    }
+    let mut guard = 0;
+    let (respuesta, opciones, forma) = loop {
+        guard += 1;
+        assert!(
+            guard < 10,
+            "el segundo ejemplo guiado no llega a su paso con opciones"
+        );
+        match p.m.esperando() {
+            Esperando::Respuesta {
+                respuesta,
+                opciones,
+                forma,
+                ..
+            } if opciones.iter().any(|o| o.contains('/')) => break (respuesta, opciones, forma),
+            Esperando::Respuesta { .. } => {
+                p.responder(true);
+            }
+            otro => panic!("el ejemplo guiado espera una respuesta: {otro:?}"),
+        }
+    };
+    assert_eq!(respuesta, "5/6");
+    assert_eq!(opciones, ["2/3", "5/6"]);
+    let clave = Clave {
+        respuesta: &respuesta,
+        opciones: &opciones,
+        forma,
+    };
+    assert_eq!(
+        corregir(&clave, "Cinco sextos").veredicto,
+        Veredicto::Correcta
+    );
+    assert_eq!(
+        corregir(&clave, "dos tercios").veredicto,
+        Veredicto::Incorrecta
+    );
+    assert_eq!(corregir(&clave, "Doce").veredicto, Veredicto::Ilegible);
+}
+
 /// [PROPUESTA] E1-03: si los pasos del primer ejemplo guiado salen bien al
 /// primer intento y sin pistas, se pasa a explicarlo sin el segundo ejemplo.
 /// Con un error o una pista, el segundo ejemplo sigue.

@@ -154,6 +154,29 @@ mod tests {
         .veredicto
     }
 
+    /// Por voz una opción escrita en cifras llega en palabras: se corrige igual.
+    #[test]
+    fn una_opcion_en_cifras_dicha_en_palabras() {
+        let opciones = ["2/3".to_string(), "5/6".to_string()];
+        let c = |txt: &str| {
+            corregir(
+                &Clave {
+                    respuesta: "5/6",
+                    opciones: &opciones,
+                    forma: Forma::Cualquiera,
+                },
+                txt,
+            )
+        };
+        let bien = c("Cinco sextos");
+        assert_eq!(bien.veredicto, Veredicto::Correcta);
+        assert_eq!(bien.leida.as_deref(), Some("5/6"));
+        assert_eq!(c("dos tercios").veredicto, Veredicto::Incorrecta);
+        assert_eq!(c("5/6").veredicto, Veredicto::Correcta);
+        // Lo que no es ninguna de las dos no se lee como respuesta.
+        assert_eq!(c("Doce").veredicto, Veredicto::Ilegible);
+    }
+
     #[test]
     fn por_valor_y_forma() {
         assert_eq!(c("1/2", Forma::Cualquiera, "2/4"), Veredicto::Correcta);
