@@ -63,6 +63,7 @@ import {
   sourceOf,
 } from "./signin.ts";
 import { RecoveryTickets, recoveryCookie, recoveryTicket, resumeToken, STATUS_GRACE_SECONDS } from "./recovery.ts";
+import { paymentRequest } from "./payments.ts";
 import { unsubscribe } from "./unsubscribe.ts";
 import { appApi, LIMITS, type Limits } from "./passthrough.ts";
 
@@ -94,6 +95,7 @@ const STATIC: Record<string, { file: string | URL; type: string }> = {
   "/steps.js": { file: new URL("steps.js", publicDir), type: "text/javascript; charset=utf-8" },
   "/screens.js": { file: new URL("screens.js", publicDir), type: "text/javascript; charset=utf-8" },
   "/onboarding.js": { file: new URL("onboarding.js", publicDir), type: "text/javascript; charset=utf-8" },
+  "/billing.js": { file: new URL("billing.js", publicDir), type: "text/javascript; charset=utf-8" },
   "/home.js": { file: new URL("home.js", publicDir), type: "text/javascript; charset=utf-8" },
   // The fixed words for a session that can be resumed or has ended.
   "/session-messages.js": { file: new URL("session-messages.js", publicDir), type: "text/javascript; charset=utf-8" },
@@ -240,6 +242,7 @@ const OWN_SCRIPTS = new Set([
   "/screens.js",
   "/onboarding.js",
   "/home.js",
+  "/billing.js",
   "/session-messages.js",
   "/first-steps.js",
   "/summaries.js",
@@ -744,6 +747,11 @@ export function createPlayground(
     const path = pathname.slice(settings.basePath.length);
 
     const handle = async () => {
+      if (path === "/api/payments/webhook" || path === "/api/billing" || path.startsWith("/api/billing/")) {
+        const answer = await paymentRequest(request, settings, path, url.searchParams);
+        response.writeHead(answer.status, { ...headers, "Cache-Control": "no-store", "Content-Type": answer.type ?? "application/json" });
+        return response.end(answer.body);
+      }
       if (path === "/unsubscribe") return unsubscribe(request, response, settings, url);
       if (path.startsWith(APP_API)) {
         const answer = await forApp(request, path.slice(APP_API.length), url.searchParams);

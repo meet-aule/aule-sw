@@ -42,6 +42,8 @@ pub struct Config {
     pub admin_passkeys: AdminPasskeys,
     /// Temporarily allow free sessions without plan quotas or trial expiry.
     pub free_access: bool,
+    /// Payments are unavailable until the complete server-side configuration exists.
+    pub payments: Option<Payments>,
     /// GitHub's OAuth app, Meta's app and Apple's Services ID for sign-in.
     /// Each provider is offered only when all its settings are there.
     pub github: Option<OAuthApp>,
@@ -51,6 +53,28 @@ pub struct Config {
     pub timezone_offset_minutes: i32,
     /// The commit the image was built from (see [`commit`]).
     pub commit: String,
+}
+
+#[derive(Clone)]
+pub struct Payments {
+    pub access_token: String,
+    pub webhook_secret: String,
+    pub collector_id: u64,
+    pub live_mode: bool,
+    pub public_url: String,
+    pub store_url: String,
+    pub store_token: String,
+    /// Device sales stay closed until fulfilment terms have been configured.
+    pub device_price_cents: Option<i64>,
+    pub shipping_cents: i64,
+    pub delivery: String,
+    pub orders_email: String,
+}
+
+impl std::fmt::Debug for Payments {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Payments").field("live_mode", &self.live_mode).finish_non_exhaustive()
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -412,6 +436,95 @@ impl Config {
             }
         };
 
+        let payment_names = [
+            "AULE_MP_ACCESS_TOKEN",
+            "AULE_MP_WEBHOOK_SECRET",
+            "AULE_MP_COLLECTOR_ID",
+            "AULE_PAYMENTS_PUBLIC_URL",
+            "AULE_STORE_URL",
+            "AULE_STORE_TOKEN",
+        ];
+        let payments = if payment_names.iter().any(|name| get(name).is_some()) {
+            for name in payment_names {
+                if get(name).is_none() {
+                    problems.push(format!("{name} is required when payments are configured"));
+                }
+            }
+            let collector_id = get("AULE_MP_COLLECTOR_ID")
+                .and_then(|v| v.parse::<u64>().ok())
+                .filter(|v| *v > 0)
+                .unwrap_or_else(|| {
+                    problems.push("AULE_MP_COLLECTOR_ID must be a positive integer".into());
+                    0
+                });
+            let live_mode = match get("AULE_MP_LIVE_MODE") {
+                Some("1") => true,
+                None | Some("0") => false,
+                _ => {
+                    problems.push("AULE_MP_LIVE_MODE must be 0 or 1".into());
+                    false
+                }
+            };
+            let public_url =
+                get("AULE_PAYMENTS_PUBLIC_URL").unwrap_or_default().trim_end_matches('/').to_string();
+            let store_url = get("AULE_STORE_URL").unwrap_or_default().trim_end_matches('/').to_string();
+            for (name, value) in [("AULE_PAYMENTS_PUBLIC_URL", &public_url), ("AULE_STORE_URL", &store_url)] {
+                if !Url::parse(value).ok().is_some_and(|u| {
+                    u.scheme() == "https"
+                        && u.host_str().is_some()
+                        && u.username().is_empty()
+                        && u.password().is_none()
+                        && u.query().is_none()
+                        && u.fragment().is_none()
+                }) {
+                    problems
+                        .push(format!("{name} must be an HTTPS URL without credentials, query or fragment"));
+                }
+            }
+            let store_token = get("AULE_STORE_TOKEN").unwrap_or_default().to_string();
+            if store_token.len() < 32 {
+                problems.push("AULE_STORE_TOKEN must have at least 32 characters".into());
+            }
+            let device_price_cents = get("AULE_DEVICE_PRICE_CENTS").map(|v| {
+                v.parse::<i64>().ok().filter(|n| *n > 0 && *n <= 100_000_000).unwrap_or_else(|| {
+                    problems.push("AULE_DEVICE_PRICE_CENTS must be positive integer cents".into());
+                    0
+                })
+            });
+            let shipping_cents = get("AULE_DEVICE_SHIPPING_CENTS")
+                .unwrap_or("0")
+                .parse::<i64>()
+                .ok()
+                .filter(|n| *n >= 0 && *n <= 100_000_000)
+                .unwrap_or_else(|| {
+                    problems.push("AULE_DEVICE_SHIPPING_CENTS must be nonnegative integer cents".into());
+                    0
+                });
+            let delivery = get("AULE_DEVICE_DELIVERY").unwrap_or_default().to_string();
+            if device_price_cents.is_some() && (delivery.is_empty() || delivery.len() > 500) {
+                problems.push("AULE_DEVICE_DELIVERY must describe delivery before device sales open".into());
+            }
+            let orders_email = get("AULE_ORDERS_EMAIL").unwrap_or_default().to_string();
+            if device_price_cents.is_some() && crate::signin::normalized_email(&orders_email).is_err() {
+                problems.push("AULE_ORDERS_EMAIL is required for device sales".into());
+            }
+            Some(Payments {
+                orders_email,
+                access_token: get("AULE_MP_ACCESS_TOKEN").unwrap_or_default().into(),
+                webhook_secret: get("AULE_MP_WEBHOOK_SECRET").unwrap_or_default().into(),
+                collector_id,
+                live_mode,
+                public_url,
+                store_url,
+                store_token,
+                device_price_cents,
+                shipping_cents,
+                delivery,
+            })
+        } else {
+            None
+        };
+
         if !problems.is_empty() {
             return Err(ConfigError(problems.join("; ")));
         }
@@ -434,6 +547,7 @@ impl Config {
             admin_emails,
             admin_passkeys,
             free_access,
+            payments,
             github,
             meta,
             apple,

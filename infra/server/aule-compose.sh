@@ -5,6 +5,9 @@ export AULE_DB_PORT=5434
 export AULE_AGENT_MEMORY=6g
 export AULE_UID=1001 AULE_GID=1001
 export AULE_FCM_KEY_FILE=/etc/aule/firebase.json
+if [ -r /etc/aule/billing.env ]; then
+  export AULE_BILLING_ENV_FILE=/etc/aule/billing.env
+fi
 # The team console is reached through its Cloudflare Worker, like the playground. It listens on
 # every interface only once its own env file is there: that file holds ADMIN_EDGE_SECRET, the
 # secret the Worker adds, which the console then requires on every request but the health probe

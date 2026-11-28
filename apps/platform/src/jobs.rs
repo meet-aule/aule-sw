@@ -73,6 +73,18 @@ async fn run(state: &AppState, kind: &str, payload: &Value) -> Result<(), String
     let done = match kind {
         REVIEW_SESSION => sessions::review_session(state, session_id()?).await,
         PLAN_AHEAD => sessions::plan_ahead(state, session_id()?).await,
+        crate::billing::RECONCILE => crate::billing::reconcile(state, payload).await,
+        crate::billing::ORDER_NOTICE => {
+            crate::billing::send_order_notice(
+                state,
+                payload["payment_id"].as_str().ok_or("missing payment id")?,
+            )
+            .await
+        }
+        crate::billing::RECEIPT => {
+            crate::billing::send_receipt(state, payload["payment_id"].as_str().ok_or("missing payment id")?)
+                .await
+        }
         other => return Err(format!("unknown job kind {other}")),
     };
     done.map_err(|error| match error {
@@ -172,6 +184,9 @@ pub async fn run_worker(state: AppState) {
         if last_housekeeping.elapsed() >= Duration::from_secs(60) {
             if let Err(error) = housekeeping(&state).await {
                 tracing::error!(%error, "housekeeping failed");
+            }
+            if let Err(error) = crate::billing::schedule(&state).await {
+                tracing::error!(%error, "billing reconciliation could not be scheduled");
             }
             last_housekeeping = tokio::time::Instant::now();
         }

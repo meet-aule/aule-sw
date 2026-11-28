@@ -621,10 +621,20 @@ pub async fn erase_family(
     if normalized_email(&body.confirm_email)? != email {
         return Err(ApiError::bad_request("confirm_email must be the address you signed in with"));
     }
+    let _billing_lock = crate::billing::family_lock(&state, guardian.family_id).await?;
+    crate::billing::cancel_family(&state, guardian.family_id).await?;
     let txn = state.db.begin().await?;
     device::Entity::update_many()
         .col_expr(device::Column::ClaimedAt, Expr::value(None::<chrono::DateTime<chrono::Utc>>))
         .filter(device::Column::FamilyId.eq(guardian.family_id))
+        .exec(&txn)
+        .await?;
+    // Accounting/delivery records survive account erasure, but recurring billing
+    // has stopped and no learner data or guardian contact stays on plan receipts.
+    crate::entity::billing_checkout::Entity::update_many()
+        .col_expr(crate::entity::billing_checkout::Column::Buyer, Expr::value(serde_json::json!({})))
+        .filter(crate::entity::billing_checkout::Column::FamilyId.eq(guardian.family_id))
+        .filter(crate::entity::billing_checkout::Column::Kind.eq("plan"))
         .exec(&txn)
         .await?;
     family::Entity::delete_by_id(guardian.family_id).exec(&txn).await?;

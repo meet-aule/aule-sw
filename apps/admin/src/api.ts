@@ -44,6 +44,7 @@ export const READS: ReadonlyMap<string, string | null> = new Map([
   ["/api/build", null],
   ["/api/metrics/daily", "/v1/metrics/daily?days=14"],
   ["/api/metrics/weekly", "/v1/metrics/weekly?weeks=12"],
+  ["/api/orders", "/v1/admin/orders"],
   ["/api/families", "/v1/admin/families"],
   // Who is in a session now, for «En vivo».
   ["/api/sessions/open", "/v1/admin/sessions/open"],

@@ -18,6 +18,7 @@
 #                                        left out; the server sets 0.0.0.0 for its Worker
 #   AULE_ADMIN_ENV_FILE                  the console's own env file, which no other service
 #                                        reads: its Worker's secret (ADMIN_EDGE_SECRET)
+#   AULE_BILLING_ENV_FILE                payment credentials, read only by platform and worker
 #
 # The services of this repository use the host network (Linux) and listen on
 # loopback only: put your reverse proxy in front of the playground and the
@@ -44,6 +45,9 @@ x-service: &service
 # from AULE_FCM_KEY_FILE on this machine, and run as AULE_UID so they
 # can read it when it belongs to the account that runs the server.
 x-platform: &platform
+  env_file:
+    - ${AULE_ENV_FILE:-.env}
+    - ${AULE_BILLING_ENV_FILE:-/dev/null}
   user: "${AULE_UID:-10001}:${AULE_GID:-10001}"
   volumes:
     - ${AULE_FCM_KEY_FILE:-/dev/null}:/run/secrets/firebase.json:ro
@@ -91,7 +95,7 @@ services:
     cpu_shares: 256
 
   platform:
-    <<: [*service, *platform]
+    <<: [*platform, *service]
     build:
       context: .
       dockerfile: apps/platform/Dockerfile
@@ -106,7 +110,7 @@ services:
     mem_limit: 512m
 
   worker:
-    <<: [*service, *platform]
+    <<: [*platform, *service]
     build:
       context: .
       dockerfile: apps/platform/Dockerfile
