@@ -562,13 +562,18 @@ test("late summaries cannot replace another child's, return after leaving, or su
   const page = reader();
   page.open("one");
   page.open("two");
-  page.requests[1].resolve(summary("Second child's review"));
+  page.requests[1].resolve({ ...summary("Second child's review"), practice: { revisit: ["Fractions"], ongoing: [] } });
   await tick();
-  page.requests[0].resolve(summary("Obsolete review"));
+  page.requests[0].resolve({ ...summary("Obsolete review"), practice: { revisit: ["Other skill"], ongoing: ["Other topic"] } });
   await tick();
   assert.equal(page.$("summary-list").children[0].children[1].textContent, "Second child's review");
+  assert.equal(page.$("practice-revisit-list").children[0].textContent, "Fractions");
+  assert.equal(page.$("practice-revisit").hidden, false);
+  assert.equal(page.$("practice-ongoing").hidden, true);
   page.signOut();
   assert.equal(page.$("summary-list").children.length, 0);
+  assert.equal(page.$("practice-revisit-list").children.length, 0);
+  assert.equal(page.$("practice-revisit").hidden, true);
   assert.equal(page.$("summaries-title").textContent, "");
 
   const left = reader();
@@ -578,6 +583,25 @@ test("late summaries cannot replace another child's, return after leaving, or su
   await tick();
   assert.equal(left.$("summary-list").children.length, 0);
   assert.equal(left.$("summaries-retry").hidden, true);
+});
+
+test("named practice can arrive before a written review; clearing or retrying never leaves stale topics", async () => {
+  const page = reader();
+  const name = "<b>Subtract fractions</b>";
+  page.open("one");
+  page.requests[0].resolve({ sessions: [], practice: { revisit: [], ongoing: [name] } });
+  await tick();
+  assert.equal(page.$("practice-revisit").hidden, true);
+  assert.equal(page.$("practice-ongoing").hidden, false);
+  const item = page.$("practice-ongoing-list").children[0];
+  assert.equal(item.textContent, name);
+  assert.equal(item.children.length, 0);
+  assert.match(page.$("summaries-status").textContent, /Todavía no hay resúmenes/);
+  const retry = page.reload();
+  assert.equal(page.$("practice-ongoing-list").children.length, 0);
+  page.requests[1].reject(new Error("unavailable"));
+  await retry;
+  assert.equal(page.$("practice-ongoing").hidden, true);
 });
 
 test("empty and failed summaries offer a retry; review markup stays text", async () => {

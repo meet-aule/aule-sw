@@ -1,6 +1,6 @@
 // The family's summaries, separate from profile settings (FIGMA.md D43).
-// Reuses the guardian-scoped read. Only its bounded session summaries are
-// drawn here, as text; memories, skill estimates and conversations are not.
+// The guardian-scoped read supplies session summaries and named practice
+// suggestions. Memories, skill scores and conversations stay off this screen.
 import { $, call } from "./students.js";
 import { current, getAccount, go, need, onAccount, onHide, onShow } from "./screens.js";
 import { homeWords } from "./summaries.js";
@@ -20,10 +20,24 @@ export function openSummaries(student) {
 
 function clear() {
   read += 1;
+  showSkills("revisit", []);
+  showSkills("ongoing", []);
   $("summary-list").replaceChildren();
   $("summaries-title").textContent = "";
   $("summaries-status").textContent = "";
   $("summaries-retry").hidden = true;
+}
+
+function showSkills(group, names) {
+  const items = names.map((name) => {
+    const item = document.createElement("li");
+    // The curriculum supplies its skill names in Spanish, even on the English interface.
+    item.lang = "es";
+    item.textContent = name;
+    return item;
+  });
+  $(`practice-${group}-list`).replaceChildren(...items);
+  $(`practice-${group}`).hidden = items.length === 0;
 }
 
 function reviewItem(session) {
@@ -60,6 +74,8 @@ async function load() {
   try {
     const known = await call("api/student/known", { student_id: student.id });
     if (!stillHere()) return;
+    showSkills("revisit", known.practice?.revisit ?? []);
+    showSkills("ongoing", known.practice?.ongoing ?? []);
     $("summary-list").replaceChildren(...known.sessions.map(reviewItem));
     $("summaries-status").textContent = known.sessions.length ? "" : words("summaries_empty");
     $("summaries-retry").textContent = words("refresh");

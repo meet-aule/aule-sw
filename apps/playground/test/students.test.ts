@@ -75,9 +75,11 @@ const platform = createServer(async (request, response) => {
         { skill_id: "c", attempts: 0, mastered: false },
       ],
       next: [
-        { skill_id: "b", name: "Comparar fracciones", p_now: 0.4 },
+        { skill_id: "b", name: "Comparar fracciones", reason: "in_progress", p_now: 0.4 },
         { skill_id: "d", name: null },
-        { skill_id: "e", name: "Fracciones equivalentes" },
+        { skill_id: "e", name: "Fracciones equivalentes", reason: "ready" },
+        { skill_id: "a", name: "Sumar hasta 20", reason: "review_due" },
+        { skill_id: "c", name: "Restar hasta 10", reason: "in_progress" },
       ],
     });
   }
@@ -391,7 +393,8 @@ test("what is kept about a student is short enough to read, and one memory can b
   assert.deepEqual(await known.json(), {
     mastered: 1,
     practising: 1,
-    next: ["Comparar fracciones", "Fracciones equivalentes"],
+    practice: { revisit: ["Sumar hasta 20"], ongoing: ["Comparar fracciones"] },
+    next: ["Comparar fracciones", "Fracciones equivalentes", "Sumar hasta 20"],
     memories: [{ id: MEMORY, text: "Le gusta el fútbol." }],
     sessions: [{ day: "2026-11-17", summary: "Practicó fracciones.", next: "Sigue comparar." }],
   });
