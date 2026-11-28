@@ -123,12 +123,15 @@ class View:
             return ""
         if self.scene["kind"] == "rectangle":
             other = OPPOSITE[self.point]
+            length = self.scene["width" if self.point in ("top", "bottom") else "height"]
             if language == "en":
                 line = f"You pointed to the {self.point} side."
-                why = f"It is as long as the opposite {other} side."
+                unit = "centimetre" if length == 1 else "centimetres"
+                why = f"It measures {length} {unit}, the same as the opposite {other} side."
             else:
                 line = f"Señalaste el lado {SIDES_ES[self.point]}."
-                why = f"Mide lo mismo que el lado opuesto, el {SIDES_ES[other]}."
+                unit = "centímetro" if length == 1 else "centímetros"
+                why = f"Mide {length} {unit}, igual que el lado opuesto, el {SIDES_ES[other]}."
         else:
             row, cell = (int(n) for n in self.point[1:].split("c"))
             shaded = self.scene["rows"][row - 1][0]

@@ -294,6 +294,8 @@ async def test_a_deictic_question_is_spoken_from_the_confirmed_point_without_inf
         [s async for s in tutor.llm_node(llm.ChatContext.empty(), [], ModelSettings())]
     )
     assert expected in utterance and gates.spoken_texts == [utterance] and screen.actions == 0
+    if lesson == "perimeter":
+        assert ("3 centímetros" if language == "es" else "3 centimetres") in utterance
     assert (
         tutor._turn.view.reference_reply(
             "Why are these fractions equivalent?", language, identify_only=False

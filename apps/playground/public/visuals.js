@@ -326,6 +326,7 @@ function rectangle(v, top, board) {
   const x = (W - w) / 2;
   const y = top + (H - top - h) / 2 - 10;
   const unit = v.unit ? ` ${v.unit}` : "";
+  const labelSize = board ? 32 : 20;
   const sides = [
     ["top", x, y, x + w, y],
     ["right", x + w, y, x + w, y + h],
@@ -336,8 +337,8 @@ function rectangle(v, top, board) {
     target(id, wordsIn(board.language, `first.board_${id}`), `line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}"`, board)).join("") : "";
   return (
     rect(x, y, w, h) +
-    text(x + w / 2, y + h + 30, `${show(v.width)}${unit}`, { size: 20, weight: 600 }) +
-    text(x + w + 14, y + h / 2 + 7, `${show(v.height)}${unit}`, { size: 20, anchor: "start", weight: 600, room: W - x - w - 24 }) + targets
+    text(x + w / 2, y + h + (board ? 40 : 30), `${show(v.width)}${unit}`, { size: labelSize, weight: 600 }) +
+    text(x + w + 14, y + h / 2 + 7, `${show(v.height)}${unit}`, { size: labelSize, anchor: "start", weight: 600, room: W - x - w - 24 }) + targets
   );
 }
 
