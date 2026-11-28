@@ -311,6 +311,8 @@ export type Known = {
   /** Skills the student has by now, and skills they have started on. */
   mastered: number;
   practising: number;
+  /** Named skills with recorded attempts that the model suggests practising or revisiting. */
+  practice: { revisit: string[]; ongoing: string[] };
   /** What comes next, by name. */
   next: string[];
   memories: { id: string; text: string }[];
@@ -347,15 +349,24 @@ export async function known(settings: Settings, token: string, id: string): Prom
     platform(settings, `${pathOf(id)}/memories?limit=${MAX_MEMORIES}`, undefined, token),
     platform(settings, `${pathOf(id)}/reviews`, undefined, token),
   ])) as [
-    { skills?: { mastered?: unknown; attempts?: unknown }[]; next?: { name?: unknown }[] },
+    {
+      skills?: { skill_id?: unknown; mastered?: unknown; attempts?: unknown }[];
+      next?: { skill_id?: unknown; name?: unknown; reason?: unknown }[];
+    },
     { memories?: { id?: unknown; content?: unknown }[] },
     Reviews,
   ];
   const worked = (skills.skills ?? []).filter((skill) => typeof skill.attempts === "number" && skill.attempts > 0);
   const mastered = worked.filter((skill) => skill.mastered === true).length;
+  const workedIds = new Set(worked.map((skill) => skill.skill_id).filter((id): id is string => typeof id === "string" && id.length > 0));
+  const practiceNames = (reason: "review_due" | "in_progress") => (skills.next ?? [])
+    .filter((item) => item.reason === reason && typeof item.skill_id === "string" && workedIds.has(item.skill_id))
+    .flatMap((item) => typeof item.name === "string" && item.name.trim() ? [item.name.trim()] : [])
+    .slice(0, MAX_NEXT);
   return {
     mastered,
     practising: worked.length - mastered,
+    practice: { revisit: practiceNames("review_due"), ongoing: practiceNames("in_progress") },
     next: (skills.next ?? [])
       .flatMap((item) => (typeof item.name === "string" && item.name ? [item.name] : []))
       .slice(0, MAX_NEXT),

@@ -420,6 +420,8 @@ export default {
     start_with: "Start with {name}",
     summaries_title: "Summaries for {name}",
     summaries_help: "What they practised and what they can work on next.",
+    revisit: "Suggested review",
+    ongoing: "Skills in practice",
     summary_list: "Latest summaries",
     summary: "Summary",
     next_session: "For the next session",

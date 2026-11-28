@@ -457,6 +457,8 @@ export default {
     start_with: "Empezar con {name}",
     summaries_title: "Resúmenes de {name}",
     summaries_help: "Lo que practicó y qué puede trabajar después.",
+    revisit: "Sugerencias de repaso",
+    ongoing: "Temas en práctica",
     summary_list: "Últimos resúmenes",
     summary: "Resumen",
     next_session: "Para la próxima sesión",
