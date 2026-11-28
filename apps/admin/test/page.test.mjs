@@ -160,11 +160,11 @@ test("every page but the sign-in has the same header, with its own link marked",
 test("every page has Aule's logo over the panel's title, once, and its cuy in the tab", async () => {
   for (const [name, html] of Object.entries(pages)) {
     // One image named «Aule», sized in the markup so the title does not move as it loads: not a heading, not a link.
-    assert.match(html, /<header>\s*<p class="wordmark"><img src="aule-logo\.svg" alt="Aule" width="65" height="32" \/><\/p>\s*<h1>Panel del equipo<\/h1>/, name);
+    assert.match(html, /<header>\s*<p class="wordmark"><img src="aule-logo\.svg" alt="Aule" width="81" height="40" \/><\/p>\s*<h1>Panel del equipo<\/h1>/, name);
     assert.equal(html.match(/<img\b/g).length, 1, name);
     assert.match(html, /<link rel="icon" href="icon\.svg" type="image\/svg\+xml" \/>/, name);
   }
-  assert.match(css, /\.admin \.wordmark img \{\s*display: block;\s*width: auto;\s*height: 32px;\s*\}/);
+  assert.match(css, /\.admin \.wordmark img \{\s*display: block;\s*width: auto;\s*height: 40px;\s*\}/);
   // The console is on paper only, so it has the logo with brown letters and no other.
   assert.match(css, /color-scheme: light;/);
   assert.doesNotMatch(css + Object.values(pages).join(""), /prefers-color-scheme|aule-logo-dark/);
