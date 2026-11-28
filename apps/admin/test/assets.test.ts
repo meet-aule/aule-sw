@@ -27,7 +27,7 @@ const versionOf = (text: string, name: string) =>
   text.match(new RegExp(`${name.replace(/\./g, "\\.")}\\?v=([0-9a-f]{12})`))?.[1];
 
 test("the pages point at fingerprinted files, and those are kept for a year", async () => {
-  for (const path of ["/", "/live", "/families", "/family", "/passkeys", "/signin"]) {
+  for (const path of ["/", "/live", "/families", "/family", "/orders", "/passkeys", "/signin"]) {
     const html = await (await fetch(`${base}${path}`)).text();
     for (const name of ["style.css", "icon.svg", "aule-logo.svg"]) assert.ok(versionOf(html, name), `${path} names ${name} by its fingerprint`);
   }
@@ -90,7 +90,7 @@ test("without the right version a file is checked every time, and a match is a 3
 
 test("a page is never kept, not even asked for at its own hash", async () => {
   // Kept, Back after signing out could bring the panel back whole, with the families' addresses.
-  for (const path of ["/", "/live", "/families", "/family", "/passkeys", "/signin"]) {
+  for (const path of ["/", "/live", "/families", "/family", "/orders", "/passkeys", "/signin"]) {
     const page = await fetch(`${base}${path}`);
     assert.equal(page.headers.get("cache-control"), "no-store", path);
     assert.equal(page.headers.get("etag"), null, path);
@@ -117,6 +117,8 @@ test("only the console's own files are served: no italic, no other package, noth
     "families.html",
     "family.html",
     "passkeys.html",
+    "orders.html",
+    "orders.js",
     "signin.html",
     "admin.js",
     "common.js",

@@ -4,6 +4,7 @@
 pub mod ahead;
 pub mod algebra;
 pub mod auth;
+pub mod billing;
 pub mod config;
 pub mod devices;
 pub mod engine;

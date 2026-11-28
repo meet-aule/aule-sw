@@ -10,6 +10,38 @@
 // without an exclamation mark (FIGMA.md D33).
 
 export default {
+  billing: {
+    reserved: '{months} meses incluidos reservados hasta que termine el acceso gratuito.',
+    "title": "Mi plan y mis pagos",
+    "offer": "S/59 al mes · 3 sesiones por semana.",
+    "consent": "Autorizo la renovación automática de S/59 cada mes. Puedo cancelarla desde mi cuenta.",
+    "subscribe": "Continuar a Mercado Pago",
+    "cancel": "Cancelar renovación",
+    "refresh": "Actualizar pagos",
+    "history": "Pagos",
+    "free": "La tutoría sigue gratuita por ahora. No se inicia ningún cobro.",
+    "unavailable": "Los pagos aún no están disponibles.",
+    "error": "No pudimos confirmar el cambio. Actualiza el estado antes de volver a intentarlo.",
+    "confirm_cancel": "¿Cancelar la renovación mensual? Conservas el acceso por el tiempo ya pagado.",
+    "accept": "Marca la autorización de renovación mensual para continuar.",
+    "checking": "Consultando el estado del pago…",
+    "none": "Todavía no tienes una suscripción mensual.",
+    "pending": "Completa el pago en Mercado Pago. El acceso se activa cuando el pago se aprueba.",
+    "creating": "Estamos confirmando el checkout. Actualiza en unos instantes.",
+    "authorized": "Renovación mensual autorizada. El acceso depende de los pagos aprobados.",
+    "paused": "La renovación está pausada.",
+    "cancelled": "Renovación cancelada. Conservas el tiempo pagado.",
+    "approved": "Aprobado",
+    "rejected": "Rechazado",
+    "refunded": "Reembolsado",
+    "charged_back": "Contracargo",
+    "in_process": "En proceso",
+    "unknown": "En revisión",
+    "redeem": "Activar {months} meses incluidos",
+    "activated": "Meses incluidos activados",
+    "confirm_redeem": "¿Activar los meses incluidos? Si tienes renovación mensual, se cancelará para evitar cobros mientras los usas. Conservas el tiempo ya pagado. Al terminar, podrás contratar el plan mensual.",
+    "included": "Tienes meses incluidos activos. No necesitas contratar otra suscripción ahora."
+},
   // The language itself: its own name, as the picker lists it, and the locale
   // its dates and numbers are written in.
   language: {
@@ -86,7 +118,7 @@ export default {
     google_refused: "No se pudo entrar con esa cuenta de Google. Inténtalo otra vez.",
     provider_failed: "No se pudo entrar con esa cuenta. Inténtalo otra vez o usa otra.",
     not_sent: "No se pudo enviar el código. Inténtalo otra vez en un momento.",
-    erased: "Tu cuenta y tus datos se borraron.",
+    erased: "Tu cuenta y los datos de aprendizaje se borraron. Los registros de pagos y entregas se conservan por separado.",
     code_title: "Escribe el código que te enviamos",
     code_help: "Puedes pegarlo. Llega en un minuto.",
     code_label: "Código de 6 dígitos",
@@ -249,13 +281,13 @@ export default {
   account: {
     summary: "Mi cuenta y mis datos",
     kept: "Guardamos tu nombre y tu correo, y de cada alumno lo que tú decidas al configurarlo. No guardamos audio ni video.",
-    erase_label: "Para borrar tu cuenta y todo lo guardado, escribe tu correo",
+    erase_label: "Para borrar tu cuenta y los datos de aprendizaje, escribe tu correo. Los registros de pagos y entregas se conservan por separado.",
     erase: "Borrar mi cuenta",
     no_undo: "No se puede deshacer.",
     sign_out: "Salir de la cuenta",
     team: "Panel del equipo",
     erase_email: "Escribe el correo con el que entraste.",
-    erase_confirm: "¿Borrar tu cuenta, tus alumnos y todo lo guardado? No se puede deshacer.",
+    erase_confirm: "¿Borrar tu cuenta, tus alumnos y sus datos de aprendizaje? Se cancelará cualquier renovación mensual. Los registros de pagos y entregas se conservan por separado. No se puede deshacer.",
     erase_wrong: "Ese no es el correo con el que entraste.",
     erase_failed: "No se pudo borrar la cuenta. Inténtalo otra vez.",
   },

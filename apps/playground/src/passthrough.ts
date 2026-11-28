@@ -127,7 +127,7 @@ const NOT_JSON = refused(400, "bad_request", "the body must be JSON with Content
 
 type Body = { bytes: Buffer } | "too large" | "gone";
 
-async function readBody(request: IncomingMessage, limits: Limits): Promise<Body> {
+export async function readBody(request: IncomingMessage, limits: Limits): Promise<Body> {
   if (Number(request.headers["content-length"] ?? 0) > limits.bodyBytes) return "too large";
   // A body sent slower than this loses its connection: trickling bytes cannot
   // hold one open.
