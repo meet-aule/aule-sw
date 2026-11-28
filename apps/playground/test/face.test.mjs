@@ -39,7 +39,7 @@ test("the cuy acts out every state the page asks its face for", () => {
   const asked = [...app.matchAll(/(?:waiting|initializing|listening|thinking|speaking|missing|left|reconnecting): "(\w+)"/g)].map(([, state]) => state);
   assert.deepEqual([...new Set(asked)].sort(), ["listening", "sad", "sleeping", "speaking", "surprised", "thinking"]);
   for (const state of ["listening", "speaking", "sleeping", "sad", "surprised", "thinking"]) assert.ok(cuy.acting[state], state);
-  // It wears the glasses of Aule's icon: two rings and their bridge.
+  // It wears the glasses Aule's first icon had: two rings and their bridge.
   assert.equal(cuy.parts.filter((part) => part.shape === "frame" && part.material === "rims").length, 2);
 });
 

@@ -330,7 +330,10 @@ test("drawn with the page in English, the entry's four screens have no Spanish l
   // As written, the page is the Spanish of the words, key by key.
   for (const element of named) assert.equal(element.textContent, wordsIn("es", element.dataset.i18n), element.dataset.i18n);
   for (const field of fields) assert.equal(field[field.attribute], wordsIn("es", field.dataset.i18nAttr.split(":")[1]));
-  assert.equal(screens.match(/\s(?:placeholder|aria-label|title|alt)="[^"]/g).length, fields.length, "no placeholder or label without its key");
+  // The one name with no key is the logo's, once a screen: Aule's name is the same in every language (FIGMA.md D49).
+  const names = [...screens.matchAll(/\s(placeholder|aria-label|title|alt)="([^"]+)"/g)].map(([, attribute, text]) => `${attribute}=${text}`);
+  assert.equal(names.filter((name) => name === "alt=Aule").length, 4);
+  assert.equal(names.filter((name) => name !== "alt=Aule").length, fields.length, "no placeholder or label without its key");
 
   // The real write() of language.js, with the page in English.
   const root = { lang: "es" };
@@ -356,14 +359,14 @@ test("drawn with the page in English, the entry's four screens have no Spanish l
   for (const text of drawn) assert.ok(!spanish.has(text), text);
 
   // And nothing a person reads on these screens is written outside the page's words: with the named
-  // elements taken out, what is left is the name, an arrow, a full stop and the team's address.
+  // elements taken out, what is left is an arrow, a full stop and the team's address (the name is the logo's, above).
   const left = screens
     .replace(/<!--[\s\S]*?-->/g, "")
     .replace(/<svg[\s\S]*?<\/svg>/g, "")
     .replace(/(<\w+\b[^>]*\bdata-i18n="[\w.-]+"[^>]*>)[^<]*/g, "$1")
     .replace(/<[^>]+>/g, "\n")
     .split("\n").map((text) => text.trim()).filter(Boolean);
-  assert.deepEqual([...new Set(left)].sort(), [".", "Aule", "admin@meetaule.com", "←"].sort());
+  assert.deepEqual([...new Set(left)].sort(), [".", "admin@meetaule.com", "←"].sort());
   // The eyebrow is written by the script over the markup's own: a line of its pool, or "welcome" or "back".
   assert.match(screens, /<p class="question-step" id="entry-greeting" data-i18n="lines\.welcome">Te damos la bienvenida<\/p>/);
 
