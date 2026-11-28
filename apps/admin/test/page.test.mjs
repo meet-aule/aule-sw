@@ -172,7 +172,7 @@ test("every page has Aule's logo over the panel's title, once, and its cuy in th
   for (const name of ["aule-logo.svg", "icon.svg"]) {
     const svg = await read(name);
     // The icon also has the one rule that says which of its two drawings shows: its bolder one at 40 px or less, in a tab.
-    const sizes = "<style>.small{display:none}@media (max-width:40px){.full{display:none}.small{display:inline}}</style>";
+    const sizes = "<style>@media (max-width:40px){.full{display:none}.small{display:inline}}</style>";
     assert.equal(svg.split("<style").length - 1, name === "icon.svg" ? 1 : 0, name);
     assert.equal(svg.includes(sizes), name === "icon.svg", name);
     assert.deepEqual([...new Set([...svg.matchAll(/<([a-zA-Z][\w:-]*)/g)].map(([, tag]) => tag))].sort(), name === "icon.svg" ? ["g", "path", "style", "svg", "title"] : ["g", "path", "svg", "title"], name);

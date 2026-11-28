@@ -753,7 +753,7 @@ test("the logo's letters are cream on the entry's near-dark and nowhere else: th
 });
 
 // The one rule inside the tab's icon: its bolder drawing at 40 px or less, the whole mark above.
-const ICON_SIZES = "<style>.small{display:none}@media (max-width:40px){.full{display:none}.small{display:inline}}</style>";
+const ICON_SIZES = "<style>@media (max-width:40px){.full{display:none}.small{display:inline}}</style>";
 
 test("the logo and the icon are drawings and nothing else: no script, no address, no picture inside, no palette of their own", async () => {
   for (const name of ["aule-logo.svg", "aule-logo-dark.svg", "icon.svg"]) {
