@@ -10,6 +10,24 @@
 // without an exclamation mark (FIGMA.md D33).
 
 export default {
+  resources: {
+    title: "Actividades de fracciones",
+    intro: "Matemática de quinto de primaria. Elige una actividad para trabajar en el cuaderno, en casa o en clase.",
+    pick: "Actividad",
+    goal: "Objetivo",
+    prompt: "Ejercicio para el estudiante",
+    plan: "Cómo guiar la práctica",
+    rubric: "Qué observar",
+    example: "Ejemplo resuelto",
+    exit: "Para resolver sin ayuda",
+    key: "Clave para el adulto",
+    practice: "Practicar este ejercicio con Aule",
+    download: "Descargar guía editable (.md)",
+    print: "Imprimir actividad",
+    license: "Licencia Apache 2.0",
+    home: "Volver a Aule",
+    source: "Material original de Aule",
+  },
   billing: {
     reserved: '{months} meses incluidos reservados hasta que termine el acceso gratuito.',
     "title": "Mi plan y mis pagos",
@@ -468,6 +486,8 @@ export default {
     kind_explore: "Quiero aprender algo nuevo",
     kind_none: "No lo sé",
     kind_exam_review: "Revisar una evaluación que ya di",
+    practice_sheet: "Practicar con la ficha «{title}»",
+    practice_edit: "Puedes cambiar la pregunta con la que quieres practicar.",
     // A04 · Detalles: its line, its fields, the subjects (as `subject` has them) and the note.
     details_line: "Si quieres, cuéntale a Aule de qué se trata.",
     details_subject: "Asignatura",

@@ -483,13 +483,15 @@ export async function startSession(
   id: string,
   language: Language,
   objective?: Objective,
+  practicing = false,
 ): Promise<Session> {
   const body = {
     audience: "child",
     language,
     child_id: id,
     ...(objective ? { objective } : {}),
-    ...(settings.engine ? { engine: true } : {}),
+    // The engine selects its own exercise; the conversational tutor can use this sheet's question.
+    ...(settings.engine && !practicing ? { engine: true } : {}),
   };
   return (await platform(settings, "/v1/sessions", body, token)) as Session;
 }

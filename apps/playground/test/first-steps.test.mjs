@@ -37,6 +37,8 @@ const SPEC_KEYS = [
   "kind_explore",
   "kind_none",
   "kind_exam_review",
+  "practice_sheet",
+  "practice_edit",
   "details_line",
   "details_subject",
   "details_due",

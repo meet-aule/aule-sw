@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="es" data-surface="paper">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Aule · Actividades de fracciones</title>
+    <link rel="icon" href="icon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <main class="guide resource-guide">
+      <header class="guide-head">
+        <a class="wordmark" href="./"><img src="aule-logo.svg" alt="Aule" width="81" height="40" /></a>
+        <div class="language" data-language hidden></div>
+      </header>
+      <div class="resource-picker">
+        <h1 data-i18n="resources.title">Actividades de fracciones</h1>
+        <p class="guide-lead" data-i18n="resources.intro">Matemática de quinto de primaria. Elige una actividad para trabajar en el cuaderno, en casa o en clase.</p>
+        <div class="field">
+          <label for="resource" data-i18n="resources.pick">Actividad</label>
+          <select id="resource"></select>
+        </div>
+      </div>
+      <article id="activity" hidden aria-labelledby="activity-title">
+        <h2 id="activity-title"></h2>
+        <h3 data-i18n="resources.goal">Objetivo</h3>
+        <p id="goal"></p>
+        <h3 data-i18n="resources.prompt">Ejercicio para el estudiante</h3>
+        <p class="resource-prompt" id="prompt"></p>
+        <a class="link" id="practice" href="./" data-i18n="resources.practice">Practicar este ejercicio con Aule</a>
+        <h3 data-i18n="resources.plan">Cómo guiar la práctica</h3>
+        <ol id="plan"></ol>
+        <details>
+          <summary data-i18n="resources.example">Ejemplo resuelto</summary>
+          <p id="workedExample"></p>
+        </details>
+        <h3 data-i18n="resources.rubric">Qué observar</h3>
+        <ul id="rubric"></ul>
+        <h3 data-i18n="resources.exit">Para resolver sin ayuda</h3>
+        <p id="exitTicket"></p>
+        <details>
+          <summary data-i18n="resources.key">Clave para el adulto</summary>
+          <p id="answerKey"></p>
+        </details>
+        <div class="resource-actions">
+          <button type="button" class="small" id="print" data-i18n="resources.print">Imprimir actividad</button>
+          <button type="button" class="link" id="download" data-i18n="resources.download">Descargar guía editable (.md)</button>
+        </div>
+      </article>
+      <noscript>Activa JavaScript para escoger una actividad. Enable JavaScript to choose an activity.</noscript>
+      <footer class="guide-foot">
+        <span><span data-i18n="resources.source">Material original de Aule</span> · <a href="license.txt" data-i18n="resources.license">Licencia Apache 2.0</a></span>
+        <a class="link" href="./" data-i18n="resources.home">Volver a Aule</a>
+      </footer>
+    </main>
+    <script type="module" src="language.js"></script>
+    <script type="module" src="resources.js"></script>
+  </body>
+</html>

@@ -22,10 +22,10 @@ export { languageOf };
 
 /**
  * The words for `key` in `language` (Spanish when the page has none in it),
- * with `name` in place of {name}; "" for a key that is not one of them.
+ * with its placeholders filled; "" for a key that is not one of them.
  */
-export function words(key, language, { name = "" } = {}) {
-  return typeof key === "string" ? wordsIn(language, `first.${key}`, { name }) : "";
+export function words(key, language, values = {}) {
+  return typeof key === "string" ? wordsIn(language, `first.${key}`, values) : "";
 }
 
 /** A level at or above this, of 0 to 1, is a voice: a quarter of the bar. */

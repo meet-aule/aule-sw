@@ -65,6 +65,19 @@ The page is in Spanish or English. Every word it says is in `public/words/`, one
 
 The paper screens say once which cookies the page uses: only its own and only the necessary ones, none for advertising: the account's and the session's and, for a family that came by an invitation, that link's until they sign in, with the policy's cookie section linked. It is a slim bar along the bottom edge of a phone or of a screen under 600 px tall, and a card from 481 px; «Entendido» is remembered in this browser (`aule.cookies`, in its local storage, as the picked language is: neither is a cookie, and neither leaves the browser), and while it shows the paper screens end just above it, so the footer starts behind it. FIGMA.md D36.
 
+## Open teaching resources
+
+The public activity library at `<base path>/resources` includes original, bilingual
+fifth-grade fraction exercises with lesson plans, observation rubrics and exit
+questions. Families and teachers can print or download an editable Markdown
+guide under Apache-2.0 without an account or model credentials. To adapt the
+activities in a self-hosted installation, edit `public/teaching-resources.js`.
+Choosing to practise with the tutor takes a family through the usual sign-in,
+student selection and session checks. The session planner receives the topic
+and the exercise in the student's language. The worked example and answer key
+stay in the adult guide. If the supervisor model is unavailable, Aule's normal
+fallback plans from the matching skills and may offer another exercise.
+
 ## Settings
 
 | Variable | Meaning |

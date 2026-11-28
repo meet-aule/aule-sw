@@ -7,6 +7,7 @@ import { readSettings } from "../src/config.ts";
 import { createPlayground } from "../src/server.ts";
 import { objectiveFrom, profileFrom } from "../src/students.ts";
 import { COMPLETE } from "./fixtures.ts";
+import { teachingResource } from "../public/teaching-resources.js";
 
 const TOKEN = "cd".repeat(32);
 const LIAM = "01a1f5f4-ede7-7028-a524-9d8e2f36b92c";
@@ -481,7 +482,7 @@ test("a session carries what the family said it is for, and nothing when they sa
   assert.deepEqual(seen.at(-1)?.body, { audience: "child", language: "es", child_id: LIAM });
 });
 
-test("a page set to the engine asks for it in every family session", async () => {
+test("a page set to the engine asks for it on an ordinary family session", async () => {
   const url = `http://127.0.0.1:${(platform.address() as AddressInfo).port}`;
   const withEngine = createPlayground(
     readSettings({ ...COMPLETE, AULE_PLATFORM_URL: url, AULE_ADMIN_TOKEN: "admin", PLAYGROUND_ENGINE: "1" }),
@@ -505,4 +506,36 @@ test("a page set to the engine asks for it in every family session", async () =>
     objective: { kind: "homework", subject: "matematica", topic: "fracciones", due: null },
     engine: true,
   });
+});
+
+test("the BFF uses the child's selected guided activity only for the authorized, unedited question", async () => {
+  const spanish = teachingResource("add-fractions", "es")!.practiceTopic;
+  const english = teachingResource("add-fractions", "en")!.practiceTopic;
+  const url = `http://127.0.0.1:${(platform.address() as AddressInfo).port}`;
+  const server = createPlayground(readSettings({ ...COMPLETE, AULE_PLATFORM_URL: url, AULE_ADMIN_TOKEN: "admin", PLAYGROUND_ENGINE: "1" }));
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const session = (data: object) => fetch(`http://127.0.0.1:${(server.address() as AddressInfo).port}/playground/api/session`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: COOKIE },
+      body: JSON.stringify(data),
+    });
+    const objective = { kind: "explore", subject: "matematica", topic: spanish, due: null };
+    const wanted = { student_id: LIAM, language: "es", objective, practice: "add-fractions" };
+    for (const change of [
+      { practice: "unknown" }, { practice: "compare-fractions" }, { language: "es-PE" }, { language: "en" },
+      { objective: { ...objective, topic: "my own question" } },
+    ]) assert.equal((await session({ ...wanted, ...change })).status, 400);
+    assert.equal(seen.length, 0, "a mismatched handoff never reaches the platform");
+    assert.equal((await session({ ...wanted, language: "en", objective: { ...objective, topic: english } })).status, 400);
+    assert.equal(seen.at(-1)?.path, `/v1/children/${LIAM}`, "the language is checked as the guardian");
+    assert.equal((await session(wanted)).status, 200);
+    assert.deepEqual(seen.at(-1), { method: "POST", path: "/v1/sessions", auth: `Bearer ${TOKEN}`, body: {
+      audience: "child", child_id: LIAM, language: "es", objective,
+    } });
+    assert.equal((await session({ ...wanted, practice: undefined, engine: false })).status, 200);
+    assert.deepEqual(seen.at(-1)?.body, { audience: "child", child_id: LIAM, language: "es", objective, engine: true });
+  } finally {
+    server.close();
+  }
 });

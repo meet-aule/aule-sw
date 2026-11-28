@@ -431,6 +431,7 @@
               <button type="button" class="link" id="add-student" data-i18n="home.add">+ Agregar un alumno</button>
             </div>
             <div class="account-links">
+              <a class="link" href="resources" data-i18n="resources.title">Actividades de fracciones</a>
               <details class="account" id="billing-panel">
                 <summary class="link" data-i18n="billing.title">Mi plan y mis pagos</summary>
                 <p class="small-help" id="billing-state" role="status" aria-live="polite"></p>
@@ -613,6 +614,7 @@
                  are first-steps.js's, in the student's language. -->
             <p class="ink-text" id="a04-hello"></p>
             <h2 class="ink-title" id="a04-title" tabindex="-1">¿Qué hacemos hoy?</h2>
+            <button type="button" class="ink-link" id="kind-practice" hidden></button>
             <!-- Figma: Cuadro/Opción 190:806, Cuadrícula (Normal 190:822, Seleccionada 190:825); Íconos · Aparato 190:995 -->
             <div class="choice-grid" id="kinds"></div>
           </div>
@@ -643,7 +645,7 @@
               </div>
               <div class="ink-field wide">
                 <label for="topic" id="topic-label">Tema <span class="optional">(opcional)</span></label>
-                <input id="topic" type="text" maxlength="200" placeholder="Ej.: fracciones, triángulos" />
+                <textarea id="topic" rows="2" maxlength="200" placeholder="Ej.: fracciones, triángulos"></textarea>
               </div>
             </div>
             <p class="ink-note" id="subject-note" hidden>Aquí Aule te ayuda con lo que traigas.</p>

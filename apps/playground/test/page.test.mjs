@@ -14,7 +14,7 @@ const read = (name) => readFile(new URL(name, pub), "utf8");
 const html = await read("index.html");
 const css = await read("style.css");
 const guides = { es: await read("guia.html"), en: await read("guide.html") };
-const ownScripts = ["app.js", "students.js", "signin.js", "steps.js", "screens.js", "onboarding.js", "home.js", "session-messages.js", "first-steps.js", "summaries.js", "reviews.js", "visuals.js", "choices.js", "cuy.js", "pixels.js", "i18n.js", "language.js", "words/es.js", "words/en.js"];
+const ownScripts = ["app.js", "students.js", "signin.js", "steps.js", "screens.js", "onboarding.js", "home.js", "practice-intent.js", "teaching-resources.js", "session-messages.js", "first-steps.js", "summaries.js", "reviews.js", "visuals.js", "choices.js", "cuy.js", "pixels.js", "i18n.js", "language.js", "words/es.js", "words/en.js"];
 const scripts = Object.fromEntries(await Promise.all(ownScripts.map(async (name) => [name, await read(name)])));
 
 /** The body of every block that starts with `opening`, braces and all. */
@@ -126,7 +126,8 @@ test("the page's own modules import each other without a cycle, as the plan draw
   assert.deepEqual([...graph["signin.js"]].sort(), ["i18n.js", "screens.js", "steps.js", "students.js"]);
   // The name screen hands the browser to the child as the home does (home.js handOff).
   assert.deepEqual([...graph["onboarding.js"]].sort(), ["home.js", "i18n.js", "screens.js", "steps.js", "students.js"]);
-  assert.deepEqual([...graph["home.js"]].sort(), ["first-steps.js", "i18n.js", "reviews.js", "screens.js", "steps.js", "students.js", "summaries.js"]);
+  assert.deepEqual([...graph["home.js"]].sort(), ["first-steps.js", "i18n.js", "practice-intent.js", "reviews.js", "screens.js", "steps.js", "students.js", "summaries.js"]);
+  assert.deepEqual(graph["practice-intent.js"], ["teaching-resources.js"]);
   // Aule's face, the cuy and its pixels, is data and arithmetic: the session's page is all that takes them.
   assert.deepEqual(graph["cuy.js"], []);
   assert.deepEqual(graph["pixels.js"], []);
@@ -147,10 +148,14 @@ test("the page's own modules import each other without a cycle, as the plan draw
   for (const name of Object.keys(graph)) walk(name, []);
 });
 
-test("only signin.js and the language's choice touch the browser's storage, and only where a refusal is caught", () => {
+test("storage is limited to sign-in, the language choice and a public activity selected for this tab", () => {
   for (const [name, text] of Object.entries(scripts)) {
-    if (name !== "signin.js" && name !== "language.js") assert.doesNotMatch(text, /localStorage|sessionStorage/, name);
+    if (!["signin.js", "language.js", "practice-intent.js"].includes(name)) assert.doesNotMatch(text, /localStorage|sessionStorage/, name);
   }
+  const practice = scripts["practice-intent.js"];
+  assert.doesNotMatch(practice, /localStorage|document\.cookie/);
+  assert.equal((practice.match(/\.setItem\(/g) ?? []).length, 1);
+  assert.match(practice, /if \(teachingResource\(id, "es"\)\) page\.sessionStorage\.setItem\(KEY, id\)/);
   // The language a person chose is the one other thing kept: read and written once each, guarded, under
   // a key of its own, and never removed or sent. Nothing about who they are goes with it.
   const picker = scripts["language.js"];
@@ -349,10 +354,13 @@ test("the family guide is a page of its own, in Spanish and in English, with the
   const ids = (page) => [...page.matchAll(/<section id="([^"]+)"/g)].map(([, id]) => id);
   assert.deepEqual(ids(guides.es), ["entrar", "prueba", "sesion", "plan", "seguir", "privacidad"]);
   assert.equal(ids(guides.en).length, ids(guides.es).length);
-  const links = (page) => [...page.matchAll(/href="([^"]+)"/g)].map(([, href]) => href).filter((href) => !/^(guia|guide)$/.test(href));
-  assert.deepEqual(links(guides.en), links(guides.es), "the same links, in the same order");
+  const links = (page, lang) => [...page.matchAll(/href="([^"]+)"/g)]
+    .map(([, href]) => href === `resources?lang=${lang}` ? "resources" : href)
+    .filter((href) => !/^(guia|guide)$/.test(href));
+  assert.deepEqual(links(guides.en, "en"), links(guides.es, "es"), "the same links, in the same order");
   for (const [lang, page] of Object.entries(guides)) {
     assert.match(page, new RegExp(`<html lang="${lang}"`), lang);
+    assert.ok(page.includes(`href="resources?lang=${lang}"`), "the activity library opens in this guide's language");
     assert.match(page, /<link rel="stylesheet" href="style\.css" \/>/, lang);
     // Nothing the policy would refuse: no script at all, no style attribute, no handler.
     assert.doesNotMatch(page, /<script\b/, lang);
