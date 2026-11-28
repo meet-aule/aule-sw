@@ -679,7 +679,7 @@ test("every signed-out visit uses the shared entry, with the email field beside 
 });
 
 // Aule's logo as every wordmark holds it: named once, and sized in the markup so nothing moves as it loads.
-const LOGO = '<img src="aule-logo.svg" alt="Aule" width="65" height="32" />';
+const LOGO = '<img src="aule-logo.svg" alt="Aule" width="81" height="40" />';
 
 test("the wordmark is Aule's logo: one image named «Aule» at the head of every paper screen and of the guide (D49)", async () => {
   // A paragraph that holds the logo and nothing else: no name in type beside it, not a heading, not a link.
@@ -706,18 +706,22 @@ test("the wordmark is Aule's logo: one image named «Aule» at the head of every
   // The markup's size is the logo's own proportion (1502 by 745), to the pixel.
   const [, viewBox] = (await read("aule-logo.svg")).match(/<svg [^>]*viewBox="0 0 (\d+ \d+)"/);
   const [wide, tall] = viewBox.split(" ").map(Number);
-  assert.equal(Math.round((32 * wide) / tall), 65);
-  // Drawn by its height, the width following: 32 px, and on the entry 36 px, 44 from 960 px.
+  assert.equal(Math.round((40 * wide) / tall), 81);
+  // Drawn by its height, the width following: 40 px, and on the entry 52 px from 960 px.
   const rule = (text, selector) => rules(text).find(([found]) => found.split("\n").pop().trim() === selector)?.[1] ?? "";
-  assert.match(rule(css, ".wordmark img"), /display: block;\s*width: auto;\s*height: 32px;/);
-  assert.match(rule(css, ".entry .wordmark img"), /height: 36px;/);
+  assert.match(rule(css, ".wordmark img"), /display: block;\s*width: auto;\s*height: 40px;/);
+  assert.match(rule(css, ".entry .wordmark img"), /height: 40px;/);
   const wide960 = blocks(css, "@media (min-width: 960px) {").join("\n");
-  assert.match(rule(wide960, ".entry .wordmark img"), /height: 44px;/);
-  // No row grew for it: past the 25 px row of a paper screen by 7 px in all, and on the entry in the 28 px row its mark had.
+  assert.match(rule(wide960, ".entry .wordmark img"), /height: 52px;/);
+  // No row grew for it: past the 25 px row of a paper screen by 15 px in all, and on the entry in the 28 px row its mark
+  // had, more above the row than below, so it ends no nearer the eyebrow than it did when it was smaller.
   assert.match(rule(css, ".head-row"), /min-height: 25px;/);
-  assert.match(rule(css, ".head-row .wordmark"), /margin-block: -4px -3px;/);
-  assert.match(rule(css, ".entry .wordmark"), /margin-block: -4px;/);
-  assert.match(rule(wide960, ".entry .wordmark"), /margin-block: -8px;/);
+  assert.match(rule(css, ".head-row .wordmark"), /margin-block: -8px -7px;/);
+  assert.match(rule(css, ".entry .wordmark"), /margin-block: -8px -4px;/);
+  assert.match(rule(wide960, ".entry .wordmark"), /margin-block: -16px -8px;/);
+  // The guide's row is its link's height: the logo sits higher in it, clear of the line under the row.
+  assert.match(rule(css, ".guide-head"), /min-height: 25px;/);
+  assert.match(rule(css, ".guide-head .wordmark"), /margin-block: -6px 6px;/);
   // The name is not translated: no words of the page's are the logo's, in either language.
   assert.doesNotMatch(html, /<p class="wordmark"[^>]*data-i18n|<img[^>]*data-i18n/);
 });
@@ -884,7 +888,7 @@ test("the entry's type is the brand site's: its eyebrow in handwriting, its seri
 
 test("the entry leaves less air above its title on a screen that is not tall, so the small print ends above the cookie notice", () => {
   const rule = (text, selector) => rules(text).find(([found]) => found.split("\n").pop().trim() === selector)?.[1] ?? "";
-  // A phone: 64 px above the eyebrow, clear of Aule's logo (20 px down, 36 tall), and the card 24 under the help.
+  // A phone: 64 px above the eyebrow, clear of Aule's logo (16 px down, 40 tall), and the card 24 under the help.
   assert.match(rule(css, ".screen.entry:not([hidden])"), /padding: 64px 24px 32px;/);
   assert.match(rule(css, ".entry-card"), /margin-top: 24px;/);
   // Two columns on a screen up to 960 px tall: 80 px above, 56 from 1200 px wide, where the eyebrow passes beside the logo.

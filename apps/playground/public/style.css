@@ -270,13 +270,14 @@ h3[tabindex="-1"]:focus {
 .wordmark img {
   display: block;
   width: auto;
-  height: 32px;
+  height: 40px;
 }
 
-/* 32 px tall, past the header's 25 px row above and below it, as «← Atrás» is: the
-   row is no taller than it was with the name in type. */
+/* 40 px tall, so the cuy's face and its notebook read: past the header's 25 px row
+   above and below it, within the height of «← Atrás», so the row is no taller than
+   it was with the name in type and the logo ends 7 px above the progress line. */
 .head-row .wordmark {
-  margin-block: -4px -3px;
+  margin-block: -8px -7px;
 }
 
 /* Figma: Barra de progreso/Base 160:1415 (Sin avance 160:1416; 1–12 de 12 160:1417…160:1439).
@@ -979,10 +980,11 @@ html[data-screen="p03"] main {
   left: 24px;
 }
 
-/* Larger here than on the other paper screens: 36 px, in a row that stays 28 px tall, so
-   the picker is where it was and the logo ends 8 px above the eyebrow. */
+/* 40 px on a phone, in a row that stays 28 px tall, so the picker is where it was. It
+   passes the row more above than below: it ends 8 px above the eyebrow, as it did at
+   36 px, and what it gained is over it. */
 .entry .wordmark {
-  margin-block: -4px;
+  margin-block: -8px -4px;
   font: 600 22px/1 var(--serif);
 }
 
@@ -990,7 +992,7 @@ html[data-screen="p03"] main {
    so the one switch above changes the letters with everything else. */
 .entry .wordmark img {
   content: var(--entry-logo);
-  height: 36px;
+  height: 40px;
 }
 
 .entry .progress {
@@ -1414,13 +1416,14 @@ html[data-screen="p03"] .entry-picture.ready {
     left: 44px;
   }
 
-  /* 44 px, still in the 28 px row: it ends where the eyebrow starts at its highest (80 px down). */
+  /* Larger here than anywhere: 52 px, still in the 28 px row. It still ends where the eyebrow
+     starts at its highest (80 px down), as it did at 44 px: all it gained is above the row. */
   .entry .wordmark {
-    margin-block: -8px;
+    margin-block: -16px -8px;
   }
 
   .entry .wordmark img {
-    height: 44px;
+    height: 52px;
   }
 
   .entry .question {
@@ -3533,6 +3536,12 @@ html[data-screen="session"] .site-footer {
   justify-content: space-between;
   min-height: 25px;
   border-bottom: 2px solid var(--line);
+}
+
+/* The row is as tall as its link, and at 40 px the logo would end 2 px from the line under
+   it: it sits 6 px higher, so it ends 8 px above the line, and the row is no taller. */
+.guide-head .wordmark {
+  margin-block: -6px 6px;
 }
 
 .guide-head .link {
