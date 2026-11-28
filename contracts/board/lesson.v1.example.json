@@ -1,0 +1,86 @@
+{
+  "fraction": [
+    {
+      "step": {
+        "action": "start_bars",
+        "numerator": 1,
+        "denominator": 2
+      },
+      "scene": {
+        "kind": "bars",
+        "rows": [
+          [
+            1,
+            2
+          ]
+        ]
+      }
+    },
+    {
+      "step": {
+        "action": "add_bar",
+        "numerator": 2,
+        "denominator": 4
+      },
+      "scene": {
+        "kind": "bars",
+        "rows": [
+          [
+            1,
+            2
+          ],
+          [
+            2,
+            4
+          ]
+        ]
+      }
+    },
+    {
+      "step": {
+        "action": "mark",
+        "part": "r2c3"
+      },
+      "scene": {
+        "kind": "bars",
+        "rows": [
+          [
+            1,
+            2
+          ],
+          [
+            2,
+            4
+          ]
+        ],
+        "mark": "r2c3"
+      }
+    }
+  ],
+  "perimeter": [
+    {
+      "step": {
+        "action": "start_rectangle",
+        "width": 8,
+        "height": 3
+      },
+      "scene": {
+        "kind": "rectangle",
+        "width": 8,
+        "height": 3
+      }
+    },
+    {
+      "step": {
+        "action": "mark",
+        "part": "right"
+      },
+      "scene": {
+        "kind": "rectangle",
+        "width": 8,
+        "height": 3,
+        "mark": "right"
+      }
+    }
+  ]
+}

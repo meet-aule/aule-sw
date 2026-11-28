@@ -120,10 +120,10 @@ function cardPage() {
     assert.ok(found, name);
     return found;
   };
-  const functions = ["shownAs", "posedCard", "aulePosed", "showCard", "presentCard", "boardToCard", "cardOwn", "onVisual"].map(source);
+  const functions = ["shownAs", "posedCard", "aulePosed", "showCard", "presentCard", "boardToCard", "cardOwn", "displayVisual", "onVisual"].map(source);
   const page = runInNewContext(
     `let cardShown = "", cardOnScreen = null, cardWaiting = null, lately = [], posed = new Set(), trustCard = false;
-    let inkMode = false, lastExercise = null, boardShows = null;
+    let progressiveBoard = null, inkMode = false, lastExercise = null, boardShows = null;
     ${constant("plain")}
     ${constant("LATELY_KEPT")}
     function showStage() {}

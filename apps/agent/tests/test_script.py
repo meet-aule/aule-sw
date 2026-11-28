@@ -65,6 +65,9 @@ def test_what_the_engine_waits_for_comes_with_what_it_says_and_only_known_values
 
     assert reply_from({"lines": line, "awaits": "homework_photo"}).awaits == "homework_photo"
     assert reply_from({"converse": "Rules.", "awaits": "homework"}).awaits == "homework"
+    for mode in ("off", "identify", "explain"):
+        assert reply_from({"converse": "Rules.", "board_help": mode}).board_help == mode
+    assert reply_from({"converse": "Rules.", "board_help": "unknown"}).board_help == "off"
     assert reply_from({"lines": line}).awaits is None
     for odd in (None, "", "photo", "HOMEWORK_PHOTO", 1, ["homework"]):
         assert reply_from({"lines": line, "awaits": odd}).awaits is None

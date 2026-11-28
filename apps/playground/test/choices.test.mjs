@@ -225,6 +225,7 @@ function page({ fails = false } = {}) {
   const sent = [];
   const messages = [];
   const context = {
+    progressiveBoard: null,
     document,
     choicesOf,
     choicesItem,

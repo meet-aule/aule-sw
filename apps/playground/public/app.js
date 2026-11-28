@@ -7,6 +7,7 @@
 import { firstRun, openedSession, purposeAsked, sessionRequest } from "./home.js";
 import { addressFor, back, current, getAccount, go, need, onAccount, onHide, onShow, readdress, sessionAddress } from "./screens.js";
 import { TOPIC as VISUAL_TOPIC, renderVisual } from "./visuals.js";
+import { Board, BOARD_RPC, registerBoard } from "./board.js";
 import { TOPIC as CHOICES_TOPIC, choicesItem, choicesOf, keyOf, restores } from "./choices.js";
 import { endedMessage, languageOf, recoveryMessage } from "./session-messages.js";
 import { COACH_HOLD_MS, HINTS_MS, VOICE, WINDOW_MS, cameraProblem, heard, isTap, levelOf, micProblem, words } from "./first-steps.js";
@@ -735,6 +736,7 @@ function presentCard(card) {
  * shows Aule again.
  */
 function boardToCard(card) {
+  progressiveBoard?.reset();
   $("board").hidden = true;
   boardShows = null;
   showStage();
@@ -754,6 +756,7 @@ $("answer").addEventListener("submit", async (event) => {
   const id = sessionId;
   const written = $("answer-text").value.trim();
   if (!id || !written) return;
+  progressiveBoard?.interrupt();
   $("answer-send").disabled = true;
   showMessage("");
   try {
@@ -859,6 +862,7 @@ function restoreChoices(carried) {
 async function sendTyped(text, who) {
   const sending = room;
   if (!text || !sending) return false;
+  progressiveBoard?.interrupt();
   try {
     await sending.localParticipant.sendText(text, { topic: CHAT_TOPIC });
     // The session ended while the message was on its way: its words went with it.
@@ -890,20 +894,39 @@ let inkMode = false;
 let lastExercise = null;
 // What the board shows: a drawing's kind, or null when empty.
 let boardShows = null;
+let progressiveBoard = null;
+$("board").addEventListener("click", event => progressiveBoard?.select(event));
+$("board").addEventListener("keydown", event => progressiveBoard?.select(event));
 
 /** What the stage shows (D30): the camera while it is on, else a drawing, else Aule's face. */
 function showStage() {
+  if (($("stage").dataset.shows === "camera") !== !$("camera-view").hidden) progressiveBoard?.interrupt();
   $("stage").dataset.shows = !$("camera-view").hidden ? "camera" : !$("board").hidden ? "drawing" : "face";
 }
 
 function draw(visual) {
-  $("board").innerHTML = renderVisual(visual);
+  if (progressiveBoard) progressiveBoard.replace(visual);
+  else paintBoard(visual);
+}
+
+function paintBoard(visual, options) {
+  const element = $("board");
+  const focused = element.contains(document.activeElement) ? document.activeElement.dataset.part : null;
+  element.innerHTML = renderVisual(visual, options);
+  if (options) {
+    const hint = document.createElement("figcaption");
+    hint.textContent = words("board_hint", options.language);
+    element.append(hint);
+    if (focused) element.querySelector(`[data-part="${CSS.escape(focused)}"]`)?.focus({ preventScroll: true });
+  }
   $("board").hidden = false;
   boardShows = visual.kind;
   // The panel flashes when it redraws.
   $("board").classList.remove("redraw");
-  void $("board").offsetWidth;
-  $("board").classList.add("redraw");
+  if (!options) {
+    void $("board").offsetWidth;
+    $("board").classList.add("redraw");
+  }
   showStage();
 }
 
@@ -919,29 +942,34 @@ function cardOwn(shown) {
   return shown === `words:${plain(cardOnScreen.statement)}` || (cardOnScreen.visual != null && shown === shownAs(cardOnScreen.visual));
 }
 
-async function onVisual(reader) {
+async function onVisual(reader, stillInRoom = () => true) {
   try {
     const visual = JSON.parse(await reader.readAll());
-    if (visual.kind === "exercise") lastExercise = visual;
-    const shown = shownAs(visual);
-    const waited = cardWaiting;
-    aulePosed(shown);
-    // Aule posed the exercise the card waited for: the card shows its words, the board its drawing.
-    if (waited && !cardWaiting) return;
-    // The exercise in hand, shown again: the board goes back to it, and the card's words are not
-    // written there a second time («Modo tinta» writes them, D32). Any other exercise Aule shows
-    // is drawn: an example with other numbers, or the one it is talking about now.
-    if (cardOwn(shown) && !inkMode) return boardToCard(cardOnScreen);
-    draw(visual);
+    if (stillInRoom()) displayVisual(visual);
   } catch {
     // A description this page cannot draw is skipped; the voice carries on.
   }
+}
+
+function displayVisual(visual) {
+  if (visual.kind === "exercise") lastExercise = visual;
+  const shown = shownAs(visual);
+  const waited = cardWaiting;
+  aulePosed(shown);
+  // Aule posed the exercise the card waited for: the card shows its words, the board its drawing.
+  if (waited && !cardWaiting) return;
+  // The exercise in hand, shown again: the board goes back to it, and the card's words are not
+  // written there a second time («Modo tinta» writes them, D32). Any other exercise Aule shows
+  // is drawn: an example with other numbers, or the one it is talking about now.
+  if (cardOwn(shown) && !inkMode) return boardToCard(cardOnScreen);
+  draw(visual);
 }
 
 function watchTutor(participant) {
   if (participant.kind !== ParticipantKind.AGENT) return;
   clearTimeout(tutorTimer);
   tutorIdentity = participant.identity;
+  if (participant.attributes[BOARD_RPC] === "1") progressiveBoard?.enable();
   if (!tutorCame) tutorArrived();
   const state = participant.attributes[AGENT_STATE] ?? "initializing";
   setTutorState(state);
@@ -970,6 +998,7 @@ function watchTutor(participant) {
 async function showConnection(lost) {
   const connectedRoom = room;
   if (lost) {
+    progressiveBoard?.interrupt();
     connectionLost = true;
     turnGeneration += 1;
     // Mute locally before any RPC: a signalling outage need not stop media.
@@ -1114,6 +1143,7 @@ function turn(method) {
 async function startTalking() {
   if (!room || !manualTurns || talking || !wanted.mic || !tutorReady || !tutorIdentity || connectionLost || closingTurn) return;
   const speaking = room;
+  progressiveBoard?.interrupt();
   const generation = ++turnGeneration;
   talking = true;
   heldAt = performance.now();
@@ -1461,7 +1491,27 @@ async function join(session, { resumed = false } = {}) {
   });
 
   const connectedRoom = room;
+  const surface = new Board({
+    element: $("board"), paint: paintBoard, language: sessionLanguage, display: displayVisual,
+    canApply: () => !talking && (manualTurns || !connectedRoom.localParticipant.isSpeaking),
+    visible: () => room === connectedRoom && !connectionLost && !document.hidden &&
+      current() === "session" && $("camera-view").hidden,
+  });
+  progressiveBoard = surface;
+  const isTutor = identity => room === connectedRoom &&
+    connectedRoom.remoteParticipants.get(identity)?.kind === ParticipantKind.AGENT &&
+    (!tutorIdentity || identity === tutorIdentity);
+  registerBoard(connectedRoom, surface, isTutor);
+  let localSpeaking = false;
   room
+    .on(RoomEvent.AudioPlaybackStatusChanged, () => {
+      if (room === connectedRoom) $("enable-playback").hidden = connectedRoom.canPlaybackAudio;
+    })
+    .on(RoomEvent.ActiveSpeakersChanged, participants => {
+      const speaking = participants.some(p => p.identity === connectedRoom.localParticipant.identity);
+      if (!manualTurns && speaking && !localSpeaking) surface.interrupt();
+      localSpeaking = speaking;
+    })
     .on(RoomEvent.ParticipantConnected, watchTutor)
     .on(RoomEvent.ParticipantAttributesChanged, (_changed, participant) => watchTutor(participant))
     .on(RoomEvent.ParticipantDisconnected, (participant) => {
@@ -1493,8 +1543,8 @@ async function join(session, { resumed = false } = {}) {
     onTranscription(reader, participant).catch(() => undefined);
   });
 
-  room.registerTextStreamHandler(VISUAL_TOPIC, (reader) => {
-    onVisual(reader);
+  room.registerTextStreamHandler(VISUAL_TOPIC, (reader, participant) => {
+    if (isTutor(participant.identity)) onVisual(reader, () => isTutor(participant.identity));
   });
 
   room.registerTextStreamHandler(CHOICES_TOPIC, (reader) => {
@@ -1502,7 +1552,13 @@ async function join(session, { resumed = false } = {}) {
   });
 
   await room.connect(session.serverUrl, session.token);
-  await room.startAudio();
+  try {
+    await room.startAudio();
+  } catch (error) {
+    if (error.name !== "NotAllowedError") throw error;
+    // Safari may need a fresh gesture after the network round trip to join.
+    $("enable-playback").hidden = false;
+  }
   setTutorState("waiting");
   // Until the tutor is in, after a while, the page says Aule did not arrive.
   tutorTimer = setTimeout(tutorMissing, TUTOR_WAIT_MS);
@@ -1743,6 +1799,7 @@ function askAgain() {
 }
 
 document.addEventListener("visibilitychange", () => {
+  progressiveBoard?.interrupt();
   if (document.visibilityState === "visible") askAgain();
 });
 
@@ -1906,6 +1963,8 @@ function play(tune) {
 function teardown({ quiet = false } = {}) {
   if (!room) return false;
   const leaving = room;
+  $("enable-playback").hidden = true;
+  progressiveBoard = null;
   room = null;
   turnGeneration += 1;
   connectionLost = false;
@@ -2039,6 +2098,7 @@ need("session", () => room !== null);
  * its own labels around it are the interface's (index.html, `session`).
  */
 function sessionWords() {
+  writeWords($("enable-playback"), "enable_playback");
   const language = sessionLanguage();
   writeWords($("end"), "end_session");
   writeWords($("type-send"), "send");
@@ -2052,6 +2112,17 @@ function sessionWords() {
     element.lang = language;
   }
 }
+
+$("enable-playback").addEventListener("click", async () => {
+  const target = room;
+  if (!target) return;
+  try {
+    await target.startAudio();
+    if (target === room) $("enable-playback").hidden = true;
+  } catch {
+    if (target === room) $("enable-playback").hidden = false;
+  }
+});
 
 $("lobby-mic").addEventListener("click", () => {
   if (micTrouble) return;

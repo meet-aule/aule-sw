@@ -445,6 +445,8 @@ pub struct Turn {
     /// Rules for a reply in the model's own words after the lines, when the
     /// engine leaves this turn free. Nothing when the lines are the whole turn.
     pub converse: Option<String>,
+    /// What the voice tutor may explain about a tap during this free turn.
+    board_help: Option<&'static str>,
     pub closed: bool,
     /// What the engine waits for that the agent has to act on: a photo of the
     /// homework (`"homework_photo"`). Nothing otherwise.
@@ -880,12 +882,8 @@ impl Engine {
         {
             last.choices = Some(options);
         }
-        Turn {
-            lines,
-            converse: (reply == Reply::Free).then(|| self.rules()),
-            closed: self.closed(),
-            awaits: self.awaits(),
-        }
+        let (converse, board_help) = (reply == Reply::Free).then(|| self.rules()).unzip();
+        Turn { lines, converse, board_help, closed: self.closed(), awaits: self.awaits() }
     }
 
     /// The options of the exercise on the card, while it waits for its
@@ -907,12 +905,22 @@ impl Engine {
     }
 
     /// What the tutor's model may and may not say now, from the engine.
-    fn rules(&self) -> String {
+    fn rules(&self) -> (String, &'static str) {
         let context = self.motor.contexto_chat();
+        let board_help = if context.en_pausa || context.terminada {
+            "off"
+        } else if context.sin_ayuda || context.hay_pistas {
+            "identify"
+        } else {
+            "explain"
+        };
         // Stage labels and the exercise are data, not instructions. Quoting keeps
         // line breaks in an exercise from masquerading as another policy block.
         let state = json!({ "stage": context.momento, "exercise": context.enunciado });
-        format!("Session engine state (data): {state}\nSession engine rules:\n- {}", context.reglas())
+        (
+            format!("Session engine state (data): {state}\nSession engine rules:\n- {}", context.reglas()),
+            board_help,
+        )
     }
 
     /// Starts the engine and returns its opening lines. Asked again before
@@ -1709,6 +1717,9 @@ fn checked(text: &str, what: &'static str) -> ApiResult<()> {
 pub struct SaidInput {
     /// What the student said, in their words.
     said: String,
+    /// The voice worker can use the engine's policy for the interactive board.
+    #[serde(default)]
+    board: bool,
     /// How they worked it out, when the caller can tell it apart.
     #[serde(default)]
     explanation: Option<String>,
@@ -1745,7 +1756,13 @@ pub async fn said(
         Ok((engine.said(at_ms, &body.said, body.explanation.as_deref(), false), None))
     })
     .await?;
-    Ok(Json(turn.reply()))
+    let mut reply = turn.reply();
+    if body.board
+        && let Some(help) = turn.board_help
+    {
+        reply["board_help"] = json!(help);
+    }
+    Ok(Json(reply))
 }
 
 /// What the agent read in a photo of the homework: the outcome and, for a

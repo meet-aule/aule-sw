@@ -641,6 +641,18 @@ async def test_a_session_run_by_the_engine_opens_with_its_lines_and_asks_it_each
     assert await platform.said("otra cosa") is None
 
 
+async def test_only_a_board_worker_requests_the_engines_board_policy():
+    send = Recorder({"lines": [], "converse": "Stay with the task.", "board_help": "identify"})
+    platform = Platform(SESSION, send, progressive_board=True)
+    reply = await platform.said("¿Por qué esta?")
+    assert reply and reply.board_help == "identify"
+    assert send.calls[-1] == (
+        "POST",
+        "/v1/agent/session/said",
+        {"said": "¿Por qué esta?", "board": True},
+    )
+
+
 async def test_a_session_without_an_engine_is_not_scripted(monkeypatch):
     monkeypatch.setattr("aule_agent.platform.START_RETRY_SECONDS", 0)
     platform = Platform(SESSION, Recorder({"instructions": "Liam."}))

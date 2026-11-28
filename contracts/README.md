@@ -29,6 +29,39 @@ cd apps/agent && uv run pytest          # Python: same examples, plus the agent'
 
 ## Visuals
 
+### Progressive board pilot
+
+Set `AULE_PROGRESSIVE_BOARD=1` on the voice worker to enable the Playground
+pilot. It uses the existing `show` tool, session audio and monochrome SVG
+renderer. The step-by-step interaction is inspired by
+[Whiteboard AI Tutor](https://github.com/molly554/whiteboard-ai-tutor).
+
+The linked learner's screen handles the LiveKit RPC `aule.board.v1`. A read
+returns its revision, visible rows or rectangle, the tutor's mark and the
+learner's selected part. Every change must match that revision. A tap, a new
+press to speak, a new drawing, hiding the screen or a reconnect invalidates
+outstanding changes. An interrupted turn keeps the drawing on the screen.
+Each new learner turn reads the screen again. All board state lives in the
+room and tab for the session's lifetime.
+
+[Steps](board/step.v1.schema.json) and [acknowledged views](board/view.v1.schema.json)
+bound the data on this path. A bar can have up to twelve cells and a board
+holds up to four bars. Rectangles use whole centimetres. The
+[sample lessons](board/lesson.v1.example.json) compare one half to two quarters
+and work through an eight-by-three rectangle. The existing visual stream
+serves screens with an older client.
+
+To check in Safari, start a voice session with the pilot enabled. Ask for a
+single bar showing one half, answer the tutor, then ask to add two quarters.
+Tap the third cell of the second bar and ask why it is unshaded. Ask for the
+rectangle, tap its right side and ask about its length. Hold the talk button
+while another change is pending and check that the last drawing stays visible.
+The agent and Playground regression tests exercise the same fixtures,
+including an interruption before moderation finishes and a stale delivery
+after a new press.
+
+### Other visuals
+
 `visuals/visual.v1.schema.json` describes what the tutor can put on the student's screen: the statement of an exercise, fraction bars, a number line, an array of dots, a table, a bar chart or a rectangle with its sides. It is a description, not a picture. The agent's `show` tool takes exactly this shape, checks it and sends it to the room on the text-stream topic `aule.visual`; each screen draws it itself, in black on white, so it costs nothing to render and works on e-ink. A bar or a circle has its fraction written next to it unless the fraction says `labelled: false`, for when the fraction is what the student has to find. A new kind needs its example here, a drawing in every screen that shows visuals, and a line in the tool's description.
 
 ## Choices

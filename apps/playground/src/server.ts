@@ -116,6 +116,7 @@ const STATIC: Record<string, { file: string | URL; type: string }> = {
   "/words/es.js": { file: new URL("words/es.js", publicDir), type: "text/javascript; charset=utf-8" },
   "/words/en.js": { file: new URL("words/en.js", publicDir), type: "text/javascript; charset=utf-8" },
   "/visuals.js": { file: new URL("visuals.js", publicDir), type: "text/javascript; charset=utf-8" },
+  "/board.js": { file: new URL("board.js", publicDir), type: "text/javascript; charset=utf-8" },
   // The answers a student can tap under the tutor's question.
   "/choices.js": { file: new URL("choices.js", publicDir), type: "text/javascript; charset=utf-8" },
   // Aule's face: the cuy the mascot's engine draws, and the arithmetic that shows it in pixel art.
@@ -261,6 +262,7 @@ const OWN_SCRIPTS = new Set([
   "/words/es.js",
   "/words/en.js",
   "/visuals.js",
+  "/board.js",
   "/choices.js",
   "/cuy.js",
   "/pixels.js",

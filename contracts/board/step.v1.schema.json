@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/meet-aule/aule-sw/contracts/board/step.v1.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "action": {
+      "enum": [
+        "start_bars",
+        "add_bar",
+        "start_rectangle",
+        "mark"
+      ]
+    },
+    "numerator": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 12
+    },
+    "denominator": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 12
+    },
+    "width": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 50
+    },
+    "height": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 50
+    },
+    "part": {
+      "type": "string",
+      "pattern": "^(top|right|bottom|left|r[1-4]c([1-9]|1[0-2]))$"
+    }
+  },
+  "required": [
+    "action"
+  ],
+  "oneOf": [
+    {
+      "properties": {
+        "action": {
+          "enum": [
+            "start_bars",
+            "add_bar"
+          ]
+        },
+        "numerator": true,
+        "denominator": true
+      },
+      "required": [
+        "numerator",
+        "denominator"
+      ],
+      "maxProperties": 3
+    },
+    {
+      "properties": {
+        "action": {
+          "enum": [
+            "start_rectangle"
+          ]
+        },
+        "width": true,
+        "height": true
+      },
+      "required": [
+        "width",
+        "height"
+      ],
+      "maxProperties": 3
+    },
+    {
+      "properties": {
+        "action": {
+          "enum": [
+            "mark"
+          ]
+        },
+        "part": true
+      },
+      "required": [
+        "part"
+      ],
+      "maxProperties": 2
+    }
+  ]
+}

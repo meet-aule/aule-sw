@@ -54,7 +54,7 @@ def _validator() -> Draft202012Validator:
 DRAWN_BY_THE_AGENT = {"contour": ("count", "segments", "expected")}
 
 
-def tool_schema() -> dict[str, Any]:
+def tool_schema(*, progressive: bool = False) -> dict[str, Any]:
     """The ``show`` tool as the model sees it.
 
     The model's API refuses ``allOf`` at the top of a tool's schema, so the rule
@@ -65,6 +65,18 @@ def tool_schema() -> dict[str, Any]:
     hidden = {field for fields in DRAWN_BY_THE_AGENT.values() for field in fields}
     properties = {key: value for key, value in whole["properties"].items() if key not in hidden}
     kinds = [kind for kind in whole["properties"]["kind"]["enum"] if kind not in DRAWN_BY_THE_AGENT]
+    description = DESCRIPTION
+    if progressive:
+        from . import board
+
+        kinds.append("board_step")
+        # Keep conditional constraints in the validator. Providers accept these simple
+        # object properties on the same existing show tool.
+        step = board.validator("step").schema
+        properties["change"] = {
+            k: step[k] for k in ("type", "additionalProperties", "properties", "required")
+        }
+        description += board.TOOL_HELP
     properties["kind"] = {**whole["properties"]["kind"], "enum": kinds}
     parameters = {
         key: value
@@ -72,7 +84,7 @@ def tool_schema() -> dict[str, Any]:
         if not key.startswith("$") and key not in ("allOf", "properties")
     }
     parameters["properties"] = properties
-    return {"name": "show", "description": DESCRIPTION, "parameters": parameters}
+    return {"name": "show", "description": description, "parameters": parameters}
 
 
 def problems(visual: object) -> list[str]:

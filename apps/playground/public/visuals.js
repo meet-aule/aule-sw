@@ -3,6 +3,8 @@
 // model and no state, so a drawing appears the moment the tutor asks for it.
 // Black on white only: the same descriptions go to an e-ink screen.
 
+import { wordsIn } from "./i18n.js";
+
 export const TOPIC = "aule.visual";
 
 // The device's e-ink panel is 800x480 (Good Display GDEY075T7); drawing at
@@ -106,13 +108,23 @@ function exercise(v, top) {
   return lines.map((raw, i) => inlineMath(W / 2, first + i * gap, raw, size)).join("");
 }
 
-function fractionBars(v, top) {
+// Transparent hit areas share the exact geometry of the ink underneath them.
+// The light and dark outlines remain legible over either a filled or an empty cell.
+function target(id, label, shape, board) {
+  return `<g role="button" tabindex="0" data-part="${id}" aria-label="${escape(label)}" aria-pressed="${board.point === id}" data-marked="${board.mark === id}">` +
+    `<${shape} class="board-hit"/><${shape} class="board-outline"/><${shape} class="board-trace"/></g>`;
+}
+
+function fractionBars(v, top, board) {
   const left = 60;
-  const width = 440;
-  const height = Math.min(52, (H - top - 30) / v.fractions.length - 18);
+  const width = board && v.fractions.every(f => f.labelled === false) ? W - 2 * left : 440;
+  const gap = board ? 26 : 18;
+  const height = Math.min(board ? 84 : 52, (H - top - 30) / v.fractions.length - gap);
+  const groupHeight = (height + gap) * v.fractions.length - gap;
+  const firstY = board ? top + (H - top - groupHeight) / 2 : top + 10;
   return v.fractions
     .map((fraction, i) => {
-      const y = top + 10 + i * (height + 18);
+      const y = firstY + i * (height + gap);
       const parts = fraction.denominator;
       const part = width / parts;
       // More parts than the bar holds (an improper fraction) fill the whole bar.
@@ -129,6 +141,13 @@ function fractionBars(v, top) {
       }
       cells += rect(left, y, width, height);
       // Nothing is written next to a shape whose fraction is the question.
+      if (board) {
+        for (let k = 0; k < parts; k += 1) {
+          const cell = k + 1;
+          const label = wordsIn(board.language, "first.board_cell", { row: i + 1, cell, total: parts });
+          cells += target(`r${i + 1}c${cell}`, label, `rect x="${left + k * part + 2}" y="${y + 2}" width="${part - 4}" height="${height - 4}"`, board);
+        }
+      }
       if (fraction.labelled === false) return cells;
       const label = fraction.label ?? `${fraction.numerator}/${fraction.denominator}`;
       return cells + text(left + width + 20, y + height / 2 + 8, label, { size: 24, anchor: "start", weight: 600, room: W - left - width - 30 });
@@ -299,7 +318,7 @@ function barChart(v, top) {
   );
 }
 
-function rectangle(v, top) {
+function rectangle(v, top, board) {
   const room = { w: W - 220, h: H - top - 80 };
   const scale = Math.min(room.w / v.width, room.h / v.height);
   const w = Math.max(v.width * scale, 40);
@@ -307,10 +326,19 @@ function rectangle(v, top) {
   const x = (W - w) / 2;
   const y = top + (H - top - h) / 2 - 10;
   const unit = v.unit ? ` ${v.unit}` : "";
+  const labelSize = board ? 32 : 20;
+  const sides = [
+    ["top", x, y, x + w, y],
+    ["right", x + w, y, x + w, y + h],
+    ["bottom", x, y + h, x + w, y + h],
+    ["left", x, y, x, y + h],
+  ];
+  const targets = board ? sides.map(([id, x1, y1, x2, y2]) =>
+    target(id, wordsIn(board.language, `first.board_${id}`), `line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}"`, board)).join("") : "";
   return (
     rect(x, y, w, h) +
-    text(x + w / 2, y + h + 30, `${show(v.width)}${unit}`, { size: 20, weight: 600 }) +
-    text(x + w + 14, y + h / 2 + 7, `${show(v.height)}${unit}`, { size: 20, anchor: "start", weight: 600, room: W - x - w - 24 })
+    text(x + w / 2, y + h + (board ? 40 : 30), `${show(v.width)}${unit}`, { size: labelSize, weight: 600 }) +
+    text(x + w + 14, y + h / 2 + 7, `${show(v.height)}${unit}`, { size: labelSize, anchor: "start", weight: 600, room: W - x - w - 24 }) + targets
   );
 }
 
@@ -467,17 +495,18 @@ const KINDS = {
 };
 
 /** The visual as an SVG document. Throws on a kind it does not know. */
-export function renderVisual(visual) {
+export function renderVisual(visual, board = undefined) {
   const draw = KINDS[visual?.kind];
   if (!draw) throw new Error(`unknown kind of visual: ${visual?.kind}`);
   const top = visual.title ? 58 : 20;
   const title = visual.title ? text(W / 2, 38, visual.title, { size: 22, weight: 600 }) : "";
+  const boardTitle = board && wordsIn(board.language, "first.board_title");
   return (
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="${escape(visual.title ?? visual.kind)}" font-family="${FONT}" fill="${INK}">` +
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" role="${board ? "group" : "img"}" aria-label="${escape(visual.title ?? (board ? boardTitle : visual.kind))}" font-family="${FONT}" fill="${INK}">` +
     `<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="${INK}"/></marker></defs>` +
     `<rect width="${W}" height="${H}" fill="#fff"/>` +
     title +
-    draw(visual, top) +
+    draw(visual, top, board) +
     "</svg>"
   );
 }
