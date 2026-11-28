@@ -162,8 +162,8 @@ is in `src/passthrough.ts`.
   does not answer: never a token, an id or a body.
 
 The family API accepts connections only from the local host. Its Worker sends the
-bearer and body through a dedicated Cloudflare Access application and encrypted
-tunnel to the local connector. The Worker returns 503 when its protected origin
+bearer and body over a dedicated encrypted tunnel. The playground checks the
+Worker's origin credential before handling a mobile request. The Worker returns 503 when its protected origin
 is unavailable. Provision and verify that route before rolling out this server
 or distributing a native build to families. See the [mobile API rollout](../../infra/edge/README.md#family-mobile-api).
 

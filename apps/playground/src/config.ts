@@ -16,6 +16,8 @@ export type Settings = {
   livekitApiKey: string;
   livekitApiSecret: string;
   accessCode: string;
+  /** Credential sent only by the mobile API Worker over its dedicated tunnel. */
+  mobileOriginSecret: string;
   agentName: string;
   sessionMinutes: number;
   /** Sessions one signed-in account may start in a day. */
@@ -63,6 +65,7 @@ export function readSettings(env: Record<string, string | undefined>): Settings 
   }
 
   const accessCode = get("PLAYGROUND_ACCESS_CODE");
+  const mobileOriginSecret = get("MOBILE_API_ORIGIN_SECRET");
   if (accessCode.length < MIN_ACCESS_CODE_LENGTH) {
     problems.push(`PLAYGROUND_ACCESS_CODE must have at least ${MIN_ACCESS_CODE_LENGTH} characters`);
   }
@@ -127,6 +130,7 @@ export function readSettings(env: Record<string, string | undefined>): Settings 
     livekitApiKey: get("LIVEKIT_API_KEY"),
     livekitApiSecret: get("LIVEKIT_API_SECRET"),
     accessCode,
+    mobileOriginSecret: /^[0-9a-f]{64}$/.test(mobileOriginSecret) ? mobileOriginSecret : "",
     agentName: get("AULE_AGENT_NAME", "aule-tutor"),
     sessionMinutes,
     dailySessions,

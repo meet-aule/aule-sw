@@ -1,8 +1,8 @@
 {
   // The session page. Deploy: wrangler deploy -c wrangler.playground.jsonc
   // Its origin: wrangler secret put ORIGIN_URL -c wrangler.playground.jsonc
-  // The mobile API needs MOBILE_API_ORIGIN, MOBILE_ACCESS_CLIENT_ID and
-  // MOBILE_ACCESS_CLIENT_SECRET. Provision its protected tunnel first (README.md).
+  // The mobile API needs MOBILE_API_ORIGIN and MOBILE_API_ORIGIN_SECRET.
+  // Provision its protected tunnel first (README.md).
   "name": "aule-playground-funnel",
   "main": "src/playground.js",
   "compatibility_date": "2025-11-01",

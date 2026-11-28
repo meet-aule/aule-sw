@@ -18,6 +18,7 @@ export default {
     origin.search = url.search;
     // The incoming request's headers cannot be changed; a copy can.
     const headers = new Headers(request.headers);
+    headers.delete("X-Aule-Mobile-Origin");
     stripAnalyticsCookies(headers);
     return fetch(origin.toString(), {
       method: request.method,
@@ -36,20 +37,18 @@ function mobileError(status) {
 }
 
 // Mobile requests still go through the playground's route and bearer checks. The
-// dedicated hostname is protected by a service-token-only Cloudflare Access policy.
+// local connector terminates the encrypted tunnel. The playground checks the
+// Worker's credential before accepting even an anonymous sign-in route.
 async function mobileApi(request, url, path, env) {
   if (url.protocol !== "https:" || url.hostname !== "playground.meetaule.com") return mobileError(403);
-  if (!env.MOBILE_ACCESS_CLIENT_ID || !env.MOBILE_ACCESS_CLIENT_SECRET) return mobileError(503);
+  if (!/^[0-9a-f]{64}$/.test(env.MOBILE_API_ORIGIN_SECRET ?? "")) return mobileError(503);
   try {
     const origin = new URL(env.MOBILE_API_ORIGIN);
     if (origin.protocol !== "https:" || origin.hostname === url.hostname || origin.username || origin.password ||
         origin.pathname !== "/" || origin.search || origin.hash) return mobileError(503);
     origin.pathname = path;
     origin.search = url.search;
-    const headers = new Headers({
-      "CF-Access-Client-Id": env.MOBILE_ACCESS_CLIENT_ID,
-      "CF-Access-Client-Secret": env.MOBILE_ACCESS_CLIENT_SECRET,
-    });
+    const headers = new Headers({ "X-Aule-Mobile-Origin": env.MOBILE_API_ORIGIN_SECRET });
     for (const name of ["Authorization", "Content-Type"]) {
       const value = request.headers.get(name);
       if (value !== null) headers.set(name, value);
@@ -57,7 +56,7 @@ async function mobileApi(request, url, path, env) {
     const upstream = await fetch(origin.toString(), {
       method: request.method, headers, body: request.body, redirect: "manual", cache: "no-store",
     });
-    // An Access login redirect or cookie must not move or authenticate the mobile client.
+    // A proxy error page or redirect must not change the mobile client's origin.
     const type = upstream.headers.get("content-type");
     if ((upstream.status >= 300 && upstream.status < 400) || type?.toLowerCase().startsWith("text/html")) {
       return mobileError(503);

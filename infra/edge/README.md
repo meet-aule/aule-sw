@@ -27,44 +27,36 @@ The shop and the brand site have their own Worker in the store's repository.
 
 The playground Worker routes `/session/api/v1` and its subpaths to a dedicated
 HTTPS service origin. The Worker forwards the guardian's bearer and JSON body.
-It supplies its own Access service credentials. The existing playground process
-checks the public sign-in routes and each authenticated route on the origin.
-Only a local socket can reach the family API. Other web and LiveKit paths keep
-their existing routes.
+The Worker adds its own `X-Aule-Mobile-Origin` credential. The playground
+accepts mobile requests from the local connector only and verifies this
+credential before serving any route, including sign-in. The platform receives
+the family's bearer and the request content type.
 
-Provision this route before deploying the playground Worker or the server:
+1. Generate 32 random bytes encoded as 64 lowercase hex characters. Set
+   `MOBILE_API_ORIGIN_SECRET` in the playground-only environment file
+   (`.env.mobile-origin`, or the file named by `AULE_MOBILE_ORIGIN_ENV_FILE`).
+   Restrict the file to the service operator. Stage the same value as a secret
+   in the playground Worker, along with the HTTPS URL in `MOBILE_API_ORIGIN`.
+   Preserve the existing `ORIGIN_URL` for web routes. Keep secret values out
+   of command arguments, source control and logs.
+2. Configure the dedicated outbound Cloudflare Tunnel to send the hostname
+   and path `^/session/api/v1(/.*)?$` to `http://127.0.0.1:8090`. Set
+   `http_status:404` as the catch-all and restrict the connector credentials
+   to the host. Check the connector is healthy before adding public DNS.
+3. When no tutoring sessions are in progress, deploy the reviewed playground.
+   Verify from the host that an anonymous GET of `/session/api/v1/me` returns
+   404 without the Worker credential and the platform's JSON 401 with it.
+   Check the public web resources and health endpoint after restarting.
+4. Route only the dedicated hostname to the tunnel. Its mobile paths must
+   return 404 without the credential, and other paths must return the tunnel's
+   404. Activate the reviewed Worker and check that the public mobile API
+   returns its JSON 401 for an anonymous GET of `/session/api/v1/me`. Collect
+   no real family tokens during verification.
 
-1. Create a dedicated Access service token and a self-hosted Access application
-   for the entire dedicated hostname. Its only policy is **Service Auth** with
-   the specific token selected. Set a rotation reminder for its expiry.
-   [Cloudflare service token guide](https://developers.cloudflare.com/cloudflare-one/access-controls/service-credentials/service-tokens/)
-2. Run an outbound `cloudflared` tunnel on the origin host. Store the connector
-   credential on the host with restricted permissions. Configure one ingress
-   rule matching the dedicated hostname and path `^/session/api/v1(/.*)?$`,
-   with service `http://127.0.0.1:8090`. Require Access JWT validation at the
-   connector with the account team name and this application's audience.
-   Finish with `http_status:404` as the catch-all. Point only the dedicated
-   hostname's proxied DNS record to this tunnel once the policy is active.
-3. Verify that an unauthenticated request directly to the dedicated hostname
-   is denied by Access. Through the service-authenticated route, an anonymous
-   GET of `/session/api/v1/me` must return the playground's JSON 401, and a
-   request outside the API prefix must return the tunnel's 404. Keep tokens
-   out of command arguments, shell history, CI and request logs.
-4. Stage the reviewed playground Worker with the three secret bindings
-   `MOBILE_API_ORIGIN` (the HTTPS origin URL without a path),
-   `MOBILE_ACCESS_CLIENT_ID` and `MOBILE_ACCESS_CLIENT_SECRET`. Preserve the
-   existing `ORIGIN_URL` binding for the website. Activate the staged version
-   and check anonymous GETs through the **public app URL**: the same JSON 401
-   at `/session/api/v1/me`, a 404 for an unknown mobile route and a 200 at
-   `/session/healthz`.
-5. When no tutoring sessions are active, deploy the playground process with
-   the loopback-only API check and repeat the three public checks. Record the
-   reviewed Worker version before distributing the native clients.
-
-If the tunnel or Access policy fails, keep the mobile route on this version
-or another reviewed version with the same protection. Removing the mobile
-origin binding makes this route return an uncached 503 while the website
-continues operating. Keep the loopback-only origin check in any rollback.
+If the tunnel fails, keep the previous website origin available for its web
+routes. Remove `MOBILE_API_ORIGIN` from the mobile-aware Worker to return an
+uncached 503 for mobile traffic during recovery. Retain the playground's
+local-peer and credential checks in any rollback.
 
 ## OTA firmware
 

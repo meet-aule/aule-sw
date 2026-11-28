@@ -162,6 +162,8 @@ export function appApi(settings: Settings, limits: Limits = LIMITS) {
     // must not be a second entrance, even if a caller supplies proxy headers.
     const peer = request.socket.remoteAddress;
     if (peer !== "127.0.0.1" && peer !== "::1" && peer !== "::ffff:127.0.0.1") return NOT_FOUND;
+    const proof = request.headers["x-aule-mobile-origin"];
+    if (!settings.mobileOriginSecret || typeof proof !== "string" || !sameCode(proof, settings.mobileOriginSecret)) return NOT_FOUND;
     const platform = settings.platform;
     const route = platform ? routeOf(request.method ?? "", path) : undefined;
     if (!platform || !route) return NOT_FOUND;

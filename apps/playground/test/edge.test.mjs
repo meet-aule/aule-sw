@@ -40,8 +40,7 @@ test("the guide goes to the web origin with its query", async (t) => {
 const MOBILE_ENV = {
   ORIGIN_URL: "http://origin.invalid:8090",
   MOBILE_API_ORIGIN: "https://protected-origin.example.test",
-  MOBILE_ACCESS_CLIENT_ID: "test-client-id",
-  MOBILE_ACCESS_CLIENT_SECRET: "test-service-secret",
+  MOBILE_API_ORIGIN_SECRET: "01".repeat(32),
 };
 const MOBILE = "https://playground.meetaule.com/session/api/v1";
 
@@ -53,7 +52,7 @@ test("the mobile API carries its bearer and body over the protected origin with 
       method: init.method,
       authorization: init.headers.get("authorization"),
       type: init.headers.get("content-type"),
-      credentials: [init.headers.get("cf-access-client-id"), init.headers.get("cf-access-client-secret")],
+      originProof: init.headers.get("x-aule-mobile-origin"),
       keys: [...init.headers.keys()].sort(),
       redirect: init.redirect,
       cache: init.cache,
@@ -74,8 +73,7 @@ test("the mobile API carries its bearer and body over the protected origin with 
         authorization: `Bearer ${token}`,
         "content-type": "application/json",
         cookie: "origin-cookie=value",
-        "cf-access-client-id": "caller",
-        "cf-access-client-secret": "caller",
+        "x-aule-mobile-origin": "caller",
         "x-forwarded-host": "untrusted.example.test",
       },
       body,
@@ -88,8 +86,8 @@ test("the mobile API carries its bearer and body over the protected origin with 
       method: "POST",
       authorization: `Bearer ${token}`,
       type: "application/json",
-      credentials: [MOBILE_ENV.MOBILE_ACCESS_CLIENT_ID, MOBILE_ENV.MOBILE_ACCESS_CLIENT_SECRET],
-      keys: ["authorization", "cf-access-client-id", "cf-access-client-secret", "content-type"],
+      originProof: MOBILE_ENV.MOBILE_API_ORIGIN_SECRET,
+      keys: ["authorization", "content-type", "x-aule-mobile-origin"],
       redirect: "manual",
       cache: "no-store",
       body,
@@ -112,8 +110,8 @@ test("plain transport, a different public host or missing protected-origin setti
     { MOBILE_API_ORIGIN: "invalid" },
     { MOBILE_API_ORIGIN: MOBILE_ENV.MOBILE_API_ORIGIN + "/another-path" },
     { MOBILE_API_ORIGIN: "https://playground.meetaule.com" },
-    { MOBILE_ACCESS_CLIENT_ID: "" },
-    { MOBILE_ACCESS_CLIENT_SECRET: undefined },
+    { MOBILE_API_ORIGIN_SECRET: "too-short" },
+    { MOBILE_API_ORIGIN_SECRET: undefined },
   ]) {
     assert.equal((await playground.fetch(new Request(MOBILE + "/me"), { ...MOBILE_ENV, ...bad })).status, 503);
   }
@@ -123,7 +121,7 @@ test("plain transport, a different public host or missing protected-origin setti
 test("anonymous sign-in and paths normalized by the playground use the encrypted route; another prefix keeps its original route", async (t) => {
   const sent = [];
   t.mock.method(globalThis, "fetch", async (url, init) => {
-    sent.push([String(url), init.headers.get("authorization"), init.headers.get("cf-access-client-id")]);
+    sent.push([String(url), init.headers.get("authorization"), init.headers.get("x-aule-mobile-origin")]);
     return new Response(null, { status: 204 });
   });
   const publicHost = "https://playground.meetaule.com";
@@ -137,20 +135,20 @@ test("anonymous sign-in and paths normalized by the playground use the encrypted
     await playground.fetch(new Request(publicHost + path, { method }), MOBILE_ENV);
   }
   const api = MOBILE_ENV.MOBILE_API_ORIGIN + "/session/api/v1";
-  const id = MOBILE_ENV.MOBILE_ACCESS_CLIENT_ID;
+  const proof = MOBILE_ENV.MOBILE_API_ORIGIN_SECRET;
   assert.deepEqual(sent, [
-    [api + "/auth/start", null, id],
-    [api + "/auth/verify", null, id],
-    [api + "/auth/google", null, id],
-    [api + "/me?limit=1", null, id],
+    [api + "/auth/start", null, proof],
+    [api + "/auth/verify", null, proof],
+    [api + "/auth/google", null, proof],
+    [api + "/me?limit=1", null, proof],
     [MOBILE_ENV.ORIGIN_URL + "/session/api/v10/me", null, null],
   ]);
 });
 
-test("an unavailable, redirecting or HTML Access origin returns an uncached API error without following or exposing the redirect", async (t) => {
+test("an unavailable, redirecting or HTML origin returns an uncached API error without following or exposing the redirect", async (t) => {
   for (const upstream of [
     () => Response.redirect("https://login.example.test"),
-    () => new Response("Access sign-in", { status: 403, headers: { "Content-Type": "text/html" } }),
+    () => new Response("Proxy error", { status: 403, headers: { "Content-Type": "text/html" } }),
     () => Promise.reject(new Error("transport unavailable")),
   ]) {
     const send = t.mock.method(globalThis, "fetch", upstream);
