@@ -1178,6 +1178,10 @@ class Tutor(Agent):
         # session's pace and its platform.
         self.on_goodbye: Callable[[], None] | None = None
         self.on_unavailable: Callable[[], None] | None = None
+        # What hears that the student finished a turn, spoken or typed, before
+        # anything is decided about it: the pace counts it as their being
+        # there. It is told nothing of what was said.
+        self.on_heard: Callable[[], None] | None = None
 
     def _goodbye(self, text: str) -> bool:
         """Whether this turn was the student's goodbye, and the session now closes."""
@@ -1636,6 +1640,8 @@ class Tutor(Agent):
         trace = new_turn()
         if self._timing is not None:
             self._timing.traced(trace)
+        if self.on_heard is not None:
+            self.on_heard()
         self._meanwhile_due = self._hold_on_due = True
         self._drew = False
         turn = self._starts_a_turn()
@@ -1700,6 +1706,8 @@ class Tutor(Agent):
         if not text:
             return None
         new_turn()
+        if self.on_heard is not None:
+            self.on_heard()
         self._meanwhile_due = self._hold_on_due = True
         self._drew = False
         turn = self._starts_a_turn()

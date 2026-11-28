@@ -228,6 +228,32 @@ async def test_a_student_who_answers_the_question_keeps_the_session():
     assert session.closed_at is None and not made.closed_for_inactivity
 
 
+async def test_a_turn_that_never_joins_the_conversation_still_keeps_the_session():
+    # One the engine answers or a gate stops: the student is there all the same.
+    made, session, time = pace()
+    task = asyncio.create_task(made.watch())
+    while not session.said:
+        await asyncio.sleep(0)
+    made.student_is_there()
+    end = time.now + IDLE_CLOSE_SECONDS + 30
+    while time.now < end:
+        await asyncio.sleep(0)
+    task.cancel()
+
+    assert [text for _, text, _, _ in session.said] == [line("still_there")]
+    assert session.closed_at is None and not made.closed_for_inactivity
+
+
+async def test_such_a_turn_does_not_end_a_break():
+    made, session, time = pace(break_minutes=10)
+    await made.take_a_break()
+    made.student_is_there()
+
+    # Still on the break: nothing is asked of a student who is resting.
+    await watched(made, time, IDLE_ASK_SECONDS * 2)
+    assert [text for _, text, _, _ in session.said] == [line(BREAKS[0])]
+
+
 async def test_silence_while_the_tutor_talks_or_on_a_break_is_not_inactivity():
     made, session, time = pace(break_minutes=10)
     session.agent_state = "speaking"

@@ -1036,6 +1036,41 @@ async def test_a_turn_the_gates_stop_never_reaches_the_engine():
     assert not to_the_model and engine.heard == []
 
 
+async def test_a_turn_the_engine_answers_or_a_gate_stops_still_says_the_student_is_there():
+    # Neither joins the conversation as an added message, where the pace hears of
+    # the others: counted as silence, they closed a session on a student who was
+    # talking (2026-11-27).
+    engine = ScriptedEngine([Line("hola")], Reply(lines=(Line("¿Y por qué?"),)))
+    tutor, session = Tutor(language="es", gates=ScriptedGates(ALLOW), engine=engine), Session()
+    there = []
+    tutor.on_heard = lambda: there.append("answered by the engine")
+
+    to_the_model, _ = await scripted_turn(tutor, session, "cinco sextos")
+
+    assert not to_the_model and engine.heard == ["cinco sextos"]
+    assert there == ["answered by the engine"]
+
+    stopped = ScriptedEngine([Line("hola")], Reply(lines=(Line("x"),)))
+    tutor, session = Tutor(language="es", gates=ScriptedGates(HAZARD), engine=stopped), Session()
+    tutor.on_heard = lambda: there.append("stopped by a gate")
+
+    to_the_model, _ = await scripted_turn(tutor, session)
+
+    assert not to_the_model and stopped.heard == []
+    assert there == ["answered by the engine", "stopped by a gate"]
+
+
+async def test_a_typed_message_says_the_student_is_there_and_an_empty_one_does_not():
+    tutor, session = Tutor(language="es", gates=ScriptedGates(HAZARD)), Session()
+    there = []
+    tutor.on_heard = lambda: there.append("typed")
+
+    await type_to(tutor, session, "   ")
+    assert there == []
+    await type_to(tutor, session, "no entiendo la pregunta")
+    assert there == ["typed"]
+
+
 async def test_without_an_engine_the_turn_is_the_models_as_before():
     tutor, session = Tutor(language="es", gates=ScriptedGates(ALLOW)), Session()
 

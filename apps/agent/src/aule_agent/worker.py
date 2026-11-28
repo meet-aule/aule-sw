@@ -527,6 +527,10 @@ async def entrypoint(ctx: JobContext) -> None:
         task.add_done_callback(asides.discard)
 
     tutor.on_goodbye = goodbye
+    # Every turn the student finishes says they are there: one the engine
+    # answers or a gate stops is never added to the conversation, where
+    # ``back_from_a_break`` hears of the rest.
+    tutor.on_heard = pace.student_is_there
 
     async def close_without_a_model() -> None:
         # The tutor's model cannot answer any more: the student hears why, and
