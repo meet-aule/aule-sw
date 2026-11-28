@@ -3,6 +3,24 @@
 // less, in British spelling.
 
 export default {
+  resources: {
+    title: "Fraction activities",
+    intro: "Fifth-grade maths. Choose an activity to work through in a notebook at home or in class.",
+    pick: "Activity",
+    goal: "Learning goal",
+    prompt: "Learner’s exercise",
+    plan: "How to guide practice",
+    rubric: "What to look for",
+    example: "Worked example",
+    exit: "Try it independently",
+    key: "Adult answer key",
+    practice: "Practise this exercise with Aule",
+    download: "Download editable guide (.md)",
+    print: "Print activity",
+    license: "Apache 2.0 licence",
+    home: "Back to Aule",
+    source: "Original material by Aule",
+  },
   billing: {
     reserved: '{months} included months reserved until free access ends.',
     "title": "My plan and payments",
@@ -428,6 +446,8 @@ export default {
     kind_explore: "I want to learn something new",
     kind_none: "I don't know",
     kind_exam_review: "Go over a test I already took",
+    practice_sheet: "Practice with “{title}”",
+    practice_edit: "You can change the question you want to practice with.",
     details_line: "If you like, tell Aule what it's about.",
     details_subject: "Subject",
     details_due: "What day is it for?",
