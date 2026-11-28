@@ -752,19 +752,30 @@ test("the logo's letters are cream on the entry's near-dark and nowhere else: th
   assert.doesNotMatch(html + Object.values(guides).join("") + Object.values(scripts).join(""), /aule-logo-dark/);
 });
 
+// The one rule inside the tab's icon: its bolder drawing at 40 px or less, the whole mark above.
+const ICON_SIZES = "<style>.small{display:none}@media (max-width:40px){.full{display:none}.small{display:inline}}</style>";
+
 test("the logo and the icon are drawings and nothing else: no script, no address, no picture inside, no palette of their own", async () => {
   for (const name of ["aule-logo.svg", "aule-logo-dark.svg", "icon.svg"]) {
     const svg = await read(name);
     assert.match(svg, /^<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg" viewBox="0 0 \d+ \d+"/, name);
-    // Only shapes: a title, groups and paths.
-    assert.deepEqual([...new Set([...svg.matchAll(/<([a-zA-Z][\w:-]*)/g)].map(([, tag]) => tag))].sort(), ["g", "path", "svg", "title"], name);
+    // Only shapes: a title, groups and paths; the icon also has the one rule that says which of its two drawings shows.
+    assert.deepEqual([...new Set([...svg.matchAll(/<([a-zA-Z][\w:-]*)/g)].map(([, tag]) => tag))].sort(), name === "icon.svg" ? ["g", "path", "style", "svg", "title"] : ["g", "path", "svg", "title"], name);
     assert.doesNotMatch(svg, /<script|\son[a-z]+\s*=|javascript:/i, `${name}: script`);
     assert.doesNotMatch(svg.replace('xmlns="http://www.w3.org/2000/svg"', ""), /https?:|\/\/|href|url\(|@import|<use|<foreignObject/i, `${name}: a reference`);
     assert.doesNotMatch(svg, /<image|data:|base64/i, `${name}: an embedded picture`);
     // A logo that changed with the system's palette would change on the paper screens too.
-    assert.doesNotMatch(svg, /<style|@media|prefers-color-scheme|currentColor/i, `${name}: a palette of its own`);
+    assert.doesNotMatch(name === "icon.svg" ? svg.replace(ICON_SIZES, "") : svg, /<style|@media|prefers-color-scheme|currentColor/i, `${name}: a palette of its own`);
     assert.match(svg, /<title>Aule<\/title>/, name);
   }
+  // The icon is two drawings of the cuy in one file, and its own size says which shows: the whole mark, or, drawn
+  // 40 px wide or less (a tab), a bolder one of its outline, its patch and its eye. One rule, about size alone.
+  const icon = await read("icon.svg");
+  assert.equal(icon.split("<style").length - 1, 1);
+  assert.ok(icon.includes(`<title>Aule</title>\n${ICON_SIZES}\n<g class="full" `), "the rule, then the whole mark");
+  assert.deepEqual([...icon.matchAll(/<g class="(\w+)"/g)].map(([, drawing]) => drawing), ["full", "small"]);
+  assert.equal(icon.split(" class=").length - 1, 2, "nothing else is named for a rule");
+  assert.doesNotMatch(icon, /\sstyle=/);
   // The two logos are one drawing: only the letters' colour differs, cream on the near-dark.
   const [light, dark] = [await read("aule-logo.svg"), await read("aule-logo-dark.svg")];
   assert.equal(dark.replace('<g id="letters" fill="#fdf3e6">', '<g id="letters">'), light);
