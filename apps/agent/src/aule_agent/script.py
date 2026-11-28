@@ -57,6 +57,8 @@ class Reply:
     # The engine's own activity is over while the room stays open: its rules
     # then ask the model for a goodbye, which is said (``closing``).
     over: bool = False
+    # The engine owns hints and measurements. Older platforms leave them to it.
+    board_help: Literal["off", "identify", "explain"] = "off"
 
 
 class Engine(Protocol):
@@ -111,4 +113,12 @@ def reply_from(value: object) -> Reply | None:
         return None
     awaits = next((known for known in AWAITS if value.get("awaits") == known), None)
     over = value.get("over") is True
-    return Reply(lines=lines, converse=rules, closed=closed, awaits=awaits, over=over)
+    help_mode = value.get("board_help")
+    return Reply(
+        lines=lines,
+        converse=rules,
+        closed=closed,
+        awaits=awaits,
+        over=over,
+        board_help=help_mode if help_mode in ("identify", "explain") else "off",
+    )

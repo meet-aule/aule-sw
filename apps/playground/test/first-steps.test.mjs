@@ -127,6 +127,7 @@ const SPEC_KEYS = [
   "conversation",
   "you",
   "you_typed",
+  "board_hint", "enable_playback", "board_title", "board_cell", "board_top", "board_right", "board_bottom", "board_left",
   "talk_not_started",
   "turn_unheard",
   "message_failed",

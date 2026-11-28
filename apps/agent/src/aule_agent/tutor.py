@@ -44,7 +44,7 @@ from livekit.agents.voice.generation import (
     mark_instructions_cache_boundary,
 )
 
-from . import answers, asking, choices, closing, comparison, drill, farewell, visuals
+from . import answers, asking, board, choices, closing, comparison, drill, farewell, visuals
 from .greetings import greeting as written_greeting
 from .homework import Reading
 from .observability import new_turn
@@ -185,6 +185,13 @@ class _Turn:
     # Its words, once they passed every gate, when they may be checked.
     words: str = ""
     check: TurnCheck | None = None
+    view: board.View | None = None
+    board_read: bool = False
+    board_reply: str = ""
+    board_help: str = "explain"
+    board_legacy: bool = False
+    board_interrupted: bool = False
+    board_used: bool = False
 
 
 # The student's turn that the reply running now answers, with the tutor it
@@ -949,7 +956,9 @@ def _check_pair(said: str, told: str) -> list[llm.ChatItem]:
     return [call, output]
 
 
-async def present(visual: object, gates: Gates, show: Show) -> str:
+async def present(
+    visual: object, gates: Gates, show: Callable[[dict[str, Any]], Awaitable[bool | None]]
+) -> str:
     """Puts a visual on the student's screen, if it can be drawn and may be read.
 
     Returns what the model is told next. The model tends to call the tool
@@ -963,7 +972,8 @@ async def present(visual: object, gates: Gates, show: Show) -> str:
     # What is read on the screen passes the same gate as what is spoken.
     if not (await gates.spoken(visuals.text_of(visual))).allowed:
         return "Not shown: that text cannot be put on the screen."
-    await show(visual)
+    if await show(visual) is False:
+        return "Screen did not confirm the drawing. Continue from the last confirmed view."
     return SHOWN
 
 
@@ -988,6 +998,7 @@ class Tutor(Agent):
         voice: tts.TTS | None = None,
         voice_ahead: bool = False,
         offer: Offer | None = None,
+        board_exchange: board.Exchange | None = None,
     ) -> None:
         # `context` is what the platform knows about this student and the
         # supervisor's plan for the session; empty when there is no platform.
@@ -1014,6 +1025,7 @@ class Tutor(Agent):
         self._checker = checker
         # The student's turn now. Before the first nothing was stopped.
         self._turn = _Turn(passed=True)
+        self._board = board_exchange
         # The open exercise the tutor stepped off with a pose the checker did not
         # take (not arithmetic it can check, or a call that failed): the tutor
         # asks something else, and the exercise stays open behind it.
@@ -1028,9 +1040,50 @@ class Tutor(Agent):
         if show is not None:
             instructions = with_notes(instructions, SCREEN)
 
-            @function_tool(raw_schema=visuals.tool_schema())
+            if self._board:
+                instructions = with_notes(instructions, board.RULE)
+
+            @function_tool(raw_schema=visuals.tool_schema(progressive=self._board is not None))
             async def show_tool(raw_arguments: dict[str, object]) -> str:
-                told = await present(raw_arguments, gates, show)
+                send = show
+                if self._board:
+                    turn = self._turn_answered()
+                    if raw_arguments.get("kind") == "board_step":
+                        return await self._board_step(turn, raw_arguments)
+                    if turn.board_interrupted or turn.board_used or turn is not self._turn:
+                        return "Keep the visible drawing and wait for the learner."
+                    if (
+                        turn.view
+                        and raw_arguments.get("kind") in ("fraction_bars", "rectangle")
+                        and not visuals.problems(raw_arguments)
+                    ):
+                        change = turn.view.from_visual(raw_arguments)
+                        if turn.board_help != "explain":
+                            return "Keep the current drawing. The session engine owns its hints."
+                        if change == {}:
+                            return (
+                                f"{turn.view.note} Already visible. To add a mark use "
+                                'kind=board_step, change={"action":"mark","part":"top"} '
+                                "with the intended part. A title does not mark it."
+                            )
+                        if change:
+                            return await self._board_step(
+                                turn, {"kind": "board_step", "change": change}
+                            )
+                    if turn.view:
+                        turn.board_used = True
+
+                    async def guarded(visual: dict) -> bool | None:
+                        if turn is not self._turn or turn.board_interrupted:
+                            return False
+                        if turn.view:
+                            return await self._replace_board(turn, visual)
+                        if not turn.board_legacy:
+                            return False
+                        return await show(visual)
+
+                    send = guarded
+                told = await present(raw_arguments, gates, send)
                 self._drew = self._drew or told == SHOWN
                 return told
 
@@ -1212,6 +1265,72 @@ class Tutor(Agent):
             return answering[1]
         return _Turn(passed=True)
 
+    async def _read_board(self, turn: _Turn) -> None:
+        if self._board and turn is self._turn and not turn.board_interrupted:
+            result = await board.exchange(self._board, {"read": True})
+            if turn is self._turn and not turn.board_interrupted:
+                turn.board_read = True
+                turn.board_legacy = result.get("unsupported") is True
+                turn.view = board.View.read(result.get("view"))
+
+    def board_interrupted(self) -> None:
+        if self._board:
+            self._turn.board_interrupted = True
+            self._script_turn += 1
+
+    async def _replace_board(self, turn: _Turn, visual: dict) -> bool:
+        assert self._board and turn.view
+        result = await board.exchange(
+            self._board, {"expect": turn.view.revision, "replace": visual}
+        )
+        turn.view = board.View.read(result.get("view"))
+        return result.get("applied") is True and turn.view is not None
+
+    async def _board_step(self, turn: _Turn, arguments: dict[str, object]) -> str:
+        wait = "Keep the visible drawing. Ask one question and wait for the learner."
+        if turn is not self._turn or turn.board_interrupted or turn.board_used or not turn.passed:
+            return wait
+        if turn.board_help != "explain":
+            return "Keep the current drawing. The session engine owns this activity and its hints."
+        view = turn.view
+        if not self._board or not view:
+            return "Interactive board unavailable. Continue by voice."
+        if set(arguments) != {"kind", "change"}:
+            return "Use only kind and change."
+        step = arguments["change"]
+        try:
+            scene = view.advance(step)
+        except ValueError as error:
+            return str(error)
+        # Reserve before yielding: LiveKit can run two tool calls concurrently.
+        turn.board_used = True
+        if not (await self._gates.spoken(board.View(view.revision, scene, None).note)).allowed:
+            return "Drawing withheld. Continue by voice."
+        if turn is not self._turn or turn.board_interrupted:
+            return wait
+        assert isinstance(step, dict)
+        result = await board.exchange(
+            self._board,
+            {
+                "expect": view.revision,
+                "scene": scene,
+                "keepPoint": step["action"] in ("mark", "add_bar"),
+            },
+        )
+        turn.view = board.View.read(result.get("view"))
+        if turn is not self._turn or turn.board_interrupted:
+            return wait
+        if not turn.view:
+            return "Drawing unconfirmed. Continue by voice without assuming it appeared."
+        if (
+            result.get("applied") is not True
+            or turn.view.revision == view.revision
+            or turn.view.scene != scene
+        ):
+            return f"Drawing changed before this step. {turn.view.note} {wait}"
+        self._drew = True
+        return f"{turn.view.note} {wait}"
+
     def _after_a_fixed_line(self) -> bool:
         """Whether the tutor's last line was a fixed one that is not part of the
         work: a gate's reply, the output gate's in place of a reply included."""
@@ -1236,6 +1355,10 @@ class Tutor(Agent):
         leaves the turn as before.
         """
         turn.passed = True
+        if turn.view and turn.board_help != "off":
+            turn.board_reply = turn.view.reference_reply(
+                words, self._language, identify_only=turn.board_help == "identify"
+            )
         if self._checker is None:
             return []
         answers_a_line = turn.after_a_stop or self._after_a_fixed_line()
@@ -1422,10 +1545,31 @@ class Tutor(Agent):
         student's part (what is known of them, the plan, then the tone) and
         the notes of this moment, which end with the output-language rule:
         the last instruction of every request, after any update."""
+        board_note = ""
+        if self._board:
+            turn = self._turn_answered()
+            if turn.view and turn.board_help == "explain":
+                board_note = turn.view.note
+            elif turn.view and turn.board_help == "identify":
+                board_note = (
+                    turn.view.describe(explain=False)
+                    + " Identify their selection only. The engine supplies hints."
+                )
+            elif turn.view and turn.board_help == "off":
+                board_note = "The board is paused. Follow the session engine."
+            elif turn.board_read:
+                board_note = (
+                    "Interactive board unconfirmed. Do not rely on earlier drawings or selections."
+                )
         return Prompt(
             rules=self._rules,
             student=_joined(self._context, self._tone),
-            notes=_joined(self._guidance, self._rules_for_talk, response_language(self._language)),
+            notes=_joined(
+                self._guidance,
+                self._rules_for_talk,
+                board_note,
+                response_language(self._language),
+            ),
         )
 
     async def on_enter(self) -> None:
@@ -1539,7 +1683,18 @@ class Tutor(Agent):
                 # that is over, drawing included.
                 break
             if line.show is not None and self._show is not None:
-                await self._show(line.show)
+                learner = self._turn
+                if self._board:
+                    await self._read_board(learner)
+                    if turn != self._script_turn or learner.board_interrupted:
+                        break
+                if learner.view:
+                    if not await self._replace_board(learner, line.show):
+                        break
+                elif not self._board or learner.board_legacy:
+                    await self._show(line.show)
+                if turn != self._script_turn:
+                    break
             # One after the other: a drawing goes up with the line it belongs to.
             played = await self.session.say(
                 line.say, add_to_chat_ctx=True, allow_interruptions=True
@@ -1589,6 +1744,7 @@ class Tutor(Agent):
             return False
         await self._after_the_photo()
         reply = await self._engine.said(text)
+        self._turn_answered().board_help = reply.board_help if reply is not None else "off"
         # Like the rules for talk, what the engine waits for is what its
         # answer says; no answer, and the turn is the model's, as without it.
         self._awaits = reply.awaits if reply is not None else None
@@ -1648,7 +1804,8 @@ class Tutor(Agent):
         # A spoken turn during a drill is the student's try (a typed one never comes here).
         self._drill.took()
         self._drop_voice()
-        self._ask_early(turn_ctx, new_message)
+        if not self._board:
+            self._ask_early(turn_ctx, new_message)
         try:
             if not await self._may_answer(turn_ctx, new_message):
                 # The stopped turn gets no reply: StopResponse discards it. An
@@ -1659,6 +1816,7 @@ class Tutor(Agent):
                 raise StopResponse()
             if self._goodbye(new_message.text_content or ""):
                 raise StopResponse()
+            await self._read_board(turn)
             if await self._scripted(new_message.text_content or ""):
                 # The engine answered; the model is not asked.
                 await self._keep(new_message)
@@ -1717,6 +1875,7 @@ class Tutor(Agent):
             return None
         if self._goodbye(text):
             return None
+        await self._read_board(turn)
         if await self._scripted(text):
             await self._keep(message)
             return None
@@ -1982,6 +2141,7 @@ class Tutor(Agent):
         """The talk button went down: what was heard before is not this turn's,
         and neither is a reply asked for an earlier one, or its voice."""
         self._words_in_flight = False
+        self.board_interrupted()
         self._drop_early_reply()
         self._drop_voice()
 
@@ -2138,6 +2298,17 @@ class Tutor(Agent):
         prompt = self._prompt()
         # A new step: what the voice was given for an earlier one is not said now.
         self._drop_voice()
+        turn = self._turn_answered()
+        if turn.board_reply:
+
+            async def reference() -> AsyncIterable[str]:
+                yield turn.board_reply
+
+            if turn is self._turn and not turn.board_interrupted:
+                async for chunk in self._said(reference(), [], took):
+                    if turn is self._turn and not turn.board_interrupted:
+                        yield chunk
+            return
         # Read by the model's client as the request is laid out (``providers``),
         # with the instructions as they are now.
         REQUEST.set(prompt)

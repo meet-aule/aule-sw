@@ -14,7 +14,7 @@ const read = (name) => readFile(new URL(name, pub), "utf8");
 const html = await read("index.html");
 const css = await read("style.css");
 const guides = { es: await read("guia.html"), en: await read("guide.html") };
-const ownScripts = ["app.js", "students.js", "signin.js", "steps.js", "screens.js", "onboarding.js", "home.js", "practice-intent.js", "teaching-resources.js", "session-messages.js", "first-steps.js", "summaries.js", "reviews.js", "visuals.js", "choices.js", "cuy.js", "pixels.js", "i18n.js", "language.js", "words/es.js", "words/en.js"];
+const ownScripts = ["app.js", "students.js", "signin.js", "steps.js", "screens.js", "onboarding.js", "home.js", "practice-intent.js", "teaching-resources.js", "session-messages.js", "first-steps.js", "summaries.js", "reviews.js", "visuals.js", "board.js", "choices.js", "cuy.js", "pixels.js", "i18n.js", "language.js", "words/es.js", "words/en.js"];
 const scripts = Object.fromEntries(await Promise.all(ownScripts.map(async (name) => [name, await read(name)])));
 
 /** The body of every block that starts with `opening`, braces and all. */
@@ -131,7 +131,7 @@ test("the page's own modules import each other without a cycle, as the plan draw
   // Aule's face, the cuy and its pixels, is data and arithmetic: the session's page is all that takes them.
   assert.deepEqual(graph["cuy.js"], []);
   assert.deepEqual(graph["pixels.js"], []);
-  assert.deepEqual([...graph["app.js"]].sort(), ["choices.js", "cuy.js", "first-steps.js", "home.js", "i18n.js", "pixels.js", "screens.js", "session-messages.js", "visuals.js"]);
+  assert.deepEqual([...graph["app.js"]].sort(), ["board.js", "choices.js", "cuy.js", "first-steps.js", "home.js", "i18n.js", "pixels.js", "screens.js", "session-messages.js", "visuals.js"]);
   // The answers to tap are drawn from what the tutor sent, with the words they are handed.
   assert.deepEqual(graph["choices.js"], []);
   // And none, followed through, comes back to itself.
@@ -1232,7 +1232,7 @@ test("the session puts Aule's face on a stage, which a drawing or the camera tak
   const app = scripts["app.js"];
   // What the stage shows comes from the camera's view and the board, and every change of either says so.
   assert.match(bodyOf(app, "showStage"), /\$\("stage"\)\.dataset\.shows = !\$\("camera-view"\)\.hidden \? "camera" : !\$\("board"\)\.hidden \? "drawing" : "face";/);
-  for (const name of ["draw", "showCamera", "teardown"]) assert.match(bodyOf(app, name), /\bshowStage\(\);/, name);
+  for (const name of ["paintBoard", "showCamera", "teardown"]) assert.match(bodyOf(app, name), /\bshowStage\(\);/, name);
   // A new exercise, or the one in hand posed again, brings the board back to it (D40).
   assert.match(bodyOf(app, "boardToCard"), /\$\("board"\)\.hidden = true;\s*boardShows = null;\s*showStage\(\);/);
   // A drawing stays until the next one, a new exercise or the end: no timer brings the face back.

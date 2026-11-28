@@ -23,6 +23,7 @@ function page() {
   const mic = [], rpc = [], messages = [];
   const button = { setAttribute() {} };
   const state = {
+    progressiveBoard: null,
     manualTurns: true, talking: false, tutorReady: true, tutorIdentity: "synthetic-tutor",
     wanted: { mic: true }, connectionLost: false, turnGeneration: 0,
     talkStarted: Promise.resolve(false), closingTurn: false,

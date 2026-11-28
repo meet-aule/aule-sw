@@ -26,7 +26,7 @@ from livekit.agents import (
 )
 from livekit.plugins import silero
 
-from . import choices, observability, visuals
+from . import board, choices, observability, visuals
 from ._version import __version__
 from .camera import Camera
 from .config import LANGUAGES, ConfigError, Settings, build_commit
@@ -458,12 +458,37 @@ async def entrypoint(ctx: JobContext) -> None:
     # What each read uses is paid like the tutor's own calls and counted with them.
     course = platform.homework_course if platform and platform.scripted else None
     reader = HomeworkReader(course, counted=usage.looked) if course is not None else None
+
+    unsupported_screen = None
+
+    async def board_exchange(message: dict) -> str:
+        nonlocal unsupported_screen
+        participant = session.room_io.linked_participant
+        if participant is None:
+            return ""
+        if participant.sid == unsupported_screen:
+            return '{"unsupported":true}'
+        try:
+            async with asyncio.timeout(2):
+                return await ctx.room.local_participant.perform_rpc(
+                    destination_identity=participant.identity,
+                    method=board.RPC,
+                    payload=json.dumps(message, separators=(",", ":")),
+                    response_timeout=1.5,
+                )
+        except rtc.RpcError as error:
+            if error.code == rtc.RpcError.ErrorCode.UNSUPPORTED_METHOD:
+                unsupported_screen = participant.sid
+                return '{"unsupported":true}'
+            raise
+
     tutor = Tutor(
         language=language,
         gates=gates,
         camera=camera,
         context=context,
         show=show,
+        board_exchange=board_exchange if settings.progressive_board else None,
         offer=offer,
         persona=persona,
         student_name=platform.student_name if platform else None,
@@ -503,6 +528,12 @@ async def entrypoint(ctx: JobContext) -> None:
         "user_state_changed", lambda event: timing.user_state(event.old_state, event.new_state)
     )
     session.on("agent_state_changed", lambda event: timing.agent_state(event.new_state))
+    if settings.progressive_board and not settings.push_to_talk:
+
+        @session.on("user_state_changed")
+        def interrupt_drawing(event) -> None:
+            if event.new_state == "speaking":
+                tutor.board_interrupted()
 
     def break_taken(count: int) -> None:
         if platform:
@@ -723,6 +754,8 @@ async def entrypoint(ctx: JobContext) -> None:
     ctx.room.local_participant.register_rpc_method("answered", answered)
     # Tells the page that the button has somebody to answer it.
     await ctx.room.local_participant.set_attributes({"aule.show_work": "rpc"})
+    if settings.progressive_board:
+        await ctx.room.local_participant.set_attributes({board.RPC: "1"})
     if settings.push_to_talk:
         await enable_push_to_talk(ctx, session, timing, tutor, gates)
     logger.info("session started", extra={"audience": audience, "language": language})

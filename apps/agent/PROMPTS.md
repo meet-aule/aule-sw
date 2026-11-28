@@ -40,7 +40,15 @@ in order, are:
    when the engine permits conversation. Those restrictions govern the current
    stage: for example, screening permits vocabulary clarification but no solving
    hints, and the engine owns its exercise and grading.
-7. One final output-language rule, on creation and after every update.
+7. With `AULE_PROGRESSIVE_BOARD=1`, the screen policy permits one visual step per
+   learner turn. The current turn's notes describe the screen's acknowledged
+   drawing, tutor mark and selected cell or side. Only validated numbers and
+   part IDs reach these notes. Tapping a part makes no model request. Generic
+   questions about the selected part get a short, gated explanation derived
+   directly from the drawing. The session engine limits this to identification
+   during screening or while the engine supplies the hints and turns it off
+   during breaks and closing.
+8. One final output-language rule, on creation and after every update.
 
 An answer the student gives to an open exercise is checked in code once their
 turn has passed every input gate. The check is not a block of the prompt: it

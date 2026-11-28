@@ -172,6 +172,7 @@ def happened(monkeypatch: pytest.MonkeyPatch) -> list[Any]:
         break_minutes=30,
         early_reply=False,
         voice_ahead=False,
+        progressive_board=False,
         posthog_api_key=None,
         posthog_host=None,
     )

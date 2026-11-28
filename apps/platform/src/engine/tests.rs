@@ -555,6 +555,7 @@ fn talk_three_times_running_at_a_question_gets_the_question_again() {
     for said in ["mi perro se llama Rocky", "hoy comí pizza"] {
         let turn = student.says(said);
         assert!(turn.lines.is_empty() && turn.converse.is_some(), "{turn:?}");
+        assert_eq!(turn.reply()["board_help"], "identify");
     }
     // The third time running, the engine says its question again and that is
     // the whole turn: the model is not asked. By voice a misheard number is
@@ -1196,7 +1197,10 @@ fn every_exercise_of_the_bank_practises_a_skill_of_the_curriculum() {
 fn time_acts_without_the_student_speaking() {
     // Before the session started, time does nothing and starts nothing.
     let mut idle = engine(Goal::Homework);
-    assert_eq!(idle.pass(60_000), Turn { lines: Vec::new(), converse: None, closed: false, awaits: None });
+    assert_eq!(
+        idle.pass(60_000),
+        Turn { lines: Vec::new(), converse: None, board_help: None, closed: false, awaits: None }
+    );
     assert!(!idle.started() && idle.unsaved().is_empty());
 
     let mut student = in_practice();

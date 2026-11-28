@@ -445,6 +445,8 @@ pub struct Turn {
     /// Rules for a reply in the model's own words after the lines, when the
     /// engine leaves this turn free. Nothing when the lines are the whole turn.
     pub converse: Option<String>,
+    /// What the voice tutor may explain about a tap during this free turn.
+    board_help: Option<&'static str>,
     pub closed: bool,
     /// What the engine waits for that the agent has to act on: a photo of the
     /// homework (`"homework_photo"`). Nothing otherwise.
@@ -456,6 +458,9 @@ impl Turn {
     /// waits for something, so a session that never does answers as before.
     fn reply(&self) -> Value {
         let mut reply = json!({ "lines": self.lines, "converse": self.converse, "closed": self.closed });
+        if let Some(help) = self.board_help {
+            reply["board_help"] = json!(help);
+        }
         if let Some(awaits) = self.awaits {
             reply["awaits"] = json!(awaits);
         }
@@ -880,12 +885,8 @@ impl Engine {
         {
             last.choices = Some(options);
         }
-        Turn {
-            lines,
-            converse: (reply == Reply::Free).then(|| self.rules()),
-            closed: self.closed(),
-            awaits: self.awaits(),
-        }
+        let (converse, board_help) = (reply == Reply::Free).then(|| self.rules()).unzip();
+        Turn { lines, converse, board_help, closed: self.closed(), awaits: self.awaits() }
     }
 
     /// The options of the exercise on the card, while it waits for its
@@ -907,12 +908,22 @@ impl Engine {
     }
 
     /// What the tutor's model may and may not say now, from the engine.
-    fn rules(&self) -> String {
+    fn rules(&self) -> (String, &'static str) {
         let context = self.motor.contexto_chat();
+        let board_help = if context.en_pausa || context.terminada {
+            "off"
+        } else if context.sin_ayuda || context.hay_pistas {
+            "identify"
+        } else {
+            "explain"
+        };
         // Stage labels and the exercise are data, not instructions. Quoting keeps
         // line breaks in an exercise from masquerading as another policy block.
         let state = json!({ "stage": context.momento, "exercise": context.enunciado });
-        format!("Session engine state (data): {state}\nSession engine rules:\n- {}", context.reglas())
+        (
+            format!("Session engine state (data): {state}\nSession engine rules:\n- {}", context.reglas()),
+            board_help,
+        )
     }
 
     /// Starts the engine and returns its opening lines. Asked again before

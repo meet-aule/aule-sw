@@ -13,6 +13,21 @@ const ajv = new Ajv2020({ allErrors: true, strict: true });
 addFormats(ajv);
 const validateEnvelope = ajv.compile(read('envelope.schema.json'));
 
+test('progressive steps and acknowledged views match the shared lesson examples', () => {
+  const step = ajv.compile(read('board/step.v1.schema.json'));
+  const view = ajv.compile(read('board/view.v1.schema.json'));
+  const revision = 'bb5afa6e-ce3c-482e-8512-b7e8c79fb60f';
+  for (const lesson of Object.values(read('board/lesson.v1.example.json'))) {
+    for (const item of lesson) {
+      assert.ok(step(item.step), JSON.stringify(step.errors));
+      assert.ok(view({ revision, scene: item.scene, point: null }), JSON.stringify(view.errors));
+    }
+  }
+  assert.equal(step({ action: 'mark', part: 'not a part' }), false);
+  assert.equal(step({ action: 'add_bar', numerator: 1, denominator: 2, part: 'top' }), false);
+  assert.equal(view({ revision, scene: null, point: null, words: 'text' }), false);
+});
+
 const types = readdirSync(new URL('events/', root))
   .filter((file) => file.endsWith('.schema.json'))
   .map((file) => file.replace('.schema.json', ''));

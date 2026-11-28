@@ -77,6 +77,7 @@ class Settings:
     # gate judges the reply. Nothing of it is heard before the gate approves
     # it; the voice's provider gets the sentence before the gate decides.
     voice_ahead: bool = False
+    progressive_board: bool = False
     # Whether TypeSafe's Jev reads a child's unsure words first and only a clear
     # "ordinary" from it is taken, the small model reading the rest as before
     # (opinion.py). Jev already reads every turn for the physical-safety gate.
@@ -167,6 +168,7 @@ class Settings:
             notes_after_history=notes_after_history,
             early_reply=early_reply,
             voice_ahead=voice_ahead,
+            progressive_board=get("AULE_PROGRESSIVE_BOARD").lower() in ("1", "true", "yes", "on"),
             jev_first_reading=jev_first_reading,
             openai_api_key=get(MODERATION_KEY) or None,
             typesafe_api_key=get(PHYSICAL_SAFETY_KEY) or None,
