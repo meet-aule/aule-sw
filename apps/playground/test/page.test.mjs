@@ -679,7 +679,7 @@ test("every signed-out visit uses the shared entry, with the email field beside 
 });
 
 // Aule's logo as every wordmark holds it: named once, and sized in the markup so nothing moves as it loads.
-const LOGO = '<img src="aule-logo.svg" alt="Aule" width="65" height="32" />';
+const LOGO = '<img src="aule-logo.svg" alt="Aule" width="81" height="40" />';
 
 test("the wordmark is Aule's logo: one image named «Aule» at the head of every paper screen and of the guide (D49)", async () => {
   // A paragraph that holds the logo and nothing else: no name in type beside it, not a heading, not a link.
@@ -706,18 +706,22 @@ test("the wordmark is Aule's logo: one image named «Aule» at the head of every
   // The markup's size is the logo's own proportion (1502 by 745), to the pixel.
   const [, viewBox] = (await read("aule-logo.svg")).match(/<svg [^>]*viewBox="0 0 (\d+ \d+)"/);
   const [wide, tall] = viewBox.split(" ").map(Number);
-  assert.equal(Math.round((32 * wide) / tall), 65);
-  // Drawn by its height, the width following: 32 px, and on the entry 36 px, 44 from 960 px.
+  assert.equal(Math.round((40 * wide) / tall), 81);
+  // Drawn by its height, the width following: 40 px, and on the entry 52 px from 960 px.
   const rule = (text, selector) => rules(text).find(([found]) => found.split("\n").pop().trim() === selector)?.[1] ?? "";
-  assert.match(rule(css, ".wordmark img"), /display: block;\s*width: auto;\s*height: 32px;/);
-  assert.match(rule(css, ".entry .wordmark img"), /height: 36px;/);
+  assert.match(rule(css, ".wordmark img"), /display: block;\s*width: auto;\s*height: 40px;/);
+  assert.match(rule(css, ".entry .wordmark img"), /height: 40px;/);
   const wide960 = blocks(css, "@media (min-width: 960px) {").join("\n");
-  assert.match(rule(wide960, ".entry .wordmark img"), /height: 44px;/);
-  // No row grew for it: past the 25 px row of a paper screen by 7 px in all, and on the entry in the 28 px row its mark had.
+  assert.match(rule(wide960, ".entry .wordmark img"), /height: 52px;/);
+  // No row grew for it: past the 25 px row of a paper screen by 15 px in all, and on the entry in the 28 px row its mark
+  // had, more above the row than below, so it ends no nearer the eyebrow than it did when it was smaller.
   assert.match(rule(css, ".head-row"), /min-height: 25px;/);
-  assert.match(rule(css, ".head-row .wordmark"), /margin-block: -4px -3px;/);
-  assert.match(rule(css, ".entry .wordmark"), /margin-block: -4px;/);
-  assert.match(rule(wide960, ".entry .wordmark"), /margin-block: -8px;/);
+  assert.match(rule(css, ".head-row .wordmark"), /margin-block: -8px -7px;/);
+  assert.match(rule(css, ".entry .wordmark"), /margin-block: -8px -4px;/);
+  assert.match(rule(wide960, ".entry .wordmark"), /margin-block: -16px -8px;/);
+  // The guide's row is its link's height: the logo sits higher in it, clear of the line under the row.
+  assert.match(rule(css, ".guide-head"), /min-height: 25px;/);
+  assert.match(rule(css, ".guide-head .wordmark"), /margin-block: -6px 6px;/);
   // The name is not translated: no words of the page's are the logo's, in either language.
   assert.doesNotMatch(html, /<p class="wordmark"[^>]*data-i18n|<img[^>]*data-i18n/);
 });
@@ -748,19 +752,30 @@ test("the logo's letters are cream on the entry's near-dark and nowhere else: th
   assert.doesNotMatch(html + Object.values(guides).join("") + Object.values(scripts).join(""), /aule-logo-dark/);
 });
 
+// The one rule inside the tab's icon: its bolder drawing at 40 px or less, the whole mark above.
+const ICON_SIZES = "<style>@media (max-width:40px){.full{display:none}.small{display:inline}}</style>";
+
 test("the logo and the icon are drawings and nothing else: no script, no address, no picture inside, no palette of their own", async () => {
   for (const name of ["aule-logo.svg", "aule-logo-dark.svg", "icon.svg"]) {
     const svg = await read(name);
     assert.match(svg, /^<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg" viewBox="0 0 \d+ \d+"/, name);
-    // Only shapes: a title, groups and paths.
-    assert.deepEqual([...new Set([...svg.matchAll(/<([a-zA-Z][\w:-]*)/g)].map(([, tag]) => tag))].sort(), ["g", "path", "svg", "title"], name);
+    // Only shapes: a title, groups and paths; the icon also has the one rule that says which of its two drawings shows.
+    assert.deepEqual([...new Set([...svg.matchAll(/<([a-zA-Z][\w:-]*)/g)].map(([, tag]) => tag))].sort(), name === "icon.svg" ? ["g", "path", "style", "svg", "title"] : ["g", "path", "svg", "title"], name);
     assert.doesNotMatch(svg, /<script|\son[a-z]+\s*=|javascript:/i, `${name}: script`);
     assert.doesNotMatch(svg.replace('xmlns="http://www.w3.org/2000/svg"', ""), /https?:|\/\/|href|url\(|@import|<use|<foreignObject/i, `${name}: a reference`);
     assert.doesNotMatch(svg, /<image|data:|base64/i, `${name}: an embedded picture`);
     // A logo that changed with the system's palette would change on the paper screens too.
-    assert.doesNotMatch(svg, /<style|@media|prefers-color-scheme|currentColor/i, `${name}: a palette of its own`);
+    assert.doesNotMatch(name === "icon.svg" ? svg.replace(ICON_SIZES, "") : svg, /<style|@media|prefers-color-scheme|currentColor/i, `${name}: a palette of its own`);
     assert.match(svg, /<title>Aule<\/title>/, name);
   }
+  // The icon is two drawings of the cuy in one file, and its own size says which shows: the whole mark, or, drawn
+  // 40 px wide or less (a tab), a bolder one of its outline, its patch and its eye. One rule, about size alone.
+  const icon = await read("icon.svg");
+  assert.equal(icon.split("<style").length - 1, 1);
+  assert.ok(icon.includes(`<title>Aule</title>\n${ICON_SIZES}\n<g class="full" `), "the rule, then the whole mark");
+  assert.deepEqual([...icon.matchAll(/<g class="(\w+)"/g)].map(([, drawing]) => drawing), ["full", "small"]);
+  assert.equal(icon.split(" class=").length - 1, 2, "nothing else is named for a rule");
+  assert.doesNotMatch(icon, /\sstyle=/);
   // The two logos are one drawing: only the letters' colour differs, cream on the near-dark.
   const [light, dark] = [await read("aule-logo.svg"), await read("aule-logo-dark.svg")];
   assert.equal(dark.replace('<g id="letters" fill="#fdf3e6">', '<g id="letters">'), light);
@@ -884,7 +899,7 @@ test("the entry's type is the brand site's: its eyebrow in handwriting, its seri
 
 test("the entry leaves less air above its title on a screen that is not tall, so the small print ends above the cookie notice", () => {
   const rule = (text, selector) => rules(text).find(([found]) => found.split("\n").pop().trim() === selector)?.[1] ?? "";
-  // A phone: 64 px above the eyebrow, clear of Aule's logo (20 px down, 36 tall), and the card 24 under the help.
+  // A phone: 64 px above the eyebrow, clear of Aule's logo (16 px down, 40 tall), and the card 24 under the help.
   assert.match(rule(css, ".screen.entry:not([hidden])"), /padding: 64px 24px 32px;/);
   assert.match(rule(css, ".entry-card"), /margin-top: 24px;/);
   // Two columns on a screen up to 960 px tall: 80 px above, 56 from 1200 px wide, where the eyebrow passes beside the logo.

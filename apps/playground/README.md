@@ -21,12 +21,13 @@ D38), disabled for increased contrast, forced colours and printing.
 
 At the head of every paper screen and of the guide is Aule's logo, a hand-drawn
 cuy reading a notebook that stands for the «A» of «Aule»: one image named «Aule»
-(`public/aule-logo.svg`), 32 px tall, and 36 px (44 from 960 px wide) on the
-entry and its code step. Where those two are near-dark its letters are cream
+(`public/aule-logo.svg`), 40 px tall, and 52 px on the entry and its code step
+from 960 px wide. Where those two are near-dark its letters are cream
 (`public/aule-logo-dark.svg`); everywhere else they are brown, on paper. The tab
 icon (`public/icon.svg`) and the installation icons (the four PNGs) are the
-logo's cuy alone. The logo is not Aule's face: that is still the pixel cuy.
-FIGMA.md D49.
+logo's cuy alone; drawn 40 px wide or less, as in a tab, the icon shows a bolder
+cuy without its notebook, by a rule of its own inside the file. The logo is not
+Aule's face: that is still the pixel cuy. FIGMA.md D49.
 
 ### A child's first steps
 

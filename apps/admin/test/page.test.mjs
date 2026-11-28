@@ -161,22 +161,26 @@ test("every page but the sign-in has the same header, with its own link marked",
 test("every page has Aule's logo over the panel's title, once, and its cuy in the tab", async () => {
   for (const [name, html] of Object.entries(pages)) {
     // One image named «Aule», sized in the markup so the title does not move as it loads: not a heading, not a link.
-    assert.match(html, /<header>\s*<p class="wordmark"><img src="aule-logo\.svg" alt="Aule" width="65" height="32" \/><\/p>\s*<h1>Panel del equipo<\/h1>/, name);
+    assert.match(html, /<header>\s*<p class="wordmark"><img src="aule-logo\.svg" alt="Aule" width="81" height="40" \/><\/p>\s*<h1>Panel del equipo<\/h1>/, name);
     assert.equal(html.match(/<img\b/g).length, 1, name);
     assert.match(html, /<link rel="icon" href="icon\.svg" type="image\/svg\+xml" \/>/, name);
   }
-  assert.match(css, /\.admin \.wordmark img \{\s*display: block;\s*width: auto;\s*height: 32px;\s*\}/);
+  assert.match(css, /\.admin \.wordmark img \{\s*display: block;\s*width: auto;\s*height: 40px;\s*\}/);
   // The console is on paper only, so it has the logo with brown letters and no other.
   assert.match(css, /color-scheme: light;/);
   assert.doesNotMatch(css + Object.values(pages).join(""), /prefers-color-scheme|aule-logo-dark/);
   // Both files are drawings and nothing else: no script, no address, no picture inside, no palette of their own.
   for (const name of ["aule-logo.svg", "icon.svg"]) {
     const svg = await read(name);
-    assert.deepEqual([...new Set([...svg.matchAll(/<([a-zA-Z][\w:-]*)/g)].map(([, tag]) => tag))].sort(), ["g", "path", "svg", "title"], name);
+    // The icon also has the one rule that says which of its two drawings shows: its bolder one at 40 px or less, in a tab.
+    const sizes = "<style>@media (max-width:40px){.full{display:none}.small{display:inline}}</style>";
+    assert.equal(svg.split("<style").length - 1, name === "icon.svg" ? 1 : 0, name);
+    assert.equal(svg.includes(sizes), name === "icon.svg", name);
+    assert.deepEqual([...new Set([...svg.matchAll(/<([a-zA-Z][\w:-]*)/g)].map(([, tag]) => tag))].sort(), name === "icon.svg" ? ["g", "path", "style", "svg", "title"] : ["g", "path", "svg", "title"], name);
     assert.doesNotMatch(svg, /<script|\son[a-z]+\s*=|javascript:/i, `${name}: script`);
     assert.doesNotMatch(svg.replace('xmlns="http://www.w3.org/2000/svg"', ""), /https?:|\/\/|href|url\(|@import/i, `${name}: a reference`);
     assert.doesNotMatch(svg, /<image|data:|base64/i, `${name}: an embedded picture`);
-    assert.doesNotMatch(svg, /<style|@media|prefers-color-scheme/i, `${name}: a palette of its own`);
+    assert.doesNotMatch(svg.replace(sizes, ""), /<style|@media|prefers-color-scheme/i, `${name}: a palette of its own`);
   }
   assert.match(await read("aule-logo.svg"), /^<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg" viewBox="0 0 1502 745"/);
 });
