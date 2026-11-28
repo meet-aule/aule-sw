@@ -178,7 +178,11 @@ async fn billing_receipts_are_verified_once_and_refunds_cannot_be_replayed(pool:
     b.unwrap();
     let periods = subscription::Entity::find().all(&app.state.db).await.unwrap();
     assert_eq!(periods.len(), 1);
-    assert_eq!(periods[0].ends_at, paid.date_approved.unwrap().checked_add_months(Months::new(1)).unwrap());
+    // PostgreSQL stores microseconds; Linux's clock can supply nanoseconds.
+    assert_eq!(
+        periods[0].ends_at.timestamp_micros(),
+        paid.date_approved.unwrap().checked_add_months(Months::new(1)).unwrap().timestamp_micros()
+    );
     billing::apply_payment(&app.state, &row, Payment { status: "pending".into(), ..paid.clone() })
         .await
         .unwrap();
