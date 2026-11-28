@@ -19,6 +19,7 @@
 #   AULE_ADMIN_ENV_FILE                  the console's own env file, which no other service
 #                                        reads: its Worker's secret (ADMIN_EDGE_SECRET)
 #   AULE_BILLING_ENV_FILE                payment credentials, read only by platform and worker
+#   AULE_MOBILE_ORIGIN_ENV_FILE          mobile Worker credential, read only by the playground
 #
 # The services of this repository use the host network (Linux) and listen on
 # loopback only: put your reverse proxy in front of the playground and the
@@ -128,6 +129,10 @@ services:
 
   playground:
     <<: *service
+    env_file:
+      - ${AULE_ENV_FILE:-.env}
+      - path: ${AULE_MOBILE_ORIGIN_ENV_FILE:-.env.mobile-origin}
+        required: false
     build:
       context: .
       dockerfile: apps/playground/Dockerfile

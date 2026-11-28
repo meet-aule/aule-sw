@@ -1,9 +1,7 @@
 // The Workers in front of the server (infra/edge/src). The page's Worker turns
 // the bare address into the session page and keeps the query, so a shared
-// link's ?src= reaches the page. All three send any other request to the
-// server as it came, less the analytics cookies the brand site and the shop
-// leave on all of meetaule.com; the team console's sends the bare address too,
-// only over https, with its secret and the client's address added.
+// link's ?src= reaches the page. The mobile API has a dedicated origin.
+// Other requests lose the analytics cookies shared by the brand site and shop.
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { test } from "node:test";
@@ -29,7 +27,7 @@ test("the bare address opens the session page with its query, on the same site",
   }
 });
 
-test("any other address goes to the server as it came, query and all", async (t) => {
+test("the guide goes to the web origin with its query", async (t) => {
   const asked = [];
   t.mock.method(globalThis, "fetch", async (url) => {
     asked.push(url);
@@ -39,7 +37,14 @@ test("any other address goes to the server as it came, query and all", async (t)
   assert.deepEqual(asked, ["http://origin.invalid:8090/guia?src=cesar"]);
 });
 
-test("the family app's API reaches the server with its bearer and its body, and the answer comes back as it is", async (t) => {
+const MOBILE_ENV = {
+  ORIGIN_URL: "http://origin.invalid:8090",
+  MOBILE_API_ORIGIN: "https://protected-origin.example.test",
+  MOBILE_API_ORIGIN_SECRET: "01".repeat(32),
+};
+const MOBILE = "https://playground.meetaule.com/session/api/v1";
+
+test("the mobile API carries its bearer and body over the protected origin with the Worker's own credentials", async (t) => {
   const sent = [];
   t.mock.method(globalThis, "fetch", async (input, init) => {
     sent.push({
@@ -47,9 +52,16 @@ test("the family app's API reaches the server with its bearer and its body, and 
       method: init.method,
       authorization: init.headers.get("authorization"),
       type: init.headers.get("content-type"),
+      originProof: init.headers.get("x-aule-mobile-origin"),
+      keys: [...init.headers.keys()].sort(),
+      redirect: init.redirect,
+      cache: init.cache,
       body: init.body ? await new Response(init.body).text() : null,
     });
-    return new Response('{"id":"x"}', { status: 201, headers: { "content-type": "application/json" } });
+    return new Response('{"id":"x"}', {
+      status: 201,
+      headers: { "content-type": "application/json", "set-cookie": "example=value" },
+    });
   });
   const token = "ab".repeat(32);
   const body = JSON.stringify({ nickname: "Mati" });
@@ -57,22 +69,97 @@ test("the family app's API reaches the server with its bearer and its body, and 
   const response = await playground.fetch(
     new Request(`https://playground.meetaule.com/session/api/v1/families/${family}/children`, {
       method: "POST",
-      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+        cookie: "origin-cookie=value",
+        "x-aule-mobile-origin": "caller",
+        "x-forwarded-host": "untrusted.example.test",
+      },
       body,
     }),
-    { ORIGIN_URL: "http://origin.invalid:8090" },
+    MOBILE_ENV,
   );
   assert.deepEqual(sent, [
     {
-      url: `http://origin.invalid:8090/session/api/v1/families/${family}/children`,
+      url: `${MOBILE_ENV.MOBILE_API_ORIGIN}/session/api/v1/families/${family}/children`,
       method: "POST",
       authorization: `Bearer ${token}`,
       type: "application/json",
+      originProof: MOBILE_ENV.MOBILE_API_ORIGIN_SECRET,
+      keys: ["authorization", "content-type", "x-aule-mobile-origin"],
+      redirect: "manual",
+      cache: "no-store",
       body,
     },
   ]);
   assert.equal(response.status, 201);
+  assert.equal(response.headers.get("set-cookie"), null);
+  assert.equal(response.headers.get("cache-control"), "no-store");
   assert.equal(await response.text(), '{"id":"x"}');
+});
+
+test("plain transport, a different public host or missing protected-origin settings never reach either origin", async (t) => {
+  const send = t.mock.method(globalThis, "fetch", () => assert.fail("unexpected upstream request"));
+  for (const link of [MOBILE.replace("https:", "http:"), MOBILE.replace("playground.meetaule.com", "preview.example.test")]) {
+    assert.equal((await playground.fetch(new Request(link + "/me"), MOBILE_ENV)).status, 403);
+  }
+  for (const bad of [
+    { MOBILE_API_ORIGIN: undefined },
+    { MOBILE_API_ORIGIN: MOBILE_ENV.ORIGIN_URL },
+    { MOBILE_API_ORIGIN: "invalid" },
+    { MOBILE_API_ORIGIN: MOBILE_ENV.MOBILE_API_ORIGIN + "/another-path" },
+    { MOBILE_API_ORIGIN: "https://playground.meetaule.com" },
+    { MOBILE_API_ORIGIN_SECRET: "too-short" },
+    { MOBILE_API_ORIGIN_SECRET: undefined },
+  ]) {
+    assert.equal((await playground.fetch(new Request(MOBILE + "/me"), { ...MOBILE_ENV, ...bad })).status, 503);
+  }
+  assert.equal(send.mock.callCount(), 0);
+});
+
+test("anonymous sign-in and paths normalized by the playground use the encrypted route; another prefix keeps its original route", async (t) => {
+  const sent = [];
+  t.mock.method(globalThis, "fetch", async (url, init) => {
+    sent.push([String(url), init.headers.get("authorization"), init.headers.get("x-aule-mobile-origin")]);
+    return new Response(null, { status: 204 });
+  });
+  const publicHost = "https://playground.meetaule.com";
+  for (const [path, method] of [
+    ["/session/api/v1/auth/start", "POST"],
+    ["/session//api/v1/auth/verify", "POST"],
+    ["/session/api//v1/auth/google", "GET"],
+    ["/session/api/v1/me?limit=1", "GET"],
+    ["/session/api/v10/me", "GET"],
+  ]) {
+    await playground.fetch(new Request(publicHost + path, { method }), MOBILE_ENV);
+  }
+  const api = MOBILE_ENV.MOBILE_API_ORIGIN + "/session/api/v1";
+  const proof = MOBILE_ENV.MOBILE_API_ORIGIN_SECRET;
+  assert.deepEqual(sent, [
+    [api + "/auth/start", null, proof],
+    [api + "/auth/verify", null, proof],
+    [api + "/auth/google", null, proof],
+    [api + "/me?limit=1", null, proof],
+    [MOBILE_ENV.ORIGIN_URL + "/session/api/v10/me", null, null],
+  ]);
+});
+
+test("an unavailable, redirecting or HTML origin returns an uncached API error without following or exposing the redirect", async (t) => {
+  for (const upstream of [
+    () => Response.redirect("https://login.example.test"),
+    () => new Response("Proxy error", { status: 403, headers: { "Content-Type": "text/html" } }),
+    () => Promise.reject(new Error("transport unavailable")),
+  ]) {
+    const send = t.mock.method(globalThis, "fetch", upstream);
+    const result = await playground.fetch(new Request(MOBILE + "/me"), MOBILE_ENV);
+    assert.equal(result.status, 503);
+    assert.equal(result.headers.get("location"), null);
+    assert.equal(result.headers.get("cache-control"), "no-store");
+    assert.deepEqual(await result.json(), { error: { code: "unavailable", message: "service unavailable" } });
+    assert.equal(send.mock.callCount(), 1);
+    send.mock.restore();
+  }
 });
 
 // The console's Worker's secret in these tests, and what it adds to every request with it.

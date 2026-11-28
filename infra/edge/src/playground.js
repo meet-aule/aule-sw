@@ -8,11 +8,17 @@ export default {
     if (url.pathname === "/" || url.pathname === "") {
       return Response.redirect(new URL(`/session/${url.search}`, url).toString(), 302);
     }
+    // The playground folds repeated slashes before matching the mobile API.
+    const path = url.pathname.replace(/\/{2,}/g, "/");
+    if (path === "/session/api/v1" || path.startsWith("/session/api/v1/")) {
+      return mobileApi(request, url, path, env);
+    }
     const origin = new URL(env.ORIGIN_URL);
     origin.pathname = url.pathname;
     origin.search = url.search;
     // The incoming request's headers cannot be changed; a copy can.
     const headers = new Headers(request.headers);
+    headers.delete("X-Aule-Mobile-Origin");
     stripAnalyticsCookies(headers);
     return fetch(origin.toString(), {
       method: request.method,
@@ -22,6 +28,46 @@ export default {
     });
   },
 };
+
+function mobileError(status) {
+  const error = status === 503
+    ? { code: "unavailable", message: "service unavailable" }
+    : { code: "forbidden", message: "request forbidden" };
+  return Response.json({ error }, { status, headers: { "Cache-Control": "no-store" } });
+}
+
+// Mobile requests still go through the playground's route and bearer checks. The
+// local connector terminates the encrypted tunnel. The playground checks the
+// Worker's credential before accepting even an anonymous sign-in route.
+async function mobileApi(request, url, path, env) {
+  if (url.protocol !== "https:" || url.hostname !== "playground.meetaule.com") return mobileError(403);
+  if (!/^[0-9a-f]{64}$/.test(env.MOBILE_API_ORIGIN_SECRET ?? "")) return mobileError(503);
+  try {
+    const origin = new URL(env.MOBILE_API_ORIGIN);
+    if (origin.protocol !== "https:" || origin.hostname === url.hostname || origin.username || origin.password ||
+        origin.pathname !== "/" || origin.search || origin.hash) return mobileError(503);
+    origin.pathname = path;
+    origin.search = url.search;
+    const headers = new Headers({ "X-Aule-Mobile-Origin": env.MOBILE_API_ORIGIN_SECRET });
+    for (const name of ["Authorization", "Content-Type"]) {
+      const value = request.headers.get(name);
+      if (value !== null) headers.set(name, value);
+    }
+    const upstream = await fetch(origin.toString(), {
+      method: request.method, headers, body: request.body, redirect: "manual", cache: "no-store",
+    });
+    // A proxy error page or redirect must not change the mobile client's origin.
+    const type = upstream.headers.get("content-type");
+    if ((upstream.status >= 300 && upstream.status < 400) || type?.toLowerCase().startsWith("text/html")) {
+      return mobileError(503);
+    }
+    const outgoing = new Headers({ "Cache-Control": "no-store" });
+    if (type) outgoing.set("Content-Type", type);
+    return new Response(upstream.body, { status: upstream.status, headers: outgoing });
+  } catch {
+    return mobileError(503);
+  }
+}
 
 // The brand site and the shop leave their analytics cookies on all of
 // meetaule.com, so the browser sends them here too: Google Analytics' (_ga,

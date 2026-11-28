@@ -2,13 +2,13 @@
 // the app calls, only with a guardian's bearer, and only Authorization and
 // Content-Type go on. Each refusal is checked against what reached the platform.
 import assert from "node:assert/strict";
-import { createServer, type IncomingHttpHeaders, type Server } from "node:http";
-import { connect, type AddressInfo } from "node:net";
+import { createServer, IncomingMessage, type IncomingHttpHeaders, type Server } from "node:http";
+import { connect, Socket, type AddressInfo } from "node:net";
 import { setTimeout as delay } from "node:timers/promises";
 import { after, before, beforeEach, test } from "node:test";
 
 import { readSettings } from "../src/config.ts";
-import { LIMITS, ROUTES } from "../src/passthrough.ts";
+import { appApi, LIMITS, ROUTES } from "../src/passthrough.ts";
 import { createPlayground } from "../src/server.ts";
 import { COMPLETE } from "./fixtures.ts";
 
@@ -17,6 +17,7 @@ import { COMPLETE } from "./fixtures.ts";
 const TOKEN = "ab".repeat(32);
 const STRANGER = "cd".repeat(32);
 const ADMIN = "ef".repeat(32);
+const ORIGIN_PROOF = "01".repeat(32);
 const FAMILY = "0193a1f0-0000-7000-8000-000000000001";
 const CHILD = "0193a1f0-0000-7000-8000-000000000101";
 const SESSION = "0193a1f0-0000-7000-8000-000000000201";
@@ -60,6 +61,7 @@ before(async () => {
     ...COMPLETE,
     AULE_PLATFORM_URL: `http://127.0.0.1:${portOf(platform)}`,
     AULE_ADMIN_TOKEN: ADMIN,
+    MOBILE_API_ORIGIN_SECRET: ORIGIN_PROOF,
     // As in production: https://playground.meetaule.com/session/api/v1.
     PLAYGROUND_BASE_PATH: "/session",
   });
@@ -80,11 +82,55 @@ beforeEach(() => {
   slow = false;
 });
 
+test("only the local connector can reach mobile routes, even for sign-in and even with proxy headers", async () => {
+  const answer = appApi(readSettings({
+    ...COMPLETE, AULE_PLATFORM_URL: `http://127.0.0.1:${portOf(platform)}`, AULE_ADMIN_TOKEN: ADMIN, MOBILE_API_ORIGIN_SECRET: ORIGIN_PROOF,
+  }));
+  for (const peer of ["203.0.113.10", "::ffff:203.0.113.10", undefined]) {
+    const socket = new Socket();
+    Object.defineProperty(socket, "remoteAddress", { value: peer });
+    const request = new IncomingMessage(socket);
+    request.headers = { "x-aule-mobile-origin": ORIGIN_PROOF, "x-forwarded-for": "127.0.0.1", "cf-connecting-ip": "::1", authorization: `Bearer ${TOKEN}` };
+    for (const [method, path] of [["GET", "me"], ["POST", "auth/start"]]) {
+      request.method = method;
+      assert.equal((await answer(request, path, new URLSearchParams()))?.status, 404);
+    }
+    socket.destroy();
+  }
+  assert.equal(seen.length, 0);
+});
+
+test("a loopback request needs the Worker's proof before even a sign-in can reach the platform", async () => {
+  for (const proof of [undefined, "", "00".repeat(32)]) {
+    const response = await fetch(`${base}/auth/google`, { headers: proof === undefined ? {} : { "X-Aule-Mobile-Origin": proof } });
+    assert.equal(response.status, 404);
+  }
+  assert.equal(seen.length, 0);
+});
+
+test("a missing or malformed origin credential leaves the mobile API closed", async () => {
+  for (const configured of [undefined, "short"]) {
+    const settings = readSettings({
+      ...COMPLETE, AULE_PLATFORM_URL: `http://127.0.0.1:${portOf(platform)}`, AULE_ADMIN_TOKEN: ADMIN,
+      MOBILE_API_ORIGIN_SECRET: configured,
+    });
+    const socket = new Socket();
+    Object.defineProperty(socket, "remoteAddress", { value: "127.0.0.1" });
+    const request = new IncomingMessage(socket);
+    request.method = "GET";
+    request.headers = { "x-aule-mobile-origin": configured ?? ORIGIN_PROOF };
+    assert.equal((await appApi(settings)(request, "auth/google", new URLSearchParams()))?.status, 404);
+    socket.destroy();
+  }
+  assert.equal(seen.length, 0);
+});
+
 type Call = { token?: string | null; body?: unknown; headers?: Record<string, string>; on?: string };
 const call = (method: string, path: string, { token = TOKEN, body, headers = {}, on = base }: Call = {}) =>
   fetch(`${on}/${path}`, {
     method,
     headers: {
+      "X-Aule-Mobile-Origin": ORIGIN_PROOF,
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(body === undefined ? {} : { "Content-Type": "application/json" }),
       ...headers,
@@ -101,7 +147,7 @@ function exchange(server: Server, head: string, pieces: string[] = [], pauseMs =
   return new Promise<{ status: number | "closed"; reply: string }>((resolve) => {
     let reply = "";
     const socket = connect(portOf(server), "127.0.0.1", async () => {
-      socket.write(`${head}\r\nHost: playground\r\n\r\n`);
+      socket.write(`${head}\r\nHost: playground\r\nX-Aule-Mobile-Origin: ${ORIGIN_PROOF}\r\n\r\n`);
       for (const piece of pieces) {
         if (pauseMs) await delay(pauseMs);
         if (!socket.destroyed) socket.write(piece);
@@ -209,7 +255,7 @@ test("only the bearer and the body's type go on: no cookie, no address, nothing 
   assert.equal(sent["content-type"], "application/json");
   // The platform is told which build of the page asks, as on every other call.
   assert.match(sent["user-agent"] ?? "", /^aule-playground\//);
-  for (const name of ["cookie", "x-forwarded-for", "x-real-ip", "cf-connecting-ip", "x-edge-secret", "origin", "referer", "x-custom"]) {
+  for (const name of ["x-aule-mobile-origin", "cookie", "x-forwarded-for", "x-real-ip", "cf-connecting-ip", "x-edge-secret", "origin", "referer", "x-custom"]) {
     assert.equal(sent[name], undefined, name);
   }
   const all = JSON.stringify(sent);
@@ -432,7 +478,7 @@ test("a body goes on as it came, as JSON and up to its limit", async () => {
     const response = await call("POST", "auth/start", { token: null, body: '{"email":"ana@example.org"}', headers: { "Content-Type": type } });
     assert.equal(response.status, 400, type);
   }
-  const untyped = await fetch(`${base}/auth/start`, { method: "POST", body: new Uint8Array(Buffer.from('{"email":"ana@example.org"}')) });
+  const untyped = await fetch(`${base}/auth/start`, { method: "POST", headers: { "X-Aule-Mobile-Origin": ORIGIN_PROOF }, body: new Uint8Array(Buffer.from('{"email":"ana@example.org"}')) });
   assert.equal(untyped.status, 400, "no type at all");
   assert.equal(seen.length, 0);
 
@@ -491,10 +537,10 @@ test("nothing of a request is logged on its way through", async (t) => {
 });
 
 test("without a platform there is nothing to pass on", async () => {
-  const alone = createPlayground(readSettings({ ...COMPLETE, PLAYGROUND_BASE_PATH: "/session" }));
+  const alone = createPlayground(readSettings({ ...COMPLETE, MOBILE_API_ORIGIN_SECRET: ORIGIN_PROOF, PLAYGROUND_BASE_PATH: "/session" }));
   await new Promise<void>((resolve) => alone.listen(0, "127.0.0.1", resolve));
   try {
-    const response = await fetch(`http://127.0.0.1:${portOf(alone)}/session/api/v1/me`, { headers: { Authorization: `Bearer ${TOKEN}` } });
+    const response = await fetch(`http://127.0.0.1:${portOf(alone)}/session/api/v1/me`, { headers: { Authorization: `Bearer ${TOKEN}`, "X-Aule-Mobile-Origin": ORIGIN_PROOF } });
     assert.equal(response.status, 404);
     assert.deepEqual(await response.json(), { error: { code: "not_found", message: "route not found" } });
   } finally {

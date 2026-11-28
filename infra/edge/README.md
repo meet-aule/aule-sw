@@ -10,6 +10,7 @@ The proxy Workers take the analytics cookies of the brand site and the shop out 
 
 ```sh
 cd infra/edge
+# Provision and verify the mobile route below before activating the playground Worker.
 wrangler deploy -c wrangler.playground.jsonc
 wrangler secret put ORIGIN_URL -c wrangler.playground.jsonc   # http://<server>:8090
 wrangler deploy -c wrangler.livekit.jsonc
@@ -21,6 +22,41 @@ wrangler secret put EDGE_SECRET -c wrangler.admin.jsonc       # the console's AD
 ```
 
 The shop and the brand site have their own Worker in the store's repository.
+
+## Family mobile API
+
+The playground Worker routes `/session/api/v1` and its subpaths to a dedicated
+HTTPS service origin. The Worker forwards the guardian's bearer and JSON body.
+The Worker adds its own `X-Aule-Mobile-Origin` credential. The playground
+accepts mobile requests from the local connector only and verifies this
+credential before serving any route, including sign-in. The platform receives
+the family's bearer and the request content type.
+
+1. Generate 32 random bytes encoded as 64 lowercase hex characters. Set
+   `MOBILE_API_ORIGIN_SECRET` in the playground-only environment file
+   (`.env.mobile-origin`, or the file named by `AULE_MOBILE_ORIGIN_ENV_FILE`).
+   Restrict the file to the service operator. Stage the same value as a secret
+   in the playground Worker, along with the HTTPS URL in `MOBILE_API_ORIGIN`.
+   Preserve the existing `ORIGIN_URL` for web routes. Keep secret values out
+   of command arguments, source control and logs.
+2. Configure the dedicated outbound Cloudflare Tunnel to send the hostname
+   and path `^/session/api/v1(/.*)?$` to `http://127.0.0.1:8090`. Set
+   `http_status:404` as the catch-all and restrict the connector credentials
+   to the host. Check the connector is healthy before adding public DNS.
+3. When no tutoring sessions are in progress, deploy the reviewed playground.
+   Verify from the host that an anonymous GET of `/session/api/v1/me` returns
+   404 without the Worker credential and the platform's JSON 401 with it.
+   Check the public web resources and health endpoint after restarting.
+4. Route only the dedicated hostname to the tunnel. Its mobile paths must
+   return 404 without the credential, and other paths must return the tunnel's
+   404. Activate the reviewed Worker and check that the public mobile API
+   returns its JSON 401 for an anonymous GET of `/session/api/v1/me`. Collect
+   no real family tokens during verification.
+
+If the tunnel fails, keep the previous website origin available for its web
+routes. Remove `MOBILE_API_ORIGIN` from the mobile-aware Worker to return an
+uncached 503 for mobile traffic during recovery. Retain the playground's
+local-peer and credential checks in any rollback.
 
 ## OTA firmware
 
