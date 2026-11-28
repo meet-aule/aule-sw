@@ -10,6 +10,7 @@ The proxy Workers take the analytics cookies of the brand site and the shop out 
 
 ```sh
 cd infra/edge
+# Provision and verify the mobile route below before activating the playground Worker.
 wrangler deploy -c wrangler.playground.jsonc
 wrangler secret put ORIGIN_URL -c wrangler.playground.jsonc   # http://<server>:8090
 wrangler deploy -c wrangler.livekit.jsonc
@@ -21,6 +22,49 @@ wrangler secret put EDGE_SECRET -c wrangler.admin.jsonc       # the console's AD
 ```
 
 The shop and the brand site have their own Worker in the store's repository.
+
+## Family mobile API
+
+The playground Worker routes `/session/api/v1` and its subpaths to a dedicated
+HTTPS service origin. The Worker forwards the guardian's bearer and JSON body.
+It supplies its own Access service credentials. The existing playground process
+checks the public sign-in routes and each authenticated route on the origin.
+Only a local socket can reach the family API. Other web and LiveKit paths keep
+their existing routes.
+
+Provision this route before deploying the playground Worker or the server:
+
+1. Create a dedicated Access service token and a self-hosted Access application
+   for the entire dedicated hostname. Its only policy is **Service Auth** with
+   the specific token selected. Set a rotation reminder for its expiry.
+   [Cloudflare service token guide](https://developers.cloudflare.com/cloudflare-one/access-controls/service-credentials/service-tokens/)
+2. Run an outbound `cloudflared` tunnel on the origin host. Store the connector
+   credential on the host with restricted permissions. Configure one ingress
+   rule matching the dedicated hostname and path `^/session/api/v1(/.*)?$`,
+   with service `http://127.0.0.1:8090`. Require Access JWT validation at the
+   connector with the account team name and this application's audience.
+   Finish with `http_status:404` as the catch-all. Point only the dedicated
+   hostname's proxied DNS record to this tunnel once the policy is active.
+3. Verify that an unauthenticated request directly to the dedicated hostname
+   is denied by Access. Through the service-authenticated route, an anonymous
+   GET of `/session/api/v1/me` must return the playground's JSON 401, and a
+   request outside the API prefix must return the tunnel's 404. Keep tokens
+   out of command arguments, shell history, CI and request logs.
+4. Stage the reviewed playground Worker with the three secret bindings
+   `MOBILE_API_ORIGIN` (the HTTPS origin URL without a path),
+   `MOBILE_ACCESS_CLIENT_ID` and `MOBILE_ACCESS_CLIENT_SECRET`. Preserve the
+   existing `ORIGIN_URL` binding for the website. Activate the staged version
+   and check anonymous GETs through the **public app URL**: the same JSON 401
+   at `/session/api/v1/me`, a 404 for an unknown mobile route and a 200 at
+   `/session/healthz`.
+5. When no tutoring sessions are active, deploy the playground process with
+   the loopback-only API check and repeat the three public checks. Record the
+   reviewed Worker version before distributing the native clients.
+
+If the tunnel or Access policy fails, keep the mobile route on this version
+or another reviewed version with the same protection. Removing the mobile
+origin binding makes this route return an uncached 503 while the website
+continues operating. Keep the loopback-only origin check in any rollback.
 
 ## OTA firmware
 

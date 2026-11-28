@@ -2,13 +2,13 @@
 // the app calls, only with a guardian's bearer, and only Authorization and
 // Content-Type go on. Each refusal is checked against what reached the platform.
 import assert from "node:assert/strict";
-import { createServer, type IncomingHttpHeaders, type Server } from "node:http";
-import { connect, type AddressInfo } from "node:net";
+import { createServer, IncomingMessage, type IncomingHttpHeaders, type Server } from "node:http";
+import { connect, Socket, type AddressInfo } from "node:net";
 import { setTimeout as delay } from "node:timers/promises";
 import { after, before, beforeEach, test } from "node:test";
 
 import { readSettings } from "../src/config.ts";
-import { LIMITS, ROUTES } from "../src/passthrough.ts";
+import { appApi, LIMITS, ROUTES } from "../src/passthrough.ts";
 import { createPlayground } from "../src/server.ts";
 import { COMPLETE } from "./fixtures.ts";
 
@@ -78,6 +78,24 @@ after(() => {
 beforeEach(() => {
   seen.length = 0;
   slow = false;
+});
+
+test("only the local connector can reach mobile routes, even for sign-in and even with proxy headers", async () => {
+  const answer = appApi(readSettings({
+    ...COMPLETE, AULE_PLATFORM_URL: `http://127.0.0.1:${portOf(platform)}`, AULE_ADMIN_TOKEN: ADMIN,
+  }));
+  for (const peer of ["203.0.113.10", "::ffff:203.0.113.10", undefined]) {
+    const socket = new Socket();
+    Object.defineProperty(socket, "remoteAddress", { value: peer });
+    const request = new IncomingMessage(socket);
+    request.headers = { "x-forwarded-for": "127.0.0.1", "cf-connecting-ip": "::1", authorization: `Bearer ${TOKEN}` };
+    for (const [method, path] of [["GET", "me"], ["POST", "auth/start"]]) {
+      request.method = method;
+      assert.equal((await answer(request, path, new URLSearchParams()))?.status, 404);
+    }
+    socket.destroy();
+  }
+  assert.equal(seen.length, 0);
 });
 
 type Call = { token?: string | null; body?: unknown; headers?: Record<string, string>; on?: string };

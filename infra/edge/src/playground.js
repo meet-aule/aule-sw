@@ -8,6 +8,11 @@ export default {
     if (url.pathname === "/" || url.pathname === "") {
       return Response.redirect(new URL(`/session/${url.search}`, url).toString(), 302);
     }
+    // The playground folds repeated slashes before matching the mobile API.
+    const path = url.pathname.replace(/\/{2,}/g, "/");
+    if (path === "/session/api/v1" || path.startsWith("/session/api/v1/")) {
+      return mobileApi(request, url, path, env);
+    }
     const origin = new URL(env.ORIGIN_URL);
     origin.pathname = url.pathname;
     origin.search = url.search;
@@ -22,6 +27,48 @@ export default {
     });
   },
 };
+
+function mobileError(status) {
+  const error = status === 503
+    ? { code: "unavailable", message: "service unavailable" }
+    : { code: "forbidden", message: "request forbidden" };
+  return Response.json({ error }, { status, headers: { "Cache-Control": "no-store" } });
+}
+
+// Mobile requests still go through the playground's route and bearer checks. The
+// dedicated hostname is protected by a service-token-only Cloudflare Access policy.
+async function mobileApi(request, url, path, env) {
+  if (url.protocol !== "https:" || url.hostname !== "playground.meetaule.com") return mobileError(403);
+  if (!env.MOBILE_ACCESS_CLIENT_ID || !env.MOBILE_ACCESS_CLIENT_SECRET) return mobileError(503);
+  try {
+    const origin = new URL(env.MOBILE_API_ORIGIN);
+    if (origin.protocol !== "https:" || origin.hostname === url.hostname || origin.username || origin.password ||
+        origin.pathname !== "/" || origin.search || origin.hash) return mobileError(503);
+    origin.pathname = path;
+    origin.search = url.search;
+    const headers = new Headers({
+      "CF-Access-Client-Id": env.MOBILE_ACCESS_CLIENT_ID,
+      "CF-Access-Client-Secret": env.MOBILE_ACCESS_CLIENT_SECRET,
+    });
+    for (const name of ["Authorization", "Content-Type"]) {
+      const value = request.headers.get(name);
+      if (value !== null) headers.set(name, value);
+    }
+    const upstream = await fetch(origin.toString(), {
+      method: request.method, headers, body: request.body, redirect: "manual", cache: "no-store",
+    });
+    // An Access login redirect or cookie must not move or authenticate the mobile client.
+    const type = upstream.headers.get("content-type");
+    if ((upstream.status >= 300 && upstream.status < 400) || type?.toLowerCase().startsWith("text/html")) {
+      return mobileError(503);
+    }
+    const outgoing = new Headers({ "Cache-Control": "no-store" });
+    if (type) outgoing.set("Content-Type", type);
+    return new Response(upstream.body, { status: upstream.status, headers: outgoing });
+  } catch {
+    return mobileError(503);
+  }
+}
 
 // The brand site and the shop leave their analytics cookies on all of
 // meetaule.com, so the browser sends them here too: Google Analytics' (_ga,

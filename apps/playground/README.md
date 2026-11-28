@@ -161,11 +161,11 @@ is in `src/passthrough.ts`.
 - **Nothing of a request is logged**, only a route's shape when the platform
   does not answer: never a token, an id or a body.
 
-The page's Worker (`infra/edge`) passes these addresses on as it does every
-other, the bearer and the body included. From Cloudflare to the server the hop
-is still plain http, as it is for the page's cookie (`infra/server/README.md`),
-so the app's bearer crosses it unencrypted until a tunnel or a certificate at
-the origin closes it.
+The family API accepts connections only from the local host. Its Worker sends the
+bearer and body through a dedicated Cloudflare Access application and encrypted
+tunnel to the local connector. The Worker returns 503 when its protected origin
+is unavailable. Provision and verify that route before rolling out this server
+or distributing a native build to families. See the [mobile API rollout](../../infra/edge/README.md#family-mobile-api).
 
 ## Boundaries
 
