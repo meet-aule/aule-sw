@@ -185,11 +185,24 @@ class Pace:
                 self._session.shutdown()
                 return
 
+    def student_is_there(self) -> None:
+        """The student finished a turn, whatever became of it: they are there.
+
+        Not every turn joins the conversation, which is where ``student_spoke``
+        is heard from: one the engine answers is kept another way, and one a
+        gate stops is kept nowhere. Counted as silence, such turns closed a
+        session on a student who was talking, and who had answered «¿Sigues
+        ahí?» (2026-11-27: 48 things heard, 8 of them turns that counted).
+        Nothing else follows from them here: a break still ends only with a
+        turn the gates let through.
+        """
+        self._heard_at = self._clock()
+        self._asked_if_there = False
+
     def student_spoke(self, *, tired: bool = False) -> None:
         """The student said or wrote something: they are there, and back from
         a break. ``tired`` when it said they are tired (``says_tired``)."""
-        self._heard_at = self._clock()
-        self._asked_if_there = False
+        self.student_is_there()
         self._tired = self._tired or tired
         if not self._on_break:
             return
