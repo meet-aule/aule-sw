@@ -16,9 +16,9 @@ asked with the signed-in team member's own token, and the platform's Staff check
 decides each call.
 
 Every page's header shows Aule's logo over «Panel del equipo», and the tab its
-cuy alone: `public/aule-logo.svg` and `public/icon.svg`, copies of the
-playground's (`apps/playground/FIGMA.md`, D49). The console is on paper only,
-so it has no logo for a dark background.
+cuy alone, a bolder drawing of it at a tab's size: `public/aule-logo.svg` and
+`public/icon.svg`, copies of the playground's (`apps/playground/FIGMA.md`,
+D49). The console is on paper only, so it has no logo for a dark background.
 
 ## Routes
 
