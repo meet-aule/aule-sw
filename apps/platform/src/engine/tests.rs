@@ -555,7 +555,7 @@ fn talk_three_times_running_at_a_question_gets_the_question_again() {
     for said in ["mi perro se llama Rocky", "hoy comí pizza"] {
         let turn = student.says(said);
         assert!(turn.lines.is_empty() && turn.converse.is_some(), "{turn:?}");
-        assert_eq!(turn.reply()["board_help"], "identify");
+        assert_eq!(turn.board_help, Some("identify"));
     }
     // The third time running, the engine says its question again and that is
     // the whole turn: the model is not asked. By voice a misheard number is

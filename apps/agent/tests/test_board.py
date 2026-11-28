@@ -3,7 +3,7 @@
 import asyncio
 import json
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, PropertyMock, patch
 from uuid import uuid4
 
 import latency_harness as harness
@@ -27,7 +27,7 @@ from aule_agent import board, visuals
 from aule_agent.config import Settings
 from aule_agent.events import contracts_dir
 from aule_agent.prompts import response_language
-from aule_agent.script import Reply
+from aule_agent.script import Line, Reply
 from aule_agent.tutor import Tutor
 
 LESSONS = json.loads((contracts_dir() / "board" / "lesson.v1.example.json").read_text())
@@ -322,3 +322,24 @@ async def test_a_denied_reference_cannot_reach_the_speaker():
         [s async for s in tutor.llm_node(llm.ChatContext.empty(), [], ModelSettings())]
     )
     assert utterance and "derecho" not in utterance
+
+
+async def test_a_card_submission_can_draw_after_an_interrupted_voice_turn():
+    before, after = str(uuid4()), str(uuid4())
+    scene = LESSONS["perimeter"][0]["scene"]
+    visual = {**scene, "unit": "cm"}
+    exchange = AsyncMock(
+        side_effect=[
+            json.dumps({"view": {"revision": before, "point": None, "scene": None}}),
+            json.dumps(
+                {"applied": True, "view": {"revision": after, "point": None, "scene": scene}}
+            ),
+        ]
+    )
+    tutor = Tutor(language="es", gates=ScriptedGates(), show=AsyncMock(), board_exchange=exchange)
+    session = Session()
+    tutor.hold_started()
+    with patch.object(Tutor, "session", new_callable=PropertyMock, return_value=session):
+        await tutor.scripted_lines(Reply(lines=(Line("Mira el rectángulo.", show=visual),)))
+    assert exchange.await_args.args[0] == {"expect": before, "replace": visual}
+    assert session.said == [("Mira el rectángulo.", True, True)]

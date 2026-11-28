@@ -756,6 +756,7 @@ $("answer").addEventListener("submit", async (event) => {
   const id = sessionId;
   const written = $("answer-text").value.trim();
   if (!id || !written) return;
+  progressiveBoard?.interrupt();
   $("answer-send").disabled = true;
   showMessage("");
   try {

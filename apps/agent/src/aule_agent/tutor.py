@@ -1728,6 +1728,9 @@ class Tutor(Agent):
         when the student types to the tutor itself, and so do the lines of the
         engine's previous answer that were still to come."""
         self._script_turn += 1
+        if self._board:
+            # A card submission starts its own turn outside the voice and chat handlers.
+            self._starts_a_turn(passed=True)
         self._awaits = said.awaits
         self._script_over = said.over
         self._asked_by_the_engine(said)

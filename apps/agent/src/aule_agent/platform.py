@@ -116,6 +116,7 @@ class Platform:
         clock: Callable[[], float] = time.monotonic,
         *,
         homework_capability: int = 0,
+        progressive_board: bool = False,
     ) -> None:
         self._session = session
         self._send = send or self._http
@@ -123,6 +124,7 @@ class Platform:
         # session starts: 1 reads its level from a photo. The platform caps
         # it, and an engine told nothing asks for no photo.
         self._homework_capability = homework_capability
+        self._progressive_board = progressive_board
         # Which build of the agent makes each call, for the platform's side of a problem.
         self._user_agent = user_agent(build_commit())
         # Filled by ``start`` from the agent-session body; the tutor's persona.
@@ -285,9 +287,10 @@ class Platform:
         """Hands what the student said to the engine and returns what it wrote
         back. None when it has nothing to say or could not be reached: the
         model answers then, as in a session without an engine."""
-        answer = await self._call(
-            "POST", "/v1/agent/session/said", {"said": text}, CHECK_TIMEOUT_SECONDS
-        )
+        body: dict[str, Any] = {"said": text}
+        if self._progressive_board:
+            body["board"] = True
+        answer = await self._call("POST", "/v1/agent/session/said", body, CHECK_TIMEOUT_SECONDS)
         return reply_from(answer)
 
     async def homework(self, report: Reading) -> Reply | None:

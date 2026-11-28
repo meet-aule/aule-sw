@@ -458,9 +458,6 @@ impl Turn {
     /// waits for something, so a session that never does answers as before.
     fn reply(&self) -> Value {
         let mut reply = json!({ "lines": self.lines, "converse": self.converse, "closed": self.closed });
-        if let Some(help) = self.board_help {
-            reply["board_help"] = json!(help);
-        }
         if let Some(awaits) = self.awaits {
             reply["awaits"] = json!(awaits);
         }
@@ -1720,6 +1717,9 @@ fn checked(text: &str, what: &'static str) -> ApiResult<()> {
 pub struct SaidInput {
     /// What the student said, in their words.
     said: String,
+    /// The voice worker can use the engine's policy for the interactive board.
+    #[serde(default)]
+    board: bool,
     /// How they worked it out, when the caller can tell it apart.
     #[serde(default)]
     explanation: Option<String>,
@@ -1756,7 +1756,13 @@ pub async fn said(
         Ok((engine.said(at_ms, &body.said, body.explanation.as_deref(), false), None))
     })
     .await?;
-    Ok(Json(turn.reply()))
+    let mut reply = turn.reply();
+    if body.board
+        && let Some(help) = turn.board_help
+    {
+        reply["board_help"] = json!(help);
+    }
+    Ok(Json(reply))
 }
 
 /// What the agent read in a photo of the homework: the outcome and, for a

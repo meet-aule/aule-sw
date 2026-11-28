@@ -415,7 +415,15 @@ async def entrypoint(ctx: JobContext) -> None:
     # session's screen has a camera to show one with is the platform's to
     # know, not a matter of the talk button: the web page has both.
     linked = platform_session(ctx.job.metadata)
-    platform = Platform(linked, homework_capability=HOMEWORK_CAPABILITY) if linked else None
+    platform = (
+        Platform(
+            linked,
+            homework_capability=HOMEWORK_CAPABILITY,
+            progressive_board=settings.progressive_board,
+        )
+        if linked
+        else None
+    )
 
     admitted = await admit(ctx, settings, audience, language, platform, observer=observer)
     if admitted is None:

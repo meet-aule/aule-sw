@@ -5214,6 +5214,7 @@ impl Pupil<'_> {
     }
 
     async fn says(&self, body: Value) -> Value {
+        let board = body["board"].as_bool().unwrap_or(false);
         let (status, response) =
             self.app.call(Method::POST, "/v1/agent/session/said", Some(&self.token), Some(body)).await;
         assert_eq!(status, StatusCode::OK, "{response}");
@@ -5222,7 +5223,7 @@ impl Pupil<'_> {
             .unwrap()
             .keys()
             .map(String::as_str)
-            .filter(|field| *field != "awaits")
+            .filter(|field| *field != "awaits" && (!board || *field != "board_help"))
             .collect();
         assert_eq!(fields, ["closed", "converse", "lines"], "{response}");
         assert!(response.get("awaits").is_none_or(|awaits| awaits == "homework_photo"), "{response}");
@@ -5370,7 +5371,8 @@ async fn the_session_engine_runs_a_session_from_the_greeting_to_the_family_repor
         (step["stage"].as_str(), step["card"]["mode"].as_str()),
         (Some("Etapa 1: Descubrimiento"), Some("teoria"))
     );
-    let aside = pupil.says(json!({ "said": "¿por qué se llaman equivalentes?" })).await;
+    let aside = pupil.says(json!({ "said": "¿por qué se llaman equivalentes?", "board": true })).await;
+    assert_eq!(aside["board_help"], "explain");
     assert_eq!(aside["lines"], json!([]));
     let rules = aside["converse"].as_str().unwrap();
     assert!(rules.contains("Never give the current exercise's answer"), "{aside}");
