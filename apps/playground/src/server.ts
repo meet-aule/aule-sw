@@ -64,6 +64,7 @@ import {
 } from "./signin.ts";
 import { RecoveryTickets, recoveryCookie, recoveryTicket, resumeToken, STATUS_GRACE_SECONDS } from "./recovery.ts";
 import { paymentRequest } from "./payments.ts";
+import { matchesPractice } from "../public/practice-intent.js";
 import { unsubscribe } from "./unsubscribe.ts";
 import { appApi, LIMITS, type Limits } from "./passthrough.ts";
 
@@ -104,6 +105,11 @@ const STATIC: Record<string, { file: string | URL; type: string }> = {
   // The lines the family's home says about each student's latest sessions.
   "/summaries.js": { file: new URL("summaries.js", publicDir), type: "text/javascript; charset=utf-8" },
   "/reviews.js": { file: new URL("reviews.js", publicDir), type: "text/javascript; charset=utf-8" },
+  "/resources": { file: new URL("resources.html", publicDir), type: "text/html; charset=utf-8" },
+  "/resources.js": { file: new URL("resources.js", publicDir), type: "text/javascript; charset=utf-8" },
+  "/teaching-resources.js": { file: new URL("teaching-resources.js", publicDir), type: "text/javascript; charset=utf-8" },
+  "/practice-intent.js": { file: new URL("practice-intent.js", publicDir), type: "text/javascript; charset=utf-8" },
+  "/license.txt": { file: new URL("../../../LICENSE", import.meta.url), type: "text/plain; charset=utf-8" },
   // The page's words: which language shows, and one file of words a language.
   "/i18n.js": { file: new URL("i18n.js", publicDir), type: "text/javascript; charset=utf-8" },
   "/language.js": { file: new URL("language.js", publicDir), type: "text/javascript; charset=utf-8" },
@@ -247,6 +253,9 @@ const OWN_SCRIPTS = new Set([
   "/first-steps.js",
   "/summaries.js",
   "/reviews.js",
+  "/resources.js",
+  "/teaching-resources.js",
+  "/practice-intent.js",
   "/i18n.js",
   "/language.js",
   "/words/es.js",
@@ -261,7 +270,7 @@ const OWN_SCRIPTS = new Set([
 // kept until they sign in.
 const LINKED_PAGES = new Set(["/", "/guia", "/guide"]);
 // Pages reached from an address typed or shared by hand (see the redirects).
-const TYPED_PAGES = ["/guia", "/guide"];
+const TYPED_PAGES = ["/guia", "/guide", "/resources"];
 // The team's panel moved to its own console (apps/admin). Its old address
 // sends the team there: a fixed address, never one taken from the request.
 const TEAM_CONSOLE = "https://admin.meetaule.com/";
@@ -558,6 +567,10 @@ export function createPlayground(
     // "/api/session" for a signed-in guardian.
     const objective = objectiveFrom(body.objective);
     if (objective === null) return json(response, 400, { error: "bad_request" });
+    const practicing = body.practice !== undefined;
+    if (practicing && (body.language !== language || !matchesPractice(body.practice, language, objective))) {
+      return json(response, 400, { error: "bad_request" });
+    }
     try {
       const previous = recoveryTicket(request);
       const saved = recoveries.get(previous, token);
@@ -567,8 +580,11 @@ export function createPlayground(
           return json(response, 409, { error: "session_active" });
         }
       }
+      if (practicing && (await readStudent(settings, token, id)).language !== language) {
+        return json(response, 400, { error: "bad_request" });
+      }
       if (!settings.freeAccess && !daily.take(token)) return json(response, 429, { error: "daily_limit" });
-      const started = await startSession(settings, token, id, language, objective);
+      const started = await startSession(settings, token, id, language, objective, practicing);
       const ticket = recoveries.remember(token, id, started);
       response.setHeader("Set-Cookie", recoveryCookie(ticket, settings.basePath, started.expiresInSeconds + STATUS_GRACE_SECONDS));
       return json(response, 200, started);

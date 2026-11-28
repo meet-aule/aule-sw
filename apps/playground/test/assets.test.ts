@@ -23,6 +23,27 @@ const YEAR = "public, max-age=31536000, immutable";
 const versionOf = (text: string, name: string) =>
   text.match(new RegExp(`${name.replace(/\./g, "\\.")}\\?v=([0-9a-f]{12})`))?.[1];
 
+test("a shared activity opens without signing in and includes the editable materials' licence", async () => {
+  const query = "?activity=add-fractions&lang=en";
+  const redirect = await fetch(new URL("/resources/" + query, base), { redirect: "manual" });
+  assert.equal(redirect.status, 308);
+  assert.equal(redirect.headers.get("location"), "/playground/resources" + query);
+  const page = await fetch(base + "/resources" + query);
+  assert.equal(page.status, 200);
+  assert.equal(page.headers.get("set-cookie"), null);
+  const html = await page.text();
+  const code = versionOf(html, "resources.js");
+  assert.ok(code);
+  const module = await fetch(base + "/resources.js?v=" + code);
+  const catalog = versionOf(await module.text(), "teaching-resources.js");
+  assert.ok(catalog);
+  const content = await fetch(base + "/teaching-resources.js?v=" + catalog);
+  assert.equal(content.headers.get("cache-control"), YEAR);
+  assert.match(await content.text(), /SPDX-License-Identifier: Apache-2.0/);
+  const licence = await fetch(base + "/license.txt");
+  assert.equal(await licence.text(), await readFile(new URL("../../../LICENSE", import.meta.url), "utf8"));
+});
+
 test("the page points at fingerprinted files, and those are kept for a year", async () => {
   const html = await (await fetch(`${base}/`)).text();
 

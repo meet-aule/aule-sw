@@ -13,6 +13,7 @@ import { back, current, getAccount, go, landing, need, onAccount, onShow, readdr
 import { languageOf, words } from "./first-steps.js";
 import { homeWords, sessionLine } from "./summaries.js";
 import { openSummaries } from "./reviews.js";
+import { linkedPractice, matchesPractice } from "./practice-intent.js";
 import { language, onLanguage, t } from "./i18n.js";
 
 // The student a session is for, and what for: undefined until a tile is
@@ -23,6 +24,10 @@ let kind;
 let request = null;
 // Whose details the details screen holds, so coming back to it keeps them.
 let detailsOf = "";
+const takePractice = linkedPractice(window);
+let offeredSheet = null;
+let usingSheet = false;
+let hadAccount = false;
 // The student whose session a reload left open, or null. Choosing them goes
 // straight to A05, which offers to carry on with it (app.js), instead of
 // asking again what a session that already has its purpose is for. Starting
@@ -201,6 +206,8 @@ function drawHome() {
 
 onShow("home", () => {
   chosen = null;
+  offeredSheet = null;
+  usingSheet = false;
   kind = undefined;
   request = null;
   handoff = null;
@@ -280,6 +287,10 @@ function study(id) {
   const student = (getAccount().students ?? []).find((one) => one.id === id);
   if (!student) return;
   chosen = student;
+  const sheet = takePractice(student.language);
+  offeredSheet = subjectsKept()?.includes(OWN_SUBJECT) ? sheet : null;
+  usingSheet = false;
+  detailsOf = "";
   kind = undefined;
   request = asked(null);
   go(subjectsKept() && id !== resumable ? "a04" : "a05");
@@ -389,7 +400,8 @@ $("kinds").replaceChildren(
   }),
 );
 
-function choose(next) {
+function choose(next, sheet = false) {
+  usingSheet = sheet;
   kind = next;
   for (const button of $("kinds").children) button.setAttribute("aria-pressed", String(button.dataset.kind === next));
   // «No lo sé»: Aule decides, and the session carries no objective.
@@ -401,12 +413,17 @@ function choose(next) {
 }
 
 $("kind-review").addEventListener("click", () => choose(REVIEW.kind));
+$("kind-practice").addEventListener("click", () => {
+  if (offeredSheet) choose("explore", true);
+});
 
 onShow("a04", () => {
   const language = chosenLanguage();
   // The name as the parent wrote it, then César's question: one sentence each.
   writeWords($("a04-hello"), "a04_hello", language, { name: chosen.name });
   writeWords($("a04-title"), "a04_title", language);
+  $("kind-practice").hidden = !offeredSheet;
+  writeWords($("kind-practice"), offeredSheet ? "practice_sheet" : "", language, { title: offeredSheet?.title });
   for (const button of $("kinds").children) {
     writeWords(button.querySelector(".choice-words"), kindKey(button.dataset.kind), language);
     // Coming back from its details, the chosen tile shows Seleccionada.
@@ -439,16 +456,17 @@ onShow("a04-details", () => {
   const language = chosenLanguage();
   writeWords($("a04-details-title"), kindKey(kind), language);
   writeWords($("a04-details-back"), "back", language);
-  writeWords($("a04-details-line"), "details_line", language);
+  writeWords($("a04-details-line"), usingSheet ? "practice_edit" : "details_line", language);
   fieldLabel($("subject-label"), "details_subject", language);
   fieldLabel($("due-label"), "details_due", language, true);
   fieldLabel($("topic-label"), "details_topic", language, true);
   $("topic").placeholder = words("details_topic_example", language);
   $("topic").lang = language;
+  $("topic").rows = usingSheet ? 8 : 2;
   writeWords($("subject-note"), "details_note", language);
   writeWords($("details-next"), "details_next", language);
   $("due-line").hidden = !DATED.includes(kind);
-  const whose = `${chosen.id}|${kind}`;
+  const whose = `${chosen.id}|${kind}|${usingSheet ? offeredSheet.id : ""}`;
   if (whose !== detailsOf) {
     detailsOf = whose;
     const kept = subjectsKept() ?? [];
@@ -456,8 +474,8 @@ onShow("a04-details", () => {
       ...[...kept, "other"].map((subject) => new Option(words(`subject_${subject}`, language), subject)),
     );
     $("subject").lang = language;
-    $("subject").value = defaultSubject(chosen.subjects, kept);
-    $("topic").value = "";
+    $("subject").value = usingSheet ? OWN_SUBJECT : defaultSubject(chosen.subjects, kept);
+    $("topic").value = usingSheet ? offeredSheet.practiceTopic : "";
     $("due").value = "";
   }
   showSubjectNote();
@@ -468,7 +486,9 @@ $("subject").addEventListener("change", showSubjectNote);
 // «Seguir»: one tap is enough; everything here is optional.
 $("details-form").addEventListener("submit", (event) => {
   event.preventDefault();
-  request = asked(objectiveFor(kind, { subject: $("subject").value, topic: $("topic").value, due: $("due").value }));
+  const objective = objectiveFor(kind, { subject: $("subject").value, topic: $("topic").value, due: $("due").value });
+  request = asked(objective);
+  if (usingSheet && matchesPractice(offeredSheet.id, chosenLanguage(), objective)) request.practice = offeredSheet.id;
   go("a05");
 });
 
@@ -476,7 +496,15 @@ $("details-form").addEventListener("submit", (event) => {
 
 // What the page drew about the family goes before anything else shows.
 onAccount((account) => {
-  if (account.signed_in === true) return;
+  if (account.signed_in === true) {
+    hadAccount = true;
+    return;
+  }
+  // Initial anonymous entry must keep its sheet through onboarding; signing out ends the invitation.
+  if (hadAccount) takePractice();
+  hadAccount = false;
+  offeredSheet = null;
+  usingSheet = false;
   chosen = null;
   kind = undefined;
   request = null;
